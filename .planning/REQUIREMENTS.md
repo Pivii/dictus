@@ -95,12 +95,37 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| DUX-05 | Phase 1: Cross-Process Foundation | Not Started |
+| APP-05 | Phase 1: Cross-Process Foundation | Not Started |
+| APP-06 | Phase 1: Cross-Process Foundation | Not Started |
+| KBD-01 | Phase 1: Cross-Process Foundation | Not Started |
+| KBD-04 | Phase 1: Cross-Process Foundation | Not Started |
+| STT-01 | Phase 2: Transcription Pipeline | Not Started |
+| STT-02 | Phase 2: Transcription Pipeline | Not Started |
+| STT-03 | Phase 2: Transcription Pipeline | Not Started |
+| STT-04 | Phase 2: Transcription Pipeline | Not Started |
+| STT-05 | Phase 2: Transcription Pipeline | Not Started |
+| APP-02 | Phase 2: Transcription Pipeline | Not Started |
+| DUX-01 | Phase 3: Dictation UX | Not Started |
+| DUX-02 | Phase 3: Dictation UX | Not Started |
+| DUX-03 | Phase 3: Dictation UX | Not Started |
+| DUX-04 | Phase 3: Dictation UX | Not Started |
+| KBD-02 | Phase 3: Dictation UX | Not Started |
+| KBD-03 | Phase 3: Dictation UX | Not Started |
+| KBD-05 | Phase 3: Dictation UX | Not Started |
+| APP-04 | Phase 3: Dictation UX | Not Started |
+| APP-01 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| APP-03 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| KBD-06 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| DSN-01 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| DSN-02 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| DSN-03 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| DSN-04 | Phase 4: Main App, Onboarding, and Polish | Not Started |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-04*
