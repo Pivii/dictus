@@ -3,13 +3,13 @@
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-04)
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Phase 1
+**Current focus:** Phase 2 (Transcription Pipeline)
 
 ## Current Phase
 Phase: 1
-Status: In Progress
-Plans completed: 2/3
-Current plan: 1.3 (Keyboard shell)
+Status: Complete
+Plans completed: 3/3
+Current plan: — (Phase 1 complete, advance to Phase 2)
 
 ## Phase History
 
@@ -23,6 +23,7 @@ Current plan: 1.3 (Keyboard shell)
 - AppGroupDiagnostic wired into both launch paths
 
 ### Plan 1.2: Cross-Process Signaling — COMPLETED (2026-03-05)
+
 - `dictus://` URL scheme registered in DictusApp Info.plist
 - `DictationCoordinator` (ObservableObject) in DictusApp: handles URL, stubs recording+transcription, writes to App Group, posts Darwin notifications
 - `DictusApp.swift` updated with `.onOpenURL` routing `dictus://dictate` to coordinator
@@ -31,6 +32,18 @@ Current plan: 1.3 (Keyboard shell)
 - `KeyboardState` (ObservableObject) in DictusKeyboard: observes Darwin notifications, reads App Group data, 100ms retry guard for race condition, deinit cleanup
 - `MicButtonDisabled` view in DictusKeyboard/Views: popover with Full Access instructions
 - `KeyboardViewController` updated with viewDidDisappear + textDidChange lifecycle hooks
+
+### Plan 1.3: Keyboard Shell — COMPLETED (2026-03-05)
+- Full AZERTY 3-layer keyboard (letters, numbers, symbols) with all iOS-native special keys
+- `KeyDefinition` / `KeyboardLayer` / `KeyboardLayout` data model separating layout from rendering
+- `KeyButton` with DragGesture press-popup preview matching native iOS keyboard feel
+- `ShiftKey` with 3-state machine (off/shifted/capsLocked), double-tap caps lock, auto-unshift
+- `DeleteKey` with async repeat-on-hold using `Task.sleep` (avoids RunLoop issues in extensions)
+- `KeyboardView` composing all rows dynamically filling screen width via `unitKeyWidth` calculation
+- `FullAccessBanner` persistent non-dismissible degradation UX with Settings deep-link
+- `KeyboardInputView` (UIView + UIInputViewAudioFeedback) enabling system click sounds
+- `KeyboardRootView` fully integrated: FullAccessBanner + StatusBar + TranscriptionStub + KeyboardView
+- All Plan 1.2 + 1.3 source files registered in `Dictus.xcodeproj/project.pbxproj`
 
 ## Key Decisions
 
@@ -52,7 +65,21 @@ Ties `KeyboardState` lifetime to the SwiftUI view. `deinit` removes Darwin obser
 ### 100ms UserDefaults retry in `KeyboardState`
 Darwin notifications are posted immediately after `defaults.synchronize()`, but cross-App-Group UserDefaults propagation can lag on-device. A 100ms deferred read guards against receiving the notification before the value is readable.
 
+### MicKey uses `Link` not `Button`
+Only `Link(destination:)` can open a URL scheme from inside a keyboard extension without `UIApplication.shared` (unavailable in extensions). Using `Button` + `openURL` environment does not work in extensions.
+
+### `Task.sleep` for delete key repeat
+`Timer.scheduledTimer` is unreliable in keyboard extensions — the main RunLoop is not always in `.default` mode. `Task { @MainActor in try? await Task.sleep(...) }` is the correct pattern for async repeat in extensions.
+
+### `.gitignore /Models/` scope fix
+The original `Models/` pattern matched any `Models/` directory recursively, including `DictusKeyboard/Models/` which contains Swift source files. Changed to `/Models/` to restrict exclusion to the repo root (where downloaded Whisper model binaries would live).
+
+### Plan 1.3 delivers KBD-02 early
+KBD-02 ("Full AZERTY keyboard layout") was assigned to Phase 3 in REQUIREMENTS but delivered in Phase 1 Plan 1.3 as the keyboard shell. Phase 3 will add long-press accented characters (é, è, â, etc.) on top of the existing infrastructure.
+
 ---
 *State initialized: 2026-03-04*
 *Plan 1.1 completed: 2026-03-05*
 *Plan 1.2 completed: 2026-03-05*
+*Plan 1.3 completed: 2026-03-05*
+*Phase 1 completed: 2026-03-05*
