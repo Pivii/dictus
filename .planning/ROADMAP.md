@@ -24,6 +24,7 @@
 - [x] Plan 1.1: Project scaffold — Xcode workspace, two targets (app + extension), App Group entitlements, `APPLICATION_EXTENSION_API_ONLY = YES`, local `DictusCore` SPM package, `AppGroupDiagnostic` check on both launch paths *(completed 2026-03-05)*
 - [x] Plan 1.2: Cross-process signaling — `dictus://dictate` URL scheme handler in main app, `DictationStatus` enum written/read via App Group `UserDefaults`, Darwin notification signaling, `KeyboardState` observer in extension, stub round-trip *(completed 2026-03-05)*
 - [x] Plan 1.3: Keyboard shell — `UIInputViewController` subclass with `UIHostingController`-hosted SwiftUI view, functional AZERTY layout (all 50 keys), graceful degradation when Full Access is off (typing works, mic button disabled) *(completed 2026-03-05)*
+- [ ] Plan 1.4: UAT gap closure — fix keyboard click sounds (inputView hierarchy), fix cross-process transcription display (notification race, StatusBar spinner)
 
 ---
 
@@ -35,7 +36,7 @@
 
 ### Success Criteria
 1. Recording 10 seconds of spoken French in the main app produces a transcription in under 3 seconds on an iPhone 12 or newer
-2. Filler words ("euh", "hm", "bah", "voilà", "um", "uh") are absent from the transcription output
+2. Filler words ("euh", "hm", "bah", "voila", "um", "uh") are absent from the transcription output
 3. Automatic punctuation from Whisper is preserved — sentences end with periods, questions with question marks
 4. Short utterances (under 5 seconds) route to `whisper-tiny`; longer utterances route to `whisper-small` automatically
 5. User can download, select, and delete Whisper models (tiny, base, small, medium, large-v3-turbo) from within the app
@@ -78,7 +79,7 @@
 ### Success Criteria
 1. A first-time user who has never installed a third-party keyboard reaches their first successful dictation solely by following the onboarding flow — no external documentation needed
 2. The Settings screen lets a user change active model, transcription language, keyboard layout, filler word toggle, and haptic toggle — changes persist across app launches
-3. Every screen in the app and keyboard extension uses `.glassEffect()` (iOS 26) with `Material.regularMaterial` fallback on iOS 16–25
+3. Every screen in the app and keyboard extension uses `.glassEffect()` (iOS 26) with `Material.regularMaterial` fallback on iOS 16-25
 4. Mic button shows idle glow, recording pulse, and transcribing shimmer animations
 5. All text in the app respects Dynamic Type — no truncation or overflow at any accessibility text size
 6. Light and dark mode render correctly without any hardcoded colors
@@ -102,4 +103,4 @@
 
 ---
 *Roadmap created: 2026-03-04*
-*Granularity: Coarse (3–5 phases per config.json)*
+*Granularity: Coarse (3-5 phases per config.json)*
