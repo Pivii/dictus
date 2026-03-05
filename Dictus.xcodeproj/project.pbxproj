@@ -13,6 +13,19 @@
 		AA000004 /* KeyboardRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100004 /* KeyboardRootView.swift */; };
 		AA000010 /* DictusCore in Frameworks (App) */ = {isa = PBXBuildFile; productRef = AA900010 /* DictusCore */; };
 		AA000011 /* DictusCore in Frameworks (Keyboard) */ = {isa = PBXBuildFile; productRef = AA900011 /* DictusCore */; };
+		AA000005 /* DictationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* DictationCoordinator.swift */; };
+		AA000006 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000A /* DictationView.swift */; };
+		AA000007 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000B /* KeyboardState.swift */; };
+		AA000008 /* MicButtonDisabled.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000C /* MicButtonDisabled.swift */; };
+		AA000030 /* InputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100030 /* InputView.swift */; };
+		AA000031 /* KeyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100031 /* KeyButton.swift */; };
+		AA000032 /* SpecialKeyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100032 /* SpecialKeyButton.swift */; };
+		AA000033 /* KeyRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100033 /* KeyRow.swift */; };
+		AA000034 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100034 /* KeyboardView.swift */; };
+		AA000035 /* FullAccessBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100035 /* FullAccessBanner.swift */; };
+		AA000036 /* KeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100036 /* KeyDefinition.swift */; };
+		AA000037 /* KeyboardLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100037 /* KeyboardLayer.swift */; };
+		AA000038 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100038 /* KeyboardLayout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +39,19 @@
 		AA100008 /* Info.plist (Keyboard) */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA200001 /* Dictus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dictus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA200002 /* DictusKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DictusKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA100009 /* DictationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinator.swift; sourceTree = "<group>"; };
+		AA10000A /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
+		AA10000B /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
+		AA10000C /* MicButtonDisabled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicButtonDisabled.swift; sourceTree = "<group>"; };
+		AA100030 /* InputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputView.swift; sourceTree = "<group>"; };
+		AA100031 /* KeyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyButton.swift; sourceTree = "<group>"; };
+		AA100032 /* SpecialKeyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecialKeyButton.swift; sourceTree = "<group>"; };
+		AA100033 /* KeyRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRow.swift; sourceTree = "<group>"; };
+		AA100034 /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
+		AA100035 /* FullAccessBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAccessBanner.swift; sourceTree = "<group>"; };
+		AA100036 /* KeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyDefinition.swift; sourceTree = "<group>"; };
+		AA100037 /* KeyboardLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayer.swift; sourceTree = "<group>"; };
+		AA100038 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +89,8 @@
 			children = (
 				AA100001 /* DictusApp.swift */,
 				AA100002 /* ContentView.swift */,
+				AA100009 /* DictationCoordinator.swift */,
+				AA10000A /* DictationView.swift */,
 				AA100005 /* DictusApp.entitlements */,
 				AA100007 /* Info.plist (App) */,
 			);
@@ -74,10 +102,37 @@
 			children = (
 				AA100003 /* KeyboardViewController.swift */,
 				AA100004 /* KeyboardRootView.swift */,
+				AA10000B /* KeyboardState.swift */,
+				AA100030 /* InputView.swift */,
+				AA400005 /* Views */,
+				AA400006 /* Models */,
 				AA100006 /* DictusKeyboard.entitlements */,
 				AA100008 /* Info.plist (Keyboard) */,
 			);
 			path = DictusKeyboard;
+			sourceTree = "<group>";
+		};
+		AA400005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA10000C /* MicButtonDisabled.swift */,
+				AA100031 /* KeyButton.swift */,
+				AA100032 /* SpecialKeyButton.swift */,
+				AA100033 /* KeyRow.swift */,
+				AA100034 /* KeyboardView.swift */,
+				AA100035 /* FullAccessBanner.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA400006 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AA100036 /* KeyDefinition.swift */,
+				AA100037 /* KeyboardLayer.swift */,
+				AA100038 /* KeyboardLayout.swift */,
+			);
+			path = Models;
 			sourceTree = "<group>";
 		};
 		AA400003 /* DictusCore (local package) */ = {
@@ -203,6 +258,8 @@
 			files = (
 				AA000001 /* DictusApp.swift in Sources */,
 				AA000002 /* ContentView.swift in Sources */,
+				AA000005 /* DictationCoordinator.swift in Sources */,
+				AA000006 /* DictationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -212,6 +269,17 @@
 			files = (
 				AA000003 /* KeyboardViewController.swift in Sources */,
 				AA000004 /* KeyboardRootView.swift in Sources */,
+				AA000007 /* KeyboardState.swift in Sources */,
+				AA000008 /* MicButtonDisabled.swift in Sources */,
+				AA000030 /* InputView.swift in Sources */,
+				AA000031 /* KeyButton.swift in Sources */,
+				AA000032 /* SpecialKeyButton.swift in Sources */,
+				AA000033 /* KeyRow.swift in Sources */,
+				AA000034 /* KeyboardView.swift in Sources */,
+				AA000035 /* FullAccessBanner.swift in Sources */,
+				AA000036 /* KeyDefinition.swift in Sources */,
+				AA000037 /* KeyboardLayer.swift in Sources */,
+				AA000038 /* KeyboardLayout.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
