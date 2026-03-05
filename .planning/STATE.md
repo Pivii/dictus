@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: — (Phase 1 complete, advance to Phase 2)
-status: completed
-last_updated: "2026-03-05T17:09:13.723Z"
+current_plan: 02-03
+status: in-progress
+last_updated: "2026-03-05T22:19:27.294Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 7
+  completed_plans: 5
 ---
 
 # Project State: Dictus
@@ -20,10 +20,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 **Current focus:** Phase 2 (Transcription Pipeline)
 
 ## Current Phase
-Phase: 1
-Status: Complete
-Plans completed: 4/4
-Current plan: — (Phase 1 complete, advance to Phase 2)
+Phase: 2
+Status: In Progress
+Plans completed: 2/3
+Current plan: 02-03
 
 ## Phase History
 
@@ -64,6 +64,14 @@ Current plan: — (Phase 1 complete, advance to Phase 2)
 - Fixed cross-process transcription display: consolidated Darwin notifications, refreshFromDefaults reads lastTranscription on .ready, StatusBar spinner conditional
 - Layout regression fix: removed translatesAutoresizingMaskIntoConstraints = false from inputView to restore full-width keyboard
 - Both UAT tests 9 (click sounds) and 13 (cross-process transcription) pass on device
+
+### Plan 2.2: Transcription Quality Logic — COMPLETED (2026-03-05)
+- FillerWordFilter: regex-based removal of 8 filler words (euh, hm, bah, ben, voila, um, uh, er)
+- Lookahead/lookbehind regex preserves French words with filler substrings (humain, errer)
+- SmartModelRouter: 5s threshold, fast models (tiny/base) vs accurate (small+), single-model fallback
+- ModelInfo: metadata for 5 WhisperKit models with identifiers, display names, size/accuracy/speed labels
+- SharedKeys extended with activeModel, modelReady, downloadedModels
+- 24 new unit tests via TDD (30 total DictusCore tests all passing)
 
 ## Key Decisions
 
@@ -106,9 +114,16 @@ Writing both lastTranscription and status to UserDefaults before posting a singl
 ### Keep autoresizing masks on inputView
 Setting translatesAutoresizingMaskIntoConstraints = false on the keyboard inputView prevents iOS from sizing it correctly. The default autoresizing masks must be preserved.
 
+### Lookahead/lookbehind for French text regex
+`\b` word boundaries treat apostrophes as boundaries, which would match filler substrings inside French contractions like "l'humain". Using `(?<=\s|^)` and `(?=\s|$|[,.!?;:])` ensures whole-word matching that respects French orthography.
+
+### 5-second model routing threshold
+Audio under 5 seconds routes to fast models (tiny/base) for low latency; 5 seconds or longer routes to accurate models (small+). When only one model is downloaded, it is always used regardless of duration.
+
 ---
 *State initialized: 2026-03-04*
 *Plan 1.1 completed: 2026-03-05*
 *Plan 1.2 completed: 2026-03-05*
 *Plan 1.3 completed: 2026-03-05*
 *Phase 1 completed: 2026-03-05*
+*Plan 2.2 completed: 2026-03-05*

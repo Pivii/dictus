@@ -34,7 +34,7 @@
 
 **Requirements:** STT-01, STT-02, STT-03, STT-04, STT-05, APP-02
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 ### Success Criteria
 1. Recording 10 seconds of spoken French in the main app produces a transcription in under 3 seconds on an iPhone 12 or newer

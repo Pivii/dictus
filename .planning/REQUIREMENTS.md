@@ -10,9 +10,9 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Transcription
 
 - [ ] **STT-01**: User can dictate text and receive accurate French transcription via on-device WhisperKit
-- [ ] **STT-02**: Filler words (euh, hm, voilà, um, uh) are automatically removed from transcription
+- [x] **STT-02**: Filler words (euh, hm, voilà, um, uh) are automatically removed from transcription
 - [ ] **STT-03**: Transcription includes automatic punctuation (provided natively by Whisper)
-- [ ] **STT-04**: Smart Model Routing switches between fast model (tiny/base) and accurate model (small) based on audio duration
+- [x] **STT-04**: Smart Model Routing switches between fast model (tiny/base) and accurate model (small) based on audio duration
 - [ ] **STT-05**: Transcription completes in under 3 seconds for 10 seconds of audio
 
 ### Keyboard Extension
