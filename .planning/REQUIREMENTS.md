@@ -17,10 +17,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Keyboard Extension
 
-- [ ] **KBD-01**: User can switch to Dictus keyboard via globe key in any app
+- [x] **KBD-01**: User can switch to Dictus keyboard via globe key in any app
 - [ ] **KBD-02**: Full AZERTY keyboard layout is available and functional
 - [ ] **KBD-03**: QWERTY keyboard layout is available as alternative (configurable in settings)
-- [ ] **KBD-04**: Keyboard remains functional for basic typing when Full Access is not enabled (graceful degradation)
+- [x] **KBD-04**: Keyboard remains functional for basic typing when Full Access is not enabled (graceful degradation)
 - [ ] **KBD-05**: Mic button with clear visual states (idle, recording, transcribing)
 - [ ] **KBD-06**: Keyboard uses iOS 26 Liquid Glass design
 
@@ -30,7 +30,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **DUX-02**: User can undo the last transcription insertion with a dedicated button
 - [ ] **DUX-03**: Haptic feedback triggers on recording start, recording stop, and text insertion
 - [ ] **DUX-04**: Animated waveform displays during active recording
-- [ ] **DUX-05**: Dictation flow uses two-process architecture (keyboard triggers main app for recording + transcription)
+- [x] **DUX-05**: Dictation flow uses two-process architecture (keyboard triggers main app for recording + transcription)
 
 ### Main App
 
@@ -38,8 +38,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **APP-02**: Model Manager allows downloading, selecting, and deleting Whisper models (tiny, base, small, medium, large-v3-turbo)
 - [ ] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
 - [ ] **APP-04**: In-app test dictation screen for testing transcription without leaving the app
-- [ ] **APP-05**: App handles `dictus://dictate` URL scheme to receive dictation requests from keyboard extension
-- [ ] **APP-06**: All shared data passes through App Group (`group.com.pivi.dictus`)
+- [x] **APP-05**: App handles `dictus://dictate` URL scheme to receive dictation requests from keyboard extension
+- [x] **APP-06**: All shared data passes through App Group (`group.com.pivi.dictus`)
 
 ### Design
 
@@ -95,11 +95,11 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DUX-05 | Phase 1: Cross-Process Foundation | Not Started |
-| APP-05 | Phase 1: Cross-Process Foundation | Not Started |
-| APP-06 | Phase 1: Cross-Process Foundation | Not Started |
-| KBD-01 | Phase 1: Cross-Process Foundation | Not Started |
-| KBD-04 | Phase 1: Cross-Process Foundation | Not Started |
+| DUX-05 | Phase 1: Cross-Process Foundation | Complete |
+| APP-05 | Phase 1: Cross-Process Foundation | Complete |
+| APP-06 | Phase 1: Cross-Process Foundation | Complete |
+| KBD-01 | Phase 1: Cross-Process Foundation | Complete |
+| KBD-04 | Phase 1: Cross-Process Foundation | Complete |
 | STT-01 | Phase 2: Transcription Pipeline | Not Started |
 | STT-02 | Phase 2: Transcription Pipeline | Not Started |
 | STT-03 | Phase 2: Transcription Pipeline | Not Started |

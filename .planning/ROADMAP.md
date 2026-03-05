@@ -24,7 +24,7 @@
 - [x] Plan 1.1: Project scaffold — Xcode workspace, two targets (app + extension), App Group entitlements, `APPLICATION_EXTENSION_API_ONLY = YES`, local `DictusCore` SPM package, `AppGroupDiagnostic` check on both launch paths *(completed 2026-03-05)*
 - [x] Plan 1.2: Cross-process signaling — `dictus://dictate` URL scheme handler in main app, `DictationStatus` enum written/read via App Group `UserDefaults`, Darwin notification signaling, `KeyboardState` observer in extension, stub round-trip *(completed 2026-03-05)*
 - [x] Plan 1.3: Keyboard shell — `UIInputViewController` subclass with `UIHostingController`-hosted SwiftUI view, functional AZERTY layout (all 50 keys), graceful degradation when Full Access is off (typing works, mic button disabled) *(completed 2026-03-05)*
-- [ ] Plan 1.4: UAT gap closure — fix keyboard click sounds (inputView hierarchy), fix cross-process transcription display (notification race, StatusBar spinner)
+- [x] Plan 1.4: UAT gap closure — fix keyboard click sounds (inputView hierarchy), fix cross-process transcription display (notification race, StatusBar spinner) *(completed 2026-03-05)*
 
 ---
 

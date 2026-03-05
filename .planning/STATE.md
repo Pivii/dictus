@@ -8,7 +8,7 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Phase
 Phase: 1
 Status: Complete
-Plans completed: 3/3
+Plans completed: 4/4
 Current plan: — (Phase 1 complete, advance to Phase 2)
 
 ## Phase History
@@ -45,6 +45,12 @@ Current plan: — (Phase 1 complete, advance to Phase 2)
 - `KeyboardRootView` fully integrated: FullAccessBanner + StatusBar + TranscriptionStub + KeyboardView
 - All Plan 1.2 + 1.3 source files registered in `Dictus.xcodeproj/project.pbxproj`
 
+### Plan 1.4: UAT Gap Closure — COMPLETED (2026-03-05)
+- Fixed keyboard click sounds: KeyboardInputView changed to UIInputView subclass, assigned to self.inputView, playInputClick() added to space/return/delete
+- Fixed cross-process transcription display: consolidated Darwin notifications, refreshFromDefaults reads lastTranscription on .ready, StatusBar spinner conditional
+- Layout regression fix: removed translatesAutoresizingMaskIntoConstraints = false from inputView to restore full-width keyboard
+- Both UAT tests 9 (click sounds) and 13 (cross-process transcription) pass on device
+
 ## Key Decisions
 
 ### DarwinNotifications C callback
@@ -76,6 +82,15 @@ The original `Models/` pattern matched any `Models/` directory recursively, incl
 
 ### Plan 1.3 delivers KBD-02 early
 KBD-02 ("Full AZERTY keyboard layout") was assigned to Phase 3 in REQUIREMENTS but delivered in Phase 1 Plan 1.3 as the keyboard shell. Phase 3 will add long-press accented characters (é, è, â, etc.) on top of the existing infrastructure.
+
+### UIInputView required for playInputClick
+UIView with UIInputViewAudioFeedback conformance is insufficient. UIInputViewController.inputView is typed as UIInputView?, so the custom view must extend UIInputView with .keyboard style for system click sounds to work.
+
+### Consolidated Darwin notifications
+Writing both lastTranscription and status to UserDefaults before posting a single Darwin notification eliminates the race condition where the keyboard reads defaults between two separate notifications.
+
+### Keep autoresizing masks on inputView
+Setting translatesAutoresizingMaskIntoConstraints = false on the keyboard inputView prevents iOS from sizing it correctly. The default autoresizing masks must be preserved.
 
 ---
 *State initialized: 2026-03-04*
