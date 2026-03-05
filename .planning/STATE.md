@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 02-03
-status: in-progress
-last_updated: "2026-03-05T22:19:27.294Z"
+status: executing
+last_updated: "2026-03-05T22:33:09.758Z"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State: Dictus
@@ -65,6 +65,15 @@ Current plan: 02-03
 - Layout regression fix: removed translatesAutoresizingMaskIntoConstraints = false from inputView to restore full-width keyboard
 - Both UAT tests 9 (click sounds) and 13 (cross-process transcription) pass on device
 
+### Plan 2.1: WhisperKit Integration — COMPLETED (2026-03-05)
+- WhisperKit SPM dependency added to DictusApp target (not DictusKeyboard — 50MB memory limit)
+- AudioRecorder wraps WhisperKit AudioProcessor with live energy levels for waveform visualization
+- TranscriptionService with French language hint, greedy decoding (temperature 0.0)
+- RecordingView with animated waveform, stop button, elapsed time counter
+- DictationCoordinator fully rewritten — no stubs remain, real recording + transcription pipeline
+- Verified on physical iPhone: French speech produces accurate transcription with automatic punctuation
+- ContiguousArray/Array type mismatch auto-fixed (WhisperKit API compatibility)
+
 ### Plan 2.2: Transcription Quality Logic — COMPLETED (2026-03-05)
 - FillerWordFilter: regex-based removal of 8 filler words (euh, hm, bah, ben, voila, um, uh, er)
 - Lookahead/lookbehind regex preserves French words with filler substrings (humain, errer)
@@ -111,11 +120,20 @@ UIView with UIInputViewAudioFeedback conformance is insufficient. UIInputViewCon
 ### Consolidated Darwin notifications
 Writing both lastTranscription and status to UserDefaults before posting a single Darwin notification eliminates the race condition where the keyboard reads defaults between two separate notifications.
 
+### Auto-insert transcription into active text field (Phase 3 UX)
+Instead of displaying transcription text in a keyboard banner, insert it directly into the active text field via `textDocumentProxy.insertText()`. This is the standard iOS dictation UX — user speaks, text appears where the cursor is. To implement in Phase 3 when wiring the keyboard extension.
+
 ### Keep autoresizing masks on inputView
 Setting translatesAutoresizingMaskIntoConstraints = false on the keyboard inputView prevents iOS from sizing it correctly. The default autoresizing masks must be preserved.
 
 ### Lookahead/lookbehind for French text regex
 `\b` word boundaries treat apostrophes as boundaries, which would match filler substrings inside French contractions like "l'humain". Using `(?<=\s|^)` and `(?=\s|$|[,.!?;:])` ensures whole-word matching that respects French orthography.
+
+### WhisperKit AudioProcessor for recording
+WhisperKit's built-in AudioProcessor handles 16kHz mono Float32 conversion internally. No custom AVAudioEngine pipeline needed — just call `startRecordingLive` and read `audioSamples` + `relativeEnergy`.
+
+### ContiguousArray wrapping for WhisperKit
+`audioProcessor.audioSamples` returns `ContiguousArray<Float>`, not `[Float]`. Wrap with `Array()` initializer when passing to methods expecting `[Float]`.
 
 ### 5-second model routing threshold
 Audio under 5 seconds routes to fast models (tiny/base) for low latency; 5 seconds or longer routes to accurate models (small+). When only one model is downloaded, it is always used regardless of duration.
@@ -126,4 +144,5 @@ Audio under 5 seconds routes to fast models (tiny/base) for low latency; 5 secon
 *Plan 1.2 completed: 2026-03-05*
 *Plan 1.3 completed: 2026-03-05*
 *Phase 1 completed: 2026-03-05*
+*Plan 2.1 completed: 2026-03-05*
 *Plan 2.2 completed: 2026-03-05*
