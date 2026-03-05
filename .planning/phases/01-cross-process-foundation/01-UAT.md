@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 01-cross-process-foundation
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md]
 started: 2026-03-05T00:00:00Z
@@ -84,13 +84,32 @@ skipped: 0
   reason: "User reported: Non, ça ne marche pas, je n'ai pas de bruit quand je clique sur les touches."
   severity: major
   test: 9
-  artifacts: []
-  missing: []
+  root_cause: "KeyboardInputView is added as a subview but never set as the controller's inputView. Apple's playInputClick() only works on the actual inputView, not a random subview. Secondary: only character keys call playInputClick(), space/return/delete do not."
+  artifacts:
+    - path: "DictusKeyboard/KeyboardViewController.swift"
+      issue: "KeyboardInputView added as subview instead of being the inputView"
+    - path: "DictusKeyboard/Views/KeyboardView.swift"
+      issue: "Missing playInputClick() calls in onSpace, onReturn, onDelete"
+  missing:
+    - "Set KeyboardInputView as the controller's inputView (or host SwiftUI inside it)"
+    - "Add playInputClick() to space, return, delete handlers"
+  debug_session: ".planning/debug/keyboard-click-sound.md"
 
 - truth: "After dictation completes in DictusApp, switching back to keyboard shows the stub transcription text inserted into the text field."
   status: failed
   reason: "User reported: Le texte stub n'est pas recu dans le clavier. Le retour est manuel (pas automatique). La status bar affiche 'transcription ready' avec un spinner qui tourne, mais le texte n'est pas insere dans le champ texte."
   severity: major
-  test: 12
-  artifacts: []
-  missing: []
+  test: 13
+  root_cause: "Three issues: (1) TranscriptionStub requires manual tap on 'Inserer' button — no auto-insertion logic exists. (2) StatusBar spinner is unconditional — keeps spinning on .ready status, confusing UX. (3) Race condition: two Darwin notifications posted sequentially, refreshFromDefaults() only reads status, not lastTranscription."
+  artifacts:
+    - path: "DictusKeyboard/KeyboardRootView.swift"
+      issue: "TranscriptionStub requires manual tap; StatusBar spinner unconditional"
+    - path: "DictusKeyboard/KeyboardState.swift"
+      issue: "refreshFromDefaults() does not read lastTranscription"
+    - path: "DictusApp/DictationCoordinator.swift"
+      issue: "Two notifications posted in sequence create race condition"
+  missing:
+    - "Auto-insert transcription text or make Inserer button more prominent"
+    - "Make StatusBar spinner conditional (hide on .ready/.failed)"
+    - "Consolidate Darwin notifications or read lastTranscription in refreshFromDefaults()"
+  debug_session: ".planning/debug/cross-process-transcription-not-received.md"
