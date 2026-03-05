@@ -2,19 +2,31 @@
 import SwiftUI
 
 /// Shift key with three states: off, shift (single character), caps lock.
+/// Double-tap detected via timestamp: if second tap arrives within 400ms, activate caps lock.
 struct ShiftKey: View {
     @Binding var shiftState: ShiftState
     let width: CGFloat
 
+    @State private var lastTapTime: Date = .distantPast
+
     var body: some View {
         Button {
-            switch shiftState {
-            case .off:
-                shiftState = .shifted
-            case .shifted:
-                shiftState = .off
-            case .capsLocked:
-                shiftState = .off
+            let now = Date()
+            let interval = now.timeIntervalSince(lastTapTime)
+            lastTapTime = now
+
+            if interval < 0.4 && shiftState == .shifted {
+                // Double-tap: activate caps lock
+                shiftState = .capsLocked
+            } else {
+                switch shiftState {
+                case .off:
+                    shiftState = .shifted
+                case .shifted:
+                    shiftState = .off
+                case .capsLocked:
+                    shiftState = .off
+                }
             }
         } label: {
             Image(systemName: shiftIconName)
@@ -31,12 +43,6 @@ struct ShiftKey: View {
                                  ? Color(.systemBackground)
                                  : Color(.label))
         }
-        // Double-tap for caps lock
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                shiftState = .capsLocked
-            }
-        )
     }
 
     private var shiftIconName: String {
