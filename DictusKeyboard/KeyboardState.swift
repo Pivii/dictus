@@ -41,11 +41,18 @@ class KeyboardState: ObservableObject {
     }
 
     /// Read current state from App Group UserDefaults.
+    /// When status is .ready, also reads lastTranscription — belt-and-suspenders
+    /// fix so the keyboard picks up the transcription even if only the statusChanged
+    /// notification fires (the transcriptionReady notification also reads it).
     private func refreshFromDefaults() {
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
             dictationStatus = status
             updateStatusMessage(for: status)
+
+            if status == .ready {
+                lastTranscription = defaults.string(forKey: SharedKeys.lastTranscription)
+            }
         }
     }
 

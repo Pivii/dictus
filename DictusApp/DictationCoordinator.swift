@@ -50,10 +50,22 @@ class DictationCoordinator: ObservableObject {
                 return
             }
 
-            // Write stub result to App Group
+            // Write stub result to App Group.
+            // IMPORTANT: Write both lastTranscription AND status to UserDefaults
+            // BEFORE posting any Darwin notifications. This prevents a race condition
+            // where the keyboard reads UserDefaults between two separate notifications
+            // and sees status=ready but lastTranscription is still nil.
             let stubResult = "Bonjour, ceci est un test de dictée."
-            writeTranscription(stubResult)
-            updateStatus(.ready)
+            self.lastResult = stubResult
+            self.status = .ready
+            self.defaults.set(stubResult, forKey: SharedKeys.lastTranscription)
+            self.defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
+            self.defaults.set(DictationStatus.ready.rawValue, forKey: SharedKeys.dictationStatus)
+            self.defaults.synchronize()
+
+            // Post notifications after ALL writes are complete
+            DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
+            DarwinNotificationCenter.post(DarwinNotificationName.transcriptionReady)
 
             if #available(iOS 14.0, *) {
                 DictusLogger.app.info("Stub transcription written: \(stubResult)")

@@ -15,9 +15,15 @@ struct KeyboardRootView: View {
                 FullAccessBanner()
             }
 
-            // Status bar — shows during active dictation round-trip
+            // Status bar — shows during active dictation round-trip.
+            // Spinner only shown during active states (recording, transcribing),
+            // hidden on terminal states (ready, failed) where work is done.
             if let message = state.statusMessage {
-                StatusBar(message: message)
+                StatusBar(
+                    message: message,
+                    showSpinner: state.dictationStatus != .ready
+                        && state.dictationStatus != .failed
+                )
             }
 
             // Transcription result stub (Phase 1 only — replaced in Phase 3)
@@ -39,11 +45,14 @@ struct KeyboardRootView: View {
 /// Status bar shown during dictation round-trip.
 struct StatusBar: View {
     let message: String
+    var showSpinner: Bool = true
 
     var body: some View {
         HStack {
-            ProgressView()
-                .scaleEffect(0.7)
+            if showSpinner {
+                ProgressView()
+                    .scaleEffect(0.7)
+            }
             Text(message)
                 .font(.caption)
                 .foregroundColor(.secondary)
