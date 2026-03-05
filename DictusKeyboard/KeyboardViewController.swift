@@ -10,7 +10,6 @@ class KeyboardViewController: UIInputViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Run diagnostic on every keyboard load (debug builds)
         #if DEBUG
         let result = AppGroupDiagnostic.run()
         if #available(iOS 14.0, *) {
@@ -40,5 +39,15 @@ class KeyboardViewController: UIInputViewController {
             hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Darwin observers cleaned up by KeyboardState deinit
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        // Future: react to cursor position changes, return key type, etc.
     }
 }
