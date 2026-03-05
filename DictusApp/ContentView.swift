@@ -7,34 +7,42 @@ struct ContentView: View {
     @State private var diagnosticResult: DiagnosticResult?
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Text("Dictus")
-                    .font(.largeTitle.bold())
+        ZStack {
+            // Base content: diagnostic view (will be replaced by Model Manager in Plan 2.3)
+            NavigationStack {
+                VStack(spacing: 20) {
+                    Text("Dictus")
+                        .font(.largeTitle.bold())
 
-                // Show dictation state when active
-                if coordinator.status != .idle {
-                    DictationStatusView(status: coordinator.status)
+                    if let result = coordinator.lastResult, coordinator.status == .idle {
+                        Text("Last result: \(result)")
+                            .font(.body)
+                            .padding()
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(8)
+                    }
+
+                    Divider()
+
+                    if let result = diagnosticResult {
+                        DiagnosticView(result: result)
+                    } else {
+                        ProgressView("Running diagnostics...")
+                    }
                 }
-
-                if let result = coordinator.lastResult {
-                    Text("Last result: \(result)")
-                        .font(.body)
-                        .padding()
-                        .background(Color(.tertiarySystemBackground))
-                        .cornerRadius(8)
-                }
-
-                Divider()
-
-                if let result = diagnosticResult {
-                    DiagnosticView(result: result)
-                } else {
-                    ProgressView("Running diagnostics...")
-                }
+                .padding()
+                .navigationTitle("Dictus")
             }
-            .padding()
-            .navigationTitle("Dictus")
+
+            // Full-screen overlay when dictation is active
+            // WHY a ZStack overlay instead of NavigationStack push:
+            // RecordingView is a full-screen takeover (dark background, focused UI).
+            // It doesn't belong in a navigation hierarchy — it appears when dictation
+            // starts and disappears when it ends, like a modal.
+            if coordinator.status != .idle {
+                RecordingView()
+                    .transition(.opacity)
+            }
         }
         .task {
             diagnosticResult = AppGroupDiagnostic.run()

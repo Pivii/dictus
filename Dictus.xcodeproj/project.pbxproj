@@ -30,6 +30,7 @@
 		AA000040 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100040 /* AudioRecorder.swift */; };
 		AA000041 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100041 /* TranscriptionService.swift */; };
 		AA000042 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA900020 /* WhisperKit */; };
+		AA000043 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100043 /* RecordingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +57,7 @@
 		AA100038 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
 		AA100040 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		AA100041 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
+		AA100043 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		AA200001 /* DictusApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DictusApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA200002 /* DictusKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DictusKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -123,6 +125,7 @@
 				AA100009 /* DictationCoordinator.swift */,
 				AA10000A /* DictationView.swift */,
 				AA400007 /* Audio */,
+				AA400008 /* Views */,
 				AA100005 /* DictusApp.entitlements */,
 				AA100007 /* Info.plist */,
 			);
@@ -136,6 +139,14 @@
 				AA100041 /* TranscriptionService.swift */,
 			);
 			path = Audio;
+			sourceTree = "<group>";
+		};
+		AA400008 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA100043 /* RecordingView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		AA400002 /* DictusKeyboard */ = {
@@ -315,6 +326,7 @@
 				AA000006 /* DictationView.swift in Sources */,
 				AA000040 /* AudioRecorder.swift in Sources */,
 				AA000041 /* TranscriptionService.swift in Sources */,
+				AA000043 /* RecordingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
