@@ -52,11 +52,16 @@ struct MainTabView: View {
                 }
                 .tag(2)
             }
+            .tint(.dictusAccent)
 
             // Full-screen recording overlay covers everything including tab bar
             // WHY coordinator.status != .idle:
             // RecordingView handles all non-idle states (requested, recording,
             // transcribing, ready, failed). The ZStack overlay makes it cover the tab bar.
+            //
+            // WHY .tint on TabView:
+            // Uses brand accent color for the selected tab icon/text instead of default blue.
+            // On iOS 26, TabView automatically gets Liquid Glass styling -- no manual glass needed.
             if coordinator.status != .idle {
                 RecordingView()
                     .transition(.opacity)

@@ -1,20 +1,20 @@
 // DictusApp/Views/RecordingView.swift
-// Full-screen recording UI with waveform, stop button, and elapsed time.
+// Full-screen recording UI with brand waveform, stop button, and elapsed time.
 import SwiftUI
 import DictusCore
 
 /// Full-screen view shown during dictation (recording, transcribing, ready states).
 ///
 /// WHY this is a separate view from ContentView:
-/// Single Responsibility — RecordingView handles the recording UI exclusively.
+/// Single Responsibility -- RecordingView handles the recording UI exclusively.
 /// ContentView decides *when* to show it based on coordinator status.
 struct RecordingView: View {
     @EnvironmentObject var coordinator: DictationCoordinator
 
     var body: some View {
         ZStack {
-            // Dark background for recording focus
-            Color.black.ignoresSafeArea()
+            // Dark background for recording focus -- uses brand color instead of Color.black
+            Color.dictusBackground.ignoresSafeArea()
 
             VStack(spacing: 40) {
                 Spacer()
@@ -30,7 +30,7 @@ struct RecordingView: View {
                 case .failed:
                     failedContent
                 default:
-                    // For .idle, .requested — show nothing (shouldn't normally appear)
+                    // For .idle, .requested -- show nothing (shouldn't normally appear)
                     EmptyView()
                 }
 
@@ -42,26 +42,30 @@ struct RecordingView: View {
 
     // MARK: - Recording State
 
-    /// Shows live waveform + elapsed time + stop button during recording.
+    /// Shows BrandWaveform + elapsed time + stop button during recording.
+    ///
+    /// WHY BrandWaveform instead of 50-bar WaveformView:
+    /// The 3-bar brand waveform matches the Dictus logo identity and provides
+    /// a cleaner, more branded recording experience. The energy is computed from
+    /// the most recent buffer values for smooth animation.
     private var recordingContent: some View {
         VStack(spacing: 32) {
-            // Elapsed time display
+            // Elapsed time display -- monospaced for timer readability
             Text(formattedTime)
                 .font(.system(size: 48, weight: .light, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
 
-            // Live audio waveform visualization
-            WaveformView(energyLevels: coordinator.bufferEnergy)
-                .frame(height: 80)
+            // Brand waveform driven by live audio energy
+            BrandWaveform(energy: currentEnergy, maxHeight: 120)
                 .padding(.horizontal)
 
-            // Stop button
+            // Stop button with branded accent color
             Button(action: {
                 coordinator.stopDictation()
             }) {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 72))
-                    .foregroundColor(.red)
+                    .foregroundColor(.dictusRecording)
             }
             .accessibilityLabel("Arreter l'enregistrement")
         }
@@ -74,11 +78,11 @@ struct RecordingView: View {
         VStack(spacing: 24) {
             ProgressView()
                 .scaleEffect(2)
-                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                .progressViewStyle(CircularProgressViewStyle(tint: .dictusAccent))
 
             Text("Transcription en cours...")
-                .font(.title2)
-                .foregroundColor(.white)
+                .font(.dictusSubheading)
+                .foregroundStyle(.primary)
         }
     }
 
@@ -89,20 +93,22 @@ struct RecordingView: View {
         VStack(spacing: 24) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 80))
-                .foregroundColor(.green)
+                .foregroundColor(.dictusSuccess)
 
             if let result = coordinator.lastResult {
                 Text(result)
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(.dictusBody)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                     .lineLimit(4)
+                    .padding()
+                    .dictusGlass()
             }
 
-            Text("Terminé")
-                .font(.title2)
-                .foregroundColor(.white)
+            Text("Termine")
+                .font(.dictusSubheading)
+                .foregroundStyle(.primary)
         }
     }
 
@@ -115,18 +121,29 @@ struct RecordingView: View {
                 .foregroundColor(.orange)
 
             Text("Erreur")
-                .font(.title2)
-                .foregroundColor(.white)
+                .font(.dictusSubheading)
+                .foregroundStyle(.primary)
 
             Button("Reessayer") {
                 coordinator.startDictation()
             }
             .buttonStyle(.borderedProminent)
-            .tint(.blue)
+            .tint(.dictusAccent)
         }
     }
 
     // MARK: - Helpers
+
+    /// Compute a single energy value from the buffer for BrandWaveform.
+    ///
+    /// WHY average of last 5 values:
+    /// bufferEnergy is a [Float] of recent audio energy samples. Taking the average
+    /// of the last 5 smooths out spikes while remaining responsive to voice changes.
+    private var currentEnergy: Float {
+        let recent = coordinator.bufferEnergy.suffix(5)
+        guard !recent.isEmpty else { return 0 }
+        return recent.reduce(0, +) / Float(recent.count)
+    }
 
     /// Format elapsed seconds as "M:SS".
     ///
@@ -138,44 +155,6 @@ struct RecordingView: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
-    }
-}
-
-// MARK: - WaveformView
-
-/// Displays audio energy levels as animated bars.
-///
-/// WHY HStack of RoundedRectangles:
-/// This is the standard approach for audio waveform visualization in SwiftUI.
-/// Each bar represents a recent energy sample from WhisperKit's AudioProcessor.
-/// The `relativeEnergy` values are 0.0-1.0, mapped to bar height.
-struct WaveformView: View {
-    let energyLevels: [Float]
-
-    /// Number of bars to display in the waveform.
-    private let barCount = 50
-
-    var body: some View {
-        HStack(spacing: 2) {
-            // Show the most recent energy values
-            ForEach(Array(displayLevels.enumerated()), id: \.offset) { _, level in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.accentColor)
-                    .frame(width: 4, height: max(CGFloat(level) * 60 + 3, 3))
-            }
-        }
-        .frame(height: 66)
-        // Animate waveform changes smoothly
-        .animation(.easeOut(duration: 0.1), value: energyLevels.count)
-    }
-
-    /// Get the last N energy levels, padded with zeros if needed.
-    private var displayLevels: [Float] {
-        let levels = energyLevels.suffix(barCount)
-        if levels.count < barCount {
-            return Array(repeating: Float(0), count: barCount - levels.count) + levels
-        }
-        return Array(levels)
     }
 }
 

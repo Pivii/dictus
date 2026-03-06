@@ -38,6 +38,7 @@ struct ModelManagerView: View {
             }
         }
         .navigationTitle("Modeles")
+        .background(Color.dictusBackground.ignoresSafeArea())
         // Delete confirmation alert
         .alert("Supprimer le modele ?", isPresented: $showDeleteAlert, presenting: modelToDelete) { model in
             Button("Annuler", role: .cancel) { }
@@ -96,15 +97,15 @@ private struct ModelRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(model.displayName)
-                        .font(.headline)
+                        .font(.dictusSubheading)
 
                     if modelManager.isRecommended(model.identifier) {
                         Text("Recommande")
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.15))
-                            .foregroundColor(.blue)
+                            .background(Color.dictusAccent.opacity(0.15))
+                            .foregroundColor(.dictusAccent)
                             .cornerRadius(4)
                     }
                 }
@@ -114,8 +115,8 @@ private struct ModelRow: View {
                     Label(model.accuracyLabel, systemImage: "target")
                     Label(model.speedLabel, systemImage: "bolt")
                 }
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -137,10 +138,6 @@ private struct ModelRow: View {
     }
 
     /// The trailing content changes based on the model's current state.
-    ///
-    /// WHY @ViewBuilder:
-    /// Swift's @ViewBuilder lets us return different view types from a single
-    /// computed property using if/else, which SwiftUI handles via type erasure.
     @ViewBuilder
     private var trailingContent: some View {
         switch state {
@@ -156,7 +153,7 @@ private struct ModelRow: View {
             } label: {
                 Image(systemName: "arrow.down.circle")
                     .font(.title2)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.dictusAccent)
             }
             .buttonStyle(.plain)
 
@@ -164,10 +161,11 @@ private struct ModelRow: View {
             VStack(spacing: 2) {
                 ProgressView(value: modelManager.downloadProgress[model.identifier] ?? 0, total: 1.0)
                     .frame(width: 60)
+                    .tint(.dictusAccent)
                 let pct = Int((modelManager.downloadProgress[model.identifier] ?? 0) * 100)
                 Text("\(pct)%")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
         case .prewarming:
@@ -175,17 +173,17 @@ private struct ModelRow: View {
                 ProgressView()
                 Text("Optimisation...")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
         case .ready:
             if isActive {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(.dictusSuccess)
                     Text("Actif")
-                        .font(.caption)
-                        .foregroundColor(.green)
+                        .font(.dictusCaption)
+                        .foregroundColor(.dictusSuccess)
                 }
             } else {
                 HStack(spacing: 8) {
@@ -194,13 +192,14 @@ private struct ModelRow: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .tint(.dictusAccent)
 
                     if !isLastModel {
                         Button {
                             onDelete()
                         } label: {
                             Image(systemName: "trash")
-                                .foregroundColor(.red)
+                                .foregroundColor(.dictusRecording)
                         }
                         .buttonStyle(.plain)
                     }
@@ -217,7 +216,7 @@ private struct ModelRow: View {
                         Image(systemName: "arrow.clockwise.circle")
                             .font(.title3)
                             .foregroundColor(.orange)
-                        Text("Réessayer")
+                        Text("Reessayer")
                             .font(.caption2)
                             .foregroundColor(.orange)
                     }
@@ -229,7 +228,7 @@ private struct ModelRow: View {
                     modelManager.cleanupFailedModel(model.identifier)
                 } label: {
                     Image(systemName: "trash")
-                        .foregroundColor(.red)
+                        .foregroundColor(.dictusRecording)
                 }
                 .buttonStyle(.plain)
             }
