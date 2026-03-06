@@ -173,8 +173,10 @@ class DictationCoordinator: ObservableObject {
 
         dictationTask = Task {
             do {
-                // Step 1: Stop recording and get audio samples
-                let samples = audioRecorder.stopRecording()
+                // Step 1: Collect audio samples WITHOUT stopping the engine.
+                // Engine keeps running so iOS doesn't suspend us — allows
+                // subsequent recordings from background via Darwin notification.
+                let samples = audioRecorder.collectSamples()
 
                 guard !samples.isEmpty else {
                     handleError("No audio recorded")

@@ -49,6 +49,12 @@ class AudioRecorder: ObservableObject {
     /// Subsequent recordings just start the audio engine — no session config needed.
     private var sessionConfigured = false
 
+    /// Whether the audio engine is currently running (even if not actively recording).
+    /// WHY: We keep the engine running between recordings so iOS doesn't suspend
+    /// the app (UIBackgroundModes:audio). This allows subsequent recordings from
+    /// background without needing to reopen the app via URL scheme.
+    private(set) var isEngineRunning = false
+
     /// Inject or re-use a WhisperKit instance.
     /// Called by DictationCoordinator after WhisperKit initialization.
     func prepare(whisperKit: WhisperKit) {
@@ -94,9 +100,10 @@ class AudioRecorder: ObservableObject {
 
     /// Start recording audio using WhisperKit's AudioProcessor.
     ///
-    /// Audio session must be configured before calling this (via configureAudioSession).
-    /// On subsequent recordings (including from background), only the audio engine
-    /// is started — no session reconfiguration needed.
+    /// Two modes:
+    /// - **Cold start** (first recording): configures session, starts engine.
+    /// - **Warm start** (engine already running from previous recording): just purges
+    ///   accumulated idle samples. No engine restart needed — works from background.
     func startRecording() throws {
         guard let whisperKit else { throw AudioRecorderError.notReady }
 
@@ -105,47 +112,68 @@ class AudioRecorder: ObservableObject {
             try configureAudioSession()
         }
 
-        // Use WhisperKit's AudioProcessor — it handles format conversion to 16 kHz mono Float32
-        try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
-            // This callback fires each time a new audio buffer arrives.
-            // We read energy levels and sample count to update the UI.
-            DispatchQueue.main.async {
-                guard let self, let wk = self.whisperKit else { return }
-                self.bufferEnergy = wk.audioProcessor.relativeEnergy
-                self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)
-                    / Double(WhisperKit.sampleRate)
+        if isEngineRunning {
+            // Engine already running (warm) — purge idle samples and start collecting
+            whisperKit.audioProcessor.purgeAudioSamples(keepingLast: 0)
+        } else {
+            // Cold start — launch the engine
+            try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, let wk = self.whisperKit else { return }
+                    // Only publish energy/duration while actively recording
+                    guard self.isRecording else { return }
+                    self.bufferEnergy = wk.audioProcessor.relativeEnergy
+                    self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)
+                        / Double(WhisperKit.sampleRate)
+                }
             }
+            isEngineRunning = true
         }
         isRecording = true
     }
 
-    /// Stop recording and return accumulated audio samples.
+    /// Collect recorded samples WITHOUT stopping the engine.
     ///
-    /// The returned [Float] array contains 16 kHz mono audio samples ready for
-    /// WhisperKit's `transcribe(audioArray:)` method.
-    func stopRecording() -> [Float] {
-        whisperKit?.audioProcessor.stopRecording()
+    /// WHY keep engine running: iOS requires an active audio engine to keep
+    /// the app alive in background (UIBackgroundModes:audio). If we stop the
+    /// engine, iOS suspends the app and the next recording request from the
+    /// keyboard (via Darwin notification) would fail. By keeping the engine
+    /// running, subsequent recordings can start instantly from background.
+    ///
+    /// The microphone indicator stays visible in the Dynamic Island/status bar,
+    /// same behavior as Wispr Flow.
+    func collectSamples() -> [Float] {
+        guard let whisperKit else { return [] }
         isRecording = false
-        let samples = Array(whisperKit?.audioProcessor.audioSamples ?? [])
+        let samples = Array(whisperKit.audioProcessor.audioSamples)
 
         // Reset published state
         bufferEnergy = []
         bufferSeconds = 0
 
-        // WHY we keep the audio session active instead of deactivating:
-        // With UIBackgroundModes:audio, iOS keeps the app alive as long as the
-        // audio session is active. If we deactivate here, iOS may suspend the app,
-        // and the next recording request from the keyboard (via Darwin notification)
-        // will fail with "Session activation failed" because a backgrounded app
-        // cannot activate a new audio session.
-        // The microphone hardware is released when the audio engine stops (above),
-        // so other apps can use audio normally.
         return samples
     }
 
-    /// Explicitly deactivate the audio session.
-    /// Call this only when the app is done with audio entirely (e.g., user closes the app).
+    /// Fully stop the engine and return samples. Use for cancel/cleanup only.
+    /// After this, the next recording will need a cold start (foreground required).
+    func stopRecording() -> [Float] {
+        guard let whisperKit else { return [] }
+        whisperKit.audioProcessor.stopRecording()
+        isRecording = false
+        isEngineRunning = false
+        let samples = Array(whisperKit.audioProcessor.audioSamples)
+
+        bufferEnergy = []
+        bufferSeconds = 0
+
+        return samples
+    }
+
+    /// Fully deactivate audio. Call when app is truly done with audio.
     func deactivateSession() {
+        whisperKit?.audioProcessor.stopRecording()
+        isEngineRunning = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        sessionConfigured = false
     }
 }
