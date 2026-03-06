@@ -163,11 +163,7 @@ class DictationCoordinator: ObservableObject {
     }
 
     /// Called when user taps the stop button.
-    /// Stops recording and starts transcription.
-    ///
-    /// Phase 2.3: Uses SmartModelRouter to select the best model based on
-    /// recorded audio duration. Short clips (< 5s) use fast models, longer
-    /// clips use accurate models.
+    /// Stops recording and starts transcription using the already-loaded model.
     func stopDictation() {
         dictationTask?.cancel()
 
@@ -183,33 +179,16 @@ class DictationCoordinator: ObservableObject {
                     return
                 }
 
-                // Step 2: Calculate audio duration for smart routing
-                let audioDuration = bufferSeconds
+                let audioDuration = Double(samples.count) / 16000.0
 
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.info("Recording stopped. Samples: \(samples.count), Duration: \(String(format: "%.1f", audioDuration))s")
                 }
 
-                // Step 3: Use SmartModelRouter to select the best model
-                // Read downloaded models from App Group (loose coupling — no reference to ModelManager)
-                let downloadedModels = readDownloadedModels()
-                let selectedModel = SmartModelRouter.selectModel(
-                    audioDuration: audioDuration,
-                    downloadedModels: downloadedModels
-                )
-
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.info("SmartModelRouter selected: \(selectedModel) for \(String(format: "%.1f", audioDuration))s audio")
-                }
-
-                // Step 4: Ensure WhisperKit is loaded with the selected model
-                // If the router selected a different model than currently loaded,
-                // this will reinitialize WhisperKit with the new model.
-                if !selectedModel.isEmpty {
-                    try await ensureWhisperKitReady(preferredModel: selectedModel)
-                }
-
-                // Step 5: Transcribe (FillerWordFilter.clean() is applied inside TranscriptionService)
+                // Transcribe with the already-loaded model (no model switching).
+                // WHY no SmartModelRouter: switching models reinitializes WhisperKit,
+                // which kills the warm audio engine and breaks background recording.
+                // The user's chosen model is loaded once and reused for all recordings.
                 updateStatus(.transcribing)
                 let text = try await transcriptionService.transcribe(audioSamples: samples)
 
