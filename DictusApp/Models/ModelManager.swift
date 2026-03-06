@@ -49,6 +49,11 @@ class ModelManager: ObservableObject {
 
     private let defaults = AppGroup.defaults
 
+    /// Serial prewarm lock — only one CoreML compilation at a time.
+    /// The Neural Engine cannot handle multiple models compiling simultaneously
+    /// (causes ANE "E5 bundle" errors). Downloads are parallel, prewarms are serial.
+    private var isPrewarming = false
+
     /// Directory inside the App Group container where model files are stored.
     /// Using the shared container means the keyboard extension could also access
     /// models here in the future (though currently only the app downloads them).
@@ -125,9 +130,24 @@ class ModelManager: ObservableObject {
                 DictusLogger.app.info("Model downloaded to: \(modelFolder)")
             }
 
-            // Prewarm: compile Core ML model for this device's Neural Engine/GPU
-            modelStates[identifier] = .prewarming
+            // Prewarm: compile Core ML model for this device's Neural Engine/GPU.
+            // Serialized — only one model compiles at a time. Multiple simultaneous
+            // CoreML compilations crash the ANE with "E5 bundle" errors.
             downloadProgress.removeValue(forKey: identifier)
+
+            // Wait for any other prewarm to finish (poll on MainActor is safe)
+            while isPrewarming {
+                modelStates[identifier] = .prewarming
+                try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+            }
+
+            modelStates[identifier] = .prewarming
+            isPrewarming = true
+            defer { isPrewarming = false }
+
+            if #available(iOS 14.0, *) {
+                DictusLogger.app.info("Prewarming model: \(identifier)")
+            }
 
             let config = WhisperKitConfig(
                 model: identifier,
