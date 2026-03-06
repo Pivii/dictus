@@ -106,7 +106,7 @@ class DictationCoordinator: ObservableObject {
         }
 
         if #available(iOS 14.0, *) {
-            DictusLogger.app.info("Dictation started via URL scheme")
+            DictusLogger.app.info("Dictation started (fromURL: \(fromURL))")
         }
 
         // Check if a model is downloaded and ready

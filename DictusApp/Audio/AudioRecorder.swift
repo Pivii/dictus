@@ -3,6 +3,7 @@
 import Foundation
 import AVFoundation
 import WhisperKit
+import DictusCore
 
 /// Errors that can occur during audio recording.
 enum AudioRecorderError: Error, LocalizedError {
@@ -80,10 +81,20 @@ class AudioRecorder: ObservableObject {
     func startRecording() throws {
         guard let whisperKit else { throw AudioRecorderError.notReady }
 
-        // Configure AVAudioSession for recording
+        // Configure AVAudioSession for recording.
+        // WHY .playAndRecord instead of .record: allows background activation.
+        // WHY we catch setActive errors: session may already be active from a
+        // previous recording. That's fine — we just start the engine.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try session.setActive(true)
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+        do {
+            try session.setActive(true)
+        } catch {
+            // Session may already be active — that's OK for subsequent recordings
+            if #available(iOS 14.0, *) {
+                DictusLogger.app.warning("AVAudioSession setActive warning (may already be active): \(error.localizedDescription)")
+            }
+        }
 
         // Use WhisperKit's AudioProcessor — it handles format conversion to 16 kHz mono Float32
         try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
@@ -112,8 +123,20 @@ class AudioRecorder: ObservableObject {
         bufferEnergy = []
         bufferSeconds = 0
 
-        // Deactivate audio session to release the microphone
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // WHY we keep the audio session active instead of deactivating:
+        // With UIBackgroundModes:audio, iOS keeps the app alive as long as the
+        // audio session is active. If we deactivate here, iOS may suspend the app,
+        // and the next recording request from the keyboard (via Darwin notification)
+        // will fail with "Session activation failed" because a backgrounded app
+        // cannot activate a new audio session.
+        // The microphone hardware is released when the audio engine stops (above),
+        // so other apps can use audio normally.
         return samples
+    }
+
+    /// Explicitly deactivate the audio session.
+    /// Call this only when the app is done with audio entirely (e.g., user closes the app).
+    func deactivateSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
