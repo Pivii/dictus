@@ -33,7 +33,7 @@ struct DictusApp: App {
 
         switch url.host {
         case "dictate":
-            coordinator.startDictation()
+            coordinator.startDictation(fromURL: true)
         default:
             if #available(iOS 14.0, *) {
                 DictusLogger.app.warning("Unknown URL host: \(url.host ?? "nil")")

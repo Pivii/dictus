@@ -19,6 +19,11 @@ public enum DarwinNotificationName {
 
     /// Posted by DictusApp when waveform energy data is written to App Group (app -> keyboard).
     public static let waveformUpdate = "com.pivi.dictus.waveformUpdate" as CFString
+
+    /// Posted by keyboard extension to request DictusApp start recording (keyboard -> app).
+    /// Used when the app is already running in background — avoids opening the app via URL.
+    /// Fallback: if app doesn't respond within 500ms, keyboard opens dictus://dictate URL.
+    public static let startRecording = "com.pivi.dictus.startRecording" as CFString
 }
 
 /// Global callback registry for Darwin notifications.

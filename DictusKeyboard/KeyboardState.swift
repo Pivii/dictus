@@ -141,7 +141,13 @@ class KeyboardState: ObservableObject {
 
         if let transcription = defaults.string(forKey: SharedKeys.lastTranscription),
            !transcription.isEmpty {
-            // Auto-insert transcribed text into the active text field
+            // Clear from UserDefaults BEFORE inserting to prevent duplicate insertions.
+            // Darwin notifications can be delivered multiple times (extension lifecycle,
+            // multiple statusChanged posts). By clearing first, subsequent calls find
+            // nothing to insert.
+            defaults.removeObject(forKey: SharedKeys.lastTranscription)
+            defaults.synchronize()
+
             controller?.textDocumentProxy.insertText(transcription)
             HapticFeedback.textInserted()
 
@@ -163,6 +169,9 @@ class KeyboardState: ObservableObject {
                 guard let self = self else { return }
                 if let transcription = self.defaults.string(forKey: SharedKeys.lastTranscription),
                    !transcription.isEmpty {
+                    self.defaults.removeObject(forKey: SharedKeys.lastTranscription)
+                    self.defaults.synchronize()
+
                     self.controller?.textDocumentProxy.insertText(transcription)
                     HapticFeedback.textInserted()
 
@@ -176,18 +185,36 @@ class KeyboardState: ObservableObject {
         }
     }
 
-    /// Start recording: set local state to .requested, then open DictusApp to begin recording.
+    /// Start recording: set local state, then signal DictusApp.
     ///
-    /// WHY the keyboard opens a URL instead of recording directly:
+    /// WHY the keyboard doesn't record directly:
     /// WhisperKit requires loading ML models (~50-200MB) which exceeds the keyboard
     /// extension's ~50MB memory limit. The actual recording runs in DictusApp.
-    /// The difference from Phase 2: the keyboard now controls the flow by setting
-    /// local state FIRST (so the recording overlay appears immediately), then
-    /// signaling the app. Previously a Link opened the app and the user stayed there.
+    ///
+    /// Flow (Wispr Flow-inspired):
+    /// 1. Set local state to .requested (recording overlay appears immediately)
+    /// 2. Post startRecording Darwin notification (app records in background if alive)
+    /// 3. If app doesn't respond in 500ms → fall back to URL scheme (opens app)
+    ///
+    /// This means: after the first launch, subsequent recordings happen without
+    /// switching apps. The user stays in their current app the entire time.
     func startRecording() {
         markRequested()
-        // Safe to force-unwrap: compile-time literal, always valid URL
-        openURL?(URL(string: "dictus://dictate")!)
+
+        // Try background recording first — if app is alive, it will handle this
+        // notification and start recording without coming to the foreground.
+        DarwinNotificationCenter.post(DarwinNotificationName.startRecording)
+
+        // Fallback: if app didn't respond (not running), open URL to launch it.
+        // We check after 500ms whether status progressed past .requested.
+        // If the app handled the notification, status will be .recording by now.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            if self.dictationStatus == .requested {
+                // App didn't respond — not running. Open URL to launch it.
+                self.openURL?(URL(string: "dictus://dictate")!)
+            }
+        }
     }
 
     /// Write "requested" status to App Group before triggering URL.
