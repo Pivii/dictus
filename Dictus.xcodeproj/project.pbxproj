@@ -42,6 +42,9 @@
 		AA000082 /* BrandWaveform.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100082 /* BrandWaveform.swift */; };
 		AA000083 /* AnimatedMicButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100083 /* AnimatedMicButton.swift */; };
 		AA000084 /* DictusTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100084 /* DictusTypography.swift */; };
+		AA000090 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100090 /* MainTabView.swift */; };
+		AA000091 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100091 /* HomeView.swift */; };
+		AA000092 /* DiagnosticDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100092 /* DiagnosticDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +85,9 @@
 		AA100082 /* BrandWaveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandWaveform.swift; sourceTree = "<group>"; };
 		AA100083 /* AnimatedMicButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedMicButton.swift; sourceTree = "<group>"; };
 		AA100084 /* DictusTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictusTypography.swift; sourceTree = "<group>"; };
+		AA100090 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		AA100091 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		AA100092 /* DiagnosticDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticDetailView.swift; sourceTree = "<group>"; };
 	/* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -180,9 +186,12 @@
 		AA400008 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA100090 /* MainTabView.swift */,
+				AA100091 /* HomeView.swift */,
 				AA100043 /* RecordingView.swift */,
 				AA100051 /* ModelManagerView.swift */,
 				AA100071 /* TestDictationView.swift */,
+				AA100092 /* DiagnosticDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -384,6 +393,9 @@
 				AA000082 /* BrandWaveform.swift in Sources */,
 				AA000083 /* AnimatedMicButton.swift in Sources */,
 				AA000084 /* DictusTypography.swift in Sources */,
+				AA000090 /* MainTabView.swift in Sources */,
+				AA000091 /* HomeView.swift in Sources */,
+				AA000092 /* DiagnosticDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
