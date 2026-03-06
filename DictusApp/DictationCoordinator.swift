@@ -1,7 +1,6 @@
 // DictusApp/DictationCoordinator.swift
 // Manages the dictation lifecycle: recording via AudioRecorder + transcription via TranscriptionService.
 import Foundation
-import UIKit
 import Combine
 import AVFoundation
 import DictusCore
@@ -78,24 +77,35 @@ class DictationCoordinator: ObservableObject {
         // UserDefaults and posts a Darwin notification. The app observes the notification,
         // reads the flag, resets it, and acts.
         observeKeyboardSignals()
+
+        // Pre-load WhisperKit + audio session eagerly on app launch.
+        // WHY: The first recording via URL scheme takes 4-5s if we load lazily.
+        // By loading in init(), the model is ready when the keyboard triggers dictation.
+        // The user sees the app briefly (iOS standard "◄ Back" in status bar),
+        // but recording starts instantly instead of waiting for model loading.
+        Task {
+            let modelReady = defaults.bool(forKey: SharedKeys.modelReady)
+            guard modelReady else { return }
+
+            do {
+                try await ensureWhisperKitReady()
+                try audioRecorder.configureAudioSession()
+                if #available(iOS 14.0, *) {
+                    DictusLogger.app.info("WhisperKit + audio session pre-loaded at launch")
+                }
+            } catch {
+                if #available(iOS 14.0, *) {
+                    DictusLogger.app.warning("Pre-load failed (will retry on first dictation): \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     // MARK: - Public API
 
-    /// Whether the current dictation was triggered by a URL scheme (app came to foreground)
-    /// vs a Darwin notification (app stays in background). When true, the app auto-returns
-    /// to the previous app after recording starts.
-    private var launchedViaURL = false
-
-    /// Called when the app receives dictus://dictate URL.
-    /// Starts the full recording pipeline.
-    ///
-    /// Phase 2.3: Now checks SharedKeys.modelReady before starting.
-    /// If no model is downloaded, writes a descriptive error instead of crashing.
-    ///
-    /// - Parameter fromURL: true when triggered by URL scheme (app foregrounded),
-    ///   false when triggered by Darwin notification (app stays in background).
-    func startDictation(fromURL: Bool = false) {
+    /// Start the recording pipeline.
+    /// Called from URL scheme (first time) or Darwin notification (subsequent times).
+    func startDictation() {
         // Guard against duplicate URL calls — iOS can fire dictus://dictate twice.
         // If we're already recording or initializing, ignore the duplicate.
         guard status == .idle || status == .failed else {
@@ -106,7 +116,7 @@ class DictationCoordinator: ObservableObject {
         }
 
         if #available(iOS 14.0, *) {
-            DictusLogger.app.info("Dictation started (fromURL: \(fromURL))")
+            DictusLogger.app.info("Dictation started")
         }
 
         // Check if a model is downloaded and ready
@@ -115,8 +125,6 @@ class DictationCoordinator: ObservableObject {
             handleError("No model downloaded. Open Dictus to download a model.")
             return
         }
-
-        launchedViaURL = fromURL
 
         // Cancel any in-flight dictation before starting a new one
         dictationTask?.cancel()
@@ -143,15 +151,6 @@ class DictationCoordinator: ObservableObject {
 
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.info("Recording started successfully")
-                }
-
-                // Step 3b: Auto-return to previous app if launched via URL.
-                // WHY: When the keyboard opens dictus://dictate, iOS brings DictusApp
-                // to the foreground. But the user wants to stay in their app — the
-                // recording happens in background (UIBackgroundModes: audio).
-                // We send the app to background so the user returns automatically.
-                if launchedViaURL {
-                    returnToPreviousApp()
                 }
             } catch {
                 if #available(iOS 14.0, *) {
@@ -302,7 +301,7 @@ class DictationCoordinator: ObservableObject {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.info("Start recording requested via Darwin notification (background)")
                 }
-                self.startDictation(fromURL: false)
+                self.startDictation()
             }
         }
     }
@@ -407,24 +406,6 @@ class DictationCoordinator: ObservableObject {
             return []
         }
         return models
-    }
-
-    /// Send the app to background, returning to whatever app was previously active.
-    ///
-    /// WHY this technique: When a keyboard extension opens our URL scheme, iOS brings
-    /// DictusApp to the foreground. But the user wants to stay in their original app.
-    /// We send the `suspend` selector through the responder chain, which tells iOS to
-    /// background this app. The active AVAudioSession + UIBackgroundModes:audio keeps
-    /// the recording alive in background.
-    ///
-    /// This technique is used by Wispr Flow and other dictation keyboards. The selector
-    /// exists on URLSessionTask (public API). If Apple ever blocks it, behavior degrades
-    /// gracefully: the user taps the "◄ Back" chevron manually.
-    private func returnToPreviousApp() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let selector = NSSelectorFromString("suspend")
-            UIControl().sendAction(selector, to: UIApplication.shared, for: nil)
-        }
     }
 
     /// Write dictation status to App Group so the keyboard can observe it.
