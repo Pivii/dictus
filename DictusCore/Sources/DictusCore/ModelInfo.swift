@@ -53,14 +53,9 @@ public struct ModelInfo: Identifiable {
             speedLabel: "Slow",
             sizeBytes: 750_000_000
         ),
-        ModelInfo(
-            identifier: "openai_whisper-large-v3_turbo",
-            displayName: "Large v3 Turbo",
-            sizeLabel: "~950 MB",
-            accuracyLabel: "Best",
-            speedLabel: "Balanced",
-            sizeBytes: 950_000_000
-        ),
+        // large-v3-turbo removed: ANE compilation fails on many devices
+        // (TextDecoder.mlmodelc too large for Neural Engine). Can be re-added
+        // when WhisperKit ships a fix or we add CPU-only fallback.
     ]
 
     /// Set of all supported model identifiers for quick lookup.

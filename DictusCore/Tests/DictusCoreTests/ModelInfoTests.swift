@@ -4,8 +4,8 @@ import XCTest
 
 final class ModelInfoTests: XCTestCase {
 
-    func testAllContainsExactlyFiveModels() {
-        XCTAssertEqual(ModelInfo.all.count, 5)
+    func testAllContainsExactlyFourModels() {
+        XCTAssertEqual(ModelInfo.all.count, 4)
     }
 
     func testEachModelHasNonEmptyLabels() {
@@ -23,13 +23,12 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(tiny?.displayName, "Tiny")
     }
 
-    func testSupportedIdentifiersContainsAllFive() {
+    func testSupportedIdentifiersContainsAllFour() {
         let ids = ModelInfo.supportedIdentifiers
-        XCTAssertEqual(ids.count, 5)
+        XCTAssertEqual(ids.count, 4)
         XCTAssertTrue(ids.contains("openai_whisper-tiny"))
         XCTAssertTrue(ids.contains("openai_whisper-base"))
         XCTAssertTrue(ids.contains("openai_whisper-small"))
         XCTAssertTrue(ids.contains("openai_whisper-medium"))
-        XCTAssertTrue(ids.contains("openai_whisper-large-v3_turbo"))
     }
 }

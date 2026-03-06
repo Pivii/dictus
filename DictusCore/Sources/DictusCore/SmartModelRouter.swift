@@ -22,8 +22,7 @@ public struct SmartModelRouter {
     /// Models optimized for accuracy (better quality on longer audio).
     static let accurateModels = [
         "openai_whisper-small",
-        "openai_whisper-medium",
-        "openai_whisper-large-v3_turbo"
+        "openai_whisper-medium"
     ]
 
     /// Selects the best model for the given audio duration from the downloaded models.
