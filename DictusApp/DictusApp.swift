@@ -13,10 +13,10 @@ struct DictusApp: App {
     /// makes it accessible to the keyboard extension if needed. The `store:` parameter
     /// points to the shared UserDefaults container.
     ///
-    /// NOTE: Default is `true` during development so the app is immediately usable.
-    /// Plan 04-02 will set this to `false` and build the real OnboardingView.
+    /// Default is `false` — first-time users see the onboarding flow.
+    /// Set to `true` when user completes the 5-step onboarding.
     @AppStorage(SharedKeys.hasCompletedOnboarding, store: UserDefaults(suiteName: AppGroup.identifier))
-    private var hasCompletedOnboarding = true
+    private var hasCompletedOnboarding = false
 
     init() {
         let result = AppGroupDiagnostic.run()
@@ -35,18 +35,8 @@ struct DictusApp: App {
                     handleIncomingURL(url)
                 }
                 .fullScreenCover(isPresented: .constant(!hasCompletedOnboarding)) {
-                    // Onboarding placeholder — replaced by OnboardingView in Plan 04-02
-                    VStack(spacing: 20) {
-                        Image(systemName: "hand.wave.fill")
-                            .font(.system(size: 60))
-                            .foregroundColor(.dictusAccent)
-                        Text("Bienvenue dans Dictus")
-                            .font(.dictusHeading)
-                        Text("L'onboarding sera disponible bientot.")
-                            .font(.dictusBody)
-                            .foregroundColor(.secondary)
-                    }
-                    .interactiveDismissDisabled()
+                    OnboardingView(isComplete: $hasCompletedOnboarding)
+                        .environmentObject(coordinator)
                 }
         }
     }
