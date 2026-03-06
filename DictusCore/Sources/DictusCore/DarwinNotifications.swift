@@ -10,6 +10,15 @@ public enum DarwinNotificationName {
 
     /// Posted by DictusApp when dictation status changes.
     public static let statusChanged = "com.pivi.dictus.statusChanged" as CFString
+
+    /// Posted by keyboard extension to request DictusApp stop recording (keyboard -> app).
+    public static let stopRecording = "com.pivi.dictus.stopRecording" as CFString
+
+    /// Posted by keyboard extension to request DictusApp cancel recording (keyboard -> app).
+    public static let cancelRecording = "com.pivi.dictus.cancelRecording" as CFString
+
+    /// Posted by DictusApp when waveform energy data is written to App Group (app -> keyboard).
+    public static let waveformUpdate = "com.pivi.dictus.waveformUpdate" as CFString
 }
 
 /// Global callback registry for Darwin notifications.

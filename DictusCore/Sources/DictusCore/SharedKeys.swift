@@ -13,4 +13,16 @@ public enum SharedKeys {
     public static let activeModel = "dictus.activeModel"
     public static let modelReady = "dictus.modelReady"
     public static let downloadedModels = "dictus.downloadedModels"
+
+    // Keyboard-App cross-process contracts (added for Plan 3.1)
+    /// Current keyboard layout type stored as String ("azerty" or "qwerty")
+    public static let keyboardLayout = "dictus.keyboardLayout"
+    /// JSON-encoded [Float] waveform energy data written by app during recording
+    public static let waveformEnergy = "dictus.waveformEnergy"
+    /// Bool flag set by keyboard to request recording stop
+    public static let stopRequested = "dictus.stopRequested"
+    /// Bool flag set by keyboard to request recording cancellation
+    public static let cancelRequested = "dictus.cancelRequested"
+    /// Double: elapsed recording seconds, updated at ~5Hz during recording
+    public static let recordingElapsedSeconds = "dictus.recordingElapsedSeconds"
 }
