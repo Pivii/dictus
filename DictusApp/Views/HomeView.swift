@@ -48,7 +48,7 @@ struct HomeView: View {
     /// Static brand waveform at the top of the home screen.
     private var logoSection: some View {
         VStack(spacing: 8) {
-            BrandWaveform(energy: 0, maxHeight: 60)
+            BrandWaveform(energyLevels: [], maxHeight: 60)
                 .padding(.top, 8)
             Text("Dictus")
                 .font(.dictusHeading)

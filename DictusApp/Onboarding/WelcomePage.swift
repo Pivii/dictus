@@ -13,12 +13,21 @@ struct WelcomePage: View {
     @State private var logoEnergy: Float = 0
     @State private var showContent = false
 
+    /// Generate a gentle wave pattern for the welcome animation.
+    private var logoLevels: [Float] {
+        (0..<30).map { i in
+            let center = Float(14.5)
+            let dist = abs(Float(i) - center) / center
+            return logoEnergy * (1.0 - dist * 0.6)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
 
             // Animated brand waveform (logo)
-            BrandWaveform(energy: logoEnergy, maxHeight: 100)
+            BrandWaveform(energyLevels: logoLevels, maxHeight: 100)
                 .padding(.bottom, 24)
 
             // "dictus" wordmark

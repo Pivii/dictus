@@ -1,81 +1,74 @@
-// DictusApp/Design/BrandWaveform.swift
-// Logo-inspired 3-bar waveform component matching Dictus brand proportions.
+// DictusKeyboard/Design/BrandWaveform.swift
+// Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
 
-/// Renders 3 asymmetric vertical bars matching the Dictus logo proportions.
+/// Multi-bar audio waveform styled with Dictus brand colors.
+/// Keyboard extension copy — identical to DictusApp/Design/BrandWaveform.swift.
 ///
-/// WHY not reuse RecordingView's WaveformView:
-/// WaveformView shows 50 bars from live audio energy — it's a real-time visualizer.
-/// BrandWaveform shows exactly 3 bars matching the logo design (18pt/42pt/27pt proportions).
-/// They serve different purposes: branding vs. audio feedback.
-///
-/// Bar proportions derived from the brand kit:
-/// - Left bar: 18/42 = 0.43 of max height, white at 45% opacity
-/// - Center bar: 42/42 = 1.0 of max height, blue gradient
-/// - Right bar: 27/42 = 0.64 of max height, white at 65% opacity
+/// WHY a separate copy:
+/// Keyboard extensions can't import DictusApp targets. The design system files
+/// are duplicated in DictusKeyboard/Design/ for the extension target.
 struct BrandWaveform: View {
-    /// Energy level from 0.0 (idle) to 1.0 (max). Drives bar height animation.
-    let energy: Float
+    /// Array of energy levels (0.0-1.0) for each bar. Count determines bar count.
+    let energyLevels: [Float]
 
-    /// Maximum height of the tallest bar (center).
+    /// Fixed height of the waveform container. Bars grow within this space.
     var maxHeight: CGFloat = 80
 
     /// Bar width scales with Dynamic Type for accessibility.
-    @ScaledMetric private var barWidth: CGFloat = 12
+    @ScaledMetric private var barWidth: CGFloat = 4
 
-    /// Base height proportions matching logo: left=0.43, center=1.0, right=0.64
-    private let baseHeights: [CGFloat] = [0.43, 1.0, 0.64]
-
-    /// Opacity values for left and right bars (center uses gradient instead).
-    private let barOpacities: [Double] = [0.45, 1.0, 0.65]
+    /// Number of bars to display.
+    private let barCount = 30
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { index in
+        HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { index in
                 barView(index: index)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: energy)
+        .frame(height: maxHeight)
+        .animation(.easeOut(duration: 0.15), value: energyLevels)
     }
 
     // MARK: - Private
 
     private func barView(index: Int) -> some View {
-        let energyClamped = CGFloat(min(max(energy, 0), 1))
-        let height = baseHeights[index] * (0.3 + energyClamped * 0.7) * maxHeight
+        let energy = energyForBar(at: index)
+        let minHeight: CGFloat = 4
+        let height = minHeight + CGFloat(energy) * (maxHeight - minHeight)
 
-        return Group {
-            if index == 1 {
-                // Center bar: blue gradient (brand signature)
-                RoundedRectangle(cornerRadius: 4.5)
-                    .fill(
-                        LinearGradient(
-                            colors: [.dictusGradientStart, .dictusGradientEnd],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: barWidth, height: height)
-            } else {
-                // Side bars: white with opacity
-                RoundedRectangle(cornerRadius: 4.5)
-                    .fill(Color.white.opacity(barOpacities[index]))
-                    .frame(width: barWidth, height: height)
-            }
+        return RoundedRectangle(cornerRadius: barWidth / 2)
+            .fill(colorForBar(at: index))
+            .frame(width: barWidth, height: height)
+    }
+
+    private func energyForBar(at index: Int) -> Float {
+        guard !energyLevels.isEmpty else { return 0 }
+        let position = Float(index) / Float(max(barCount - 1, 1))
+        let arrayIndex = position * Float(energyLevels.count - 1)
+        let lower = Int(arrayIndex)
+        let upper = min(lower + 1, energyLevels.count - 1)
+        let fraction = arrayIndex - Float(lower)
+        let value = energyLevels[lower] * (1 - fraction) + energyLevels[upper] * fraction
+        return min(max(value, 0), 1)
+    }
+
+    private func colorForBar(at index: Int) -> some ShapeStyle {
+        let center = Float(barCount - 1) / 2.0
+        let distanceFromCenter = abs(Float(index) - center) / center
+
+        if distanceFromCenter < 0.4 {
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [.dictusGradientStart, .dictusGradientEnd],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        } else {
+            let opacity = Double(1.0 - distanceFromCenter) * 0.9 + 0.15
+            return AnyShapeStyle(Color.white.opacity(opacity))
         }
-    }
-}
-
-#Preview("Idle") {
-    ZStack {
-        Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(energy: 0)
-    }
-}
-
-#Preview("Active") {
-    ZStack {
-        Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(energy: 0.7)
     }
 }

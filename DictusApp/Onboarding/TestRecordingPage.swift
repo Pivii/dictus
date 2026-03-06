@@ -24,11 +24,11 @@ struct TestRecordingPage: View {
         VStack(spacing: 0) {
             Spacer()
 
-            // Waveform visualization
+            // Waveform visualization — fixed frame prevents layout shifts
             BrandWaveform(
-                energy: coordinator.status == .recording
-                    ? Float(coordinator.bufferEnergy.last ?? 0)
-                    : 0,
+                energyLevels: coordinator.status == .recording
+                    ? coordinator.bufferEnergy
+                    : [],
                 maxHeight: 80
             )
             .padding(.bottom, 32)

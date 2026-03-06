@@ -56,7 +56,7 @@ struct RecordingView: View {
                 .foregroundStyle(.primary)
 
             // Brand waveform driven by live audio energy
-            BrandWaveform(energy: currentEnergy, maxHeight: 120)
+            BrandWaveform(energyLevels: coordinator.bufferEnergy, maxHeight: 120)
                 .padding(.horizontal)
 
             // Stop button with branded accent color
@@ -133,17 +133,6 @@ struct RecordingView: View {
     }
 
     // MARK: - Helpers
-
-    /// Compute a single energy value from the buffer for BrandWaveform.
-    ///
-    /// WHY average of last 5 values:
-    /// bufferEnergy is a [Float] of recent audio energy samples. Taking the average
-    /// of the last 5 smooths out spikes while remaining responsive to voice changes.
-    private var currentEnergy: Float {
-        let recent = coordinator.bufferEnergy.suffix(5)
-        guard !recent.isEmpty else { return 0 }
-        return recent.reduce(0, +) / Float(recent.count)
-    }
 
     /// Format elapsed seconds as "M:SS".
     ///

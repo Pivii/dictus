@@ -1,67 +1,96 @@
 // DictusApp/Design/BrandWaveform.swift
-// Logo-inspired 3-bar waveform component matching Dictus brand proportions.
+// Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
 
-/// Renders 3 asymmetric vertical bars matching the Dictus logo proportions.
+/// Multi-bar audio waveform styled with Dictus brand colors.
 ///
-/// WHY not reuse RecordingView's WaveformView:
-/// WaveformView shows 50 bars from live audio energy — it's a real-time visualizer.
-/// BrandWaveform shows exactly 3 bars matching the logo design (18pt/42pt/27pt proportions).
-/// They serve different purposes: branding vs. audio feedback.
+/// WHY multi-bar instead of 3-bar logo:
+/// 3 bars felt static and logo-like, not like a real audio visualizer.
+/// This uses ~30 bars for fluid audio feedback, but keeps brand identity through
+/// the color scheme: center bars use the blue gradient, outer bars use white at
+/// decreasing opacity — echoing the logo's asymmetric bar styling.
 ///
-/// Bar proportions derived from the brand kit:
-/// - Left bar: 18/42 = 0.43 of max height, white at 45% opacity
-/// - Center bar: 42/42 = 1.0 of max height, blue gradient
-/// - Right bar: 27/42 = 0.64 of max height, white at 65% opacity
+/// WHY fixed frame:
+/// The view occupies a fixed height container. Bars animate INSIDE this frame,
+/// growing from center. This prevents the waveform from pushing surrounding
+/// UI elements when energy changes.
 struct BrandWaveform: View {
-    /// Energy level from 0.0 (idle) to 1.0 (max). Drives bar height animation.
-    let energy: Float
+    /// Array of energy levels (0.0–1.0) for each bar. Count determines bar count.
+    let energyLevels: [Float]
 
-    /// Maximum height of the tallest bar (center).
+    /// Fixed height of the waveform container. Bars grow within this space.
     var maxHeight: CGFloat = 80
 
     /// Bar width scales with Dynamic Type for accessibility.
-    @ScaledMetric private var barWidth: CGFloat = 12
+    @ScaledMetric private var barWidth: CGFloat = 4
 
-    /// Base height proportions matching logo: left=0.43, center=1.0, right=0.64
-    private let baseHeights: [CGFloat] = [0.43, 1.0, 0.64]
-
-    /// Opacity values for left and right bars (center uses gradient instead).
-    private let barOpacities: [Double] = [0.45, 1.0, 0.65]
+    /// Number of bars to display.
+    private let barCount = 30
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { index in
+        HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { index in
                 barView(index: index)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: energy)
+        .frame(height: maxHeight)
+        .animation(.easeOut(duration: 0.15), value: energyLevels)
     }
 
     // MARK: - Private
 
     private func barView(index: Int) -> some View {
-        let energyClamped = CGFloat(min(max(energy, 0), 1))
-        let height = baseHeights[index] * (0.3 + energyClamped * 0.7) * maxHeight
+        let energy = energyForBar(at: index)
+        // Minimum bar height so bars are visible even at zero energy
+        let minHeight: CGFloat = 4
+        let height = minHeight + CGFloat(energy) * (maxHeight - minHeight)
 
-        return Group {
-            if index == 1 {
-                // Center bar: blue gradient (brand signature)
-                RoundedRectangle(cornerRadius: 4.5)
-                    .fill(
-                        LinearGradient(
-                            colors: [.dictusGradientStart, .dictusGradientEnd],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: barWidth, height: height)
-            } else {
-                // Side bars: white with opacity
-                RoundedRectangle(cornerRadius: 4.5)
-                    .fill(Color.white.opacity(barOpacities[index]))
-                    .frame(width: barWidth, height: height)
-            }
+        return RoundedRectangle(cornerRadius: barWidth / 2)
+            .fill(colorForBar(at: index))
+            .frame(width: barWidth, height: height)
+    }
+
+    /// Map bar index to an energy value from the energyLevels array.
+    ///
+    /// WHY interpolation:
+    /// energyLevels may have fewer or more entries than barCount.
+    /// We map each bar position proportionally into the array.
+    private func energyForBar(at index: Int) -> Float {
+        guard !energyLevels.isEmpty else { return 0 }
+        let position = Float(index) / Float(max(barCount - 1, 1))
+        let arrayIndex = position * Float(energyLevels.count - 1)
+        let lower = Int(arrayIndex)
+        let upper = min(lower + 1, energyLevels.count - 1)
+        let fraction = arrayIndex - Float(lower)
+        let value = energyLevels[lower] * (1 - fraction) + energyLevels[upper] * fraction
+        return min(max(value, 0), 1)
+    }
+
+    /// Brand-inspired color: blue gradient in center, white with opacity on sides.
+    ///
+    /// WHY this pattern:
+    /// Mirrors the Dictus logo where the center bar is blue gradient and side bars
+    /// are white at varying opacity. Here the gradient fades from blue center to
+    /// translucent white edges, creating a branded but natural waveform look.
+    private func colorForBar(at index: Int) -> some ShapeStyle {
+        // Distance from center (0.0 = center, 1.0 = edge)
+        let center = Float(barCount - 1) / 2.0
+        let distanceFromCenter = abs(Float(index) - center) / center
+
+        // Center bars: brand blue, edge bars: white with decreasing opacity
+        if distanceFromCenter < 0.4 {
+            // Inner 40%: blue gradient blend
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [.dictusGradientStart, .dictusGradientEnd],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        } else {
+            // Outer 60%: white with opacity decreasing toward edges
+            let opacity = Double(1.0 - distanceFromCenter) * 0.9 + 0.15
+            return AnyShapeStyle(Color.white.opacity(opacity))
         }
     }
 }
@@ -69,13 +98,15 @@ struct BrandWaveform: View {
 #Preview("Idle") {
     ZStack {
         Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(energy: 0)
+        BrandWaveform(energyLevels: Array(repeating: Float(0), count: 30))
     }
 }
 
 #Preview("Active") {
     ZStack {
         Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(energy: 0.7)
+        BrandWaveform(energyLevels: (0..<30).map { i in
+            Float.random(in: 0.2...0.8)
+        })
     }
 }

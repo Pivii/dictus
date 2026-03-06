@@ -81,7 +81,7 @@ struct RecordingOverlay: View {
             // WHY BrandWaveform instead of 30-bar KeyboardWaveformView:
             // Unifies the visual language between app and keyboard extension.
             // The 3-bar waveform matches the Dictus logo proportions.
-            BrandWaveform(energy: computedEnergy, maxHeight: 60)
+            BrandWaveform(energyLevels: waveformEnergy, maxHeight: 60)
                 .padding(.horizontal, 20)
 
             // Timer in MM:SS format -- monospaced for digit alignment
@@ -117,17 +117,6 @@ struct RecordingOverlay: View {
     }
 
     // MARK: - Helpers
-
-    /// Compute a single energy value from the waveform array for BrandWaveform.
-    ///
-    /// WHY average of recent values:
-    /// waveformEnergy is a [Float] array from DictationCoordinator forwarding at ~5Hz.
-    /// Taking the average smooths out spikes for a visually pleasant animation.
-    private var computedEnergy: Float {
-        let recent = waveformEnergy.suffix(5)
-        guard !recent.isEmpty else { return 0 }
-        return recent.reduce(0, +) / Float(recent.count)
-    }
 
     private var formattedTime: String {
         let minutes = Int(elapsedSeconds) / 60
