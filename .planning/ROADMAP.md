@@ -34,7 +34,7 @@
 
 **Requirements:** STT-01, STT-02, STT-03, STT-04, STT-05, APP-02
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 ### Success Criteria
 1. Recording 10 seconds of spoken French in the main app produces a transcription in under 3 seconds on an iPhone 12 or newer
@@ -46,7 +46,7 @@
 ### Plans
 - [x] 02-01-PLAN.md — WhisperKit SPM integration, AudioRecorder, TranscriptionService, RecordingView with waveform + stop + timer, DictationCoordinator rewrite *(completed 2026-03-05)*
 - [x] 02-02-PLAN.md — FillerWordFilter (TDD), SmartModelRouter (TDD), ModelInfo, SharedKeys extensions *(completed 2026-03-05)*
-- [ ] 02-03-PLAN.md — ModelManager + ModelManagerView (download/select/delete), wire SmartModelRouter + FillerWordFilter into pipeline
+- [x] 02-03-PLAN.md — ModelManager + ModelManagerView (download/select/delete), wire SmartModelRouter + FillerWordFilter into pipeline *(completed 2026-03-06)*
 
 ---
 

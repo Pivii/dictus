@@ -35,7 +35,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Main App
 
 - [ ] **APP-01**: Onboarding guides user through microphone permission, keyboard addition, Full Access enablement, and model download
-- [ ] **APP-02**: Model Manager allows downloading, selecting, and deleting Whisper models (tiny, base, small, medium, large-v3-turbo)
+- [x] **APP-02**: Model Manager allows downloading, selecting, and deleting Whisper models (tiny, base, small, medium, large-v3-turbo)
 - [ ] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
 - [ ] **APP-04**: In-app test dictation screen for testing transcription without leaving the app
 - [x] **APP-05**: App handles `dictus://dictate` URL scheme to receive dictation requests from keyboard extension
@@ -100,12 +100,12 @@ Deferred to future release. Tracked but not in current roadmap.
 | APP-06 | Phase 1: Cross-Process Foundation | Complete |
 | KBD-01 | Phase 1: Cross-Process Foundation | Complete |
 | KBD-04 | Phase 1: Cross-Process Foundation | Complete |
-| STT-01 | Phase 2: Transcription Pipeline | Not Started |
-| STT-02 | Phase 2: Transcription Pipeline | Not Started |
-| STT-03 | Phase 2: Transcription Pipeline | Not Started |
-| STT-04 | Phase 2: Transcription Pipeline | Not Started |
-| STT-05 | Phase 2: Transcription Pipeline | Not Started |
-| APP-02 | Phase 2: Transcription Pipeline | Not Started |
+| STT-01 | Phase 2: Transcription Pipeline | Complete |
+| STT-02 | Phase 2: Transcription Pipeline | Complete |
+| STT-03 | Phase 2: Transcription Pipeline | Complete |
+| STT-04 | Phase 2: Transcription Pipeline | Complete |
+| STT-05 | Phase 2: Transcription Pipeline | Complete |
+| APP-02 | Phase 2: Transcription Pipeline | Complete |
 | DUX-01 | Phase 3: Dictation UX | Not Started |
 | DUX-02 | Phase 3: Dictation UX | Not Started |
 | DUX-03 | Phase 3: Dictation UX | Not Started |

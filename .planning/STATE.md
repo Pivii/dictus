@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 02-03
-status: executing
-last_updated: "2026-03-05T22:33:09.758Z"
+current_plan: 03-01
+status: ready
+last_updated: "2026-03-06T12:00:00Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State: Dictus
@@ -20,10 +20,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 **Current focus:** Phase 2 (Transcription Pipeline)
 
 ## Current Phase
-Phase: 2
-Status: In Progress
-Plans completed: 2/3
-Current plan: 02-03
+Phase: 3
+Status: Not Started
+Plans completed: 0/3
+Current plan: 03-01
 
 ## Phase History
 
@@ -81,6 +81,15 @@ Current plan: 02-03
 - ModelInfo: metadata for 5 WhisperKit models with identifiers, display names, size/accuracy/speed labels
 - SharedKeys extended with activeModel, modelReady, downloadedModels
 - 24 new unit tests via TDD (30 total DictusCore tests all passing)
+
+### Plan 2.3: Model Manager + Pipeline Integration — COMPLETED (2026-03-06)
+- ModelManager with full download/select/delete lifecycle and App Group persistence
+- ModelManagerView shows all models with metadata, download progress, active selection, delete confirmation
+- SmartModelRouter wired into DictationCoordinator — short audio routes to fast model, long audio to accurate model
+- FillerWordFilter.clean() applied to all transcription output in TranscriptionService
+- modelReady flag persisted to App Group after first model download
+- 5 post-checkpoint bugfixes: deletion path, double-start guard, serial prewarming, error-state delete, large-v3-turbo removal
+- Verified end-to-end on physical iPhone: model management, smart routing, filler removal, French transcription with punctuation
 
 ## Key Decisions
 
@@ -147,6 +156,12 @@ WhisperKit's built-in AudioProcessor handles 16kHz mono Float32 conversion inter
 ### 5-second model routing threshold
 Audio under 5 seconds routes to fast models (tiny/base) for low latency; 5 seconds or longer routes to accurate models (small+). When only one model is downloaded, it is always used regardless of duration.
 
+### Serial CoreML prewarming
+Parallel prewarming of multiple CoreML models crashes the ANE (Apple Neural Engine) due to resource contention. Models must be prewarmed one at a time in sequence. This is undocumented Apple behavior discovered through on-device testing.
+
+### large-v3-turbo ANE incompatibility
+The `openai_whisper-large-v3_turbo` model fails ANE compilation on some devices (TextDecoder.mlmodelc). This is a hardware limitation — the model's TextDecoder is too large for the device's Neural Engine. No software fix possible. Consider hiding this model on incompatible devices in a future version.
+
 ---
 *State initialized: 2026-03-04*
 *Plan 1.1 completed: 2026-03-05*
@@ -155,3 +170,5 @@ Audio under 5 seconds routes to fast models (tiny/base) for low latency; 5 secon
 *Phase 1 completed: 2026-03-05*
 *Plan 2.1 completed: 2026-03-05*
 *Plan 2.2 completed: 2026-03-05*
+*Plan 2.3 completed: 2026-03-06*
+*Phase 2 completed: 2026-03-06*
