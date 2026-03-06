@@ -56,7 +56,7 @@
 
 **Requirements:** DUX-01, DUX-02 (DROPPED by user decision), DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 ### Success Criteria
 1. Tapping mic in keyboard toolbar opens DictusApp briefly; keyboard shows recording overlay (waveform, timer, cancel/stop)

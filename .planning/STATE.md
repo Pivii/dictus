@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 03-01
-status: Not Started
-last_updated: "2026-03-06T09:02:59.975Z"
+current_plan: 03-02
+status: In Progress
+last_updated: "2026-03-06T10:06:30.000Z"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 10
+  completed_plans: 8
 ---
 
 # Project State: Dictus
@@ -17,13 +17,13 @@ progress:
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-04)
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Phase 2 (Transcription Pipeline)
+**Current focus:** Phase 3 (Dictation UX)
 
 ## Current Phase
 Phase: 3
-Status: Not Started
-Plans completed: 0/3
-Current plan: 03-01
+Status: In Progress
+Plans completed: 1/3
+Current plan: 03-02
 
 ## Phase History
 
@@ -90,6 +90,17 @@ Current plan: 03-01
 - modelReady flag persisted to App Group after first model download
 - 5 post-checkpoint bugfixes: deletion path, double-start guard, serial prewarming, error-state delete, large-v3-turbo removal
 - Verified end-to-end on physical iPhone: model management, smart routing, filler removal, French transcription with punctuation
+
+### Plan 3.1: Cross-Process Contracts — COMPLETED (2026-03-06)
+- SharedKeys extended with 5 new keys: keyboardLayout, waveformEnergy, stopRequested, cancelRequested, recordingElapsedSeconds
+- DarwinNotificationName extended with 3 new names: stopRecording, cancelRecording, waveformUpdate
+- KeyboardLayoutData: QWERTY layout rows and LayoutType enum with App Group persistence
+- AccentedCharacters: French accented character mappings (8 base letters, precomposed Unicode) with case-insensitive lookup
+- HapticFeedback: 3 distinct haptic patterns with canImport(UIKit) guard for SPM test compatibility
+- DictationCoordinator: observes keyboard stop/cancel Darwin notifications, forwards waveform energy at ~5Hz
+- cancelDictation() method discards audio and resets state
+- Audio background mode added to Info.plist for background recording
+- 16 new unit tests (6 QWERTY + 10 accented), 46 total DictusCore tests passing
 
 ## Key Decisions
 
@@ -162,6 +173,21 @@ Parallel prewarming of multiple CoreML models crashes the ANE (Apple Neural Engi
 ### large-v3-turbo ANE incompatibility
 The `openai_whisper-large-v3_turbo` model fails ANE compilation on some devices (TextDecoder.mlmodelc). This is a hardware limitation — the model's TextDecoder is too large for the device's Neural Engine. No software fix possible. Consider hiding this model on incompatible devices in a future version.
 
+### canImport(UIKit) for shared SPM packages
+HapticFeedback.swift uses `#if canImport(UIKit) && !os(macOS)` because DictusCore compiles on macOS for `swift test`. UIKit is iOS-only — the guard prevents build failures during SPM test runs while keeping the code available on iOS targets.
+
+### Throttled waveform forwarding at 5Hz
+AudioRecorder publishes energy updates at ~60Hz. Writing to UserDefaults + synchronize + Darwin notification at 60Hz would cause excessive disk I/O and cross-process overhead. A 200ms timestamp check throttles to ~5Hz which is smooth enough for waveform animation.
+
+### Precomposed Unicode for accented characters
+Use precomposed Unicode (e.g., `\u{00E9}` = e-acute) not combining characters (e.g., `e\u{0301}`). Combining characters can cause string comparison issues and display inconsistencies. Precomposed forms are single code points matching iOS system keyboard behavior.
+
+### Audio background mode for recording continuity
+Added `UIBackgroundModes: audio` to DictusApp Info.plist. When user taps mic in keyboard, DictusApp opens and starts recording. User returns to their app via status bar chevron. The active AVAudioSession + audio background mode keeps iOS from suspending DictusApp during recording.
+
+### Darwin notification + Bool flag pattern
+Keyboard sets a Bool flag in App Group UserDefaults (e.g., stopRequested = true), then posts a Darwin notification. App observes the notification, reads the flag, resets it to false, and acts. This two-step pattern is necessary because Darwin notifications carry no payload.
+
 ---
 *State initialized: 2026-03-04*
 *Plan 1.1 completed: 2026-03-05*
@@ -172,3 +198,4 @@ The `openai_whisper-large-v3_turbo` model fails ANE compilation on some devices 
 *Plan 2.2 completed: 2026-03-05*
 *Plan 2.3 completed: 2026-03-06*
 *Phase 2 completed: 2026-03-06*
+*Plan 3.1 completed: 2026-03-06*

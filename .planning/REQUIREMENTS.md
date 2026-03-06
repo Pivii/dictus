@@ -18,8 +18,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Keyboard Extension
 
 - [x] **KBD-01**: User can switch to Dictus keyboard via globe key in any app
-- [ ] **KBD-02**: Full AZERTY keyboard layout is available and functional
-- [ ] **KBD-03**: QWERTY keyboard layout is available as alternative (configurable in settings)
+- [x] **KBD-02**: Full AZERTY keyboard layout is available and functional
+- [x] **KBD-03**: QWERTY keyboard layout is available as alternative (configurable in settings)
 - [x] **KBD-04**: Keyboard remains functional for basic typing when Full Access is not enabled (graceful degradation)
 - [ ] **KBD-05**: Mic button with clear visual states (idle, recording, transcribing)
 - [ ] **KBD-06**: Keyboard uses iOS 26 Liquid Glass design
@@ -28,7 +28,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **DUX-01**: Transcribed text is auto-inserted into the active text field via textDocumentProxy
 - [ ] **DUX-02**: User can undo the last transcription insertion with a dedicated button
-- [ ] **DUX-03**: Haptic feedback triggers on recording start, recording stop, and text insertion
+- [x] **DUX-03**: Haptic feedback triggers on recording start, recording stop, and text insertion
 - [ ] **DUX-04**: Animated waveform displays during active recording
 - [x] **DUX-05**: Dictation flow uses two-process architecture (keyboard triggers main app for recording + transcription)
 
