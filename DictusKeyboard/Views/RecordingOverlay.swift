@@ -2,10 +2,10 @@
 import SwiftUI
 
 /// Full-screen recording overlay that replaces the keyboard during active recording.
-/// Shows an animated waveform, elapsed timer, and cancel/stop controls.
+/// Shows a BrandWaveform, elapsed timer, and cancel/stop controls.
 ///
 /// WHY this replaces the keyboard:
-/// Wispr Flow-inspired design — when recording, the keyboard area transforms into
+/// Wispr Flow-inspired design -- when recording, the keyboard area transforms into
 /// an immersive recording UI. This prevents accidental key presses during dictation
 /// and provides clear visual feedback that the mic is active.
 struct RecordingOverlay: View {
@@ -15,8 +15,19 @@ struct RecordingOverlay: View {
     let onCancel: () -> Void
     let onStop: () -> Void
 
-    /// Adaptive foreground color — dark on light keyboard, light on dark keyboard.
+    /// Adaptive foreground color -- dark on light keyboard, light on dark keyboard.
     @Environment(\.colorScheme) private var colorScheme
+
+    /// Timer font size scales with Dynamic Type.
+    ///
+    /// WHY @ScaledMetric:
+    /// Keyboard extensions should respect Dynamic Type. Using @ScaledMetric makes
+    /// the timer font size scale proportionally with the user's text size setting,
+    /// while keeping monospaced design for proper digit alignment.
+    @ScaledMetric private var timerFontSize: CGFloat = 20
+
+    /// Icon size scales with Dynamic Type.
+    @ScaledMetric private var iconSize: CGFloat = 28
 
     private var foregroundColor: Color {
         colorScheme == .dark ? .white : Color(white: 0.15)
@@ -28,7 +39,7 @@ struct RecordingOverlay: View {
 
     var body: some View {
         ZStack {
-            // Transparent background — the native iOS keyboard chrome shows through.
+            // Transparent background -- the native iOS keyboard chrome shows through.
             // No dark rectangle, the overlay blends seamlessly with the keyboard.
             Color.clear
 
@@ -48,7 +59,7 @@ struct RecordingOverlay: View {
             HStack {
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: iconSize))
                         .foregroundColor(secondaryForeground)
                 }
 
@@ -56,7 +67,7 @@ struct RecordingOverlay: View {
 
                 Button(action: onStop) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: iconSize))
                         .foregroundColor(foregroundColor)
                 }
             }
@@ -65,19 +76,22 @@ struct RecordingOverlay: View {
 
             Spacer()
 
-            // Waveform visualization
-            KeyboardWaveformView(energy: waveformEnergy, colorScheme: colorScheme)
-                .frame(height: 60)
+            // Brand waveform -- 3-bar logo-inspired visualization
+            //
+            // WHY BrandWaveform instead of 30-bar KeyboardWaveformView:
+            // Unifies the visual language between app and keyboard extension.
+            // The 3-bar waveform matches the Dictus logo proportions.
+            BrandWaveform(energy: computedEnergy, maxHeight: 60)
                 .padding(.horizontal, 20)
 
-            // Timer in MM:SS format
+            // Timer in MM:SS format -- monospaced for digit alignment
             Text(formattedTime)
-                .font(.system(size: 20, weight: .medium, design: .monospaced))
+                .font(.system(size: timerFontSize, weight: .medium, design: .monospaced))
                 .foregroundColor(foregroundColor)
 
             // Status label
             Text("Listening...")
-                .font(.system(size: 14))
+                .font(.dictusCaption)
                 .foregroundColor(secondaryForeground)
 
             Spacer()
@@ -95,7 +109,7 @@ struct RecordingOverlay: View {
                 .scaleEffect(1.2)
 
             Text("Processing...")
-                .font(.system(size: 16, weight: .medium))
+                .font(.dictusBody)
                 .foregroundColor(foregroundColor)
 
             Spacer()
@@ -104,65 +118,20 @@ struct RecordingOverlay: View {
 
     // MARK: - Helpers
 
+    /// Compute a single energy value from the waveform array for BrandWaveform.
+    ///
+    /// WHY average of recent values:
+    /// waveformEnergy is a [Float] array from DictationCoordinator forwarding at ~5Hz.
+    /// Taking the average smooths out spikes for a visually pleasant animation.
+    private var computedEnergy: Float {
+        let recent = waveformEnergy.suffix(5)
+        guard !recent.isEmpty else { return 0 }
+        return recent.reduce(0, +) / Float(recent.count)
+    }
+
     private var formattedTime: String {
         let minutes = Int(elapsedSeconds) / 60
         let seconds = Int(elapsedSeconds) % 60
         return String(format: "%02d:%02d", minutes, seconds)
-    }
-}
-
-// MARK: - Keyboard Waveform View
-
-/// Waveform visualization adapted for the keyboard extension context.
-/// Shows 30 vertical bars whose heights are driven by energy levels.
-///
-/// WHY a separate view from DictusApp's WaveformView:
-/// The keyboard extension is a separate binary — it cannot import DictusApp code.
-/// This is a self-contained waveform optimized for the smaller keyboard area.
-private struct KeyboardWaveformView: View {
-    let energy: [Float]
-    let colorScheme: ColorScheme
-
-    /// Number of bars to display
-    private let barCount = 30
-
-    /// Bar color adapts to keyboard theme — dark bars on light keyboard, light bars on dark.
-    private var barColor: Color {
-        colorScheme == .dark ? .white : Color(white: 0.2)
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 2) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    let value = energyValue(at: index)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(barColor.opacity(Double(0.3 + value * 0.7)))
-                        .frame(width: barWidth(in: geometry), height: barHeight(value, in: geometry))
-                        .frame(height: geometry.size.height, alignment: .center)
-                        .animation(.easeOut(duration: 0.15), value: value)
-                }
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    /// Map energy array values to bar indices, distributing evenly.
-    private func energyValue(at index: Int) -> Float {
-        guard !energy.isEmpty else { return 0.05 }
-        let mappedIndex = index * energy.count / barCount
-        let clampedIndex = min(mappedIndex, energy.count - 1)
-        return max(0.05, min(1.0, energy[clampedIndex]))
-    }
-
-    private func barWidth(in geometry: GeometryProxy) -> CGFloat {
-        let totalSpacing = CGFloat(barCount - 1) * 2
-        return (geometry.size.width - totalSpacing) / CGFloat(barCount)
-    }
-
-    private func barHeight(_ value: Float, in geometry: GeometryProxy) -> CGFloat {
-        let minHeight: CGFloat = 4
-        let maxHeight = geometry.size.height
-        return minHeight + CGFloat(value) * (maxHeight - minHeight)
     }
 }

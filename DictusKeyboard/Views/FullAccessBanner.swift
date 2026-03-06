@@ -3,16 +3,20 @@ import SwiftUI
 
 /// Non-dismissible banner shown when Full Access is disabled.
 /// Guides the user to Settings to enable Full Access for dictation.
+///
+/// WHY dictusGlass instead of Material:
+/// The glass modifier provides iOS 26 Liquid Glass with automatic Material fallback
+/// on older versions, keeping the banner consistent with the rest of the design system.
 struct FullAccessBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.orange)
-                .font(.caption)
+                .font(.dictusCaption)
 
-            Text("Dictée désactivée.")
-                .font(.caption2)
-                .foregroundColor(.primary)
+            Text("Dictee desactivee.")
+                .font(.dictusCaption)
+                .foregroundStyle(.primary)
 
             Spacer()
 
@@ -21,11 +25,11 @@ struct FullAccessBanner: View {
             Link(destination: URL(string: "app-settings:")!) {
                 Text("Activer")
                     .font(.caption2.bold())
-                    .foregroundColor(.blue)
+                    .foregroundColor(.dictusAccent)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color(.tertiarySystemBackground))
+        .dictusGlass(in: Rectangle())
     }
 }

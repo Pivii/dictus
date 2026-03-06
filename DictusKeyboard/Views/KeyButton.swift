@@ -46,17 +46,17 @@ struct KeyButton: View {
     /// Cell width matching AccentPopup's cellWidth for hit-testing calculations.
     private let accentCellWidth: CGFloat = 36
 
+    /// Font size scales with Dynamic Type for key labels.
+    @ScaledMetric private var keyFontSize: CGFloat = 22
+
     var body: some View {
         // Using a plain gesture to get press/release states
         Text(displayLabel)
-            .font(.system(size: 22, weight: .regular))
+            .font(.system(size: keyFontSize, weight: .regular))
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .frame(height: KeyMetrics.keyHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 1)
-            )
+            .background(keyBackground)
             .overlay(
                 // Popup preview shown above key on press (hidden when accents are showing)
                 Group {
@@ -119,6 +119,24 @@ struct KeyButton: View {
             )
     }
 
+    // MARK: - Key Background
+
+    /// Key background: glass on iOS 26, material fallback on older versions.
+    ///
+    /// WHY conditional glass:
+    /// On iOS 26, the native keyboard container already has a glass-like chrome.
+    /// Adding individual glass effects to keys might create glass-on-glass artifacts.
+    /// We use dictusGlass which applies .glassEffect on iOS 26 and .regularMaterial
+    /// on older iOS. If glass-on-glass looks wrong on iOS 26, this can be adjusted
+    /// to only apply the fallback material on older versions.
+    @ViewBuilder
+    private var keyBackground: some View {
+        RoundedRectangle(cornerRadius: 5)
+            .fill(Color(.systemBackground))
+            .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 1)
+            .dictusGlass(in: RoundedRectangle(cornerRadius: 5))
+    }
+
     // MARK: - Long-press helpers
 
     /// Starts a 400ms timer. If the timer completes (user hasn't lifted finger),
@@ -179,9 +197,12 @@ struct KeyButton: View {
 struct KeyPopup: View {
     let label: String
 
+    @ScaledMetric private var popupFontSize: CGFloat = 32
+
     var body: some View {
         Text(label)
-            .font(.system(size: 32, weight: .regular))
+            .font(.system(size: popupFontSize, weight: .regular))
+            .foregroundStyle(.primary)
             .frame(width: 50, height: 56)
             .background(
                 RoundedRectangle(cornerRadius: 8)

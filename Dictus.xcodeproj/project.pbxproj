@@ -53,6 +53,11 @@
 		AA0000A5 /* TestRecordingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A5 /* TestRecordingPage.swift */; };
 		AA0000A6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A6 /* SettingsView.swift */; };
 		AA0000A7 /* LicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A7 /* LicensesView.swift */; };
+		AA0000B0 /* GlassModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B0 /* GlassModifier.swift */; };
+		AA0000B1 /* DictusColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B1 /* DictusColors.swift */; };
+		AA0000B2 /* BrandWaveform.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B2 /* BrandWaveform.swift */; };
+		AA0000B3 /* AnimatedMicButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B3 /* AnimatedMicButton.swift */; };
+		AA0000B4 /* DictusTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B4 /* DictusTypography.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -104,6 +109,11 @@
 		AA1000A5 /* TestRecordingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestRecordingPage.swift; sourceTree = "<group>"; };
 		AA1000A6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA1000A7 /* LicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensesView.swift; sourceTree = "<group>"; };
+		AA1000B0 /* GlassModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassModifier.swift; sourceTree = "<group>"; };
+		AA1000B1 /* DictusColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictusColors.swift; sourceTree = "<group>"; };
+		AA1000B2 /* BrandWaveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandWaveform.swift; sourceTree = "<group>"; };
+		AA1000B3 /* AnimatedMicButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedMicButton.swift; sourceTree = "<group>"; };
+		AA1000B4 /* DictusTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictusTypography.swift; sourceTree = "<group>"; };
 	/* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -243,12 +253,25 @@
 				AA100004 /* KeyboardRootView.swift */,
 				AA10000B /* KeyboardState.swift */,
 				AA100030 /* InputView.swift */,
+				AA40000C /* Design */,
 				AA400005 /* Views */,
 				AA400006 /* Models */,
 				AA100006 /* DictusKeyboard.entitlements */,
 				AA100008 /* Info.plist */,
 			);
 			path = DictusKeyboard;
+			sourceTree = "<group>";
+		};
+		AA40000C /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				AA1000B0 /* GlassModifier.swift */,
+				AA1000B1 /* DictusColors.swift */,
+				AA1000B2 /* BrandWaveform.swift */,
+				AA1000B3 /* AnimatedMicButton.swift */,
+				AA1000B4 /* DictusTypography.swift */,
+			);
+			path = Design;
 			sourceTree = "<group>";
 		};
 		AA400003 /* DictusCore (local package) */ = {
@@ -459,6 +482,11 @@
 				AA000060 /* ToolbarView.swift in Sources */,
 				AA000061 /* RecordingOverlay.swift in Sources */,
 				AA000070 /* AccentPopup.swift in Sources */,
+				AA0000B0 /* GlassModifier.swift in Sources */,
+				AA0000B1 /* DictusColors.swift in Sources */,
+				AA0000B2 /* BrandWaveform.swift in Sources */,
+				AA0000B3 /* AnimatedMicButton.swift in Sources */,
+				AA0000B4 /* DictusTypography.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
