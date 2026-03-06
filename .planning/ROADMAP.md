@@ -82,6 +82,8 @@
 
 **Requirements:** APP-01, APP-03, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04
 
+**Plans:** 3 plans
+
 ### Success Criteria
 1. A first-time user who has never installed a third-party keyboard reaches their first successful dictation solely by following the onboarding flow — no external documentation needed
 2. The Settings screen lets a user change active model, transcription language, keyboard layout, filler word toggle, and haptic toggle — changes persist across app launches
@@ -91,9 +93,9 @@
 6. Light and dark mode render correctly without any hardcoded colors
 
 ### Plans
-- Plan 4.1: Onboarding flow — four-step guided sequence: microphone permission request, keyboard addition instructions with Settings deep link, Full Access enablement instructions with screenshot, model download trigger; non-dismissible Full Access banner on keyboard when Full Access is off with Settings deep link
-- Plan 4.2: Settings screen — `AppSettings` model persisted in App Group `UserDefaults`, five toggles/pickers (model, language, layout, filler words, haptics), live preview of current model status, links to GitHub and licenses
-- Plan 4.3: Design system pass — `.glassEffect()` applied to all surfaces behind `#available(iOS 26, *)` guards with `Material.regularMaterial` fallbacks, SF Pro Rounded headings, SF Pro Text body, Dynamic Type throughout, mic button animation polish (idle glow, recording pulse, transcribing shimmer), light/dark mode audit on all screens
+- [ ] 04-01-PLAN.md — SharedKeys extensions (language, haptics, fillerWords, hasCompletedOnboarding), Design system components (GlassModifier, DictusColors, BrandWaveform, AnimatedMicButton, DictusTypography), app restructure into TabView with Home/Models/Settings tabs
+- [ ] 04-02-PLAN.md — 5-step onboarding flow (welcome, mic permission, keyboard+Full Access, model download, test transcription), Settings screen with 3 sections (Transcription, Clavier, A propos)
+- [ ] 04-03-PLAN.md — Design system pass: glass effect on all app + keyboard surfaces, BrandWaveform replacing old waveforms, AnimatedMicButton in keyboard toolbar, Dynamic Type audit, light/dark mode audit
 
 ---
 
