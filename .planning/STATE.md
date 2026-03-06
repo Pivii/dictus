@@ -123,6 +123,15 @@ Writing both lastTranscription and status to UserDefaults before posting a singl
 ### Auto-insert transcription into active text field (Phase 3 UX)
 Instead of displaying transcription text in a keyboard banner, insert it directly into the active text field via `textDocumentProxy.insertText()`. This is the standard iOS dictation UX — user speaks, text appears where the cursor is. To implement in Phase 3 when wiring the keyboard extension.
 
+### Pre-load WhisperKit on app launch (UX improvement)
+First dictation after app launch has a visible delay (~2-5s) while WhisperKit loads the model into RAM. Could pre-load the active model when the app starts or when returning from model selection. Currently loading happens on first `dictus://dictate` call.
+
+### Onboarding flow: permissions before models (Phase 4)
+User must configure: (1) install keyboard, (2) enable Full Access, (3) grant microphone permission — BEFORE downloading models. Current flow doesn't guide this. Phase 4 onboarding should make this the first thing the user sees.
+
+### large-v3-turbo ANE incompatibility
+The `openai_whisper-large-v3_turbo` model fails ANE compilation on some devices (TextDecoder.mlmodelc). This is a hardware limitation — the model's TextDecoder is too large for the device's Neural Engine. No software fix possible. Consider hiding this model on incompatible devices in a future version.
+
 ### Keep autoresizing masks on inputView
 Setting translatesAutoresizingMaskIntoConstraints = false on the keyboard inputView prevents iOS from sizing it correctly. The default autoresizing masks must be preserved.
 

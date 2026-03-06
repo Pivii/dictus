@@ -253,6 +253,13 @@ class ModelManager: ObservableObject {
         return identifier == "openai_whisper-small"
     }
 
+    /// Cleans up a failed model's files and resets its state to not downloaded.
+    /// Called from UI when user wants to free disk space from a failed download.
+    func cleanupFailedModel(_ identifier: String) {
+        cleanupModelFiles(identifier)
+        modelStates[identifier] = .notDownloaded
+    }
+
     /// Removes partially downloaded or corrupted model files from disk.
     /// Called after download/prewarm failure so a retry starts clean.
     private func cleanupModelFiles(_ identifier: String) {

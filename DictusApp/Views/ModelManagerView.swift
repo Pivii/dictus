@@ -208,20 +208,31 @@ private struct ModelRow: View {
             }
 
         case .error(let message):
-            Button {
-                // Reset state and allow retry
-                modelManager.modelStates[model.identifier] = .notDownloaded
-            } label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "arrow.clockwise.circle")
-                        .font(.title3)
-                        .foregroundColor(.orange)
-                    Text("Réessayer")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
+            HStack(spacing: 8) {
+                Button {
+                    // Reset state and allow retry
+                    modelManager.modelStates[model.identifier] = .notDownloaded
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "arrow.clockwise.circle")
+                            .font(.title3)
+                            .foregroundColor(.orange)
+                        Text("Réessayer")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
                 }
+                .buttonStyle(.plain)
+
+                // Allow cleanup of failed model files to free disk space
+                Button {
+                    modelManager.cleanupFailedModel(model.identifier)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .help(message)
         }
     }
