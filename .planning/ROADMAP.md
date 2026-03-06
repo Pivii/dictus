@@ -52,23 +52,26 @@
 
 ## Phase 3: Dictation UX
 
-**Goal:** The full dictation loop — record, preview, confirm, insert, undo — works fluidly from the keyboard without leaving the context.
+**Goal:** Wispr Flow-inspired dictation loop -- tap mic, record with immersive keyboard UI, auto-insert transcribed text -- works fluidly from the keyboard. Includes QWERTY layout, accented characters, and in-app test screen.
 
-**Requirements:** DUX-01, DUX-02, DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04
+**Requirements:** DUX-01, DUX-02 (DROPPED by user decision), DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04
+
+**Plans:** 3 plans
 
 ### Success Criteria
-1. After a dictation round trip, transcribed text appears in a preview bar inside the keyboard before any insertion
-2. Tapping confirm inserts the text into the active text field via `textDocumentProxy`; tapping dismiss clears the preview
-3. An undo button deletes the last inserted transcription block character-by-character via `deleteBackward()`
+1. Tapping mic in keyboard toolbar opens DictusApp briefly; keyboard shows recording overlay (waveform, timer, cancel/stop)
+2. After stop, transcribed text auto-inserts into the active text field via `textDocumentProxy.insertText()` -- no preview bar, no confirmation
+3. DUX-02 (undo button) intentionally omitted per user decision -- manual select+delete instead
 4. Haptic feedback fires on recording start, recording stop, and text insertion
-5. An animated waveform is visible during active recording; the mic button shows distinct idle, recording, and transcribing states
-6. Both AZERTY and QWERTY layouts are available and switchable from Settings; AZERTY is default
-7. The in-app test dictation screen allows end-to-end transcription testing without leaving Dictus
+5. Animated waveform visible during active recording; mic button shows distinct idle, recording, and transcribing states
+6. Both AZERTY and QWERTY layouts available; AZERTY default, switchable from Settings
+7. Long-press accented character popups on AZERTY keys (e, a, u, i, o, c, y, n)
+8. In-app test dictation screen allows end-to-end transcription testing without leaving Dictus
 
 ### Plans
-- Plan 3.1: Transcription preview and insertion — `TranscriptionPreviewBar` SwiftUI component in keyboard, confirm/dismiss actions, `textDocumentProxy.insertText()`, undo via `deleteBackward() × N` tracked in local state, `lastInsertedLength` in App Group for cross-launch undo support
-- Plan 3.2: Recording feedback — animated waveform component using `AVAudioEngine` metering tap, mic button state machine (idle / recording / transcribing), `UIImpactFeedbackGenerator` haptics at three trigger points
-- Plan 3.3: Keyboard layout switcher + test screen — QWERTY layout implementation, layout preference persisted in App Group `UserDefaults`, in-app `TestDictationView` with local recording → transcription → result display flow
+- [ ] 03-01-PLAN.md — DictusCore contracts (SharedKeys, Darwin notifications, QWERTY layout data, accented character mappings, haptic helper), DictationCoordinator wired for keyboard stop/cancel signals and waveform forwarding
+- [ ] 03-02-PLAN.md — Wispr Flow-inspired keyboard recording UX (ToolbarView with mic button, RecordingOverlay replacing keyboard, auto-insert via textDocumentProxy, haptic feedback, mic button states)
+- [ ] 03-03-PLAN.md — QWERTY layout switching in keyboard, accented character long-press popup on AZERTY, in-app TestDictationView
 
 ---
 
@@ -99,7 +102,7 @@
 |-------|-------------|
 | Phase 1 | DUX-05, APP-05, APP-06, KBD-01, KBD-04 |
 | Phase 2 | STT-01, STT-02, STT-03, STT-04, STT-05, APP-02 |
-| Phase 3 | DUX-01, DUX-02, DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04 |
+| Phase 3 | DUX-01, DUX-02 (DROPPED), DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04 |
 | Phase 4 | APP-01, APP-03, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04 |
 | **Total** | **22 / 22** |
 
