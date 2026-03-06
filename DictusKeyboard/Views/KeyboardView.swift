@@ -117,37 +117,3 @@ struct KeyboardView: View {
         }
     }
 }
-
-/// Mic key — shows Link when Full Access is on, disabled button otherwise.
-struct MicKey: View {
-    let width: CGFloat
-    let hasFullAccess: Bool
-
-    var body: some View {
-        if hasFullAccess {
-            // Link destination requires non-nil URL — safe to force-unwrap
-            // a compile-time literal that is always a valid URL
-            Link(destination: URL(string: "dictus://dictate")!) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: width)
-                    .frame(height: KeyMetrics.keyHeight)
-                    .foregroundColor(.white)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color.blue)
-                    )
-            }
-        } else {
-            Image(systemName: "mic.fill")
-                .font(.system(size: 18, weight: .medium))
-                .frame(width: width)
-                .frame(height: KeyMetrics.keyHeight)
-                .foregroundColor(Color(.systemGray2))
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color(.systemGray4))
-                )
-        }
-    }
-}

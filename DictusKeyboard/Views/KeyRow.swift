@@ -60,7 +60,10 @@ struct KeyRow: View {
             LayerSwitchKey(label: key.label, width: keyWidth, onTap: onLayerSwitch)
 
         case .mic:
-            MicKey(width: keyWidth, hasFullAccess: hasFullAccess)
+            // Mic keys are filtered out before reaching KeyRow (Plan 03-02).
+            // The mic button now lives in ToolbarView above the keyboard.
+            // This case is kept for exhaustive switch — should never execute.
+            EmptyView()
 
         case .symbolToggle:
             LayerSwitchKey(label: key.label, width: keyWidth, onTap: onSymbolToggle)
