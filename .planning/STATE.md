@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: 04-03
-status: executing
-last_updated: "2026-03-06T22:23:28Z"
+current_plan: done
+status: complete
+last_updated: "2026-03-06T22:49:00Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State: Dictus
@@ -21,9 +21,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Phase
 Phase: 4
-Status: In Progress
-Plans completed: 2/3
-Current plan: 04-03
+Status: Complete
+Plans completed: 3/3
+Current plan: done
 
 ## Phase History
 
@@ -143,7 +143,28 @@ Current plan: 04-03
 - LicensesView: MIT attribution for WhisperKit and Dictus
 - hasCompletedOnboarding default changed from true to false
 
+### Plan 4.3: Design System Pass — COMPLETED (2026-03-06)
+- Glass + multi-bar waveform + AnimatedMicButton + Dynamic Type applied across all screens
+- RecordingView: replaced 50-bar WaveformView with BrandWaveform, removed old struct
+- RecordingOverlay: replaced 30-bar KeyboardWaveformView with BrandWaveform
+- ToolbarView: replaced inline micIcon with AnimatedMicButton (4 animation states)
+- 5 Design files copied into DictusKeyboard/Design/ and registered in pbxproj
+- KeyButton: glass background via dictusGlass, @ScaledMetric for Dynamic Type
+- FullAccessBanner: dictusGlass replacing tertiarySystemBackground
+- All hardcoded Color literals replaced with DictusColors equivalents
+- BrandWaveform redesigned from 3-bar to 30-bar after visual verification
+- Human verification passed on device
+
 ## Key Decisions
+
+### BrandWaveform 30-bar redesign
+The original 3-bar logo-inspired waveform was too sparse for meaningful audio energy feedback. Redesigned to 30 bars maintaining brand identity (blue gradient center band, white opacity edges) while providing better visualization.
+
+### Design file duplication for keyboard extension
+DictusKeyboard cannot import DictusApp code. Moving design files to DictusCore would add UIKit/SwiftUI dependency to the shared package (breaks macOS SPM tests). Copying ~200 lines into DictusKeyboard/Design/ is the pragmatic solution. Both copies must be updated together.
+
+### AnimatedMicButton 0.45x scale in toolbar
+AnimatedMicButton is designed at 72pt for the main app. Scaling to 0.45x in the keyboard toolbar fits the 32pt space while preserving all 4 animation states.
 
 ### Don't block onboarding on mic denial
 Apple HIG and research best practices recommend against blocking progress on permission denial. The user can still set up the keyboard and download a model without mic access. They can grant mic permission later from iOS Settings.
@@ -279,3 +300,6 @@ KeyboardState holds `weak var controller: UIInputViewController?` set via `.onAp
 *Phase 3 completed: 2026-03-06*
 *Plan 4.1 completed: 2026-03-06*
 *Plan 4.2 completed: 2026-03-06*
+*Plan 4.3 completed: 2026-03-06*
+*Phase 4 completed: 2026-03-06*
+*All phases complete: 2026-03-06*

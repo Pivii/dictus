@@ -82,7 +82,7 @@
 
 **Requirements:** APP-01, APP-03, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 ### Success Criteria
 1. A first-time user who has never installed a third-party keyboard reaches their first successful dictation solely by following the onboarding flow — no external documentation needed
@@ -94,8 +94,8 @@
 
 ### Plans
 - [x] 04-01-PLAN.md — SharedKeys extensions (language, haptics, fillerWords, hasCompletedOnboarding), Design system components (GlassModifier, DictusColors, BrandWaveform, AnimatedMicButton, DictusTypography), app restructure into TabView with Home/Models/Settings tabs *(completed 2026-03-06)*
-- [ ] 04-02-PLAN.md — 5-step onboarding flow (welcome, mic permission, keyboard+Full Access, model download, test transcription), Settings screen with 3 sections (Transcription, Clavier, A propos)
-- [ ] 04-03-PLAN.md — Design system pass: glass effect on all app + keyboard surfaces, BrandWaveform replacing old waveforms, AnimatedMicButton in keyboard toolbar, Dynamic Type audit, light/dark mode audit
+- [x] 04-02-PLAN.md — 5-step onboarding flow (welcome, mic permission, keyboard+Full Access, model download, test transcription), Settings screen with 3 sections (Transcription, Clavier, A propos) *(completed 2026-03-06)*
+- [x] 04-03-PLAN.md — Design system pass: glass + multi-bar waveform on all surfaces, AnimatedMicButton in keyboard toolbar, Dynamic Type via @ScaledMetric, light/dark mode audit, human verification passed *(completed 2026-03-06)*
 
 ---
 

@@ -22,7 +22,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **KBD-03**: QWERTY keyboard layout is available as alternative (configurable in settings)
 - [x] **KBD-04**: Keyboard remains functional for basic typing when Full Access is not enabled (graceful degradation)
 - [x] **KBD-05**: Mic button with clear visual states (idle, recording, transcribing)
-- [ ] **KBD-06**: Keyboard uses iOS 26 Liquid Glass design
+- [x] **KBD-06**: Keyboard uses iOS 26 Liquid Glass design
 
 ### Dictation UX
 
@@ -114,9 +114,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | KBD-03 | Phase 3: Dictation UX | Complete |
 | KBD-05 | Phase 3: Dictation UX | Complete |
 | APP-04 | Phase 3: Dictation UX | Complete |
-| APP-01 | Phase 4: Main App, Onboarding, and Polish | Not Started |
-| APP-03 | Phase 4: Main App, Onboarding, and Polish | Not Started |
-| KBD-06 | Phase 4: Main App, Onboarding, and Polish | Not Started |
+| APP-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
+| APP-03 | Phase 4: Main App, Onboarding, and Polish | Complete |
+| KBD-06 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-02 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-03 | Phase 4: Main App, Onboarding, and Polish | Complete |
@@ -129,4 +129,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-06 after Plan 04-01 completion (DSN-01 through DSN-04)*
+*Last updated: 2026-03-06 after Plan 04-03 completion (all v1 requirements complete)*
