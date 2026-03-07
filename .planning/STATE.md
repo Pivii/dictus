@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_plan: done
-status: completed
-last_updated: "2026-03-07T08:19:19.331Z"
+current_plan: 2
+status: in-progress
+last_updated: "2026-03-07T10:43:33.168Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 18
+  completed_plans: 17
 ---
 
 # Project State: Dictus
@@ -20,10 +20,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 **Current focus:** Phase 3 (Dictation UX)
 
 ## Current Phase
-Phase: 4
-Status: Complete
-Plans completed: 3/3
-Current plan: done
+Phase: 5
+Status: In Progress
+Plans completed: 1/2
+Current plan: 2
 
 ## Phase History
 
@@ -171,6 +171,13 @@ Current plan: done
 - FullAccessBanner enlarged with .footnote font, 10pt padding, dictus:// URL
 - Waveform enlarged to 140pt height, 40 bars at 5pt width, 0.08s animation
 - barWidth changed from @ScaledMetric to fixed let
+
+### Plan 5.1: Wire Settings — COMPLETED (2026-03-07)
+- HapticFeedback: isEnabled() guard reading SharedKeys.hapticsEnabled from App Group on all 4 methods
+- HapticFeedback: new keyTapped() method with .light impact style for keyboard key taps
+- TranscriptionService: dynamic language from SharedKeys.language (default "fr") instead of hardcoded
+- TranscriptionService: conditional FillerWordFilter.clean() based on SharedKeys.fillerWordsEnabled toggle
+- All defaults correct: haptics=true, fillerWords=true, language="fr" via object(forKey:) as? Bool ?? true
 
 ## Key Decisions
 
@@ -334,3 +341,4 @@ KeyboardState holds `weak var controller: UIInputViewController?` set via `.onAp
 *Plan 4.5 completed: 2026-03-07*
 *Phase 4 completed: 2026-03-06*
 *All phases complete: 2026-03-06*
+*Plan 5.1 completed: 2026-03-07*

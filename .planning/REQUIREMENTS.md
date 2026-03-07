@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **APP-01**: Onboarding guides user through microphone permission, keyboard addition, Full Access enablement, and model download
 - [x] **APP-02**: Model Manager allows downloading, selecting, and deleting Whisper models (tiny, base, small, medium, large-v3-turbo)
-- [ ] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
+- [x] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
 - [x] **APP-04**: In-app test dictation screen for testing transcription without leaving the app
 - [x] **APP-05**: App handles `dictus://dictate` URL scheme to receive dictation requests from keyboard extension
 - [x] **APP-06**: All shared data passes through App Group (`group.com.pivi.dictus`)
@@ -115,7 +115,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | KBD-05 | Phase 3: Dictation UX | Complete |
 | APP-04 | Phase 3: Dictation UX | Complete |
 | APP-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
-| APP-03 | Phase 5: Wire Settings & Code Hygiene | Pending |
+| APP-03 | Phase 5: Wire Settings & Code Hygiene | Complete |
 | KBD-06 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-02 | Phase 4: Main App, Onboarding, and Polish | Complete |

@@ -107,7 +107,7 @@
 
 **Requirements:** APP-03 (full closure), STT-01, STT-02, DUX-03 (integration fixes)
 **Gap Closure:** Closes all gaps from v1.0 milestone audit
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 ### Success Criteria
 1. Changing "language" in Settings changes the transcription language used by WhisperKit (not hardcoded to "fr")
