@@ -36,9 +36,17 @@ struct ModelDownloadPage: View {
                 .padding(.bottom, 24)
 
             // Title
-            Text("Telecharger un modele")
+            Text("Modele vocal")
                 .font(.dictusHeading)
                 .foregroundStyle(.primary)
+                .padding(.bottom, 12)
+
+            // Explanatory text
+            Text("Pour transcrire votre voix, Dictus a besoin d'un modele vocal. Le telechargement prend environ 1 minute.")
+                .font(.dictusBody)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
                 .padding(.bottom, 24)
 
             // Model card
@@ -103,7 +111,7 @@ struct ModelDownloadPage: View {
             } else if !isDownloading {
                 VStack(spacing: 16) {
                     Button(action: startDownload) {
-                        Text("Telecharger")
+                        Text("Installer le modele")
                             .font(.dictusSubheading)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -167,11 +175,6 @@ struct ModelDownloadPage: View {
                 try await modelManager.downloadModel(recommendedModel)
                 downloadComplete = true
                 isDownloading = false
-
-                // Auto-advance after brief delay to show checkmark
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    onNext()
-                }
             } catch {
                 errorMessage = error.localizedDescription
                 isDownloading = false

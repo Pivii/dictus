@@ -1,20 +1,18 @@
 // DictusApp/Onboarding/KeyboardSetupPage.swift
-// Step 3 of onboarding: guide user to add the Dictus keyboard and enable Full Access.
+// Step 3 of onboarding: guide user to add the Dictus keyboard with auto-detection.
 import SwiftUI
 import UIKit
 import DictusCore
 
 /// Guides the user through adding the Dictus keyboard in iOS Settings.
 ///
-/// WHY two separate instruction blocks:
-/// Adding a keyboard and enabling Full Access are two distinct steps in iOS Settings.
-/// Numbering them makes the multi-step process clear for first-time users.
-///
-/// WHY manual fallback button:
-/// Auto-detection of keyboard installation checks UITextInputMode.activeInputModes,
-/// but this API is unreliable — it may not update immediately after the user adds
-/// the keyboard. The manual "J'ai ajoute le clavier" button is always visible
-/// as a reliable fallback path.
+/// WHY auto-detection instead of manual confirm button:
+/// Per locked design decision: the keyboard is detected automatically via
+/// UITextInputMode.activeInputModes when the app returns to foreground.
+/// This eliminates user confusion ("did I add it correctly?") and prevents
+/// false positives from users tapping "J'ai ajoute le clavier" without
+/// actually completing the setup. When the keyboard is detected, the page
+/// auto-advances after a brief delay so the user sees the checkmark feedback.
 struct KeyboardSetupPage: View {
     let onNext: () -> Void
 
@@ -54,7 +52,13 @@ struct KeyboardSetupPage: View {
                     title: "Activez l'Acces complet pour le microphone",
                     subtitle: "L'acces complet permet a Dictus d'enregistrer votre voix depuis le clavier"
                 )
-                .padding(.bottom, 32)
+                .padding(.bottom, 24)
+
+                // Auto-detection helper text
+                Text("Le clavier sera detecte automatiquement")
+                    .font(.dictusCaption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 16)
 
                 // Detection feedback
                 if keyboardDetected {
@@ -62,23 +66,16 @@ struct KeyboardSetupPage: View {
                         .font(.dictusBody)
                         .foregroundColor(.dictusSuccess)
                         .padding(.bottom, 16)
+                        .transition(.opacity)
                 }
 
-                // Manual confirmation button (always visible as fallback)
-                Button(action: onNext) {
-                    Text(keyboardDetected ? "Continuer" : "J'ai ajoute le clavier")
-                        .font(.dictusSubheading)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.dictusAccent)
-                        )
-                }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 48)
+                Spacer(minLength: 48)
             }
+        }
+        .onAppear {
+            // Check immediately in case keyboard was already installed
+            // (e.g., user reached this step before, went to Settings, came back)
+            checkKeyboardInstalled()
         }
         .onChange(of: scenePhase) { newPhase in
             // When user returns from Settings, check if keyboard was added
@@ -86,6 +83,15 @@ struct KeyboardSetupPage: View {
                 checkKeyboardInstalled()
             }
         }
+        .onChange(of: keyboardDetected) { detected in
+            // Auto-advance after brief delay so user sees the checkmark
+            if detected {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    onNext()
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: keyboardDetected)
     }
 
     // MARK: - Instruction Block
