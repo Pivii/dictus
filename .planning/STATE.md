@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 2
-status: in-progress
-last_updated: "2026-03-07T10:43:33.168Z"
+status: complete
+last_updated: "2026-03-07T10:48:10Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State: Dictus
@@ -17,13 +17,13 @@ progress:
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-04)
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Phase 3 (Dictation UX)
+**Current focus:** All phases complete
 
 ## Current Phase
 Phase: 5
 Status: In Progress
-Plans completed: 1/2
-Current plan: 2
+Plans completed: 2/2
+Current plan: 2 (complete)
 
 ## Phase History
 
@@ -179,7 +179,19 @@ Current plan: 2
 - TranscriptionService: conditional FillerWordFilter.clean() based on SharedKeys.fillerWordsEnabled toggle
 - All defaults correct: haptics=true, fillerWords=true, language="fr" via object(forKey:) as? Bool ?? true
 
+### Plan 5.2: Code Hygiene — COMPLETED (2026-03-07)
+- HapticFeedback.keyTapped() wired on every key tap (normal and accent) in KeyButton.swift
+- AccentPopup Color.blue replaced with Color.dictusAccent for brand consistency
+- BrandWaveform unified: both copies now use 30 bars with GeometryReader adaptive bar width
+- Both copies have sync reminder comments, 0.08s animation, 2pt spacing
+
 ## Key Decisions
+
+### GeometryReader adaptive bar width for BrandWaveform
+Bar width computed from container width via GeometryReader so waveform fills any context automatically (recording overlay, HomeView card, full-screen RecordingView). Replaces fixed 5pt (keyboard) and @ScaledMetric 4pt (app) with computed values.
+
+### 0.08s animation for both BrandWaveform copies
+Standardized on the keyboard copy's 0.08s animation duration. The app's previous 0.15s was too slow for real-time audio feedback visualization.
 
 ### Fixed key font sizes (native iOS keyboard behavior)
 Key labels and popup labels use `private let` instead of `@ScaledMetric`. Native iOS keyboard does NOT scale key labels with Dynamic Type -- scaling causes layout overflow on larger text sizes.
@@ -342,3 +354,5 @@ KeyboardState holds `weak var controller: UIInputViewController?` set via `.onAp
 *Phase 4 completed: 2026-03-06*
 *All phases complete: 2026-03-06*
 *Plan 5.1 completed: 2026-03-07*
+*Plan 5.2 completed: 2026-03-07*
+*Phase 5 completed: 2026-03-07*
