@@ -12,7 +12,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **STT-01**: User can dictate text and receive accurate French transcription via on-device WhisperKit
 - [x] **STT-02**: Filler words (euh, hm, voilà, um, uh) are automatically removed from transcription
 - [x] **STT-03**: Transcription includes automatic punctuation (provided natively by Whisper)
-- [x] **STT-04**: Smart Model Routing switches between fast model (tiny/base) and accurate model (small) based on audio duration
+- ~~**STT-04**: Smart Model Routing switches between fast model (tiny/base) and accurate model (small) based on audio duration~~ *(DROPPED — user chooses model once; runtime switching breaks background recording)*
 - [x] **STT-05**: Transcription completes in under 3 seconds for 10 seconds of audio
 
 ### Keyboard Extension
@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **APP-01**: Onboarding guides user through microphone permission, keyboard addition, Full Access enablement, and model download
 - [x] **APP-02**: Model Manager allows downloading, selecting, and deleting Whisper models (tiny, base, small, medium, large-v3-turbo)
-- [x] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
+- [ ] **APP-03**: Settings screen for active model, transcription language, keyboard layout, filler word toggle, haptic toggle
 - [x] **APP-04**: In-app test dictation screen for testing transcription without leaving the app
 - [x] **APP-05**: App handles `dictus://dictate` URL scheme to receive dictation requests from keyboard extension
 - [x] **APP-06**: All shared data passes through App Group (`group.com.pivi.dictus`)
@@ -103,7 +103,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | STT-01 | Phase 2: Transcription Pipeline | Complete |
 | STT-02 | Phase 2: Transcription Pipeline | Complete |
 | STT-03 | Phase 2: Transcription Pipeline | Complete |
-| STT-04 | Phase 2: Transcription Pipeline | Complete |
+| STT-04 | ~~Phase 2: Transcription Pipeline~~ | Dropped |
 | STT-05 | Phase 2: Transcription Pipeline | Complete |
 | APP-02 | Phase 2: Transcription Pipeline | Complete |
 | DUX-01 | Phase 3: Dictation UX | Complete |
@@ -115,7 +115,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | KBD-05 | Phase 3: Dictation UX | Complete |
 | APP-04 | Phase 3: Dictation UX | Complete |
 | APP-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
-| APP-03 | Phase 4: Main App, Onboarding, and Polish | Complete |
+| APP-03 | Phase 5: Wire Settings & Code Hygiene | Pending |
 | KBD-06 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-01 | Phase 4: Main App, Onboarding, and Polish | Complete |
 | DSN-02 | Phase 4: Main App, Onboarding, and Polish | Complete |
@@ -123,8 +123,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | DSN-04 | Phase 4: Main App, Onboarding, and Polish | Complete |
 
 **Coverage:**
-- v1 requirements: 22 total
-- Mapped to phases: 22
+- v1 requirements: 21 active (1 dropped: STT-04)
+- Mapped to phases: 21
 - Unmapped: 0
 
 ---

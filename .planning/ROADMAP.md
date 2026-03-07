@@ -2,8 +2,8 @@
 
 **Created:** 2026-03-04
 **Granularity:** Coarse
-**Phases:** 4
-**Requirements:** 22 mapped
+**Phases:** 5
+**Requirements:** 21 active (2 dropped)
 
 ---
 
@@ -101,15 +101,35 @@
 
 ---
 
+## Phase 5: Wire Settings & Code Hygiene
+
+**Goal:** Make all settings toggles functional end-to-end and clean up minor code hygiene issues from the v1 build.
+
+**Requirements:** APP-03 (full closure), STT-01, STT-02, DUX-03 (integration fixes)
+**Gap Closure:** Closes all gaps from v1.0 milestone audit
+
+### Success Criteria
+1. Changing "language" in Settings changes the transcription language used by WhisperKit (not hardcoded to "fr")
+2. Toggling "filler words" off in Settings causes FillerWordFilter to skip filtering; toggling on re-enables it
+3. Toggling "haptics" off in Settings suppresses all haptic feedback; toggling on re-enables it
+4. AccentPopup uses DictusColors instead of hardcoded Color.blue
+5. BrandWaveform divergence (app: 30 bars, keyboard: 40 bars) is documented with inline comments
+
+### Plans
+*(none yet — run `/gsd:plan-phase 5`)*
+
+---
+
 ## Requirement Coverage
 
 | Phase | Requirements |
 |-------|-------------|
 | Phase 1 | DUX-05, APP-05, APP-06, KBD-01, KBD-04 |
-| Phase 2 | STT-01, STT-02, STT-03, STT-04, STT-05, APP-02 |
+| Phase 2 | STT-01, STT-02, STT-03, ~~STT-04~~ (DROPPED), STT-05, APP-02 |
 | Phase 3 | DUX-01, DUX-02 (DROPPED), DUX-03, DUX-04, KBD-02, KBD-03, KBD-05, APP-04 |
-| Phase 4 | APP-01, APP-03, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04 |
-| **Total** | **22 / 22** |
+| Phase 4 | APP-01, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04 |
+| Phase 5 | APP-03 (gap closure) |
+| **Total** | **21 / 21 active** (2 dropped: STT-04, DUX-02) |
 
 ---
 *Roadmap created: 2026-03-04*
