@@ -1,3 +1,4 @@
+// IMPORTANT: This file is duplicated in DictusApp/Design/ and DictusKeyboard/Design/. Keep both copies in sync.
 // DictusKeyboard/Design/BrandWaveform.swift
 // Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
@@ -15,21 +16,26 @@ struct BrandWaveform: View {
     /// Fixed height of the waveform container. Bars grow within this space.
     var maxHeight: CGFloat = 80
 
-    /// Fixed bar width — visualization element, not text. No @ScaledMetric needed.
-    private let barWidth: CGFloat = 5
-
     /// Adaptive color for outer bars: gray in light mode, white in dark mode.
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Number of bars to display. 40 bars * 5pt + 39 * 2pt spacing = 278pt,
-    /// filling most of a 375pt+ screen width.
-    private let barCount = 40
+    /// Number of bars to display.
+    private let barCount = 30
+
+    /// Consistent spacing between bars.
+    private let barSpacing: CGFloat = 2
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { index in
-                barView(index: index)
+        GeometryReader { geometry in
+            let totalSpacing = barSpacing * CGFloat(barCount - 1)
+            let barWidth = max((geometry.size.width - totalSpacing) / CGFloat(barCount), 2)
+
+            HStack(spacing: barSpacing) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    barView(index: index, barWidth: barWidth)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: maxHeight)
         .animation(.easeOut(duration: 0.08), value: energyLevels)
@@ -37,7 +43,7 @@ struct BrandWaveform: View {
 
     // MARK: - Private
 
-    private func barView(index: Int) -> some View {
+    private func barView(index: Int, barWidth: CGFloat) -> some View {
         let energy = energyForBar(at: index)
         let minHeight: CGFloat = 4
         let height = minHeight + CGFloat(energy) * (maxHeight - minHeight)

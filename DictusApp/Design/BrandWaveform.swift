@@ -1,3 +1,4 @@
+// IMPORTANT: This file is duplicated in DictusApp/Design/ and DictusKeyboard/Design/. Keep both copies in sync.
 // DictusApp/Design/BrandWaveform.swift
 // Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
@@ -6,23 +7,20 @@ import SwiftUI
 ///
 /// WHY multi-bar instead of 3-bar logo:
 /// 3 bars felt static and logo-like, not like a real audio visualizer.
-/// This uses ~30 bars for fluid audio feedback, but keeps brand identity through
+/// This uses 30 bars for fluid audio feedback, but keeps brand identity through
 /// the color scheme: center bars use the blue gradient, outer bars use white at
 /// decreasing opacity — echoing the logo's asymmetric bar styling.
 ///
-/// WHY fixed frame:
-/// The view occupies a fixed height container. Bars animate INSIDE this frame,
-/// growing from center. This prevents the waveform from pushing surrounding
-/// UI elements when energy changes.
+/// WHY GeometryReader for bar width:
+/// Bar width adapts automatically to fit available space in each context.
+/// The waveform fills the space whether it appears in the recording overlay
+/// (full keyboard width), the HomeView card (narrower), or RecordingView (full screen).
 struct BrandWaveform: View {
-    /// Array of energy levels (0.0–1.0) for each bar. Count determines bar count.
+    /// Array of energy levels (0.0-1.0) for each bar. Count determines bar count.
     let energyLevels: [Float]
 
     /// Fixed height of the waveform container. Bars grow within this space.
     var maxHeight: CGFloat = 80
-
-    /// Bar width scales with Dynamic Type for accessibility.
-    @ScaledMetric private var barWidth: CGFloat = 4
 
     /// WHY @Environment colorScheme:
     /// Outer bars use white in dark mode (original) and gray in light mode.
@@ -32,19 +30,28 @@ struct BrandWaveform: View {
     /// Number of bars to display.
     private let barCount = 30
 
+    /// Consistent spacing between bars.
+    private let barSpacing: CGFloat = 2
+
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { index in
-                barView(index: index)
+        GeometryReader { geometry in
+            let totalSpacing = barSpacing * CGFloat(barCount - 1)
+            let barWidth = max((geometry.size.width - totalSpacing) / CGFloat(barCount), 2)
+
+            HStack(spacing: barSpacing) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    barView(index: index, barWidth: barWidth)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: maxHeight)
-        .animation(.easeOut(duration: 0.15), value: energyLevels)
+        .animation(.easeOut(duration: 0.08), value: energyLevels)
     }
 
     // MARK: - Private
 
-    private func barView(index: Int) -> some View {
+    private func barView(index: Int, barWidth: CGFloat) -> some View {
         let energy = energyForBar(at: index)
         // Minimum bar height so bars are visible even at zero energy
         let minHeight: CGFloat = 4
