@@ -34,8 +34,8 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 - [ ] **VIS-03**: Waveform animation reworked — smoother via TimelineView + Canvas (60fps interpolation)
 - [ ] **VIS-04**: Test recording screen in app redesigned
 - [ ] **VIS-05**: Recording stop screen redesigned (more cohesive with app theme)
-- [ ] **VIS-06**: Duplicate "Dictus" navigation title removed from HomeView (keep only logo + blue title)
-- [ ] **VIS-07**: Post-onboarding bug fixed — HomeView shows correct state after model download (no "Télécharger un modèle" when model exists) + side band artifacts removed
+- [x] **VIS-06**: Duplicate "Dictus" navigation title removed from HomeView (keep only logo + blue title)
+- [x] **VIS-07**: Post-onboarding bug fixed — HomeView shows correct state after model download (no "Télécharger un modèle" when model exists) + side band artifacts removed
 - [ ] **VIS-08**: Onboarding flow improved — progression blocked until each step completed (mic permission granted, keyboard added, model downloaded)
 
 ### Cold Start
@@ -108,8 +108,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VIS-03 | Phase 7 | Pending |
 | VIS-04 | Phase 6 | Pending |
 | VIS-05 | Phase 6 | Pending |
-| VIS-06 | Phase 6 | Pending |
-| VIS-07 | Phase 6 | Pending |
+| VIS-06 | Phase 6 | Complete |
+| VIS-07 | Phase 6 | Complete |
 | VIS-08 | Phase 6 | Pending |
 | COLD-01 | Phase 9 | Pending |
 | COLD-02 | Phase 9 | Pending |

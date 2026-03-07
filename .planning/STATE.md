@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-07T21:04:21Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-07T21:10:04.465Z"
 last_activity: 2026-03-07 — Phase 6 Plan 1 complete (design consolidation + app icon)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 53
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 6 of 10 (Infrastructure & App Polish)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing
-Last activity: 2026-03-07 — Phase 6 Plan 1 complete (design consolidation + app icon)
+Last activity: 2026-03-07 — Phase 6 Plan 2 complete (HomeView visual fixes)
 
-Progress: [██████████▓░░░░░░░░░] 53% (5/10 phases, 1/3 plans in phase 6)
+Progress: [█████████████░░░░░░░] 67% (5/10 phases, 2/3 plans in phase 6)
 
 ## Performance Metrics
 
@@ -48,11 +48,11 @@ Progress: [██████████▓░░░░░░░░░] 53% (5/
 | 3. Dictation UX | 4 | ~100 min | ~25 min |
 | 4. App & Polish | 5 | ~125 min | ~25 min |
 | 5. Settings | 2 | ~50 min | ~25 min |
-| 6. Infra & Polish | 1/3 | ~9 min | ~9 min |
+| 6. Infra & Polish | 2/3 | ~10 min | ~5 min |
 
 **Recent Trend:**
 - v1.0: 18 plans in 4 days
-- v1.1: Plan 1 completed in 9 min (faster due to no TDD overhead)
+- v1.1: Plan 1 in 9 min, Plan 2 in 1 min
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -69,6 +69,7 @@ Recent decisions affecting current work:
 - [06-01]: CoreGraphics script for reproducible app icon generation
 - [v1.0]: FillerWordFilter removed -- Whisper handles fillers natively
 - [v1.0]: SmartModelRouter bypassed -- runtime model switching breaks background recording
+- [Phase 06]: onAppear loadState() to fix stale model state after onboarding
 
 ### Pending Todos
 
@@ -82,9 +83,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T21:04:21Z
-Stopped at: Completed 06-01-PLAN.md
-Resume file: .planning/phases/06-infrastructure-app-polish/06-01-SUMMARY.md
+Last session: 2026-03-07T21:10:04.464Z
+Stopped at: Completed 06-02-PLAN.md
+Resume file: None
 
 ---
 *State initialized: 2026-03-04*
