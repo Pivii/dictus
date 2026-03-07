@@ -1,4 +1,4 @@
-// DictusApp/Design/GlassModifier.swift
+// DictusCore/Sources/DictusCore/Design/GlassModifier.swift
 // Reusable glass effect modifier supporting iOS 26 Liquid Glass with graceful fallback.
 import SwiftUI
 
@@ -8,10 +8,14 @@ import SwiftUI
 /// Centralizes the iOS version check. Every surface that should look "glassy" calls
 /// `.dictusGlass()` and automatically gets the best available effect for the device.
 /// When iOS 26 ships, all surfaces upgrade to Liquid Glass without any code changes.
-struct GlassModifier<S: Shape>: ViewModifier {
-    let shape: S
+public struct GlassModifier<S: Shape>: ViewModifier {
+    public let shape: S
 
-    func body(content: Content) -> some View {
+    public init(shape: S) {
+        self.shape = shape
+    }
+
+    public func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             content
                 .glassEffect(.regular, in: shape)
@@ -23,7 +27,7 @@ struct GlassModifier<S: Shape>: ViewModifier {
 }
 
 /// Convenience View extension for applying glass effects.
-extension View {
+public extension View {
     /// Apply glass effect with a custom shape (default: rounded rectangle with 16pt corners).
     ///
     /// - Parameter shape: The shape to use for the glass effect clipping.

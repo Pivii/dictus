@@ -1,5 +1,6 @@
 // DictusKeyboard/Views/FullAccessBanner.swift
 import SwiftUI
+import DictusCore
 
 /// Non-dismissible banner shown when Full Access is disabled.
 /// Guides the user to Settings to enable Full Access for dictation.

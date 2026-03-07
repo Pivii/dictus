@@ -1,6 +1,7 @@
 // DictusKeyboard/Views/AccentPopup.swift
 // Horizontal popup showing accented character variants when a key is long-pressed.
 import SwiftUI
+import DictusCore
 
 /// Accent picker popup shown above a pressed key during a long-press gesture.
 ///

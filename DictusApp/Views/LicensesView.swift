@@ -1,6 +1,7 @@
 // DictusApp/Views/LicensesView.swift
 // Open-source license attributions for third-party dependencies.
 import SwiftUI
+import DictusCore
 
 /// Displays license text for WhisperKit and other open-source dependencies.
 ///

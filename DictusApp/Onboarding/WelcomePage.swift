@@ -1,6 +1,7 @@
 // DictusApp/Onboarding/WelcomePage.swift
 // Step 1 of onboarding: animated waveform, wordmark, tagline, and "Commencer" button.
 import SwiftUI
+import DictusCore
 
 /// Welcome page shown on first launch with animated brand waveform and tagline.
 ///

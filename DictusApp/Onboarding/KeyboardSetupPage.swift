@@ -2,6 +2,7 @@
 // Step 3 of onboarding: guide user to add the Dictus keyboard and enable Full Access.
 import SwiftUI
 import UIKit
+import DictusCore
 
 /// Guides the user through adding the Dictus keyboard in iOS Settings.
 ///

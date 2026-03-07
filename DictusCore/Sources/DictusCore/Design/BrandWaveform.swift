@@ -1,5 +1,4 @@
-// IMPORTANT: This file is duplicated in DictusApp/Design/ and DictusKeyboard/Design/. Keep both copies in sync.
-// DictusApp/Design/BrandWaveform.swift
+// DictusCore/Sources/DictusCore/Design/BrandWaveform.swift
 // Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
 
@@ -9,18 +8,23 @@ import SwiftUI
 /// 3 bars felt static and logo-like, not like a real audio visualizer.
 /// This uses 30 bars for fluid audio feedback, but keeps brand identity through
 /// the color scheme: center bars use the blue gradient, outer bars use white at
-/// decreasing opacity — echoing the logo's asymmetric bar styling.
+/// decreasing opacity -- echoing the logo's asymmetric bar styling.
 ///
 /// WHY GeometryReader for bar width:
 /// Bar width adapts automatically to fit available space in each context.
 /// The waveform fills the space whether it appears in the recording overlay
 /// (full keyboard width), the HomeView card (narrower), or RecordingView (full screen).
-struct BrandWaveform: View {
+public struct BrandWaveform: View {
     /// Array of energy levels (0.0-1.0) for each bar. Count determines bar count.
-    let energyLevels: [Float]
+    public let energyLevels: [Float]
 
     /// Fixed height of the waveform container. Bars grow within this space.
-    var maxHeight: CGFloat = 80
+    public var maxHeight: CGFloat = 80
+
+    public init(energyLevels: [Float], maxHeight: CGFloat = 80) {
+        self.energyLevels = energyLevels
+        self.maxHeight = maxHeight
+    }
 
     /// WHY @Environment colorScheme:
     /// Outer bars use white in dark mode (original) and gray in light mode.
@@ -33,7 +37,7 @@ struct BrandWaveform: View {
     /// Consistent spacing between bars.
     private let barSpacing: CGFloat = 2
 
-    var body: some View {
+    public var body: some View {
         GeometryReader { geometry in
             let totalSpacing = barSpacing * CGFloat(barCount - 1)
             let barWidth = max((geometry.size.width - totalSpacing) / CGFloat(barCount), 2)

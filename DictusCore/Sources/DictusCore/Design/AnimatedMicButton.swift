@@ -1,13 +1,12 @@
-// DictusApp/Design/AnimatedMicButton.swift
+// DictusCore/Sources/DictusCore/Design/AnimatedMicButton.swift
 // Animated microphone button with visual states for idle, recording, transcribing, and success.
 import SwiftUI
-import DictusCore
 
 /// Animated mic button with 4 visual states matching dictation lifecycle.
 ///
 /// WHY separate from keyboard ToolbarView mic button:
 /// ToolbarView's mic is a compact icon in the keyboard toolbar. This AnimatedMicButton
-/// is a larger, more prominent button for the main app's HomeView — different visual
+/// is a larger, more prominent button for the main app's HomeView -- different visual
 /// treatment, same functional purpose.
 ///
 /// State machine:
@@ -16,9 +15,14 @@ import DictusCore
 /// - transcribing: blue shimmer sweep moving left-to-right at 1.5s
 /// - failed: same as idle (reset to inviting state)
 /// - Transition from transcribing to ready: brief green flash (0.3s fade)
-struct AnimatedMicButton: View {
-    let status: DictationStatus
-    let onTap: () -> Void
+public struct AnimatedMicButton: View {
+    public let status: DictationStatus
+    public let onTap: () -> Void
+
+    public init(status: DictationStatus, onTap: @escaping () -> Void) {
+        self.status = status
+        self.onTap = onTap
+    }
 
     // MARK: - Animation State
 
@@ -30,7 +34,7 @@ struct AnimatedMicButton: View {
 
     private let buttonSize: CGFloat = 72
 
-    var body: some View {
+    public var body: some View {
         Button(action: onTap) {
             ZStack {
                 // Background ring effects

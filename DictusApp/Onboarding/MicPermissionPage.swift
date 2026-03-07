@@ -2,6 +2,7 @@
 // Step 2 of onboarding: request microphone permission.
 import SwiftUI
 import AVFoundation
+import DictusCore
 
 /// Requests microphone permission with clear explanation of privacy.
 ///

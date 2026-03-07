@@ -1,4 +1,4 @@
-// DictusApp/Design/DictusLogo.swift
+// DictusCore/Sources/DictusCore/Design/DictusLogo.swift
 // Static 3-bar logo matching brand kit proportions.
 import SwiftUI
 
@@ -8,12 +8,16 @@ import SwiftUI
 /// BrandWaveform is a multi-bar audio visualizer for recording feedback.
 /// DictusLogo is the actual logo: exactly 3 bars at brand proportions (18/42/27pt).
 /// Used on HomeView and onboarding WelcomePage where the logo identity matters.
-struct DictusLogo: View {
+public struct DictusLogo: View {
     /// Overall height of the tallest bar (center).
-    var height: CGFloat = 80
+    public var height: CGFloat = 80
 
     /// Bar width.
     @ScaledMetric private var barWidth: CGFloat = 12
+
+    public init(height: CGFloat = 80) {
+        self.height = height
+    }
 
     /// WHY @Environment colorScheme:
     /// Side bars use white in dark mode and gray in light mode for visibility.
@@ -25,7 +29,7 @@ struct DictusLogo: View {
     /// Opacity for side bars (center uses gradient)
     private let opacities: [Double] = [0.45, 1.0, 0.65]
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 8) {
             ForEach(0..<3, id: \.self) { index in
                 let barHeight = proportions[index] * height

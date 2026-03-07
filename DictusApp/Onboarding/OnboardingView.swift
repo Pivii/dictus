@@ -1,6 +1,7 @@
 // DictusApp/Onboarding/OnboardingView.swift
 // Container for the 5-step onboarding flow using a paged TabView.
 import SwiftUI
+import DictusCore
 
 /// 5-step onboarding flow presented as a fullScreenCover on first launch.
 ///

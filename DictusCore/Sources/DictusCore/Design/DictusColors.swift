@@ -1,4 +1,4 @@
-// DictusApp/Design/DictusColors.swift
+// DictusCore/Sources/DictusCore/Design/DictusColors.swift
 // Brand color system with hex initializer and light/dark mode support.
 import SwiftUI
 
@@ -12,7 +12,7 @@ import SwiftUI
 /// WHY static computed properties returning adaptive colors:
 /// SwiftUI re-evaluates computed properties when colorScheme changes, so the colors
 /// automatically adapt to light/dark mode without manual observation.
-extension Color {
+public extension Color {
     // MARK: - Brand Colors (fixed, non-adaptive)
 
     /// Primary accent blue (#3D7EFF)
@@ -55,7 +55,7 @@ extension Color {
     /// Create a Color from a hex integer value (e.g., 0x3D7EFF).
     ///
     /// WHY UInt rather than String:
-    /// Compile-time validation — a typo in a hex literal causes a build error.
+    /// Compile-time validation -- a typo in a hex literal causes a build error.
     /// String parsing would silently fail at runtime.
     init(hex: UInt, opacity: Double = 1.0) {
         self.init(
