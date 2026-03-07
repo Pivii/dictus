@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-current_plan: 2 (complete)
-status: executing
-last_updated: "2026-03-07T10:53:12.223Z"
+milestone_name: MVP
+current_plan: complete
+status: milestone_complete
+last_updated: "2026-03-07"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -15,14 +15,13 @@ progress:
 # Project State: Dictus
 
 ## Project Reference
-See: .planning/PROJECT.md (updated 2026-03-04)
+See: .planning/PROJECT.md (updated 2026-03-07)
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** All phases complete
+**Current focus:** Planning next milestone
 
 ## Current Phase
-Phase: 5
-Status: In Progress
-Plans completed: 2/2
+Milestone v1.0 MVP shipped 2026-03-07.
+Next milestone: not yet defined. Run `/gsd:new-milestone` to start.
 Current plan: 2 (complete)
 
 ## Phase History

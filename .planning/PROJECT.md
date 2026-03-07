@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Dictus is a free, open-source iOS keyboard app that lets users dictate text into any application using on-device speech recognition (WhisperKit/Whisper). It's a replacement for Super Whisper and Wispr Flow — built for French-speaking users who need an AZERTY keyboard with a quality typing experience alongside voice dictation. Embraces iOS 26 Liquid Glass design language from day one.
+Dictus is a free, open-source iOS keyboard app for on-device French speech-to-text dictation. Users speak into any iOS app and get accurate French transcription auto-inserted at the cursor — no subscription, no cloud, no account. Built with WhisperKit (Whisper) for speech recognition, featuring full AZERTY/QWERTY keyboard layouts and iOS 26 Liquid Glass design.
 
 ## Core Value
 
@@ -12,48 +12,56 @@ A user can dictate text in French in any iOS app and correct it immediately on t
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ On-device speech-to-text via WhisperKit (French primary) — v1.0
+- ✓ Custom iOS keyboard extension with full AZERTY layout — v1.0
+- ✓ QWERTY layout option (secondary to AZERTY) — v1.0
+- ✓ Dictation works in any app via the keyboard extension — v1.0
+- ✓ Microphone recording with visual/haptic feedback — v1.0
+- ✓ Automatic filler word removal (handled natively by Whisper) — v1.0
+- ✓ Auto-insert transcription into active text field — v1.0
+- ✓ Whisper model manager (download, select, delete) — v1.0
+- ✓ Onboarding flow (permissions, keyboard setup, model download) — v1.0
+- ✓ Settings (model, language, keyboard layout, filler word toggle, haptic toggle) — v1.0
+- ✓ iOS 26 Liquid Glass design throughout — v1.0
+- ✓ Two-process architecture (keyboard triggers app for recording) — v1.0
 
 ### Active
 
-- [ ] On-device speech-to-text via WhisperKit (French primary, English secondary)
-- [ ] Custom iOS keyboard extension with full AZERTY layout
-- [ ] Dictation works in any app via the keyboard extension
-- [ ] Microphone recording with visual/haptic feedback
-- [ ] Automatic filler word removal (euh, hm, voilà...)
-- [ ] Auto-insert transcription into active text field
-- [ ] Undo capability for inserted text
-- [ ] Transcription preview/edit zone in the keyboard
-- [ ] Whisper model manager (download, select, delete)
-- [ ] Onboarding flow (permissions, keyboard setup, model download)
-- [ ] Settings (model, language, keyboard layout, filler word toggle)
-- [ ] iOS 26 Liquid Glass design throughout
-- [ ] QWERTY layout option (secondary to AZERTY)
+- [ ] Cold start auto-return to keyboard (competitors handle this, frequent in production)
+- [ ] Text prediction / autocorrect
+- [ ] Accented character suggestions in suggestion bar
+- [ ] Smart modes (LLM post-processing: email, SMS, note formats)
 
 ### Out of Scope
 
-- Text prediction / autocorrect — too complex for MVP, will be added post-MVP
-- Smart modes (LLM post-processing) — v1+ feature, after core STT is solid
-- Real-time streaming transcription — v2 feature
-- iPad support — v2+
-- Android port — v3
-- iCloud sync — v2+
-- Additional LLM providers (Claude, Groq, Ollama) — v2+
+- Real-time streaming transcription — v2+ feature, current batch approach works well
+- iPad support — v2+, iPhone-first
+- Android port — v3+, different platform entirely
+- iCloud sync — v2+, local storage sufficient for MVP
+- Additional LLM providers (Claude, Groq, Ollama) — v2+, after smart modes ship
+- Cloud transcription — contradicts privacy/offline identity
+- Subscription / monetization — contradicts open-source positioning
+- Smart Model Routing at runtime — breaks background recording, user selects model once
 
 ## Context
 
-- **Inspiration**: [Handy](https://handy.computer/) (macOS, open source, offline STT) — Dictus is the iOS equivalent
-- **Pain point**: Super Whisper's keyboard is QWERTY-only, has no autocorrect, and requires switching keyboards to correct text — frustrating for French AZERTY users
-- **User profile**: Pierre uses dictation primarily to avoid typing — messaging AI agents (Claude, ChatGPT, OpenFlow bot), SMS, and emails. Dictates 90%+ in French with occasional English technical terms
-- **Learning goal**: First Swift/iOS project — the development process itself is a goal (learning SwiftUI, iOS architecture, keyboard extensions)
-- **Design motivation**: Liquid Glass (iOS 26) is a personal passion — the app should look and feel premium despite being free
+Shipped v1.0 with 7,305 LOC Swift across 156 files in 4 days.
+Tech stack: Swift 5.9+ / SwiftUI / WhisperKit 0.16.0+ via SPM.
+Architecture: Two-process (keyboard extension + main app via Darwin notifications + URL scheme).
+App Group: `group.com.pivi.dictus` for all cross-process data sharing.
+Keyboard extension memory limit: ~50MB (tiny/base/small models only in extension).
+
+Known remaining issues:
+- Cold start auto-return to keyboard is the top priority for next milestone
+- Design files duplicated between DictusApp and DictusKeyboard (6 files, manual sync)
+- SmartModelRouter exists but intentionally bypassed
 
 ## Constraints
 
-- **Memory**: Keyboard extensions are limited to ~50MB RAM — only tiny/base/small Whisper models can load in the extension
-- **Permissions**: Microphone in keyboard requires `RequestsOpenAccess = true` and user enabling "Full Access" in iOS Settings
-- **Extension limitations**: No access to `UIApplication.shared` in keyboard extensions
-- **Data sharing**: All shared data between app and keyboard must go through App Group (`group.com.pivi.dictus`)
+- **Memory**: Keyboard extensions limited to ~50MB RAM
+- **Permissions**: Microphone in keyboard requires Full Access enabled
+- **Extension limitations**: No `UIApplication.shared` in keyboard extensions
+- **Data sharing**: All shared data via App Group (`group.com.pivi.dictus`)
 - **Minimum target**: iOS 16.0, iPhone 12+ (A14 Bionic) recommended
 - **Stack**: Swift 5.9+ / SwiftUI / WhisperKit via SPM
 - **License**: MIT — fully open source
@@ -62,12 +70,19 @@ A user can dictate text in French in any iOS app and correct it immediately on t
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| WhisperKit over whisper.cpp | Native Swift, Core ML + Metal optimized, maintained by Argmax | — Pending |
-| AZERTY as default layout | Primary user is French, main competitive advantage over Super Whisper | — Pending |
-| Liquid Glass from day one | Design is a project motivation, not an afterthought | — Pending |
-| Keyboard without autocorrect in MVP | Text prediction is the most complex feature (~2-3 sprints alone), ship basic first | — Pending |
-| Smart modes deferred to v1+ | Core STT + good keyboard must work first, LLM is a nice-to-have | — Pending |
-| Small model as default | Best balance of speed and French accuracy, fits in extension memory | — Pending |
+| WhisperKit over whisper.cpp | Native Swift, Core ML + Metal optimized, maintained by Argmax | ✓ Good — accurate French STT, easy integration |
+| AZERTY as default layout | Primary user is French, main competitive advantage | ✓ Good — key differentiator |
+| Liquid Glass from day one | Design is a project motivation | ✓ Good — premium look achieved |
+| Keyboard without autocorrect in MVP | Text prediction too complex for first release | ✓ Good — shipped faster |
+| Smart modes deferred | Core STT must work first | ✓ Good — solid foundation |
+| Small model as default | Best balance of speed and French accuracy | ✓ Good — fits memory constraints |
+| Two-process architecture | Keyboard 50MB limit prevents loading Whisper models | ✓ Good — works reliably |
+| Darwin notifications for IPC | Lightweight cross-process signaling | ✓ Good — <100ms latency |
+| Audio background mode | Keep recording alive when user returns to previous app | ✓ Good — seamless UX |
+| DUX-02 (undo button) dropped | User decided manual select+delete is sufficient | ✓ Good — simpler UX |
+| STT-04 (smart routing) dropped | Runtime model switching breaks background recording | ✓ Good — stability over feature |
+| Design file duplication | DictusKeyboard can't import DictusApp code, DictusCore can't have UIKit | ⚠️ Revisit — manual sync burden |
+| FillerWordFilter removed | Whisper model handles filler removal natively | ✓ Good — less code |
 
 ---
-*Last updated: 2026-03-04 after initialization*
+*Last updated: 2026-03-07 after v1.0 milestone*
