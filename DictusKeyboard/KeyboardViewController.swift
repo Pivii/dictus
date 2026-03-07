@@ -87,8 +87,8 @@ class KeyboardViewController: UIInputViewController {
     /// Must match the height computed in KeyboardRootView/KeyboardView.
     private func computeKeyboardHeight() -> CGFloat {
         let rows: CGFloat = 4
-        let keyHeight: CGFloat = 42     // KeyMetrics.keyHeight
-        let rowSpacing: CGFloat = 6     // KeyMetrics.rowSpacing
+        let keyHeight: CGFloat = KeyMetrics.keyHeight  // 46pt, matches native iOS keyboard
+        let rowSpacing: CGFloat = KeyMetrics.rowSpacing  // 6pt
         let verticalPadding: CGFloat = 8
         let toolbarHeight: CGFloat = 44 // ToolbarView approximate height
         return (rows * keyHeight) + ((rows - 1) * rowSpacing) + verticalPadding + toolbarHeight

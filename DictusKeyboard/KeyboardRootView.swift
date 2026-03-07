@@ -20,14 +20,21 @@ struct KeyboardRootView: View {
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
-    /// Standard keyboard height for 4 rows of keys.
-    /// Used by both KeyboardView and RecordingOverlay to ensure identical heights,
-    /// preventing jarring resize when switching between them.
+    /// Height of just the 4-row keyboard area (without toolbar).
     private var keyboardHeight: CGFloat {
         let rows: CGFloat = 4
         return (rows * KeyMetrics.keyHeight)
             + ((rows - 1) * KeyMetrics.rowSpacing)
             + 8  // vertical padding
+    }
+
+    /// Toolbar height — must match ToolbarView's intrinsic height.
+    private let toolbarHeight: CGFloat = 44
+
+    /// Total content height (toolbar + keyboard). RecordingOverlay uses this
+    /// to cover the full area, preventing layout shift when switching to recording.
+    private var totalContentHeight: CGFloat {
+        toolbarHeight + keyboardHeight
     }
 
     var body: some View {
@@ -46,7 +53,7 @@ struct KeyboardRootView: View {
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() }
                 )
-                .frame(height: keyboardHeight)
+                .frame(height: totalContentHeight)
             } else {
                 // Toolbar visible only when not recording
                 ToolbarView(

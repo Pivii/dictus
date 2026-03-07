@@ -46,8 +46,10 @@ struct KeyButton: View {
     /// Cell width matching AccentPopup's cellWidth for hit-testing calculations.
     private let accentCellWidth: CGFloat = 36
 
-    /// Font size scales with Dynamic Type for key labels.
-    @ScaledMetric private var keyFontSize: CGFloat = 22
+    /// Fixed font size for key labels — matches native iOS keyboard behavior.
+    /// WHY not @ScaledMetric: Native iOS keyboard does NOT scale key labels with
+    /// Dynamic Type. Scaling causes layout overflow on larger text sizes.
+    private let keyFontSize: CGFloat = 22
 
     var body: some View {
         // Using a plain gesture to get press/release states
@@ -197,7 +199,8 @@ struct KeyButton: View {
 struct KeyPopup: View {
     let label: String
 
-    @ScaledMetric private var popupFontSize: CGFloat = 32
+    /// Fixed popup font size — same rationale as key labels.
+    private let popupFontSize: CGFloat = 32
 
     var body: some View {
         Text(label)
@@ -214,7 +217,7 @@ struct KeyPopup: View {
 
 /// Shared key dimension constants.
 enum KeyMetrics {
-    static let keyHeight: CGFloat = 42
+    static let keyHeight: CGFloat = 46
     static let rowSpacing: CGFloat = 6
     static let keySpacing: CGFloat = 4
     static let rowHorizontalPadding: CGFloat = 3

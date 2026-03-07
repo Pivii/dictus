@@ -12,24 +12,24 @@ struct FullAccessBanner: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.orange)
-                .font(.dictusCaption)
+                .font(.body)
 
             Text("Dictee desactivee.")
-                .font(.dictusCaption)
+                .font(.footnote)
                 .foregroundStyle(.primary)
 
             Spacer()
 
-            // Deep-link to Settings
-            // "app-settings:" opens the app's settings page in iOS Settings
-            Link(destination: URL(string: "app-settings:")!) {
+            // Open DictusApp via URL scheme — better than app-settings: which opens
+            // a blank iOS Settings page. The app can show keyboard setup instructions.
+            Link(destination: URL(string: "dictus://settings")!) {
                 Text("Activer")
-                    .font(.caption2.bold())
+                    .font(.footnote.bold())
                     .foregroundColor(.dictusAccent)
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
         .dictusGlass(in: Rectangle())
     }
 }
