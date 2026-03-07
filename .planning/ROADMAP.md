@@ -82,7 +82,7 @@
 
 **Requirements:** APP-01, APP-03, KBD-06, DSN-01, DSN-02, DSN-03, DSN-04
 
-**Plans:** 5 plans (3 complete + 2 gap closure)
+**Plans:** 5/5 plans complete
 
 ### Success Criteria
 1. A first-time user who has never installed a third-party keyboard reaches their first successful dictation solely by following the onboarding flow — no external documentation needed

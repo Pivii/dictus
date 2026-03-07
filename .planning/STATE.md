@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: done
 status: completed
-last_updated: "2026-03-07T08:18:33.704Z"
+last_updated: "2026-03-07T08:19:19.331Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State: Dictus
@@ -155,6 +155,15 @@ Current plan: done
 - BrandWaveform redesigned from 3-bar to 30-bar after visual verification
 - Human verification passed on device
 
+### Plan 4.4: UAT Gap Closure — COMPLETED (2026-03-07)
+- WelcomePage: replaced static DictusLogo with animated BrandWaveform (idle breathing animation via Timer)
+- Button contrast: all onboarding buttons use .foregroundColor(.white) on colored backgrounds
+- OnboardingView: @SceneStorage persists currentPage across backgrounding/foregrounding
+- BrandWaveform + DictusLogo: colorScheme-adaptive bar colors (gray in light mode, white in dark mode)
+- DictusKeyboard BrandWaveform copy also updated with adaptive colors
+- ModelManagerView: converted from List to ScrollView+VStack with .dictusGlass() per card
+- SettingsView: scrollContentBackground hidden, glass-tinted section rows, dictusBackground
+
 ### Plan 4.5: Keyboard UAT Gap Closure — COMPLETED (2026-03-07)
 - keyHeight 42->46pt matching native iOS keyboard
 - Key/popup font sizes changed from @ScaledMetric to fixed let (native keyboard behavior)
@@ -290,6 +299,12 @@ Added `UIBackgroundModes: audio` to DictusApp Info.plist. When user taps mic in 
 
 ### Darwin notification + Bool flag pattern
 Keyboard sets a Bool flag in App Group UserDefaults (e.g., stopRequested = true), then posts a Darwin notification. App observes the notification, reads the flag, resets it to false, and acts. This two-step pattern is necessary because Darwin notifications carry no payload.
+
+### ScrollView+VStack for ModelManagerView glass styling
+List rows don't support custom glass modifiers well. Converting to ScrollView + VStack with .dictusGlass() per card enables the same glass card pattern used in HomeView. Swipe-to-delete was removed (doesn't work outside List) but inline delete buttons were already present.
+
+### SettingsView keeps native List with glass tint
+SettingsView preserves the standard iOS grouped List for familiar settings UX. Glass effect applied via .listRowBackground with subtle accent tint and .scrollContentBackground(.hidden) to show the dictusBackground through the List.
 
 ### Conditional rendering over ZStack for keyboard/recording swap
 Using `if/else` in SwiftUI body fully removes the inactive view from the hierarchy when switching between KeyboardView and RecordingOverlay. This prevents ghost touches on hidden keyboard keys and frees memory. A ZStack or overlay would keep both views alive.
