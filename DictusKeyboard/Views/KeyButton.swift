@@ -107,6 +107,7 @@ struct KeyButton: View {
                             // Long-press mode: insert selected accent or dismiss
                             if let index = selectedAccentIndex, index >= 0, index < accentOptions.count {
                                 onTap(accentOptions[index])
+                                HapticFeedback.keyTapped()
                             }
                             // Reset accent state
                             showingAccents = false
@@ -115,6 +116,7 @@ struct KeyButton: View {
                         } else {
                             // Normal tap: insert the regular character
                             onTap(outputChar)
+                            HapticFeedback.keyTapped()
                         }
                         dragStartX = nil
                     }

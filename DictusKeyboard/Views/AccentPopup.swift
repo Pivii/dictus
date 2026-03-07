@@ -32,7 +32,7 @@ struct AccentPopup: View {
                     .background(
                         RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                             .fill(index == selectedIndex
-                                  ? Color.blue
+                                  ? Color.dictusAccent
                                   : KeyMetrics.letterKeyColor)
                     )
                     .foregroundColor(index == selectedIndex ? .white : .primary)
