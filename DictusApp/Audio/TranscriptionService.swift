@@ -30,7 +30,6 @@ enum TranscriptionError: Error, LocalizedError {
 ///
 /// Phase 2.3 additions:
 /// - Supports loading/switching WhisperKit instances for different models
-/// - Applies FillerWordFilter.clean() to remove filler words from output
 class TranscriptionService {
     private var whisperKit: WhisperKit?
 
@@ -88,8 +87,6 @@ class TranscriptionService {
     /// means the next dictation uses the updated language/filler preference without
     /// requiring app restart or notification-based refresh.
     ///
-    /// Phase 2.3: FillerWordFilter.clean() is conditionally applied based on the
-    /// filler words toggle to remove words like "euh", "hm", "um" from output.
     func transcribe(audioSamples: [Float]) async throws -> String {
         guard let whisperKit else {
             throw TranscriptionError.notReady
@@ -129,16 +126,7 @@ class TranscriptionService {
                 throw TranscriptionError.transcriptionFailed("Empty transcription result")
             }
 
-            // Conditionally apply filler word removal based on user setting.
-            // WHY object(forKey:) as? Bool ?? true: bool(forKey:) returns false when
-            // the key has never been set, but the correct default is true (filter enabled).
-            // The filter removes words like "euh", "hm", "um" that are common in spoken
-            // French but unwanted in written text. Preserves valid words containing filler
-            // substrings (e.g., "humain" is kept, "hm" is removed).
-            let fillerWordsEnabled = defaults?.object(forKey: SharedKeys.fillerWordsEnabled) as? Bool ?? true
-            let cleaned = fillerWordsEnabled ? FillerWordFilter.clean(trimmed) : trimmed
-
-            return cleaned
+            return trimmed
         } catch let error as TranscriptionError {
             throw error
         } catch {

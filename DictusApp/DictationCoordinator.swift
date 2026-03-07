@@ -8,8 +8,7 @@ import DictusCore
 import WhisperKit
 
 /// Manages the dictation lifecycle in the main app.
-/// Phase 2.3: Integrated with SmartModelRouter for duration-based model selection
-/// and FillerWordFilter (applied in TranscriptionService).
+/// Phase 2.3: Integrated with SmartModelRouter for duration-based model selection.
 /// Phase 3.1: Observes keyboard stop/cancel signals via Darwin notifications,
 /// forwards waveform energy to App Group for keyboard visualization.
 ///

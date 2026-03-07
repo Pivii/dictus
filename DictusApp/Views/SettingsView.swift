@@ -20,9 +20,6 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.language, store: UserDefaults(suiteName: AppGroup.identifier))
     private var language = "fr"
 
-    @AppStorage(SharedKeys.fillerWordsEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
-    private var fillerWordsEnabled = true
-
     @AppStorage(SharedKeys.keyboardLayout, store: UserDefaults(suiteName: AppGroup.identifier))
     private var keyboardLayout = "azerty"
 
@@ -39,12 +36,8 @@ struct SettingsView: View {
                     Text("Francais").tag("fr")
                     Text("English").tag("en")
                 }
-
-                Toggle("Filtrer les mots de remplissage", isOn: $fillerWordsEnabled)
             } header: {
                 Text("Transcription")
-            } footer: {
-                Text("Supprime automatiquement 'euh', 'hm', 'bah', etc.")
             }
             .listRowBackground(Color.dictusAccent.opacity(0.05))
 

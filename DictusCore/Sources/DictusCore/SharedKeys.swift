@@ -31,8 +31,6 @@ public enum SharedKeys {
     public static let language = "dictus.language"
     /// Whether haptic feedback is enabled, default true
     public static let hapticsEnabled = "dictus.hapticsEnabled"
-    /// Whether filler word removal is enabled, default true
-    public static let fillerWordsEnabled = "dictus.fillerWordsEnabled"
     /// Whether the user has completed onboarding, default false
     public static let hasCompletedOnboarding = "dictus.hasCompletedOnboarding"
 }
