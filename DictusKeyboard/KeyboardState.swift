@@ -220,7 +220,15 @@ class KeyboardState: ObservableObject {
             guard let self = self else { return }
             if self.dictationStatus == .requested {
                 // App didn't respond — not running. Open URL to launch it.
-                self.openURLFromExtension(URL(string: "dictus://dictate")!)
+                // WHY try both methods: extensionContext.open() can silently fail on
+                // some iOS versions. SwiftUI's openURL uses the responder chain which
+                // may work more reliably for keyboard extensions.
+                let url = URL(string: "dictus://dictate")!
+                if let openURL = self.openURL {
+                    openURL(url)
+                } else {
+                    self.openURLFromExtension(url)
+                }
             }
         }
     }

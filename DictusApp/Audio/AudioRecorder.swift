@@ -95,13 +95,26 @@ class AudioRecorder: ObservableObject {
         }
     }
 
-    /// Configure the audio session once. Called on first recording only.
-    /// Must happen while app is in foreground — iOS forbids setCategory from background.
+    /// Configure the audio session. Must be called from foreground.
+    ///
+    /// WHY these specific options:
+    /// WhisperKit's AudioProcessor internally calls setCategory(.playAndRecord, options:
+    /// [.defaultToSpeaker, .allowBluetooth]) in startRecordingLive(). If we use different
+    /// options, WhisperKit's setCategory call CHANGES the session config, which can reset
+    /// the active state and cause "Failed to set properties '!int'" errors. By matching
+    /// WhisperKit's options exactly, its setCategory is effectively a no-op.
+    ///
+    /// WHY setActive every time (no sessionConfigured guard):
+    /// iOS interrupts the audio session when the app goes to background. Even if the
+    /// category was set, setActive(true) must be called again on foreground return.
     func configureAudioSession() throws {
-        guard !sessionConfigured else { return }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
+        if !sessionConfigured {
+            // Match WhisperKit's options to avoid conflicting setCategory calls
+            try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth])
+        }
         try session.setActive(true)
+        try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         sessionConfigured = true
 
         if #available(iOS 14.0, *) {
@@ -129,6 +142,10 @@ class AudioRecorder: ObservableObject {
                     / Double(WhisperKit.sampleRate)
             }
         }
+        // WHY re-apply after startRecordingLive: WhisperKit's AudioProcessor internally
+        // calls setCategory(.playAndRecord) + setActive(true), which resets this flag.
+        // We must re-apply it after the engine starts to keep haptics working.
+        try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
         isEngineRunning = true
 
         if #available(iOS 14.0, *) {
@@ -165,6 +182,8 @@ class AudioRecorder: ObservableObject {
                         / Double(WhisperKit.sampleRate)
                 }
             }
+            // Re-apply after WhisperKit reconfigures AVAudioSession internally
+            try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
             isEngineRunning = true
         }
         isRecording = true

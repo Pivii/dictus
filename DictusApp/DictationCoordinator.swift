@@ -3,6 +3,7 @@
 import Foundation
 import Combine
 import AVFoundation
+import UIKit
 import DictusCore
 import WhisperKit
 
@@ -89,6 +90,14 @@ class DictationCoordinator: ObservableObject {
         // By loading in init(), the model is ready when the keyboard triggers dictation.
         // The user sees the app briefly (iOS standard "◄ Back" in status bar),
         // but recording starts instantly instead of waiting for model loading.
+        //
+        // WHY configure audio session BEFORE the Task:
+        // iOS forbids AVAudioSession.setActive(true) from background. The async Task
+        // may not run until after the app is backgrounded (e.g., when opened via URL
+        // scheme from the keyboard). By configuring synchronously in init(), we guarantee
+        // the session is active while the app is still in the foreground.
+        try? audioRecorder.configureAudioSession()
+
         Task {
             let modelReady = defaults.bool(forKey: SharedKeys.modelReady)
             guard modelReady else { return }
@@ -101,7 +110,37 @@ class DictationCoordinator: ObservableObject {
                 }
             } catch {
                 if #available(iOS 14.0, *) {
-                    DictusLogger.app.warning("Pre-load failed (will retry on first dictation): \(error.localizedDescription)")
+                    DictusLogger.app.warning("Pre-load failed (will retry when app returns to foreground): \(error.localizedDescription)")
+                }
+            }
+        }
+
+        // WHY observe didBecomeActive (not willEnterForeground):
+        // willEnterForeground fires while the audio session is still interrupted.
+        // didBecomeActive fires AFTER the app is fully active and the audio session
+        // interruption has ended — the audio engine can safely start at this point.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                guard !self.audioRecorder.isEngineRunning else { return }
+                let modelReady = self.defaults.bool(forKey: SharedKeys.modelReady)
+                guard modelReady else { return }
+
+                do {
+                    try self.audioRecorder.configureAudioSession()
+                    try await self.ensureWhisperKitReady()
+                    try self.audioRecorder.warmUp()
+                    if #available(iOS 14.0, *) {
+                        DictusLogger.app.info("Audio engine warmed up on foreground return")
+                    }
+                } catch {
+                    if #available(iOS 14.0, *) {
+                        DictusLogger.app.warning("Foreground warmUp failed: \(error.localizedDescription)")
+                    }
                 }
             }
         }
@@ -122,6 +161,21 @@ class DictationCoordinator: ObservableObject {
             return
         }
 
+        // WHY this early return:
+        // iOS forbids starting an audio engine from background. If the engine isn't
+        // running and we're in background (Darwin notification from keyboard), attempting
+        // to start will fail. By returning early WITHOUT changing status, the keyboard's
+        // dictationStatus stays ".requested". After 500ms, the keyboard's fallback opens
+        // the dictus:// URL scheme, which brings the app to foreground. Then
+        // handleIncomingURL calls startDictation() again — this time from foreground.
+        let isBackground = UIApplication.shared.applicationState != .active
+        if isBackground && !audioRecorder.isEngineRunning {
+            if #available(iOS 14.0, *) {
+                DictusLogger.app.info("Deferring dictation — engine not running and app in background (keyboard URL fallback will bring us to foreground)")
+            }
+            return
+        }
+
         if #available(iOS 14.0, *) {
             DictusLogger.app.info("Dictation started")
         }
@@ -136,6 +190,12 @@ class DictationCoordinator: ObservableObject {
         // Cancel any in-flight dictation before starting a new one
         dictationTask?.cancel()
 
+        // Configure audio session NOW while we're in the foreground.
+        // WHY before the Task: ensureWhisperKitReady() takes 4-5s on cold start.
+        // By then the app may be backgrounded (opened via URL from keyboard).
+        // iOS forbids setActive(true) from background, so this must happen first.
+        try? audioRecorder.configureAudioSession()
+
         dictationTask = Task {
             do {
                 // Step 1: Check microphone permission
@@ -147,10 +207,6 @@ class DictationCoordinator: ObservableObject {
 
                 // Step 2: Initialize WhisperKit if not already ready
                 try await ensureWhisperKitReady()
-
-                // Step 2b: Configure audio session while in foreground.
-                // Must happen before any background recording attempt.
-                try audioRecorder.configureAudioSession()
 
                 // Step 3: Start recording
                 updateStatus(.recording)
