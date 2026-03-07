@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_plan: done
 status: completed
-last_updated: "2026-03-07T07:05:26.403Z"
+last_updated: "2026-03-07T08:18:33.704Z"
 progress:
   total_phases: 4
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
+  completed_phases: 3
+  total_plans: 16
+  completed_plans: 15
 ---
 
 # Project State: Dictus
@@ -155,7 +155,21 @@ Current plan: done
 - BrandWaveform redesigned from 3-bar to 30-bar after visual verification
 - Human verification passed on device
 
+### Plan 4.5: Keyboard UAT Gap Closure — COMPLETED (2026-03-07)
+- keyHeight 42->46pt matching native iOS keyboard
+- Key/popup font sizes changed from @ScaledMetric to fixed let (native keyboard behavior)
+- RecordingOverlay covers full toolbar+keyboard height (no layout shift on mic tap)
+- FullAccessBanner enlarged with .footnote font, 10pt padding, dictus:// URL
+- Waveform enlarged to 140pt height, 40 bars at 5pt width, 0.08s animation
+- barWidth changed from @ScaledMetric to fixed let
+
 ## Key Decisions
+
+### Fixed key font sizes (native iOS keyboard behavior)
+Key labels and popup labels use `private let` instead of `@ScaledMetric`. Native iOS keyboard does NOT scale key labels with Dynamic Type -- scaling causes layout overflow on larger text sizes.
+
+### dictus:// URL in FullAccessBanner
+Changed from `app-settings:` (opens blank iOS Settings page) to `dictus://settings` (opens DictusApp which can show keyboard setup instructions).
 
 ### BrandWaveform 30-bar redesign
 The original 3-bar logo-inspired waveform was too sparse for meaningful audio energy feedback. Redesigned to 30 bars maintaining brand identity (blue gradient center band, white opacity edges) while providing better visualization.
@@ -301,5 +315,7 @@ KeyboardState holds `weak var controller: UIInputViewController?` set via `.onAp
 *Plan 4.1 completed: 2026-03-06*
 *Plan 4.2 completed: 2026-03-06*
 *Plan 4.3 completed: 2026-03-06*
+*Plan 4.4 completed: 2026-03-07*
+*Plan 4.5 completed: 2026-03-07*
 *Phase 4 completed: 2026-03-06*
 *All phases complete: 2026-03-06*
