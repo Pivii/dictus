@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: MVP
-current_plan: complete
-status: milestone_complete
+milestone: v1.1
+milestone_name: UX & Keyboard
+current_plan: —
+status: defining_requirements
 last_updated: "2026-03-07"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 18
-  completed_plans: 18
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: Dictus
@@ -17,12 +17,14 @@ progress:
 ## Project Reference
 See: .planning/PROJECT.md (updated 2026-03-07)
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Planning next milestone
+**Current focus:** Defining requirements for v1.1
 
-## Current Phase
-Milestone v1.0 MVP shipped 2026-03-07.
-Next milestone: not yet defined. Run `/gsd:new-milestone` to start.
-Current plan: 2 (complete)
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-07 — Milestone v1.1 started
 
 ## Phase History
 

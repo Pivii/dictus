@@ -27,13 +27,24 @@ A user can dictate text in French in any iOS app and correct it immediately on t
 
 ### Active
 
+<!-- Current milestone: v1.1 UX & Keyboard -->
+
 - [ ] Cold start auto-return to keyboard (competitors handle this, frequent in production)
-- [ ] Text prediction / autocorrect
+- [ ] Spacebar trackpad (long-press → cursor movement mode with haptics)
+- [ ] Remove duplicate globe key, replace with emoji button
+- [ ] Adaptive accent key next to N (apostrophe/accent based on context)
+- [ ] Remove Apple dictation mic from keyboard (Wispr Flow does it)
+- [ ] Haptic feedback on all keyboard keys
+- [ ] Mic button redesign (pill shape, larger) + recording buttons pill shape
+- [ ] Text prediction / autocorrect (suggestion bar)
 - [ ] Accented character suggestions in suggestion bar
-- [ ] Smart modes (LLM post-processing: email, SMS, note formats)
+- [ ] Waveform animation rework (smoother, more fluid)
+- [ ] Redesign test recording + recording stop screens
+- [ ] Model catalog update (remove weak models, add performant ones like Parakeet v3)
 
 ### Out of Scope
 
+- Smart modes (LLM post-processing) — deferred to v1.2+, focus on keyboard UX first
 - Real-time streaming transcription — v2+ feature, current batch approach works well
 - iPad support — v2+, iPhone-first
 - Android port — v3+, different platform entirely
@@ -42,6 +53,19 @@ A user can dictate text in French in any iOS app and correct it immediately on t
 - Cloud transcription — contradicts privacy/offline identity
 - Subscription / monetization — contradicts open-source positioning
 - Smart Model Routing at runtime — breaks background recording, user selects model once
+
+## Current Milestone: v1.1 UX & Keyboard
+
+**Goal:** Bring the keyboard to Apple-level parity and polish the overall UX — cold start, trackpad, prediction, haptics, animations, and model catalog.
+
+**Target features:**
+- Cold start auto-return to keyboard
+- Apple-parity keyboard (trackpad, adaptive accent, emoji, haptics, remove Apple mic)
+- Text prediction / autocorrect with suggestion bar
+- Mic button + recording overlay redesign (pill shapes)
+- Waveform animation rework
+- App screen polish (test recording, recording stop)
+- Model catalog update (drop weak models, research Parakeet v3+)
 
 ## Context
 
@@ -85,4 +109,4 @@ Known remaining issues:
 | FillerWordFilter removed | Whisper model handles filler removal natively | ✓ Good — less code |
 
 ---
-*Last updated: 2026-03-07 after v1.0 milestone*
+*Last updated: 2026-03-07 after v1.1 milestone start*
