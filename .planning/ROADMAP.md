@@ -96,8 +96,8 @@
 - [x] 04-01-PLAN.md — SharedKeys extensions (language, haptics, fillerWords, hasCompletedOnboarding), Design system components (GlassModifier, DictusColors, BrandWaveform, AnimatedMicButton, DictusTypography), app restructure into TabView with Home/Models/Settings tabs *(completed 2026-03-06)*
 - [x] 04-02-PLAN.md — 5-step onboarding flow (welcome, mic permission, keyboard+Full Access, model download, test transcription), Settings screen with 3 sections (Transcription, Clavier, A propos) *(completed 2026-03-06)*
 - [x] 04-03-PLAN.md — Design system pass: glass + multi-bar waveform on all surfaces, AnimatedMicButton in keyboard toolbar, Dynamic Type via @ScaledMetric, light/dark mode audit, human verification passed *(completed 2026-03-06)*
-- [ ] 04-04-PLAN.md — UAT gap closure: onboarding fixes (animated waveform, button contrast, persistent state, adaptive colors) + glass on Models/Settings tabs
-- [ ] 04-05-PLAN.md — UAT gap closure: keyboard fixes (layout shift, key sizing, Dynamic Type, FullAccessBanner, waveform enlargement, light mode colors)
+- [x] 04-04-PLAN.md — UAT gap closure: onboarding fixes (animated waveform, button contrast, persistent state, adaptive colors) + glass on Models/Settings tabs *(completed 2026-03-07)*
+- [x] 04-05-PLAN.md — UAT gap closure: keyboard fixes (layout shift, key sizing, Dynamic Type, FullAccessBanner, waveform enlargement, light mode colors) *(completed 2026-03-07)*
 
 ---
 

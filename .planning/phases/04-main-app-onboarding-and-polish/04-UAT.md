@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 04-main-app-onboarding-and-polish
 source: [04-01-SUMMARY.md, 04-02-SUMMARY.md, 04-03-SUMMARY.md]
 started: 2026-03-07T10:00:00Z
-updated: 2026-03-07T09:20:00Z
+updated: 2026-03-07T09:30:00Z
 ---
 
 ## Current Test
@@ -77,7 +77,7 @@ skipped: 0
 ## Gaps
 
 - truth: "Onboarding flow: animated waveform on welcome, readable text/buttons, keyboard setup doesn't reset progress, waveform visible in light mode"
-  status: failed
+  status: resolved
   reason: "User reported: Welcome page waveform is static (not animated). Text/button contrast is poor — text on buttons barely visible in both light and dark mode. Returning from Settings after keyboard setup (step 3) resets onboarding to step 1. In light mode, white waveform bars are invisible on light background — need gray bars. Test recording waveform also invisible on white background (same white/blue color issue)."
   severity: major
   test: 3
@@ -100,7 +100,7 @@ skipped: 0
     - "Adaptive bar colors in BrandWaveform (gray in light, white in dark)"
   debug_session: ".planning/debug/onboarding-uat-5-issues.md"
 - truth: "Glass effect applied to all card surfaces throughout the app"
-  status: failed
+  status: resolved
   reason: "User reported: Home card has Liquid Glass and looks great. Models tab has regular cards without glass effect. Settings also regular cards. Would be better if Models cards matched the Home card glass style. Buttons and animations are ok."
   severity: cosmetic
   test: 6
@@ -115,7 +115,7 @@ skipped: 0
     - "Apply .dictusGlass() to SettingsView sections or keep native List style if preferred"
   debug_session: ".planning/debug/missing-glass-effect-cards.md"
 - truth: "Keyboard glass keys, animated mic button without layout shift, visible FullAccessBanner, deep link to Dictus keyboard settings"
-  status: failed
+  status: resolved
   reason: "User reported: Tapping mic shifts everything up — cancel/validate buttons at top left/right get clipped. Keyboard overall too short compared to standard iOS keyboard, keys too small. FullAccessBanner barely visible (too small/compressed). Banner 'Activer' link opens iOS Settings app instead of opening Dictus app directly (ideally deep-link to keyboard settings for full access toggle)."
   severity: major
   test: 8
@@ -134,7 +134,7 @@ skipped: 0
     - "Change 'app-settings:' to 'dictus://settings' URL"
   debug_session: ".planning/debug/keyboard-uat-8-9-10.md"
 - truth: "Keyboard recording overlay waveform is large, reactive, and visually impressive"
-  status: failed
+  status: resolved
   reason: "User reported: Works but same layout shift bug as test 8 (buttons clipped at top). Waveform too small — not tall enough, not reactive enough to audio, should be wider (nearly full keyboard width) and more impressive/dynamic."
   severity: minor
   test: 9
@@ -151,7 +151,7 @@ skipped: 0
     - "Remove @ScaledMetric from barWidth"
   debug_session: ".planning/debug/keyboard-uat-8-9-10.md"
 - truth: "Keyboard key labels scale appropriately with Dynamic Type without overflow"
-  status: failed
+  status: resolved
   reason: "User reported: Key labels scale way too much with Dynamic Type — at max size letters are huge and overflow. Standard iOS keyboard does NOT scale key labels with Dynamic Type. Our keyboard should match that behavior — key letter sizes should be fixed like the native keyboard."
   severity: major
   test: 10
