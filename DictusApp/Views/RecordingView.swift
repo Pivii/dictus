@@ -76,9 +76,7 @@ struct RecordingView: View {
     /// Shows a progress indicator while WhisperKit processes the audio.
     private var transcribingContent: some View {
         VStack(spacing: 24) {
-            ProgressView()
-                .scaleEffect(2)
-                .progressViewStyle(CircularProgressViewStyle(tint: .dictusAccent))
+            ProcessingAnimation(height: 64)
 
             Text("Transcription en cours...")
                 .font(.dictusSubheading)

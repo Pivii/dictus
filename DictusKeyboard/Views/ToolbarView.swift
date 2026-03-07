@@ -48,27 +48,5 @@ struct ToolbarView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
-        .background(toolbarBackground)
-    }
-
-    /// Toolbar background: glass bar on iOS 26, separator line on older versions.
-    ///
-    /// WHY conditional glass:
-    /// On iOS 26, the glass bar blends with the native keyboard chrome for a cohesive look.
-    /// On older iOS versions, a simple separator line is more appropriate since there's
-    /// no glass design language to match.
-    @ViewBuilder
-    private var toolbarBackground: some View {
-        if #available(iOS 26, *) {
-            Color.clear
-                .dictusGlassBar()
-        } else {
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(Color(.separator).opacity(0.3))
-                    .frame(height: 0.5)
-            }
-        }
     }
 }

@@ -38,7 +38,7 @@ struct ModelDownloadPage: View {
             // Title
             Text("Telecharger un modele")
                 .font(.dictusHeading)
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
                 .padding(.bottom, 24)
 
             // Model card
@@ -56,7 +56,7 @@ struct ModelDownloadPage: View {
 
                     Text("\(Int(progress * 100))%")
                         .font(.dictusCaption)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 16)
             }
@@ -68,7 +68,7 @@ struct ModelDownloadPage: View {
                         .tint(.dictusAccent)
                     Text("Preparation du modele...")
                         .font(.dictusCaption)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 16)
             }
@@ -90,7 +90,7 @@ struct ModelDownloadPage: View {
                 Button(action: onNext) {
                     Text("Continuer")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -105,7 +105,7 @@ struct ModelDownloadPage: View {
                     Button(action: startDownload) {
                         Text("Telecharger")
                             .font(.dictusSubheading)
-                            .foregroundColor(.white)
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(
@@ -135,16 +135,16 @@ struct ModelDownloadPage: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Whisper Small")
                 .font(.dictusSubheading)
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
 
             HStack(spacing: 16) {
                 Label("~500 Mo", systemImage: "internaldrive")
                     .font(.dictusCaption)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
 
                 Label("Bonne precision", systemImage: "waveform")
                     .font(.dictusCaption)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
             }
 
             Text("Recommande pour la plupart des appareils")

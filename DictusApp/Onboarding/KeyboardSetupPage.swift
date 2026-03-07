@@ -35,7 +35,7 @@ struct KeyboardSetupPage: View {
                 // Title
                 Text("Ajouter le clavier")
                     .font(.dictusHeading)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 32)
 
                 // Instruction block 1: Add keyboard
@@ -67,7 +67,7 @@ struct KeyboardSetupPage: View {
                 Button(action: onNext) {
                     Text(keyboardDetected ? "Continuer" : "J'ai ajoute le clavier")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -100,19 +100,19 @@ struct KeyboardSetupPage: View {
             // Step number circle
             Text(number)
                 .font(.system(.title3, design: .rounded, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Color.dictusAccent.opacity(0.3)))
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
                     .font(.dictusBody)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.primary)
 
                 if let subtitle {
                     Text(subtitle)
                         .font(.dictusCaption)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundStyle(.secondary)
                 }
 
                 if let buttonTitle, let action {

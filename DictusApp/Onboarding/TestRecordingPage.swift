@@ -36,13 +36,13 @@ struct TestRecordingPage: View {
             // Title
             Text("Testez la dictee")
                 .font(.dictusHeading)
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
                 .padding(.bottom, 12)
 
             // Prompt
             Text(promptText)
                 .font(.dictusBody)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
                 .padding(.bottom, 32)
@@ -64,7 +64,7 @@ struct TestRecordingPage: View {
 
                 Text(formattedDuration)
                     .font(.dictusCaption)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
 
             } else if coordinator.status == .transcribing {
                 // Transcribing indicator
@@ -73,14 +73,14 @@ struct TestRecordingPage: View {
                         .tint(.dictusAccent)
                     Text("Transcription en cours...")
                         .font(.dictusCaption)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.secondary)
                 }
 
             } else if let result = transcriptionResult {
                 // Show transcription result
                 Text(result)
                     .font(.dictusBody)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.primary)
                     .padding(16)
                     .frame(maxWidth: .infinity)
                     .dictusGlass()
@@ -114,7 +114,7 @@ struct TestRecordingPage: View {
                 }) {
                     Text("Reessayer")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -132,7 +132,7 @@ struct TestRecordingPage: View {
                 }) {
                     Text("Terminer")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(

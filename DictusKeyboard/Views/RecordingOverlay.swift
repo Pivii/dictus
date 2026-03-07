@@ -81,8 +81,8 @@ struct RecordingOverlay: View {
             // WHY BrandWaveform instead of 30-bar KeyboardWaveformView:
             // Unifies the visual language between app and keyboard extension.
             // The 3-bar waveform matches the Dictus logo proportions.
-            BrandWaveform(energyLevels: waveformEnergy, maxHeight: 60)
-                .padding(.horizontal, 20)
+            BrandWaveform(energyLevels: waveformEnergy, maxHeight: 100)
+                .padding(.horizontal, 8)
 
             // Timer in MM:SS format -- monospaced for digit alignment
             Text(formattedTime)
@@ -104,13 +104,11 @@ struct RecordingOverlay: View {
         VStack(spacing: 16) {
             Spacer()
 
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: foregroundColor))
-                .scaleEffect(1.2)
+            ProcessingAnimation(height: 40)
 
-            Text("Processing...")
-                .font(.dictusBody)
-                .foregroundColor(foregroundColor)
+            Text("Transcription...")
+                .font(.dictusCaption)
+                .foregroundColor(secondaryForeground)
 
             Spacer()
         }

@@ -29,13 +29,13 @@ struct MicPermissionPage: View {
             // Title
             Text("Microphone")
                 .font(.dictusHeading)
-                .foregroundColor(.white)
+                .foregroundStyle(.primary)
                 .padding(.bottom, 16)
 
             // Explanation
             Text("Dictus a besoin du microphone pour transcrire votre voix. Vos enregistrements restent sur votre appareil.")
                 .font(.dictusBody)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
@@ -64,7 +64,7 @@ struct MicPermissionPage: View {
                 Button(action: requestPermission) {
                     Text("Autoriser le micro")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
@@ -80,7 +80,7 @@ struct MicPermissionPage: View {
                 Button(action: onNext) {
                     Text("Continuer")
                         .font(.dictusSubheading)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(
