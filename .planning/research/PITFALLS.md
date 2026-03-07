@@ -1,353 +1,340 @@
-# Pitfalls Research
+# Domain Pitfalls
 
-*Research date: 2026-03-04*
+**Domain:** iOS keyboard extension — v1.1 feature additions (text prediction, spacebar trackpad, cold start auto-return, emoji picker, model catalog update)
+**Researched:** 2026-03-07
+**Context:** Existing v1.0 shipped with AZERTY/QWERTY layouts, long-press accent popup, recording overlay, two-process architecture (keyboard + app via Darwin notifications), WhisperKit STT in app process. 50MB extension memory limit. 6 design files duplicated between DictusApp and DictusKeyboard.
 
 ---
 
 ## Critical Pitfalls
 
-These are show-stoppers that can kill the project if not addressed early.
+Mistakes that cause rewrites, App Review rejections, or ship-blocking issues.
 
 ---
 
-### 1. Microphone Access Is Blocked in Keyboard Extensions by Default
+### Pitfall 1: Spacebar Trackpad Gesture Conflicts with Existing Long-Press Accent System
 
-**The pitfall:** iOS keyboard extensions cannot access the microphone by default. The restriction has been in place since iOS 8. Even with `RequestsOpenAccess = true` in `Info.plist` and the user granting Full Access in Settings, audio recording via `AVAudioEngine` or `AVAudioRecorder` frequently fails with error code `561145187` (`kAudioSessionIncompatibleCategory`). Apple's documentation is misleading — it lists microphone as a capability unlocked by Full Access, but the sandbox enforcement at the OS level is inconsistent and device-dependent.
+**What goes wrong:** The spacebar trackpad (long-press spacebar to enter cursor movement mode) uses the same gesture primitive as the existing accent popup system: `DragGesture(minimumDistance: 0)` with a timer-based long-press detection. Both features rely on detecting a hold gesture followed by horizontal drag. When both are active, SwiftUI's gesture resolution becomes unpredictable. Specifically:
 
-**Evidence:** Multiple Apple Developer Forums threads confirm that enabling `RequestsOpenAccess` is necessary but not sufficient. Developers report that `AVAudioSession.sharedInstance().requestRecordPermission` succeeds (returns `true`) but then `AVAudioEngine.start()` still fails. The error is `com.apple.coreaudio.avfaudio Code=561145187` with the call failing at `kAUStartIO`.
+- The spacebar's long-press must transition the entire keyboard into "trackpad mode" (all keys become a touch surface for cursor movement, letters disappear)
+- But the accent popup system expects per-key DragGesture ownership to track which accent the finger hovers over
+- If the user long-presses the spacebar and then drags upward into the letter rows, the system cannot determine if the user wants trackpad cursor movement or accidentally triggered an accent popup on a letter key above
 
-**Warning signs:**
-- Testing only in the Simulator (audio always works there; the Simulator does not enforce extension sandboxing)
-- Assuming Full Access == microphone access because Apple's docs imply it
-- No error handling around `AVAudioEngine.start()`
+The current `KeyButton.swift` uses a `DragGesture(minimumDistance: 0)` per key with a 400ms timer. The spacebar trackpad needs a single DragGesture across the entire keyboard area after spacebar long-press. These two gesture systems will fight each other.
 
-**Prevention strategy:**
-- Treat microphone recording as a privileged feature that may fail even when permissions appear granted
-- Wrap all audio session setup in `do/catch` and display a clear degraded-mode UI
-- Test exclusively on physical devices from day one, not the Simulator
-- Architecture: record audio in the containing app (main app target), not the extension. The keyboard extension triggers a deep link or IPC message to the main app, which records the audio and writes the result to the App Group shared container. The extension then reads the transcript. This is the only fully reliable pattern.
-- If in-extension recording is attempted: configure `AVAudioSession` with `.record` category before calling `requestRecordPermission`, and add `NSMicrophoneUsageDescription` in **both** the main app `Info.plist` and the extension's `Info.plist`
+**Why it happens:** Apple's stock keyboard handles this at the UIKit level with gesture recognizer priority and exclusive touch handling. SwiftUI does not expose gesture recognizer priority or `require(toFail:)` relationships between gestures on different views. The two gesture systems are architecturally incompatible as currently designed.
 
-**Phase:** Architecture (Phase 0 / Sprint 0). Choosing between in-extension and main-app recording is a foundational architectural decision that cannot be changed cheaply later.
+**Consequences:** Trackpad mode activates when user wants accents, or accents appear when user wants trackpad. Both features feel broken. Users lose trust in the keyboard.
 
----
+**Prevention:**
+1. Trackpad mode must be a **keyboard-level state**, not a per-key gesture. When spacebar long-press is detected, set `KeyboardState.isTrackpadMode = true` and overlay a transparent gesture capture view on top of all keys
+2. While in trackpad mode, all per-key DragGestures are disabled (don't render KeyButton gesture at all when `isTrackpadMode`)
+3. Use `adjustTextPosition(byCharacterOffset:)` on `textDocumentProxy` for cursor movement — this is the official API. Map horizontal drag delta to character offset: ~10pt per character works well
+4. Exit trackpad mode on finger lift (DragGesture.onEnded)
+5. Add haptic feedback (light impact) per cursor step to match Apple's stock behavior
+6. Test the transition: long-press spacebar -> drag up into letter area -> release. This must NOT trigger any letter key or accent popup
 
-### 2. Memory Limit Is ~30MB, Not 50MB — WhisperKit's Tiny Model May Not Fit
+**Detection:** User reports of "wrong letter inserted when trying to move cursor" or "cursor moves when trying to type accents on E"
 
-**The pitfall:** The PROJECT.md states the memory limit is "~50MB." Empirical evidence from developer forums and crash reports puts the actual jetsam kill threshold for keyboard extensions at **~30MB on most devices**, not 50MB. The limit is not publicly documented by Apple and varies by device RAM and OS version. It is enforced by jetsam (the iOS OOM killer) and the extension process is terminated without warning when it is exceeded.
-
-WhisperKit's models (even the smallest) carry significant memory overhead when loaded:
-- `openai_whisper-tiny`: ~40–60MB resident memory once loaded into Core ML (the on-disk `.mlmodelc` package is smaller, but Core ML expands it in memory during compilation and inference)
-- `openai_whisper-small`: well above the limit for any extension
-- Core ML model compilation at first launch adds a **temporary spike** of 1.5–2x the model's resident size
-
-Loading even the tiny model inside the keyboard extension process is likely to cause a jetsam termination on devices with 3–4GB RAM or less.
-
-**Warning signs:**
-- The app works fine in the Simulator but crashes silently on device
-- Crashes appear in device logs as `jetsam` events with no stack trace
-- Memory profiling shows a spike when WhisperKit loads that exceeds 30MB
-- First launch after install always crashes (Core ML compilation spike)
-
-**Prevention strategy:**
-- Do not instantiate `WhisperKit` inside the keyboard extension process at all
-- Run all inference in the containing app (main app target) and share results via App Group
-- If in-extension inference is non-negotiable: use `ModelComputeOptions` to restrict to Neural Engine only (smallest memory footprint), lazy-load the model only when dictation is explicitly requested, and release it immediately after transcription (`whisperKit = nil`)
-- Pre-compile Core ML models in the main app on first launch so the extension never incurs compilation overhead
-- Track memory with Xcode Instruments `Allocations` and `VM Tracker` on an iPhone 12 (4GB RAM) — the lowest-end A14 target
-- Set a conservative internal budget of 25MB total extension memory (all code, heap, stack, assets)
-
-**Phase:** Architecture (Phase 0). Determines whether inference runs in-extension or via IPC to main app.
+**Phase:** Must be the FIRST keyboard feature implemented in v1.1 — it changes the gesture architecture for all keys.
 
 ---
 
-### 3. The Extension Cannot Use `UIApplication.shared` — Crashes at Runtime
+### Pitfall 2: Text Prediction Blows the 50MB Memory Budget
 
-**The pitfall:** `UIApplication.shared` is unavailable in app extensions and calling it crashes the process with `EXC_BAD_INSTRUCTION`. This is enforced at the linker/runtime level. Many SwiftUI and UIKit APIs call into `UIApplication.shared` internally, including:
-- `UIApplication.shared.open(_:)` (deep links)
-- `UIPasteboard.general` (when not in an extension context)
-- Some `UIScene` APIs
-- Haptic feedback APIs (`UIImpactFeedbackGenerator` sometimes works, sometimes not)
+**What goes wrong:** A French text prediction system (autocorrect + suggestion bar) requires at minimum:
+- A French dictionary/word frequency model: 5-15MB depending on coverage
+- N-gram or trie data structure for prefix matching: 8-20MB resident
+- UITextChecker (Apple's built-in) is essentially free on memory but has poor French support and no word frequency ranking
+- Any ML-based prediction model (even a small one): 15-50MB
 
-Third-party dependencies (analytics SDKs, crash reporters, logging frameworks) often call `UIApplication.shared` and will crash the extension.
+The keyboard extension is already consuming memory for: SwiftUI view hierarchy (~8-10MB), DictusCore framework, Darwin notification observers, keyboard layout data, and the accent character mapping. Realistic baseline is ~15-20MB before any prediction engine loads. Adding even a modest prediction system pushes total memory toward or past the ~30-40MB jetsam kill threshold.
 
-**Warning signs:**
-- Any SPM dependency that is not explicitly extension-safe
-- Using `UIApplication.shared.open()` to redirect users to Settings or the main app
-- Initializing analytics/tracking in the extension target
+**Why it happens:** Developers underestimate the resident memory of dictionary/trie structures because they see small on-disk sizes. A compressed dictionary might be 3MB on disk but expand to 15MB when loaded into a trie for fast prefix lookup. Additionally, the suggestion bar itself (3 UILabel/Text views that update on every keystroke) triggers frequent SwiftUI re-renders that add to heap pressure.
 
-**Prevention strategy:**
-- Enable `EXTENSION_SAFE_API_ONLY = YES` in the extension target's build settings — Xcode will emit a compile-time error for forbidden APIs
-- Audit every SPM dependency: check if it declares `APPLICATION_EXTENSION_API_ONLY` support or explicitly states extension compatibility
-- To open URLs from the extension (e.g., to navigate to Settings), use `self.extensionContext?.open(url, completionHandler: nil)` — not `UIApplication.shared.open()`
-- Do not link analytics, crash reporters, or logging SDKs into the keyboard extension target
+**Consequences:** Extension gets killed by jetsam mid-typing. iOS replaces Dictus with the stock keyboard without warning. User loses their current text input context. This happens more on older devices (iPhone 12, 4GB RAM) where the threshold is lower.
 
-**Phase:** Project setup (Sprint 1). Enable `EXTENSION_SAFE_API_ONLY` before writing any extension code.
+**Prevention:**
+1. Start with `UITextChecker` only — it is built into iOS, costs zero additional memory, supports French (`"fr"` language code), and provides spelling corrections via `guesses(forWordRange:in:language:)` and completions via `completions(forPartialWordRange:in:language:)`
+2. UITextChecker limitations for French: no word frequency ranking (suggestions are alphabetical), no contextual prediction (doesn't know "je" should be followed by "suis"), no accented character suggestions based on context
+3. If UITextChecker is insufficient, use a **compact frequency-based approach**: ship a pre-sorted top-10K French words file (~200KB), load it lazily, and do prefix matching in a sorted array with binary search. This adds <1MB resident memory
+4. Do NOT ship a full French dictionary (300K+ words) in the extension. If needed, keep it in the app and query via App Group file reads
+5. Profile memory after adding prediction: `Instruments > Allocations > mark generation before/after prediction init`
+6. Set a hard budget: prediction system must use <5MB resident memory total
 
----
+**Detection:** Extension crashes increase on iPhone 12/13 mini. Jetsam events in device logs. Users report "keyboard disappears randomly while typing."
 
-### 4. Full Access Is Not Granted by Default — Users Must Manually Enable It
-
-**The pitfall:** After installing the keyboard and enabling it in Settings > General > Keyboard > Keyboards, the user must *separately* navigate to Settings > General > Keyboard > Keyboards > Dictus > Allow Full Access and toggle it on. Most users will not do this. Without Full Access:
-- No network access from the extension
-- No App Group shared container writes (reads still work)
-- Microphone access is unavailable
-- The keyboard cannot communicate results back to the main app via shared UserDefaults
-
-A keyboard that silently fails because Full Access is off will confuse users and generate negative reviews.
-
-**Warning signs:**
-- Testing with a development provisioning profile (Full Access is easier to grant during dev)
-- Not detecting Full Access state in the extension
-- UI that shows the dictation button even when Full Access is off
-
-**Prevention strategy:**
-- Detect Full Access state using `UIPasteboard` access as a proxy: `UIPasteboard.general.hasStrings` will throw if Full Access is not granted
-- Alternatively, check App Group container accessibility: attempt to read from `FileManager.default.containerURL(forSecurityApplicationGroupIdentifier:)` — returns `nil` without Full Access
-- Show a prominent non-dismissible banner when Full Access is off: "Dictation requires Full Access. Tap here to enable it." with a deep link to the Settings page
-- Include a dedicated onboarding step in the main app for Full Access setup with visual instructions
-- The dictation button must be visually disabled (greyed out) when Full Access is off, not silently non-functional
-
-**Phase:** Onboarding flow (Sprint 2).
+**Phase:** Text prediction should be implemented AFTER trackpad and emoji, once the memory baseline is known. It has the highest memory risk.
 
 ---
 
-## Common Mistakes
+### Pitfall 3: Emoji Picker Memory Is Unrecoverable
 
-Frequent errors that waste significant development time.
+**What goes wrong:** iOS renders emoji as bitmap glyphs, and these bitmaps are cached in memory by the system font rendering pipeline. The critical issue: **after destroying a view that displays emoji, the emoji glyph cache is NOT released**. iOS keeps this cache for the lifetime of the process. In a normal app this is fine (plenty of memory), but in a keyboard extension with a ~40MB budget, rendering even 100-200 emoji can consume 5-15MB of cache that never comes back.
 
----
+A full emoji picker showing all Unicode 15.1 emoji (~3,700+ emoji) will consume far more memory than the extension can afford. The picker will work the first time, but each category switch loads more emoji bitmaps into the permanent cache. After browsing 3-4 categories, the extension hits jetsam and dies.
 
-### 5. SwiftUI in Keyboard Extensions: Height and Layout Failures
+**Why it happens:** The emoji glyph cache is managed by CoreText/CoreGraphics at the system level, not by the app. There is no API to flush this cache. Setting the view to `nil`, removing it from the hierarchy, or calling `removeFromSuperview()` does not release the cached glyphs.
 
-**The pitfall:** Keyboard extensions must set their own height via constraints on `inputView` or `inputViewController.view`. SwiftUI's `UIHostingController` does not automatically communicate its `intrinsicContentSize` to the hosting UIKit layer in all iOS versions. The keyboard can appear with 0 height, incorrect height, or flicker between heights.
+**Consequences:** First use of emoji picker works. After browsing several categories, the keyboard crashes and iOS replaces it with the stock keyboard. This is not reproducible in the Simulator (which has much higher memory limits).
 
-Specific issues:
-- `UIHostingController` does not update its view's intrinsic content size automatically when the SwiftUI view's content changes (fixed in iOS 16 with `.intrinsicContentSize` sizing option, but requires explicit opt-in)
-- SwiftUI's `ignoresSafeArea(.keyboard)` modifier interacts badly inside an extension because the extension IS the keyboard — safe area semantics are inverted
-- Using `@State` with large state objects can trigger excessive re-renders that cause layout thrashing
+**Prevention:**
+1. Do NOT build a full-category emoji picker inside the extension. Instead, show only a **single row of recent/frequent emoji** (8-12 emoji max) directly in the keyboard toolbar
+2. For the full picker, open it as a **scrolling grid that renders only visible cells** — use SwiftUI `LazyVGrid` so off-screen emoji views are destroyed. However, note that the glyph cache still accumulates
+3. Hard limit: never render more than ~50-80 unique emoji glyphs in a single session. After that threshold, the extension is at risk
+4. Consider a "search-first" emoji design: user types emoji name, show 5-8 matching results. This avoids rendering hundreds of glyphs
+5. Pre-populate the "recent emoji" row from the main app (store in App Group UserDefaults) so the extension never needs to show the full picker
+6. Profile with `Instruments > VM Tracker` on an iPhone 12 — track dirty memory specifically, as the emoji cache shows up there
 
-**Warning signs:**
-- The keyboard view appears blank or too tall/short after the first render
-- Layout constraint conflict warnings in the console
-- SwiftUI preview works but the extension does not render correctly on device
+**Detection:** Memory grows monotonically during emoji browsing and never decreases. Extension crashes after extended emoji picker use.
 
-**Prevention strategy:**
-- Set keyboard height explicitly via a `NSLayoutConstraint` on `inputViewController.view.heightAnchor` in `viewDidAppear`, not `viewDidLoad`
-- On iOS 16+, use `UIHostingController(rootView:)` followed by `hostingController.sizingOptions = .intrinsicContentSize`
-- On iOS 15, manually call `hostingController.view.invalidateIntrinsicContentSize()` whenever SwiftUI content changes
-- Use a thin `UIKit` wrapper (`KeyboardViewController`) as the root and host SwiftUI views as children — do not attempt to make `UIInputViewController` itself a pure SwiftUI entry point
-- Avoid `ignoresSafeArea` modifiers in keyboard views; set height explicitly instead
-
-**Phase:** Sprint 1 (keyboard scaffold setup).
+**Phase:** Emoji button should replace the duplicate globe key with a simple recent-emoji row, NOT a full category picker. Full picker is out of scope for v1.1 given memory constraints.
 
 ---
 
-### 6. `textDocumentProxy` Is Unreliable for Reading Context
+### Pitfall 4: Cold Start Auto-Return Has No Public API Solution
 
-**The pitfall:** `textDocumentProxy.documentContextBeforeInput` returns at most ~300 characters before the cursor. It returns `nil` in:
-- Password fields
-- Secure text entry fields
-- Some web views (`WKWebView`)
-- Immediately after `insertText()` (proxy state is stale for one run loop cycle)
+**What goes wrong:** When the app is not running (cold start), the keyboard must open the app via URL scheme to start recording. The app launches, records, transcribes — but there is NO public iOS API to programmatically return the user to the previous app. The user is stranded in the Dictus app and must manually swipe back or tap the status bar "< Back" arrow.
 
-After calling `insertText()` to place a transcription, the proxy's context does not update synchronously. Reading it immediately after insertion gives you the pre-insertion text.
+Competitors like Wispr Flow handle this, but the technique is not publicly documented. Research into the Swift Forums and Apple Developer Forums reveals:
+- `suspend()` on UIApplication goes to home screen, not the previous app
+- `x-callback-url` requires cooperation from the host app (Messages, WhatsApp, etc. don't support it)
+- Private APIs like `_hostBundleID` and `LSApplicationWorkspace` are blocked in iOS 18+
+- Wispr Flow's approach appears to involve "Flow Sessions" where the app opens and immediately returns, but the exact mechanism is unclear
 
-Additionally, `adjustTextPosition(byCharacterOffset:)` can move the cursor unexpectedly in some editors.
+**Why it happens:** Apple intentionally restricts apps from controlling navigation flow between apps. This is a security/UX design decision. The "< Back to [previous app]" arrow in the status bar is an iOS system feature that apps cannot programmatically trigger.
 
-**Warning signs:**
-- Assuming the context always reflects the current document state
-- Reading `documentContextBeforeInput` immediately after `insertText()`
-- Testing only in `UITextField` (which is the most reliable host — real apps use `UITextView`, `WKWebView`, etc.)
+**Consequences:** Cold start requires 2 taps (1st opens app, 2nd starts recording from keyboard after manually returning). This is the worst UX issue in v1.0 and the top priority for v1.1, but it may not be fully solvable without reverse-engineering competitor approaches.
 
-**Prevention strategy:**
-- Always guard for `nil` on `documentContextBeforeInput` and `documentContextAfterInput`
-- After `insertText()`, wait one run loop (`DispatchQueue.main.async`) before reading context again
-- Test with: UITextField, UITextView, Safari web view, Notes, Messages, Mail, WhatsApp — they each have different proxy behaviors
-- Never attempt to "read back" inserted text via the proxy to confirm success — use your own state instead
-- For the undo feature: track what was inserted in a local variable; do not rely on the proxy to tell you what to delete
+**Prevention:**
+1. **Minimize cold starts**: Keep the app alive as long as possible using `UIBackgroundModes: audio` (already implemented). Configure the audio session to maintain background execution even when not recording — play a silent audio loop if needed
+2. **Speed up the cold start flow**: If the app must open, make it transcription-ready in <1 second. Pre-load WhisperKit at app launch, pre-warm the audio engine. The faster the round-trip, the less painful the UX
+3. **Auto-start recording on URL scheme launch**: When opened via `dictus://dictate`, skip any UI and immediately start recording + show a minimal overlay with "Recording... Tap to stop". Auto-stop after silence detection
+4. **Research Wispr Flow's exact technique**: Install Wispr Flow, use `Console.app` to monitor its system calls during cold start. Check if it uses `NSUserActivity` continuation, Handoff, or another system API
+5. **Consider PiP (Picture-in-Picture) as a workaround**: A small floating recording indicator via PiP might keep the app "present" while the user returns to their previous app. This is a stretch but worth investigating
+6. **Accept the limitation for v1.1**: Document the cold start behavior clearly in onboarding ("First tap opens Dictus, then tap the mic again"). Focus engineering effort on preventing cold starts rather than solving the auto-return
 
-**Phase:** Sprint 2 (text insertion and dictation flow).
+**Detection:** Users complain about "needing to tap twice" or "being stuck in the Dictus app after recording."
 
----
-
-### 7. WhisperKit First-Load Cold Start and Core ML Compilation
-
-**The pitfall:** When WhisperKit loads a model for the first time on a new device or after an OS update, Core ML must compile the `.mlpackage` → `.mlmodelc` on the device. This takes **10–60 seconds** on older A-series chips and consumes significantly more memory during compilation than during inference. If this happens inside the extension, the jetsam killer will terminate the process.
-
-Additionally, if the model download is interrupted, the resulting `.mlmodelc` file is corrupted. About 20% of WhisperKit users hit this issue (per GitHub Issue #171). The corrupted file causes `prewarmModels()` to throw: `coremldata.bin is not a valid .mlmodelc file`.
-
-**Warning signs:**
-- Model download happens inside the extension
-- No integrity check on the downloaded model files before loading
-- Using `WhisperKit(prewarm: true)` in the extension (will spike memory during compilation)
-
-**Prevention strategy:**
-- All model downloading and Core ML compilation must happen in the **main app target**, never in the extension
-- After download completes in the main app, call `try await WhisperKit.prewarmModels()` there to trigger compilation, then write a `modelReady: true` flag to the App Group `UserDefaults`
-- The extension reads this flag before attempting to use the model
-- On load, verify model integrity: check that `audioEncoder.mlmodelc`, `textDecoder.mlmodelc`, and `melspectrogram.mlmodelc` directories are non-empty and contain `model.mil`
-- If corruption is detected, delete the model folder and prompt the user to re-download from the main app
-- Use `WhisperKitConfig(modelFolder: sharedContainerPath)` to point the extension at the App Group model location
-
-**Phase:** Sprint 3 (model manager and onboarding).
+**Phase:** Research spike at the START of v1.1 (1-2 days max). Either find a working technique or accept the limitation and optimize the cold start speed instead.
 
 ---
 
-### 8. App Group Configuration Mismatch Between Targets
+## Moderate Pitfalls
 
-**The pitfall:** Both the main app target and the keyboard extension target must have identical App Group identifiers in their entitlements **and** both must be backed by the same provisioning profile that includes the `com.apple.security.application-groups` capability. If either target's profile is out of sync, the shared container returns `nil` at runtime — no error, just `nil`. This is the most common silent failure in keyboard extension development.
-
-Common triggers:
-- Adding the App Group in Xcode for the app target but forgetting to add it to the extension target
-- Regenerating provisioning profiles without re-adding the App Group
-- Using automatic signing for one target and manual for the other
-- Build configurations (Debug vs Release) using different provisioning profiles where only one has the App Group
-
-**Warning signs:**
-- `FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.pivi.dictus")` returns `nil`
-- `UserDefaults(suiteName: "group.com.pivi.dictus")` returns a non-nil object but writes do not persist between app and extension (because each target is using its own sandbox)
-- Everything works in Simulator but fails on device
-
-**Prevention strategy:**
-- On the Apple Developer portal, create the App Group `group.com.pivi.dictus` and explicitly add it to BOTH App IDs (`com.pivi.dictus` and `com.pivi.dictus.keyboard`)
-- Download fresh provisioning profiles for both targets after any capability change
-- Write a diagnostic function that checks App Group access on launch of both targets: log whether `containerURL` is non-nil
-- Use **consistent signing mode** (both automatic or both manual) across targets
-- In CI/CD, regenerate profiles after any entitlement change
-
-**Phase:** Sprint 1 (project setup and extension skeleton).
+Issues that cause significant rework or degraded UX.
 
 ---
 
-### 9. WhisperKit Memory Leak When Re-Instantiating
+### Pitfall 5: UITextChecker French Suggestions Are Poor Quality
 
-**The pitfall:** WhisperKit leaks memory when destroyed and re-created (e.g., if the extension tries to load/unload the model between sessions). Issue #265 confirmed this on macOS; the underlying cause is Core ML backend resource retention that the OS does not always reclaim when the Swift object is deallocated. On iOS the behavior is similar — `whisperKit = nil` does not guarantee that Core ML has freed its GPU/ANE buffers.
+**What goes wrong:** UITextChecker uses Apple's built-in dictionary infrastructure. While it supports French (`"fr"` language parameter), the quality of suggestions is significantly worse than Apple's stock keyboard prediction because:
+- UITextChecker only does spell-checking (is this word misspelled?) and basic completions (prefix matching). It does NOT do contextual prediction ("after 'je', suggest 'suis', 'vais', 'peux'")
+- Suggestions are alphabetically ordered, not frequency-ordered. For the prefix "con", it returns "conaissance" before "contacter" even though "contacter" is far more common
+- French accentuation errors are handled inconsistently: "ecole" might not suggest "ecole" (missing accent) depending on the iOS version
+- No n-gram or language model — each word is evaluated independently
 
-**Warning signs:**
-- Memory grows each time the user activates/deactivates dictation
-- Memory does not return to baseline after `whisperKit = nil`
+Developers who prototype with UITextChecker and show it to testers get feedback like "the suggestions are useless" because users compare it to Apple's built-in keyboard which has a full neural language model.
 
-**Prevention strategy:**
-- Load the WhisperKit instance **once** and keep it alive for the lifetime of the session
-- If memory pressure forces unloading, call `try await whisperKit.unloadModels()` before setting to `nil`
-- Use `ModelComputeOptions(audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndNeuralEngine)` — the Neural Engine path has fewer memory retention issues than GPU
-- Profile with Instruments > VM Tracker across multiple dictation cycles before shipping
+**Prevention:**
+1. Set expectations: UITextChecker is a v1.1 starting point, not the final solution. It is "free" in terms of memory and implementation time
+2. Supplement with a hand-curated top-1000 French words list sorted by frequency. When UITextChecker returns suggestions, re-rank them against this frequency list
+3. For accented character suggestions specifically (the v1.1 feature "accented character suggestions in suggestion bar"): build a simple rule-based system. After typing "e", show "e", "e", "e", "e" in the suggestion bar based on the preceding consonant pattern. This does not require UITextChecker at all
+4. Do NOT build a custom language model for v1.1. Defer ML-based prediction to v1.2 when it can be researched properly
+5. Label the feature as "Spelling suggestions" not "Predictive text" to set correct user expectations
 
-**Phase:** Sprint 3 (dictation engine integration).
-
----
-
-## App Store Review Risks
-
-Things that have caused keyboard extensions to be rejected or flagged.
+**Phase:** Implement after spacebar trackpad and emoji row. Use UITextChecker as the base, add frequency re-ranking and accent rules on top.
 
 ---
 
-### 10. Privacy Usage Descriptions Are Insufficient or Missing
+### Pitfall 6: Adding Non-Whisper STT Models Breaks the Two-Process Architecture
 
-**Risk:** Apple will reject the submission if `NSMicrophoneUsageDescription` is present in `Info.plist` but the description is vague ("This app uses the microphone") or does not clearly explain the specific use case. In 2024–2025, Apple has tightened this requirement significantly.
+**What goes wrong:** The v1.1 scope includes "Model catalog update (remove weak models, research Parakeet v3+)." Adding NVIDIA Parakeet alongside WhisperKit introduces several integration risks:
 
-Required in **both** targets (main app and extension) if microphone is used in either:
-- `NSMicrophoneUsageDescription` — must explain dictation purpose in plain user-facing language
-- If recording happens in-extension: the extension's `Info.plist` must also have this key
+- **Different APIs**: WhisperKit has a specific Swift API (`WhisperKit.transcribe()`). Parakeet models via FluidAudio/CoreML have a completely different interface. The `TranscriptionService` and `AudioRecorder` would need an abstraction layer
+- **Different model formats**: WhisperKit uses its own `.mlmodelc` packaging with specific encoder/decoder structure. Parakeet CoreML models from HuggingFace (FluidInference/parakeet-tdt-0.6b-v2-coreml) use a different architecture (TDT = Token-and-Duration Transducer, not encoder-decoder)
+- **Different audio preprocessing**: Whisper expects 16kHz 80-channel mel spectrogram. Parakeet expects 16kHz 80-channel mel spectrogram but with different normalization. Sending Whisper-preprocessed audio to Parakeet produces garbage output
+- **Memory**: Parakeet 0.6B is 600M parameters — far too large for the current architecture. Even quantized to INT4, it would be ~300MB resident
 
-**Prevention strategy:**
-- Write descriptions that name the specific feature: "Dictus records your voice only when you tap the microphone button to transcribe speech to text. Your audio is processed entirely on your device and never sent to any server."
-- Include this text in the App Store review notes as well
-- Do not include `NSMicrophoneUsageDescription` in a target that does not actually request microphone access — reviewers check that declared permissions match actual API usage
+**Why it happens:** "Add Parakeet" sounds simple because both are "speech-to-text CoreML models." But the preprocessing, inference pipeline, and output format are completely different. This is not a model swap — it is a second complete STT pipeline.
 
----
+**Prevention:**
+1. For v1.1, limit scope to **curating the WhisperKit model catalog**: remove models with poor French accuracy (tiny.en, base.en), add better French-specific Whisper variants if available on the WhisperKit model hub
+2. Do NOT add Parakeet in v1.1. It requires: a new model loader, new audio preprocessor, new output parser, abstraction layer over TranscriptionService, and memory profiling of a much larger model
+3. If Parakeet is desired for v1.2+: design the `TranscriptionService` protocol NOW (in v1.1) with `protocol STTEngine { func transcribe(audioURL: URL) async throws -> String }` so WhisperKit and future engines conform to the same interface
+4. Research Parakeet v3 CoreML availability: as of March 2026, FluidInference has published `parakeet-tdt-0.6b-v2-coreml` on HuggingFace but it requires FluidAudio SDK — check licensing and iOS compatibility
 
-### 11. Requesting Full Access Without Adequate Justification
-
-**Risk:** Apple's App Review team scrutinizes `RequestsOpenAccess = true` because it gives the keyboard access to the clipboard and (potentially) keystrokes. If the review notes do not explain why Full Access is needed, the app may be rejected under Guideline 5.1.1 (Data Collection and Storage).
-
-**Prevention strategy:**
-- In the App Review Information notes field, explicitly state: "Full Access is required to share the transcribed text from the keyboard extension back to the main app via an App Group shared container, and to allow the keyboard to read microphone permission status."
-- The App Store description must not claim the app is "secure" or "private" without qualifying: on-device processing should be mentioned but not used as a marketing shield without technical accuracy
-- Do not request Full Access if the core keyboard functionality (typing) works without it — only dictation should require it
+**Phase:** Model catalog curation (removing weak models) is safe for v1.1. Parakeet integration is a v1.2 feature that needs its own research spike.
 
 ---
 
-### 12. Network Entitlement Without a Clear Explanation
+### Pitfall 7: Design File Duplication Worsens with Every v1.1 Feature
 
-**Risk:** `RequestsOpenAccess = true` enables network access from the extension. If the extension makes any network requests (e.g., for model download checks, analytics, or telemetry), App Review will scrutinize the privacy policy for whether this is disclosed. An extension that requests open access but makes undisclosed network calls is grounds for rejection under Guideline 5.1.2.
+**What goes wrong:** Six design files are currently duplicated between DictusApp and DictusKeyboard:
+- `GlassModifier.swift`
+- `DictusColors.swift`
+- `AnimatedMicButton.swift`
+- `DictusTypography.swift`
+- `ProcessingAnimation.swift`
+- `BrandWaveform.swift`
 
-**Prevention strategy:**
-- Keep all network access in the main app, not the extension
-- The extension should only use the shared container and local file system
-- If the extension must check for model updates, do this via the main app on foreground events, not from the extension at keyboard load time
+Every v1.1 feature that touches design (suggestion bar styling, emoji button, mic button redesign, waveform animation rework, recording overlay redesign) must be implemented in BOTH copies. Forgetting to sync one copy creates visual inconsistencies between the keyboard and the app.
 
----
+The v1.1 scope adds at least 3 new shared design components (suggestion bar, emoji row, new mic button shape). This will grow the duplicated file count from 6 to potentially 9.
 
-### 13. Missing Keyboard Functionality Without Full Access (Guideline 4.5.1)
+**Why it happens:** DictusKeyboard cannot import DictusApp code (they are separate targets). DictusCore is a Swift Package that cannot contain UIKit/SwiftUI views (it is a pure data/logic layer).
 
-**Risk:** Apple's Guideline 4.5.1 requires that custom keyboards provide a basic level of functionality (alphanumeric keyboard) without Full Access. A keyboard that shows nothing or is non-functional when Full Access is off will be rejected.
+**Prevention:**
+1. **Before starting v1.1 features**: Create a `DictusUI` Swift Package (or framework target) that contains all shared design files. Both DictusApp and DictusKeyboard import DictusUI
+2. DictusUI should contain: colors, typography, glass modifiers, animations, shared button styles, suggestion bar view
+3. DictusUI CAN use SwiftUI — Swift Packages support platform-specific code with `#if canImport(SwiftUI)`
+4. Move existing duplicated files into DictusUI first, verify both targets still build, THEN start implementing v1.1 features
+5. If creating a new target feels too heavy: at minimum, move shared design into DictusCore with `#if canImport(SwiftUI)` guards. DictusCore already compiles into both targets
 
-**Prevention strategy:**
-- AZERTY typing, delete, space, and return must work regardless of Full Access state
-- The microphone button should be visible but clearly disabled with an explanatory tooltip when Full Access is off
-- Do not gate basic text insertion on Full Access
+**Detection:** Visual differences between app and keyboard (different button radius, wrong color, missing animation). Bug reports like "the mic button looks different in the app vs the keyboard."
 
----
-
-### 14. Extension Crashes During App Review Testing
-
-**Risk:** App Review tests on a range of devices including older models. A keyboard extension that crashes due to memory pressure on an iPhone 12 (4GB RAM) with other apps open will be rejected as unstable.
-
-**Prevention strategy:**
-- Test on the oldest supported device in its worst-case state: multiple apps backgrounded, low storage, background app refresh active
-- Add `NSExceptionMaximumBytesForJetsamException` awareness — monitor memory in the extension and gracefully degrade before the OS kills the process
-- If WhisperKit is running in-extension, test with the profile attached to catch jetsam events before submission
+**Phase:** Must be done BEFORE any v1.1 design work. It is infrastructure that prevents compounding tech debt.
 
 ---
 
-## Prevention Strategies
+### Pitfall 8: adjustTextPosition(byCharacterOffset:) Behaves Inconsistently Across Apps
 
-Consolidated actionable steps organized by development phase.
+**What goes wrong:** The spacebar trackpad uses `textDocumentProxy.adjustTextPosition(byCharacterOffset:)` to move the cursor. This API works reliably in UITextField and UITextView but has inconsistent behavior in:
+- **WKWebView** text fields (Safari, web-based apps): cursor may not move, or moves by wrong amount
+- **Messages app**: works for single-line messages, behaves erratically in multi-line
+- **Some third-party apps** (Slack, Discord): may not respond to cursor adjustment at all
+- **Emoji characters**: adjusting by 1 character offset may skip emoji that use multiple Unicode code points (emoji with skin tones, flags, ZWJ sequences are 2-7 code points)
 
----
+**Prevention:**
+1. Map drag distance to character offset conservatively: ~15pt per character (not 10pt). Overshooting is worse than undershooting for UX
+2. Add a small delay (50ms) between consecutive `adjustTextPosition` calls — calling it too rapidly causes iOS to batch/drop adjustments
+3. Test in: Messages, Notes, Safari, WhatsApp, Slack, Gmail. Each has different UITextInput behavior
+4. For emoji-aware movement: read `documentContextBeforeInput` after each adjustment to detect if the cursor actually moved. If it didn't, increase the offset
+5. Provide haptic feedback (light impact) per successful cursor step so the user knows the cursor is moving even if they can't see it clearly
 
-### Phase 0: Architecture Decisions (Before Writing Code)
-
-1. **Decide: in-extension inference vs. main-app inference.** Given the ~30MB memory limit, running WhisperKit in the extension is high-risk. The recommended architecture: extension records audio (if microphone access works) or uses a visual trigger to hand off to the main app, which runs inference and writes the transcript to the App Group shared container.
-
-2. **Decide: in-extension recording vs. main-app recording.** The safest architecture: extension activates the main app (via `extensionContext?.open()` with a custom URL scheme) which presents a recording UI, transcribes, then returns the result. The tradeoff is UX friction (user leaves the keyboard momentarily). Alternatively, attempt in-extension recording with a robust fallback to the main-app pattern.
-
-3. **Define the App Group identifier once:** `group.com.pivi.dictus`. Never hardcode it — put it in a shared `Constants.swift` file compiled into both targets.
-
-### Phase 1: Project Setup (Sprint 1)
-
-4. Enable `EXTENSION_SAFE_API_ONLY = YES` for the keyboard extension target immediately.
-5. Set up App Group in Apple Developer portal for both App IDs before writing any code that uses shared storage.
-6. Write a `AppGroupDiagnostic.swift` that verifies container access on launch in both targets and logs the result — run this before adding any other feature.
-7. Use consistent signing: both targets use automatic signing with the same team, or both use manual.
-8. Write a unit test that instantiates `UserDefaults(suiteName: "group.com.pivi.dictus")` and round-trips a value — run this in the extension's unit test target.
-
-### Phase 2: Keyboard UI (Sprint 1–2)
-
-9. Set keyboard height via `NSLayoutConstraint` in `viewDidAppear`, not in a SwiftUI body.
-10. Use `UIHostingController` with `sizingOptions = .intrinsicContentSize` (iOS 16+).
-11. Test layout on: iPhone 12 mini (small screen), iPhone 15 Pro Max (large screen), landscape orientation.
-12. Add full graceful degradation for "Full Access off" state: typing works, dictation button is disabled with an explanation tooltip.
-
-### Phase 3: Dictation (Sprint 2–3)
-
-13. Request microphone permission from the **main app** during onboarding, not from the extension.
-14. Add integrity verification for downloaded WhisperKit model files before first use.
-15. Run all Core ML model compilation in the main app, write `modelReady` flag to App Group `UserDefaults`.
-16. Test dictation on iPhone 12 (A14, 4GB RAM) with 5 other apps in the background.
-17. Track memory usage with Instruments > Allocations across 10 consecutive dictation cycles.
-
-### Phase 4: App Store Submission
-
-18. Write specific, accurate `NSMicrophoneUsageDescription` in both `Info.plist` files.
-19. Add App Review notes explaining why `RequestsOpenAccess` is needed.
-20. Verify that typing (AZERTY layout, delete, space, return) works with Full Access off.
-21. Test on the oldest supported device (iPhone 12, iOS 16) with the Simulator off — physical device only.
-22. Run the full onboarding flow as a new user to confirm the Full Access setup step is clear and unambiguous.
+**Phase:** Implement during spacebar trackpad feature. Test across at least 5 different host apps before marking complete.
 
 ---
 
-*Sources consulted: Apple Developer Forums (threads 742601, 85478, 105815), WhisperKit GitHub Issues #171 and #265, Medium articles on iOS keyboard extension limitations, KeyboardKit blog, Apple App Extension Programming Guide, Daniel Saidi's App Group blog post.*
+## Minor Pitfalls
+
+Issues that cause friction or polish problems.
+
+---
+
+### Pitfall 9: Suggestion Bar Steals Vertical Space from Keys
+
+**What goes wrong:** Adding a suggestion/prediction bar above the keyboard rows reduces the available height for keys. The current keyboard height is precisely calculated in `computeKeyboardHeight()` (4 rows * 46pt + spacing + toolbar + banner). Adding a suggestion bar (~36-44pt) without adjusting the total height compresses the key rows, making them harder to tap accurately. Alternatively, increasing total height makes the keyboard feel oversized and leaves less screen space for the host app content.
+
+**Prevention:**
+1. The suggestion bar should be integrated INTO the existing toolbar area (44pt), not added as a separate row. When prediction is active, the toolbar switches from showing globe/mic/layout buttons to showing 3 suggestion pills
+2. Alternatively, add the suggestion bar and reduce key height from 46pt to 42pt (still within Apple's recommended minimum of 40pt). Update `KeyMetrics.keyHeight` and `computeKeyboardHeight()` together
+3. Update `heightConstraint?.constant` in `viewWillAppear` to include the new height
+4. Test on iPhone 12 mini (smallest screen) — the keyboard must not consume more than ~40% of screen height
+
+**Phase:** Design decision needed before implementing text prediction UI.
+
+---
+
+### Pitfall 10: Haptic Feedback on Every Key Press Drains Battery
+
+**What goes wrong:** The v1.1 scope includes "Haptic feedback on all keyboard keys." The Taptic Engine consumes measurable power per actuation. At 60 WPM (average typing speed), that is ~300 key presses per minute, each triggering `UIImpactFeedbackGenerator`. On devices with smaller batteries (iPhone 12 mini, iPhone SE), this can noticeably impact battery life during extended typing sessions.
+
+Additionally, preparing the haptic engine (`prepare()`) before each tap adds ~2ms of latency. If `prepare()` is not called, the first tap of a burst has a noticeable delay (~50ms).
+
+**Prevention:**
+1. Use `UIImpactFeedbackGenerator(style: .light)` for key taps — lightest haptic, lowest power
+2. Keep one `UIImpactFeedbackGenerator` instance alive and call `prepare()` once when the keyboard appears, not per-tap
+3. Make haptics a user-toggleable setting (already exists in v1.0 Settings) — default ON but clearly visible
+4. Consider haptics only on special keys (space, return, delete, shift) not every letter — this is what many third-party keyboards do
+5. Test battery impact: use Xcode Energy Diagnostics over a 10-minute typing session and compare with/without haptics
+
+**Phase:** Implement alongside the spacebar trackpad (which already needs haptics for cursor steps).
+
+---
+
+### Pitfall 11: Removing Apple Dictation Mic May Confuse Users
+
+**What goes wrong:** The v1.1 scope includes "Remove Apple dictation mic from keyboard." The globe key and Apple dictation mic are system elements that users expect. Removing the dictation mic (if it is a system-provided button) is not directly controllable by the custom keyboard — iOS may still show it in the bottom bar. If Dictus replaces it with its own mic button, users who expect Apple's dictation to work will be confused when it doesn't.
+
+**Prevention:**
+1. The Apple dictation mic in the keyboard toolbar is a system element. Custom keyboards can choose NOT to show it by not including `needsInputModeSwitchKey`-related system elements, but iOS may still show its own toolbar below the custom keyboard
+2. Focus on making Dictus's mic button prominent and clearly different from Apple's (the pill shape redesign helps)
+3. Do not claim to "replace" Apple dictation — position Dictus as an alternative
+4. Test: does removing/hiding the system dictation button trigger any App Review concern? Apple allows custom keyboards to have their own mic buttons as long as Full Access is properly handled
+
+**Phase:** UI redesign phase. Test on device to understand what the custom keyboard actually controls vs what iOS shows.
+
+---
+
+## App Review Pitfalls (Keyboard-Specific for v1.1)
+
+---
+
+### Pitfall 12: Full Emoji Picker May Require Justifying Full Access Scope
+
+**Risk:** If the emoji picker sends any data through the App Group (e.g., syncing recent emoji between app and extension), App Review may question whether this data sharing is necessary. Keyboard extensions that share more data than strictly needed through App Groups face scrutiny under Guideline 5.1.1.
+
+**Prevention:** Only share the `recentEmoji: [String]` array via App Group UserDefaults. Do not share emoji usage analytics, frequency data, or typing patterns. Document this in App Review notes.
+
+---
+
+### Pitfall 13: Text Prediction Must Not Log Keystrokes
+
+**Risk:** Implementing text prediction requires reading `documentContextBeforeInput` on every keystroke to generate relevant suggestions. If ANY of this text is logged (even in debug builds), persisted to disk, or sent over the network, Apple will reject under Guideline 5.1.1 (Data Collection). Even storing word frequency data locally could be flagged if the privacy policy does not disclose it.
+
+**Prevention:**
+1. Text prediction must be purely in-memory. No keystroke logging, no word frequency persistence, no disk writes of user input
+2. If word frequency data is desired (to improve predictions), store it as anonymized frequency counts in App Group, never raw text. Disclose this in the privacy policy
+3. In App Review notes, explicitly state: "The keyboard does not log, store, or transmit any keystrokes. Text prediction operates entirely in-memory using the iOS built-in UITextChecker API."
+4. Remove ALL `print()` and `DictusLogger` calls that output `documentContextBeforeInput` content before submitting to App Review
+
+**Phase:** Pre-submission checklist item. Audit all logging before every App Store submission.
+
+---
+
+### Pitfall 14: Keyboard Must Still Function Without Full Access for v1.1 Features
+
+**Risk:** With v1.1 adding text prediction, emoji, and trackpad — all of these features must work without Full Access. Only dictation requires Full Access. If the keyboard becomes non-functional or severely degraded without Full Access (e.g., no prediction, no emoji, no trackpad), Apple may reject under Guideline 4.5.1.
+
+**Prevention:**
+1. Text prediction via UITextChecker works WITHOUT Full Access (it is a local API)
+2. Emoji row works WITHOUT Full Access (emoji are Unicode characters, inserted via `insertText`)
+3. Spacebar trackpad works WITHOUT Full Access (`adjustTextPosition` is a local API)
+4. Only dictation (mic button) requires Full Access — this is already correctly gated in v1.0
+5. Test all v1.1 features with Full Access DISABLED before submission
+
+---
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Design file consolidation | Breaking existing keyboard/app builds when moving files to shared package | Move one file at a time, build both targets after each move |
+| Spacebar trackpad | Gesture conflicts with accent long-press on letter keys | Implement trackpad as keyboard-level state that disables per-key gestures |
+| Text prediction | Memory budget exceeded with dictionary data | Start with zero-memory UITextChecker, add frequency list only if needed |
+| Emoji button | Emoji glyph cache never released, cumulative memory growth | Limit to recent-emoji row (8-12), never show full picker in extension |
+| Cold start auto-return | No public API exists, competitors use undocumented techniques | Research spike first (1-2 days), then decide: solve or optimize cold start speed |
+| Model catalog update | Accidentally adding Parakeet scope bloats v1.1 | Limit to curating WhisperKit models; design STT protocol for future engines |
+| Mic button redesign | Pill shape increases touch target overlap with adjacent keys | Ensure mic button touch area does not overlap with space or return key |
+| Waveform animation rework | Animation frame rate causes memory/CPU pressure in extension | Use `CADisplayLink` or SwiftUI `TimelineView` with 30fps cap, not 60fps |
+| Haptics on all keys | Battery drain at high typing speed, latency on first tap | Single prepared `UIImpactFeedbackGenerator`, `.light` style |
+| Suggestion bar height | Keyboard becomes too tall, steals screen space from host app | Integrate into existing toolbar row, or reduce key height by 4pt |
+| App Review submission | Keystroke logging in debug code left in release build | Pre-submission audit: search for `documentContextBeforeInput` in log statements |
+
+---
+
+## Sources
+
+- [Apple App Extension Programming Guide: Custom Keyboard](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/CustomKeyboard.html) — HIGH confidence
+- [UITextChecker Apple Documentation](https://developer.apple.com/documentation/uikit/uitextchecker) — HIGH confidence
+- [adjustTextPosition(byCharacterOffset:) Apple Documentation](https://developer.apple.com/documentation/uikit/uitextdocumentproxy/1618194-adjusttextposition) — HIGH confidence
+- [Swift Forums: How do voice dictation keyboard apps return users to previous app?](https://forums.swift.org/t/how-do-voice-dictation-keyboard-apps-like-wispr-flow-return-users-to-the-previous-app-automatically/83988) — MEDIUM confidence
+- [High memory usage of Emojis on iOS](https://vinceyuan.github.io/high-memory-usage-of-emojis-on-ios/) — MEDIUM confidence
+- [React Native iOS Custom Keyboard memory crashes (GitHub #31910)](https://github.com/facebook/react-native/issues/31910) — MEDIUM confidence
+- [Apple Developer Forums: Keyboard Extension Memory Issue](https://developer.apple.com/forums/thread/85478) — MEDIUM confidence
+- [FluidInference/parakeet-tdt-0.6b-v2-coreml on HuggingFace](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml) — MEDIUM confidence
+- [iOS UITextChecker Autocorrect GitHub implementation](https://github.com/ansonl/ios-uitextchecker-autocorrect) — LOW confidence
+- [Wispr Flow Setup Documentation](https://docs.wisprflow.ai/articles/7453988911-set-up-the-flow-keyboard-on-iphone) — MEDIUM confidence
+- [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) — HIGH confidence
+- [Limitations of custom iOS keyboards (Medium)](https://medium.com/@inFullMobile/limitations-of-custom-ios-keyboards-3be88dfb694) — LOW confidence

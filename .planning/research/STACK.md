@@ -1,252 +1,390 @@
-# Stack Research
+# Technology Stack — v1.1 Additions
 
-*Research date: 2026-03-04. Target: Dictus — iOS AZERTY keyboard with on-device French STT.*
-
----
-
-## Recommended Stack
-
-### Speech Recognition: WhisperKit (current release via SPM)
-
-**Package**: `https://github.com/argmaxinc/whisperkit` via Swift Package Manager
-**Model for keyboard extension**: `openai_whisper-tiny` or `openai_whisper-base` (multilingual)
-**Model for main app download**: `openai_whisper-small` as the recommended default
-
-WhisperKit is the correct choice for this project. It is a pure Swift library built by Argmax that runs Whisper models entirely through Core ML, distributing inference across ANE (Apple Neural Engine), GPU, and CPU depending on the device. It supports all 100 Whisper languages including French (`fr`), provides voice activity detection, word timestamps, and quantized model variants. It is actively maintained with production-level documentation and a TestFlight demo app.
-
-**Model selection for the keyboard extension is the most critical architectural decision in this project.** The keyboard extension memory ceiling is approximately 40–60 MB (undocumented by Apple, empirically measured; varies by device and memory pressure). WhisperKit model sizes at runtime are approximately:
-
-| Model | Disk size (CoreML quantized) | Approximate runtime RAM |
-|---|---|---|
-| tiny multilingual | ~75 MB disk | ~30 MB RAM |
-| base multilingual | ~145 MB disk | ~55–65 MB RAM |
-| small multilingual | ~480 MB disk | ~150–200 MB RAM |
-| medium multilingual | ~1.5 GB disk | ~500 MB RAM |
-
-The **tiny multilingual** model is the only one that reliably fits inside keyboard extension memory. The **base multilingual** sits at the edge and will cause jetsam kills on memory-pressured devices or older hardware. The **small model is definitively too large** for the extension process.
-
-The recommended architecture: store downloaded models in the App Group shared container (`group.com.pivi.dictus`). The keyboard extension loads only `tiny` for inline use. The main app exposes `small` (or `medium` for users who want accuracy) via a model manager but runs transcription in the main app process, not the extension.
-
-French WER with Whisper multilingual models: approximately 5–8% for `small`, 8–12% for `base`, 15–20% for `tiny` on clean speech. Tiny is acceptable for dictation where the user sees and corrects the result immediately; it is not acceptable for a silent background transcription. This matches Dictus's inline preview-and-correct workflow.
-
-**Confidence: High** — WhisperKit is the only production-ready, actively maintained, pure-Swift, Core ML native Whisper implementation for iOS. The Argmax team benchmarks it continuously against Apple hardware. Argmax is also the partner Apple cited when introducing SpeechAnalyzer, indicating alignment with the Apple platform direction.
+**Project:** Dictus v1.1 UX & Keyboard
+**Researched:** 2026-03-07
+**Scope:** Stack additions for new features only. Existing stack (WhisperKit, Swift 5.9+, SwiftUI, App Group, DictusCore) is validated and unchanged.
 
 ---
 
-### Microphone / Audio Capture: AVAudioEngine in the Main App only
+## 1. Text Prediction / Autocorrect (French)
 
-**Framework**: AVFoundation — `AVAudioEngine` with `AVAudioSession`
-**Architecture decision**: Audio capture MUST happen in the main app process, not the keyboard extension.
+### Recommendation: Build custom using UITextChecker + n-gram model
 
-This is the hardest constraint in the entire project. Apple's official documentation for custom keyboard extensions explicitly states:
+**Confidence:** MEDIUM
 
-> "Custom keyboards, like all app extensions in iOS 8.0, have no access to the device microphone, so dictation input is not possible."
+There is no production-ready, open-source, French text prediction library for iOS. The options are:
 
-Even with `RequestsOpenAccess = true`, which unlocks network access, shared containers, and audio playback (for key clicks), microphone recording via `AVAudioEngine` or `AVAudioRecorder` fails in the extension process. Developer reports from 2023–2024 on the Apple Developer Forums confirm that attempting to start an `AVAudioEngine` from a keyboard extension produces audio session errors even after Full Access is granted by the user.
+| Option | Verdict | Why |
+|--------|---------|-----|
+| **UITextChecker (Apple)** | USE for spell-check | Built-in, supports `fr_FR`, no dependency. `rangeOfMisspelledWord()` + `guesses(forWordRange:in:language:)` work for French out of the box |
+| **UILexicon (Apple)** | USE as supplement | Available in keyboard extensions via `requestSupplementaryLexicon()`. Contains contact names + user shortcuts. Free data source |
+| **Custom n-gram model** | BUILD for word prediction | Train trigram model on French corpus (Wikipedia FR dump). Ship as SQLite DB in App Group. ~5-15MB compressed |
+| **KeyboardKit Pro** | DO NOT USE | Commercial license ($$$), closed-source Pro for autocorrect/prediction. Contradicts MIT open-source positioning |
+| **Presage** | DO NOT USE | C++ library, no iOS/Swift bindings, GPL license (incompatible with MIT), unmaintained |
+| **Predict4All** | DO NOT USE | Java-based, no iOS port, research project |
+| **Apple Foundation Models (iOS 26.1+)** | DEFER to v1.2+ | On-device next word prediction via Apple Intelligence, but requires iPhone 15 Pro+ and iOS 26.1+. Too restrictive for iOS 16+ target |
 
-**The workaround is a process-crossing architecture**:
+### Implementation approach
 
-1. The keyboard extension displays a record button.
-2. Tapping the record button opens the main Dictus app (or uses a URL scheme / `openURL` via `UIApplication.shared` — which is NOT available in extensions). This means using `NSExtensionContext` to open the app URL, or passing a signal via an App Group flag that the main app monitors via a background task.
-3. The main Dictus app wakes, records audio via `AVAudioEngine`, runs WhisperKit inference, writes the transcription string to the App Group `UserDefaults`, then returns focus to the previous app.
-4. The keyboard extension reads the transcription from shared `UserDefaults` and inserts it via `textDocumentProxy.insertText()`.
+```
+Autocorrect pipeline:
+1. UITextChecker.rangeOfMisspelledWord() -> detect typos
+2. UITextChecker.guesses(forWordRange:in:language:"fr") -> get corrections
+3. Custom n-gram DB -> rank corrections by context probability
+4. Display top 3 in suggestion bar
 
-This is the architecture used by Super Whisper and similar apps. It is the only viable approach on iOS. There is no API available to grant microphone access directly to a keyboard extension process, and there is no evidence that Apple will change this in iOS 26.
-
-**Alternative pattern worth investigating**: `SpeechAnalyzer` (iOS 26 only) runs out-of-process, meaning its inference does not count against the extension's memory budget. If Apple permits keyboard extensions to open a SpeechAnalyzer session (which feeds from an audio file or stream, not from a live microphone directly in the extension), this could simplify the architecture for iOS 26+ users. This is unconfirmed and should be treated as a research spike for v2, not a v1 dependency.
-
-**Required entitlements for the main app**:
-- `NSMicrophoneUsageDescription` in Info.plist
-- `RequestsOpenAccess = true` in the keyboard extension's Info.plist (for shared container access)
-- App Group entitlement on both targets: `group.com.pivi.dictus`
-
-**Confidence: High** — The microphone restriction is a hard platform constraint, not a configuration issue.
-
----
-
-### Keyboard Extension UI: UIInputViewController + SwiftUI via UIHostingController
-
-**Architecture**: `UIInputViewController` subclass (required by iOS) hosting a SwiftUI root view via `UIHostingController`
-
-UIKit is mandatory for keyboard extensions — the entry point is always `UIInputViewController`, which is a UIKit class. There is no SwiftUI-native path to a custom keyboard extension. However, you are not forced to write the entire keyboard UI in UIKit. The standard and well-supported pattern is:
-
-```swift
-class KeyboardViewController: UIInputViewController {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        let hostingController = UIHostingController(
-            rootView: KeyboardView(textProxy: textDocumentProxy)
-        )
-        addChild(hostingController)
-        view.addSubview(hostingController.view)
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([...fill superview...])
-        hostingController.didMove(toParent: self)
-    }
-}
+Word prediction pipeline:
+1. Track last 2 words typed (trigram context)
+2. Query n-gram SQLite DB for most probable next words
+3. Display top 3 predictions in suggestion bar
+4. Tap suggestion -> insert word + space
 ```
 
-The SwiftUI view inside the `UIHostingController` can use the full SwiftUI view hierarchy, animations, state management, and as of iOS 26, the `glassEffect` modifier. The `UIInputViewController.textDocumentProxy` must be passed down as an observable object or environment value for text insertion.
+### Dependencies needed
 
-**SwiftUI-only limitation**: You cannot use `@FocusState` or `TextField` inside a keyboard extension in a way that steals first responder. All text output goes through `textDocumentProxy.insertText()`, not through SwiftUI text fields.
+| Technology | Purpose | Size Impact | Notes |
+|------------|---------|-------------|-------|
+| UITextChecker | Spell-check + corrections | 0 (system) | Already available, language param `"fr"` |
+| UILexicon | Contact names supplement | 0 (system) | `requestSupplementaryLexicon()` in UIInputViewController |
+| SQLite (via Foundation) | n-gram storage | 0 (system) | No third-party SQLite wrapper needed, use Foundation's built-in |
+| French n-gram DB | Word prediction data | ~10-15MB | Generate offline from French Wikipedia corpus using text2ngram or custom Python script, ship via App Group |
 
-**What does NOT work in keyboard extensions**:
-- `UIApplication.shared` (unavailable — crashes at runtime)
-- `UIScene` or multi-window APIs
-- Direct microphone recording (see above)
-- Secure text entry fields (extension is deactivated automatically)
-- Key press artwork displayed above the primary view (system limitation)
+### Key constraints
 
-**KeyboardKit consideration**: KeyboardKit (v10.3.0, open source base tier) provides AZERTY layout definitions, key rendering, and input handling boilerplate. For a learning project, using it reduces time-to-working-keyboard but makes the codebase less educational and adds a dependency. For Dictus specifically, given the learning goal stated in PROJECT.md, build the keyboard layout manually in SwiftUI. The AZERTY layout is not complex (roughly 50 keys, 3 rows), and building it manually teaches the fundamental SwiftUI layout skills needed for the rest of the app. KeyboardKit Pro's French dictation feature is paid and cloud-dependent, which conflicts with Dictus's design.
+- Keyboard extension 50MB memory limit applies -- n-gram DB must be queried via SQLite (not loaded into memory)
+- UITextChecker guesses on iOS are alphabetically ordered, not probability-ranked -- need n-gram model to re-rank
+- Must handle French-specific challenges: accented characters (e/e/e/e), elision (l'homme), compound words
 
-**Confidence: High** — UIInputViewController + UIHostingController is the only supported pattern, well-documented, and proven in production keyboards.
+### Sources
 
----
-
-### Data Sharing: App Group with UserDefaults + FileManager
-
-**App Group ID**: `group.com.pivi.dictus`
-
-Two sharing mechanisms are needed:
-
-**1. Settings and state** — `UserDefaults(suiteName: "group.com.pivi.dictus")`
-
-Use for: selected model name, language preference, filler word toggle, keyboard layout preference. Always call `.synchronize()` after writes in the extension (iOS does not guarantee flush timing for extensions). Use `@AppStorage(wrappedValue:store:)` in SwiftUI views in the main app; access via the named suite directly in the extension.
-
-**2. Model files and transcription results** — `FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.pivi.dictus")`
-
-Use for: downloaded Whisper model files (CoreML bundles can be 75 MB – 480 MB, too large for UserDefaults). Store models at `<group-container>/Models/<model-name>/`. The main app downloads models here; WhisperKit in the extension loads from this path.
-
-Use also for: transcription result passing. Write the transcription string to a small JSON file in the shared container rather than UserDefaults if the string is long (UserDefaults is not designed for large values).
-
-**Signal mechanism**: To notify the keyboard extension that a new transcription is ready, write a `transcription_ready` boolean flag to shared UserDefaults. The extension polls this flag on `viewWillAppear` or via a short `Timer` while the recording button is in a "processing" state. Darwin notifications (`CFNotificationCenterGetDarwinNotifyCenter`) can also be used for immediate cross-process signaling without polling.
-
-**Confidence: High** — App Group is the only supported cross-process data sharing mechanism for extensions. The patterns above are stable and unchanged since iOS 8.
+- [UITextChecker Apple Docs](https://developer.apple.com/documentation/uikit/uitextchecker)
+- [UITextChecker guesses method](https://developer.apple.com/documentation/uikit/uitextchecker/guesses(forwordrange:in:language:))
+- [NSHipster UITextChecker](https://nshipster.com/uitextchecker/)
+- [ios-uitextchecker-autocorrect](https://github.com/ansonl/ios-uitextchecker-autocorrect) -- reference implementation (unmaintained but useful pattern)
 
 ---
 
-### iOS 26 Liquid Glass Design
+## 2. Spacebar Trackpad Cursor Movement
 
-**APIs**: `.glassEffect()` modifier, `GlassEffectContainer`, `.glassEffectID()` for morphing
-**Minimum deployment target impact**: iOS 26 for Liquid Glass; use `#available(iOS 26, *)` guards throughout
+### Recommendation: Custom gesture recognizer on space bar key (no library needed)
 
-The `.glassEffect()` modifier is a SwiftUI-only API. Since the keyboard UI runs inside a `UIHostingController`, the entire SwiftUI layer inside it gets access to `glassEffect`. This is the correct approach for Dictus — the keyboard key backgrounds, the dictation bar, and the transcription preview zone can all use `glassEffect`.
+**Confidence:** HIGH
 
-Key rules for correct Liquid Glass usage:
+This is a pure UIKit gesture implementation. No third-party library exists or is needed. Apple's own keyboard does this with a UILongPressGestureRecognizer transitioning to UIPanGestureRecognizer.
 
-- Wrap adjacent glass elements in a `GlassEffectContainer` to share the sampling region. This is mandatory when glass elements are close to each other, or rendering artifacts appear.
-- Use `.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))` for key backgrounds.
-- Use `.glassEffect(.clear)` for the transcription preview zone that sits over keyboard content.
-- Never apply `glassEffect` to list or table content — only navigation-layer UI.
-- The system automatically handles Reduce Transparency (increases frost), Increase Contrast (adds stark borders), and Reduce Motion. No manual fallback needed.
-- For iOS 16–25 fallback: replace `glassEffect` with a simple `Material.regularMaterial` background.
+### Implementation approach
 
-**UIKit interop for Liquid Glass**: If any part of the keyboard UI needs UIKit-level control (e.g., custom gesture recognizers on key cells), wrap the UIKit view in `UIViewRepresentable` and apply `glassEffect` on the SwiftUI side. Do not try to bridge Liquid Glass to UIKit layers — the API is SwiftUI-only with no UIKit equivalent currently documented.
+| Component | Technology | Notes |
+|-----------|------------|-------|
+| Long-press detection | UILongPressGestureRecognizer | 0.3s threshold on spacebar |
+| Pan tracking | UIPanGestureRecognizer | Track X/Y translation after long-press activates |
+| Cursor movement | `textDocumentProxy.adjustTextPosition(byCharacterOffset:)` | UIInputViewController API -- moves cursor left/right |
+| Visual feedback | SwiftUI animation | Fade keyboard labels, show trackpad indicator |
+| Haptic feedback | UIImpactFeedbackGenerator(.light) | Tick on each character position change |
 
-**Confidence: Medium** — The API surface is well-defined from WWDC 2025 sessions and community documentation. The uncertainty is whether `glassEffect` renders correctly within `UIHostingController` inside a keyboard extension (the background content being "sampled" by the glass is the host app's content, not the keyboard's own background — this may require testing to confirm the visual result is as expected). If glass sampling does not work correctly in the extension context, fall back to `Material.regularMaterial` for the keyboard surface and reserve full glass effects for the main app UI.
+### Key detail: `adjustTextPosition(byCharacterOffset:)`
 
----
+This is the official UITextDocumentProxy method for moving the cursor. Takes a positive (right) or negative (left) integer offset. Call it based on pan gesture translation divided by a sensitivity threshold (~8-10pt per character step).
 
-## Alternatives Considered
+### Vertical movement
 
-### Apple SpeechAnalyzer (iOS 26+)
+Vertical cursor movement (line up/down) is NOT supported by `adjustTextPosition()` -- it only moves horizontally by character count. This matches Apple's keyboard behavior on non-3D-Touch devices. Do not attempt vertical movement.
 
-Introduced at WWDC 2025. Supports French (`fr_FR`, `fr_CA`, `fr_CH`, `fr_BE`). Runs out-of-process so model inference does not count against the app's memory budget. All language models are system-managed (zero app bundle impact). Word error rate on English benchmarks: ~14% (WhisperKit small: ~12.8%, WhisperKit base: ~15.2%). Supports DictationTranscriber (punctuation-aware) and SpeechTranscriber (command-style) modes.
+### Dependencies needed
 
-**Why not chosen for v1**: iOS 26 is in beta as of research date (2026-03-04). Targeting iOS 26 as the minimum excludes the entire installed base on iOS 16–25. The Dictus requirement is iOS 16.0 minimum. SpeechAnalyzer should be adopted as an additive enhancement for iOS 26+ users in v2 — it solves the extension memory problem and has excellent French support. It does not solve the microphone restriction in keyboard extensions.
+None. All APIs are built into UIKit.
 
-### whisper.cpp via SwiftWhisper or whisper.spm
+### Sources
 
-`whisper.cpp` by ggerganov is the original C++ Whisper implementation. Swift wrappers exist: `SwiftWhisper` (exPHAT/SwiftWhisper, last meaningfully updated 2023) and `whisper.spm` (ggerganov's own SPM wrapper). Both use Metal for GPU inference rather than Core ML/ANE.
-
-**Why not chosen**: WhisperKit uses Core ML, which routes inference to the Apple Neural Engine on A14+. ANE inference is significantly more power-efficient than Metal GPU inference, which matters for battery life during dictation. WhisperKit is a native Swift codebase with no C++ bridge, simpler to debug and integrate. SwiftWhisper is essentially unmaintained. The whisper.spm package is cross-platform C++ wrapped in Swift — not idiomatic and harder to maintain. Argmax's own benchmarks show WhisperKit outperforming whisper.cpp on Apple Silicon in both speed and energy consumption.
-
-### Apple SFSpeechRecognizer (legacy)
-
-Available since iOS 10. On-device mode added in iOS 13. Supports French on-device (available in iOS 13+, but with fewer training data and lower accuracy than Whisper).
-
-**Why not chosen**: On-device accuracy is notably lower than WhisperKit/Whisper for French. Audio duration limit of ~60 seconds for buffer-based requests. The API is deprecated in spirit — Apple's WWDC 2025 introduced SpeechAnalyzer as its replacement. No control over model quality or updates. SFSpeechRecognizer does offer one advantage: it does not require a separate model download step. For a v1 fallback while the Whisper model downloads, SFSpeechRecognizer could be used transiently — this is worth implementing as a graceful degradation path.
-
-### KeyboardKit (open source, v10.3.0)
-
-A full keyboard SDK with AZERTY layout definitions, key cap rendering, autocomplete scaffolding, and a dictation module (KeyboardKit Pro, paid).
-
-**Why not chosen for the core keyboard layout**: This is a learning project. Building the AZERTY layout in SwiftUI is achievable in one sprint and is more educational. The free tier of KeyboardKit does not include French dictation or autocomplete. The Pro tier is commercial and cloud-dependent for dictation, which directly conflicts with Dictus's offline-first design. Adding KeyboardKit as a dependency for layout alone adds significant surface area with little benefit given the targeted key count.
-
-### Combine for cross-process communication
-
-`NotificationCenter` or `Combine` publishers do not cross process boundaries between the extension and the main app. Darwin notifications (`CFNotificationCenterGetDarwinNotifyCenter`) do.
-
-**Darwin notifications** are available to both the extension and main app and can trigger immediate signaling without file polling. They are the recommended low-latency cross-process signal mechanism. Used in combination with App Group UserDefaults for the actual data payload.
+- [UITextDocumentProxy adjustTextPosition](https://developer.apple.com/documentation/uikit/uitextdocumentproxy/1618198-adjusttextposition)
 
 ---
 
-## What NOT to Use
+## 3. Adaptive Accent Key
 
-**AVAudioEngine or AVAudioRecorder directly in the keyboard extension process** — These will fail at runtime. Microphone access is architecturally blocked for all iOS keyboard extensions regardless of entitlements. There is no workaround. Do not attempt this; it will waste sprint time.
+### Recommendation: Context-aware key using textDocumentProxy + frequency table
 
-**`UIApplication.shared` in the extension** — This property is unavailable in extension targets and will crash. Use `NSExtensionContext` for app opening and URL handling.
+**Confidence:** HIGH
 
-**WhisperKit `small` or larger models loaded in the keyboard extension process** — The small model requires approximately 150–200 MB at runtime. The keyboard extension will be killed by jetsam before inference begins. Only `tiny` (multilingual) is safe to load inside the extension. If the user needs `small` quality, transcription must occur in the main app process.
+No library needed. Build a simple state machine that checks the previous character(s) via `textDocumentProxy.documentContextBeforeInput` and shows the most likely accent/punctuation.
 
-**Synchronous WhisperKit inference on the main thread** — WhisperKit inference blocks the thread it runs on. Always dispatch to a background actor or `Task { }` with `await`. Blocking the keyboard extension's main thread will trigger system-level unresponsiveness warnings and potential termination.
+### Implementation approach
 
-**`UserDefaults.standard` in either target for cross-process data** — Standard UserDefaults is process-scoped. Data written by the main app is not visible to the extension. Always use `UserDefaults(suiteName: "group.com.pivi.dictus")`.
+```
+Context rules (French-specific):
+- After vowel -> show accent acute (e)
+- After consonant at word end -> show apostrophe (')
+- After "c" -> show cedilla (c)
+- After space/start -> show apostrophe (for l', d', s', n', j', qu')
+- Default -> show apostrophe (most common in French)
+```
 
-**SwiftUI `TextField` or `TextEditor` for keyboard output** — These steal first responder. Text output must go through `textDocumentProxy.insertText()` exclusively.
+| Input context | Key shows | Rationale |
+|---------------|-----------|-----------|
+| After a vowel | acute accent (e) | Most common French accent |
+| After "c" | cedilla (c) | Cedilla after c |
+| After space or start | apostrophe (') | Elision is very frequent |
+| Default | apostrophe (') | Highest-frequency French punctuation |
 
-**KeyboardKit Pro for dictation** — The dictation feature in KeyboardKit Pro routes audio to cloud services, which is incompatible with Dictus's core value of no-cloud, no-subscription offline operation.
+### Dependencies needed
 
-**Liquid Glass `glassEffect` on list or table content** — Apple explicitly designates Liquid Glass for navigation-layer UI (bars, sheets, overlays). Applying it to content layers (key rows, lists) creates visual noise. Use it for the key cap surfaces and the floating dictation UI, not for list-style settings views inside the keyboard.
-
-**iOS 16 `UIInputViewController` without `UIHostingController`** — Building the full keyboard in UIKit directly (no SwiftUI) is unnecessary extra work and forfeits access to SwiftUI animation, Liquid Glass, and the modern layout system. The `UIHostingController` bridge is stable and well-understood.
-
-**Streaming real-time transcription in v1** — WhisperKit supports streaming (chunked inference), but it adds significant complexity to the architecture (partial result display, chunking heuristics, cancellation). PROJECT.md correctly defers this to v2. Use a push-to-talk / tap-to-dictate model for v1 where the user records a complete utterance and then sees the result.
-
----
-
-## Confidence Levels
-
-| Component | Confidence | Rationale |
-|---|---|---|
-| WhisperKit via SPM | High | Production-proven, actively maintained, Core ML native, used in production apps |
-| UIInputViewController + UIHostingController | High | Standard pattern, documented, used in every modern custom keyboard |
-| Microphone block in extension process | High | Hard platform constraint, Apple documentation + developer reports agree |
-| App Group shared container pattern | High | Stable API since iOS 8, extensively documented |
-| Tiny model as extension default | High | Memory math is clear; alternatives will be killed by jetsam |
-| App URL scheme for recording handoff | Medium | The UX is clunky (app switches); unclear if there is a smoother API path that avoids it. Needs prototyping in Sprint 1. |
-| Liquid Glass in UIHostingController | Medium | API is well-defined, but rendering behavior inside extension UIHostingController needs device validation; the "sampling" source may not behave as expected |
-| SpeechAnalyzer in extension (iOS 26+) | Low | Out-of-process design is promising but extension microphone entitlement is still a barrier; needs testing on iOS 26 beta |
-| Darwin notifications for cross-process signals | Medium | Well-known pattern, but brittle in low-memory scenarios where extension is suspended |
-| French accuracy with tiny model | Medium | Whisper tiny multilingual is acceptable for conversational French but noticeably worse than small; user correction workflow mitigates this, but needs user testing to confirm acceptability |
+None. Uses `textDocumentProxy.documentContextBeforeInput` (already available in keyboard extension).
 
 ---
 
-## Key Architectural Constraint Summary
+## 4. Cold Start Auto-Return to Keyboard
 
-The central constraint that shapes the entire architecture is this: **iOS keyboard extensions cannot access the microphone**. All other decisions flow from this.
+### Recommendation: Wispr Flow "session" model -- minimize cold starts, don't solve auto-return
 
-The consequence is a two-process architecture where:
-- The **keyboard extension** handles UI, text insertion via proxy, model display, and signals the main app.
-- The **main app** handles audio recording, WhisperKit inference (for quality above tiny), model downloading, and writes results to the shared App Group container.
-- **Shared state** (transcription results, settings, model selection) lives in `group.com.pivi.dictus` via `UserDefaults` and `FileManager`.
+**Confidence:** LOW -- This is the hardest unsolved problem in the milestone
 
-For in-extension transcription using only the `tiny` model: audio must still be recorded in the main app, written to a temp file in the shared container, then loaded by WhisperKit running in the extension. Whether this roundtrip is fast enough for good UX is the primary unknown that Sprint 1 must validate.
+### The problem
+
+When DictusApp is not running (cold start), the keyboard extension opens DictusApp via URL scheme. After DictusApp starts recording, the user needs to return to the host app. There is NO public API to programmatically return to the previous app.
+
+### What competitors do
+
+**Wispr Flow's approach** (reverse-engineered from behavior, not documented):
+1. Opens main app from keyboard for "Flow Session" activation
+2. Claims to auto-return to previous app
+3. FAQ admits "Not all apps allow the app to reopen" -- meaning it is selective/imperfect
+4. Session stays active for 5 minutes of idle, so cold start only happens once per session
+
+**Technical options investigated:**
+
+| Technique | Status | Risk |
+|-----------|--------|------|
+| `_hostBundleID` private API | Blocked in iOS 18+ | App Store rejection |
+| `UIApplication.suspend()` | Goes to home screen, not previous app | Wrong behavior |
+| x-callback-url | Requires host app cooperation | Only works with specific apps |
+| NSUserActivity / Handoff | Not applicable to keyboard extensions | Wrong use case |
+| Clipboard-based bundle ID stash | Store host bundle ID before opening app, use URL scheme to return | Only works for apps with known URL schemes |
+| Background URL scheme timer | Open dictus://, do work, then open host app URL scheme | Requires knowing host app's URL scheme |
+| "Session" model (Wispr Flow pattern) | Keep app alive with audio background mode, only cold start once | Best practical approach |
+
+### Recommended approach: Wispr Flow session model
+
+1. **First cold start:** User taps mic in keyboard -> opens DictusApp -> user manually returns (swipe/tap status bar "< Back")
+2. **DictusApp stays alive** via `UIBackgroundModes:audio` (already implemented)
+3. **Subsequent taps:** Darwin notification works instantly, no app switch needed
+4. **Session timeout:** After 5 min idle, audio session ends, next tap = cold start again (rare)
+
+This is what Wispr Flow does. The "auto-return" is not truly automatic -- they minimize cold starts. The key improvement for Dictus is to **extend the audio session keep-alive duration** and **show a clear "tap Back to return" instruction** on first cold start.
+
+### Dependencies needed
+
+None new. Existing Darwin notification + URL scheme + audio background mode.
+
+### Open research question
+
+How exactly does Wispr Flow return to the previous app on cold start? The Swift Forums thread (Jan 2026) found no public API. Either they use a private API (risky for App Store) or they have a clever workaround not yet discovered. Flag this for deeper reverse-engineering research during implementation.
+
+### Sources
+
+- [Swift Forums discussion -- auto-return](https://forums.swift.org/t/how-do-voice-dictation-keyboard-apps-like-wispr-flow-return-users-to-the-previous-app-automatically/83988)
+- [Wispr Flow FAQ](https://docs.wisprflow.ai/iphone/faq)
 
 ---
 
-*Sources consulted:*
-- *[WhisperKit GitHub](https://github.com/argmaxinc/WhisperKit)*
-- *[WhisperKit vs whisper.cpp discussion](https://github.com/argmaxinc/WhisperKit/discussions/250)*
-- *[WhisperKit arXiv paper (2507.10860)](https://arxiv.org/html/2507.10860v1)*
-- *[Apple SpeechAnalyzer and Argmax blog](https://www.argmaxinc.com/blog/apple-and-argmax)*
-- *[Apple Custom Keyboard Extension Programming Guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/CustomKeyboard.html)*
-- *[iOS 26 Liquid Glass Reference](https://github.com/conorluddy/LiquidGlassReference)*
-- *[iOS 26 Liquid Glass in UIKit+SwiftUI hybrid](https://fatbobman.com/en/posts/grow-ios26/)*
-- *[SpeechAnalyzer iOS 26 Guide](https://antongubarenko.substack.com/p/ios-26-speechanalyzer-guide)*
-- *[SpeechAnalyzer WWDC25 Session 277](https://developer.apple.com/videos/play/wwdc2025/277/)*
-- *[Building iOS AI Keyboard with SwiftUI](https://medium.com/@jonathanaraney/building-an-ios-ai-keyboard-with-swiftui-my-experience-so-far-308a67e536a7)*
-- *[KeyboardKit](https://github.com/KeyboardKit/KeyboardKit)*
-- *[App Group data sharing patterns](https://rderik.com/blog/sharing-information-between-ios-app-and-an-extension/)*
-- *[Keyboard extension memory issue — Apple Developer Forums](https://developer.apple.com/forums/thread/85478)*
-- *[Recording audio in keyboard extension — Apple Developer Forums](https://developer.apple.com/forums/thread/742601)*
+## 5. Removing Apple Dictation Mic Button
+
+### Recommendation: Already handled by custom keyboard -- non-issue
+
+**Confidence:** HIGH
+
+Custom keyboard extensions (UIInputViewController) do NOT show the Apple dictation mic button. That button only appears on the system keyboard. Since Dictus IS a custom keyboard, the Apple mic is not present when Dictus keyboard is active.
+
+### What you actually need to address
+
+The real issue may be the **system keyboard bottom bar** (globe button area) that iOS shows beneath custom keyboards on certain devices. This is controlled by iOS, not by the extension.
+
+| Concern | Solution |
+|---------|----------|
+| Globe button shows at bottom | Check `needsInputModeSwitchKey` -- if true, show your own globe key. System globe appears in bottom bar on iPhone X+ regardless |
+| Dictation mic in system bar | Cannot be removed programmatically. Users disable via Settings > General > Keyboard > Enable Dictation |
+| System keyboard bleeding through | Ensure `inputView` height constraint is properly set (already done in KeyboardViewController) |
+
+### Dependencies needed
+
+None. This is a design/layout concern, not a technology concern.
+
+### Sources
+
+- [Apple Custom Keyboard Guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/CustomKeyboard.html)
+
+---
+
+## 6. Parakeet v3 / Alternative STT Models
+
+### Recommendation: FluidAudio SDK with Parakeet TDT v3 CoreML -- as optional ALTERNATIVE to WhisperKit
+
+**Confidence:** MEDIUM
+
+### FluidAudio + Parakeet TDT v3
+
+| Attribute | Value |
+|-----------|-------|
+| **Library** | [FluidAudio](https://github.com/FluidInference/FluidAudio) |
+| **Model** | Parakeet TDT 0.6B v3 (CoreML) |
+| **Languages** | 25 European languages including French |
+| **iOS minimum** | iOS 17.0+ (higher than Dictus's iOS 16.0 target) |
+| **Model size on disk** | ~2.5GB (significantly larger than WhisperKit small ~460MB) |
+| **RAM usage** | ~1.2GB (vs WhisperKit small ~150-200MB) |
+| **Performance** | ~110x RTF on M4 Pro (batch mode). Much faster than Whisper |
+| **Accuracy** | Beats Whisper Large v3 on benchmarks |
+| **License** | MIT/Apache 2.0 (models permissive) |
+| **Integration** | Swift native, SPM, CoreML on Neural Engine |
+
+### Critical constraints for Dictus
+
+| Constraint | Impact |
+|------------|--------|
+| iOS 17.0+ minimum | Raises Dictus minimum from iOS 16.0 to 17.0 if adopted. Acceptable -- iOS 17 adoption >95% |
+| 2.5GB model size | Cannot coexist easily with WhisperKit models. Must be an either/or choice for users |
+| 1.2GB RAM | Cannot run in keyboard extension (50MB limit). Must run in DictusApp process (same as current WhisperKit architecture) |
+| Batch-only transcription | No streaming/real-time mode documented. Compatible with current batch approach |
+
+### Recommendation
+
+Add Parakeet v3 as an **optional model** in the model manager alongside existing WhisperKit models. Users choose one engine. Do NOT replace WhisperKit -- it remains the default for users with storage constraints.
+
+### Integration plan
+
+```
+Model Manager UI:
++-- WhisperKit Models (default)
+|   +-- tiny (~40MB) -- fast, lower accuracy
+|   +-- base (~140MB) -- balanced
+|   +-- small (~460MB) -- best WhisperKit accuracy
++-- Parakeet v3 (alternative)
+    +-- parakeet-tdt-0.6b-v3 (~2.5GB) -- highest accuracy, needs more storage
+```
+
+### Dependencies needed
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| FluidAudio | latest (SPM) | Parakeet CoreML inference engine |
+
+### Installation
+
+```swift
+// Xcode SPM: File > Add Package Dependencies
+// URL: https://github.com/FluidInference/FluidAudio.git
+```
+
+### Sources
+
+- [FluidAudio GitHub](https://github.com/FluidInference/FluidAudio)
+- [Parakeet TDT v3 CoreML on HuggingFace](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
+- [sherpa-onnx RAM issue #2626](https://github.com/k2-fsa/sherpa-onnx/issues/2626) -- confirms 1.2GB RAM for Parakeet 0.6B
+
+---
+
+## 7. Emoji Picker in Keyboard Extension
+
+### Recommendation: Build custom emoji grid in SwiftUI (no library needed)
+
+**Confidence:** HIGH
+
+### Options evaluated
+
+| Option | Pros | Cons | Verdict |
+|--------|------|------|---------|
+| **Custom SwiftUI grid** | Full Liquid Glass design control, zero dependencies | More work (~2-3 days), must handle categories/skin tones | RECOMMENDED |
+| **ISEmojiView** | Battle-tested, SPM support, ~0.3.0 | UIKit-based (needs bridging in SwiftUI keyboard), may not match Liquid Glass | ACCEPTABLE for faster delivery |
+| **MCEmojiPicker** | SwiftUI native, small (795KB), updated Feb 2026 | Popover-style (macOS-like), not keyboard-style grid | NOT IDEAL for keyboard context |
+| **KeyboardKit emoji module** | Professional, categorized | Commercial Pro required for full features | DO NOT USE (license conflict) |
+
+### Recommended approach: Custom SwiftUI grid
+
+Emojis are Unicode strings. No library needed to render them.
+
+```swift
+// Emojis are just strings -- insert via textDocumentProxy
+textDocumentProxy.insertText("emoji-character")
+
+// Use LazyVGrid for scrollable grid
+// Categories: Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags
+// Skin tone: long-press popup (same pattern as existing AccentPopup)
+// Recents: store in UserDefaults via App Group
+```
+
+### Dependencies needed
+
+None for recommended approach. ISEmojiView (~0.3.0 via SPM) as fallback option.
+
+### Sources
+
+- [ISEmojiView GitHub](https://github.com/isaced/ISEmojiView)
+- [MCEmojiPicker GitHub](https://github.com/izyumkin/MCEmojiPicker)
+
+---
+
+## Summary: New Dependencies for v1.1
+
+### Required additions
+
+| Dependency | Version | Purpose | Feature | Size Impact |
+|------------|---------|---------|---------|-------------|
+| French n-gram SQLite DB | Custom-built | Word prediction | Text prediction | ~10-15MB in App Group |
+
+### Optional additions
+
+| Dependency | Version | Purpose | Feature | Size Impact |
+|------------|---------|---------|---------|-------------|
+| FluidAudio | latest via SPM | Parakeet v3 STT engine | Model catalog | SDK ~5MB, model ~2.5GB user-downloaded |
+| ISEmojiView | ~0.3.0 via SPM | Emoji picker grid (if not building custom) | Emoji keyboard | ~100KB |
+
+### Explicitly NOT adding
+
+| Technology | Why Not |
+|------------|---------|
+| KeyboardKit / KeyboardKit Pro | Commercial, closed-source, contradicts MIT open-source project |
+| Presage | C++ only, GPL license, unmaintained |
+| LanguageTool | Server-based, contradicts offline-first |
+| Any autocorrect API service | Contradicts privacy/offline identity |
+| Apple Foundation Models | Requires iPhone 15 Pro+ and iOS 26.1+ -- too restrictive for current target |
+| sherpa-onnx for Parakeet | ONNX Runtime on iOS has CoreML instability; FluidAudio's native CoreML conversion is superior |
+
+### Unchanged from v1.0
+
+| Technology | Version | Status |
+|------------|---------|--------|
+| WhisperKit | 0.16.0+ | Stays as default STT engine |
+| Swift | 5.9+ | Unchanged |
+| SwiftUI | - | Unchanged |
+| App Group | group.com.pivi.dictus | Unchanged |
+| Minimum iOS | 16.0 (or 17.0 if Parakeet added) | Potentially raised |
+
+---
+
+## Installation (new dependencies only)
+
+```bash
+# If adding FluidAudio for Parakeet v3:
+# Xcode: File > Add Package Dependencies
+# URL: https://github.com/FluidInference/FluidAudio.git
+
+# If using ISEmojiView for emoji picker:
+# URL: https://github.com/isaced/ISEmojiView.git
+# Version: Up to Next Minor from 0.3.0
+
+# French n-gram database:
+# Generated offline with Python script (not an SPM dependency)
+# Placed in App Group container at build time or first launch
+```
+
+---
+
+## Confidence Assessment
+
+| Feature Area | Confidence | Reason |
+|--------------|------------|--------|
+| Text prediction/autocorrect | MEDIUM | UITextChecker for French is documented but under-tested in production keyboards. N-gram approach is proven but requires building from scratch |
+| Spacebar trackpad | HIGH | `adjustTextPosition(byCharacterOffset:)` is well-documented Apple API, widely implemented |
+| Adaptive accent key | HIGH | Simple context logic using existing `textDocumentProxy` API |
+| Cold start auto-return | LOW | No public API exists. Wispr Flow's technique is unknown. Best approach is minimizing cold starts |
+| Remove Apple mic | HIGH | Non-issue for custom keyboards -- mic is system keyboard only |
+| Parakeet v3 models | MEDIUM | FluidAudio is young (2025), CoreML conversion works, but production iOS stories are limited |
+| Emoji picker | HIGH | Well-understood problem, multiple proven approaches, existing AccentPopup pattern to follow |

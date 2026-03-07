@@ -1,188 +1,391 @@
-# Features Research
+# Feature Landscape: v1.1 Keyboard Parity & UX
 
-*Last updated: 2026-03-04*
-
-## Competitors Analyzed
-
-- **Super Whisper** (iOS + macOS) — YC-backed, subscription ($8.49/mo or $84.99/yr), offline + cloud modes, LLM post-processing
-- **Wispr Flow** (iOS + macOS + Windows) — cloud-only, subscription ($15/mo, 2,000 words/wk free), 97%+ accuracy claim
-- **WhisperBoard** (iOS) — free, open source, standalone transcription app (NOT a keyboard extension)
-- **Whisper Notes** (iOS) — $4.99 one-time, offline, standalone app (NOT a keyboard extension)
-- **Willow** (iOS) — YC S25, full QWERTY keyboard + voice, context-aware formatting, enterprise-focused
-- **Apple built-in dictation** — free, ~60s limit, accuracy issues in iOS 18, English-centric
+**Domain:** iOS keyboard extension -- French speech-to-text
+**Researched:** 2026-03-07
+**Focus:** Apple keyboard parity features, UX improvements for existing v1.0 keyboard
 
 ---
 
 ## Table Stakes
 
-Features users expect as a baseline. Missing any of these is a reason to leave.
+Features users expect from any iOS keyboard that claims to replace Apple's native keyboard. Missing any of these makes the keyboard feel "off" and pushes users back to Apple's default.
 
-### 1. Universal dictation — works in any app
-**Complexity**: High
-The entire value proposition. Without this, it's just a note-taking app. Requires a functional iOS keyboard extension with Full Access. This is technically non-trivial: Apple's keyboard extension sandbox is strict, microphone access requires `RequestsOpenAccess = true`, and the extension must stay under ~50-60MB RAM. All competitors that are keyboard-based (Super Whisper, Wispr Flow, Willow) solve this first.
+### 1. Spacebar Trackpad / Cursor Movement
 
-### 2. Accuracy that beats Apple's built-in dictation
-**Complexity**: Medium (WhisperKit handles the heavy lifting)
-Apple's dictation is notoriously inconsistent — users frequently complain about nonsense word substitutions, random punctuation, and degraded accuracy after iOS 18. Whisper models (even small) reliably outperform it. This is table stakes because users already have Apple's dictation for free; if a third-party tool isn't meaningfully better, there's no reason to switch keyboards.
+| Aspect | Detail |
+|--------|--------|
+| **Why Expected** | Apple introduced this in iOS 12 (2018). Every iPhone user who edits text uses it daily. Third-party keyboards (Gboard, SwiftKey) also implement it. A keyboard without trackpad feels broken. |
+| **Complexity** | Medium |
+| **Can Reuse Existing Code** | Partially -- SpaceKey already exists, needs long-press gesture added |
 
-### 3. Low-latency transcription (perceptually fast)
-**Complexity**: Medium
-Users abandon tools that feel slow. Acceptable latency is 1-3 seconds for a short utterance on-device. WhisperKit's Core ML + Metal pipeline achieves this on A14+ chips with small/base models. The tiny model is faster but significantly less accurate in French — small model is the right default.
+**How Apple Does It:**
+- Long-press spacebar (~350-400ms) activates trackpad mode
+- All key labels fade out, entire keyboard turns light grey/transparent
+- Finger movement on the greyed-out area maps to cursor movement via `textDocumentProxy.adjustTextPosition(byCharacterOffset:)`
+- Horizontal movement = character-by-character cursor repositioning
+- Vertical movement has no effect on iPhone (iPad supports vertical for line movement)
+- Release finger = exit trackpad mode, keys reappear
+- Subtle haptic tick on each cursor position change (UIImpactFeedbackGenerator, light)
+- No text selection on iPhone via spacebar alone (iPad uses two-finger gesture for selection)
 
-### 4. French language support with acceptable accuracy
-**Complexity**: Low (Whisper is multilingual by design)
-Super Whisper's iOS keyboard is QWERTY-only — this is the primary pain point the project solves. French support at the model level is already built into Whisper. The differentiator is that competitors either don't support French well or require QWERTY. This is table stakes *for French users* specifically; for English users it would be "just works."
+**How Gboard/SwiftKey Do It:**
+- SwiftKey: slide thumb along spacebar (no long-press delay, immediate cursor drag). More responsive but sometimes triggers accidentally.
+- Gboard: long-press spacebar, similar to Apple but with slightly different visual treatment.
+- Both: horizontal movement only for cursor on iPhone.
 
-### 5. Filler word removal
-**Complexity**: Low-Medium
-Every competitor removes filler words (um, uh, like, "euh", "hm", "voilà" for French). It's expected. A rule-based approach (word list filter) is simple but misses context. A post-processing LLM is accurate but adds latency and complexity. For MVP, a curated French + English filler word list is sufficient and fast.
+**Implementation in Dictus:**
+- Add DragGesture with long-press timer (400ms) to SpaceKey, same pattern already used in KeyButton for accent popups
+- On activation: set a `@State var trackpadActive = true` in KeyboardView, conditionally render greyed-out overlay
+- During drag: call `controller.textDocumentProxy.adjustTextPosition(byCharacterOffset:)` with +1 or -1 based on horizontal delta
+- Map pixel movement to character offset: ~15-20pt per character step works well
+- Add haptic feedback per cursor step: `UIImpactFeedbackGenerator(style: .light).impactOccurred()`
+- On release: restore normal keyboard view
 
-### 6. Automatic punctuation
-**Complexity**: Low (Whisper produces punctuation natively)
-Whisper models output punctuated text by default. This is a baseline expectation — Apple's dictation frequently fails at this, which is a known frustration. No additional implementation needed beyond what WhisperKit provides.
+**Key API:** `UITextDocumentProxy.adjustTextPosition(byCharacterOffset:)` -- moves insertion point forward (positive) or backward (negative). Available since iOS 11. Uses UTF-16 character offsets internally, so emoji/special chars may need `.utf16.count` handling.
 
-### 7. Transcription preview before insertion
-**Complexity**: Medium
-Users need to see what was transcribed before it lands in the text field, especially when accuracy matters (messaging, emails). All mature competitors show a preview zone. This is also practically necessary given the edit loop: dictate → review → correct → insert. WhisperBoard and Whisper Notes both default to review-before-insert.
+**Confidence:** HIGH -- well-documented Apple API, straightforward gesture implementation.
 
-### 8. Undo inserted text
-**Complexity**: Low-Medium
-If the transcription is wrong and the user inserts it anyway, they need a way to remove the whole block at once — not character-by-character backspace. iOS keyboard APIs support this via `deleteBackward` and `textDocumentProxy`. Table stakes because the alternative (manually selecting and deleting inserted text) breaks the keyboard flow entirely.
+### 2. Haptic Feedback on All Keys
 
-### 9. Microphone visual feedback during recording
-**Complexity**: Low
-A clear recording indicator (waveform animation, level meter, or simple pulsing icon) is expected. Without it, users don't know if the mic is active. Every competitor provides this. Haptic feedback on start/stop is a bonus but considered expected on iOS.
+| Aspect | Detail |
+|--------|--------|
+| **Why Expected** | Apple's native keyboard provides haptic feedback on every key press (iOS 16+). Users notice immediately when a third-party keyboard lacks it. |
+| **Complexity** | Low |
+| **Can Reuse Existing Code** | Yes -- HapticFeedback utility exists, KeyButton already calls it on accent selection |
 
-### 10. Onboarding for keyboard + permissions setup
-**Complexity**: Medium
-iOS keyboard setup is genuinely confusing (Settings > General > Keyboard > Keyboards > Add New Keyboard, then enable Full Access). Without guided onboarding, most users will fail setup and leave a 1-star review. All serious keyboard apps provide step-by-step onboarding. Permissions needed: microphone (required for recording), Full Access (required to use microphone in extension).
+**How Apple Does It:**
+- Light impact haptic on every key press (not just special keys)
+- Enabled via Settings > Sounds & Haptics > Keyboard Feedback > Haptic
+- Uses UIImpactFeedbackGenerator(style: .light) or equivalent system API
 
-### 11. Model download and management
-**Complexity**: Medium
-WhisperKit models are not bundled — they must be downloaded. Users need to understand which model to download (tiny is fast but poor French accuracy, small is the right balance, medium is too large for the extension at ~50MB). An in-app model browser with size/speed/accuracy tradeoffs shown clearly is expected by power users.
+**Current State in Dictus:**
+- `HapticFeedback.keyTapped()` already exists and is called in KeyButton.onEnded
+- `UIDevice.current.playInputClick()` is called for audio feedback when hasFullAccess
+- Haptic calls appear to be in place for character keys and accent selection
+- Special keys (shift, delete, globe, layer switch) may be missing haptics
+
+**What Needs to Change:**
+- Audit all special key views (ShiftKey, DeleteKey, GlobeKey, LayerSwitchKey, ReturnKey) for haptic feedback
+- Ensure delete-on-hold also fires haptics on each repeat deletion
+- Verify HapticFeedback.keyTapped() uses the right intensity (should be light, not medium)
+
+**Confidence:** HIGH -- minimal new code, mostly verification and consistency.
+
+### 3. Adaptive Accent/Apostrophe Key (Context-Sensitive)
+
+| Aspect | Detail |
+|--------|--------|
+| **Why Expected** | Apple's native iOS French AZERTY has a key in the bottom letter row (row 3, between N and delete) that shows either an apostrophe (') or an accent grave/cedilla based on typing context. This is a distinctive French AZERTY feature. |
+| **Complexity** | Medium |
+| **Can Reuse Existing Code** | Partially -- KeyDefinition supports character keys, but needs context-awareness logic |
+
+**How Apple Does It (French AZERTY, iOS):**
+- Row 3 on Apple's iOS AZERTY: `shift W X C V B N ['/accent] delete`
+- The key between N and delete is context-adaptive:
+  - Default state: shows apostrophe (') -- the most common punctuation in French
+  - After certain letters where accent is likely (e.g., after space before a vowel): shows accent grave or other contextual character
+- The key adapts based on `documentContextBeforeInput` -- what the user just typed
+- Most common behavior: apostrophe by default, because French uses contractions constantly (l'homme, j'ai, d'accord, c'est, n'est, qu'il)
+
+**Dictus Current State:**
+- Row 3 is: `shift W X C V B N delete` -- missing this key entirely
+- Apostrophe is only accessible via long-press or switching to the numbers layer (row 3 of numbers layout has `'`)
+- This is a significant gap -- French users type apostrophes constantly
+
+**Implementation Approach:**
+- Add a new KeyType: `.adaptive` or modify `.character` to support context-sensitivity
+- Add a `KeyDefinition` between N and delete in the AZERTY layout: `KeyDefinition("'", output: "'", type: .adaptive, width: 1.0)`
+- Context logic reads `controller.textDocumentProxy.documentContextBeforeInput` to decide what to show
+- Simple heuristic for French:
+  - Default: apostrophe `'` (covers 90%+ of use cases)
+  - After specific letter combinations: could show accent but this is complex and low-ROI
+- Start with a static apostrophe key -- it solves the biggest pain point. Make it adaptive later.
+
+**User Behavior Reference:**
+- French users type apostrophes ~5-10 times per paragraph (l', d', n', s', c', j', qu')
+- Without a visible apostrophe key, users must: switch to numbers layer, type apostrophe, switch back -- 3 taps instead of 1
+- This alone is enough to make users abandon a French keyboard
+
+**Confidence:** MEDIUM -- Apple's exact context-switching logic is not documented. Starting with a static apostrophe key is safe and solves the core problem.
+
+### 4. Remove Duplicate Globe Key / Reorganize Bottom Row
+
+| Aspect | Detail |
+|--------|--------|
+| **Why Expected** | Apple's iOS keyboard has one globe key in the bottom-left. Having duplicates or wrong placement confuses muscle memory. |
+| **Complexity** | Low |
+| **Can Reuse Existing Code** | Yes -- layout changes only in KeyboardLayout.swift |
+
+**Current Dictus Bottom Row (AZERTY):** `globe 123 [mic filtered] space return`
+**Apple's Bottom Row (AZERTY):** `globe 123 emoji space return`
+
+**What Needs to Change:**
+- The mic key is already filtered from the bottom row (moved to toolbar in v1.0)
+- Replace the mic key slot with an emoji button
+- Ensure globe key uses `advanceToNextInputMode()` (already does)
+
+**Confidence:** HIGH -- layout restructuring only.
 
 ---
 
 ## Differentiators
 
-Features where Dictus can win against competitors.
+Features that set Dictus apart. Not expected by default but valued by users who discover them.
 
-### 1. AZERTY keyboard layout
-**Complexity**: Medium
-**Why it wins**: Super Whisper's iOS keyboard is QWERTY-only. Wispr Flow and Willow are also QWERTY-only on iOS. For French users, switching from AZERTY to QWERTY to correct a dictation error, then back, is enough friction to abandon the tool. Dictus ships AZERTY as default with QWERTY as secondary. This is a direct response to the stated primary pain point and has no competitor parity on iOS today.
-**Dependency**: Full keyboard implementation (layout engine, key rendering, text input proxy).
+### 1. Text Prediction / Autocorrect Suggestion Bar
 
-### 2. Fully on-device, no account, no subscription
-**Complexity**: Low (architecture decision, not implementation complexity)
-**Why it wins**: Wispr Flow ($15/mo, cloud-required), Super Whisper ($8.49/mo or $84.99/yr), Willow (subscription model). Whisper Notes charges $4.99 once but is not a keyboard. WhisperBoard is free and open source but is also not a keyboard. Dictus is free + open source + offline-only — a genuinely different position. Privacy-conscious users and users burned by SaaS pricing churn respond to this.
-**Dependency**: WhisperKit on-device model, no network calls in transcription path.
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | Bridges the gap between "dictation keyboard" and "full replacement keyboard." Users who switch to Dictus for dictation but have to switch back for typing (because no autocorrect) will eventually stop switching. |
+| **Complexity** | High |
+| **New Subsystem Required** | Yes -- prediction engine, suggestion bar UI, word replacement logic |
 
-### 3. Inline correction in the same keyboard (no context switching)
-**Complexity**: High
-**Why it wins**: The Super Whisper iOS flow requires switching keyboards to correct text — the primary stated frustration in PROJECT.md. Dictus keeps dictation, preview, and correction in the same keyboard view. The user never needs to switch input methods. This requires a well-designed keyboard layout that shows a transcription edit zone while remaining usable as a standard keyboard.
-**Dependency**: Custom AZERTY keyboard, transcription preview zone, text editing within the keyboard UI.
+**How Apple Does It:**
+- Three-slot suggestion bar above the keyboard
+- Center slot: autocorrect (bold, auto-applied on space)
+- Left/right slots: alternative predictions
+- Tap a suggestion to insert it (replaces current partial word)
+- Powered by on-device ML model trained per language
+- Learns from user typing patterns over time
 
-### 4. iOS 26 Liquid Glass design
-**Complexity**: Medium (once iOS 26 SDK APIs are available)
-**Why it wins**: No competitor will adopt iOS 26 design from day one — it takes time for established apps to update. Dictus is purpose-built for iOS 26 and can set the visual standard for voice keyboard apps. This is a meaningful differentiator for users who care about fit-and-finish and an explicit personal project motivation.
-**Dependency**: iOS 26 SDK, SwiftUI Liquid Glass components, no backwards compatibility to worry about pre-iOS 26.
+**How Gboard/SwiftKey Do It:**
+- SwiftKey: three-slot bar, learns writing style, predicts next word (not just completion)
+- Gboard: similar three-slot bar, powered by Google's prediction engine
+- Both use proprietary ML models far beyond what public APIs offer
 
-### 5. French-first, not French-as-an-afterthought
-**Complexity**: Low-Medium
-**Why it wins**: Competitors support French, but none are tuned for it. French filler words ("euh", "bah", "voilà", "quoi"), French punctuation conventions (space before `:`), and French-specific corrections (accentuation on proper nouns, contractions) are all edge cases that English-first apps handle poorly. A curated French filler word list and correct punctuation handling differentiates the experience for native speakers.
-**Dependency**: Filler word list, optional post-processing rules.
+**Available iOS APIs for Dictus:**
+- `UITextChecker` -- built-in iOS spell checker with French support
+  - `rangeOfMisspelledWord(in:range:startingAt:wrap:language:)` -- finds misspelled words
+  - `guesses(forWordRange:in:language:)` -- returns correction suggestions
+  - `completions(forPartialWordRange:in:language:)` -- word completions from partial input
+  - Language parameter: `"fr"` or `"fr_FR"` for French
+  - Limitations: completions sort alphabetically (not by probability), no next-word prediction, context-independent
+- `UILexicon` (via `requestSupplementaryLexicon`) -- user's contact names and text shortcuts
+  - Supplements UITextChecker with user-specific vocabulary
+- `UITextDocumentProxy.documentContextBeforeInput` -- recent text for context
 
-### 6. Open source / MIT licensed
-**Complexity**: Low (no implementation complexity — it's a licensing decision)
-**Why it wins**: Super Whisper and Wispr Flow are closed source. Whisperboard is open source but not a keyboard. An open-source iOS voice keyboard lets developers fork, audit privacy, and contribute. Builds trust with privacy-sensitive users. Also enables community-driven AZERTY improvements for regional variants (Belgian, Swiss, Canadian French).
-**Dependency**: None — this is a distribution choice.
+**Realistic Scope for Dictus:**
+- **Spell-check + autocorrect**: Use UITextChecker with `"fr"` language. Trigger on space/punctuation. Show top 3 guesses in suggestion bar. Auto-apply top guess if confidence is high (single guess returned).
+- **Word completion**: Use `completions(forPartialWordRange:)` as user types. Show in suggestion bar.
+- **Next-word prediction**: NOT possible with public iOS APIs. Would require a custom n-gram model or on-device LLM. Defer.
+- **User learning**: UITextChecker.learnWord() lets Dictus remember user vocabulary. Learned words persist device-wide.
+
+**Suggestion Bar UI:**
+- Horizontal bar above the keyboard, height ~36-40pt
+- Three slots separated by thin dividers
+- Center slot = autocorrect (bold text), auto-inserted on space
+- Left/right slots = completions or alternatives, tap to insert
+- Integrates between ToolbarView (mic button) and KeyboardView
+- Consider: merge suggestion bar INTO the toolbar row to save vertical space
+
+**Accented Character Suggestions in Bar:**
+- For French, when user types "e", show e/e/e/e as quick-access accented variants
+- This supplements the existing long-press accent popup with a faster one-tap method
+- Read `documentContextBeforeInput` to determine if accented suggestion is relevant
+
+**Memory Considerations:**
+- UITextChecker is lightweight, system-provided -- no extra memory
+- Suggestion bar UI is minimal SwiftUI
+- No ML model loading required for basic spell-check
+- Stays well within 50MB keyboard extension limit
+
+**Confidence:** MEDIUM -- UITextChecker French support works but quality of suggestions is unknown. Alphabetical sorting (not probability) may produce poor UX. Needs prototyping to evaluate.
+
+### 2. Emoji Picker Integration
+
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | Users switch keyboards frequently for emoji. If Dictus has a basic emoji picker, they stay in Dictus longer. |
+| **Complexity** | Medium-High |
+| **New Subsystem Required** | Yes -- emoji data source, grid view, category tabs, search |
+
+**How Apple Does It:**
+- Emoji button in bottom row opens full emoji keyboard
+- Category tabs at bottom (Smileys, Animals, Food, etc.)
+- Recently used section at top
+- Search bar
+- Skin tone variants on long-press
+
+**Options for Dictus:**
+1. **Globe key fallback** (simplest): tapping an emoji button calls `advanceToNextInputMode()` which cycles to Apple's emoji keyboard. Zero implementation but requires a keyboard switch round-trip.
+2. **Basic built-in picker** (medium): grid of common emoji organized by category. Use Unicode emoji data. No search, no skin tones. Covers 80% of use cases.
+3. **Third-party library** (ISEmojiView, MCEmojiPicker): pre-built emoji grids with categories and search. SPM-compatible. Adds dependency but saves significant development time.
+4. **KeyboardKit Pro** ($): includes emoji keyboard. But adds a paid dependency to an open-source project -- philosophically misaligned.
+
+**Recommendation:** Start with option 1 (globe/emoji button that switches to system emoji keyboard). This is what Wispr Flow does. A built-in emoji picker is a v1.2+ feature -- it's a lot of UI work for a feature that Apple already provides well.
+
+**Bottom Row Change:**
+- Replace the filtered mic key position with an emoji/smiley button
+- Button shows `face.smiling` SF Symbol
+- Tap action: `advanceToNextInputMode()` -- cycles to next keyboard (usually emoji)
+- This is functionally identical to a second globe key but with emoji iconography, signaling to the user "tap here for emoji"
+
+**Confidence:** HIGH for the globe-based approach. LOW for building a custom emoji picker (complex, memory-heavy, version compatibility issues with new emoji).
+
+### 3. Pill-Shaped Button Design (Mic + Recording Controls)
+
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | Modern, premium feel. Pill/capsule shapes are the dominant iOS design pattern for action buttons (App Store download, Messages send, Spotlight search). Makes the mic button more tappable. |
+| **Complexity** | Low |
+| **Can Reuse Existing Code** | Yes -- AnimatedMicButton exists, just needs shape change |
+
+**How to Implement:**
+- SwiftUI `Capsule()` shape or `.clipShape(Capsule())` modifier
+- `.buttonBorderShape(.capsule)` for system-styled buttons
+- Replace circular mic button with horizontal pill: icon + "Dicter" label
+- Recording overlay buttons (Stop, Cancel) also become pills
+- Minimum tap target: 44x44pt (Apple HIG), pill allows wider touch area
+
+**Design Pattern:**
+```
+[mic icon] Dicter     -- idle state, pill button in toolbar
+[stop icon] Arreter   -- recording state, red pill
+[x] Annuler           -- cancel, secondary pill
+```
+
+**Confidence:** HIGH -- pure UI change, well-supported by SwiftUI.
+
+### 4. Cold Start Auto-Return to Keyboard
+
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | When iOS kills the main app (common after 2-3 app switches), tapping mic opens the app but doesn't auto-return to the keyboard. User must manually navigate back. Competitors (Wispr Flow, Super Whisper) handle this seamlessly. |
+| **Complexity** | High |
+| **New Subsystem Required** | Partially -- needs investigation of competitor approaches |
+
+**This is documented as the top priority in PROJECT.md and MEMORY.md.** Research on implementation approaches is a separate concern from feature landscape -- flagged for deeper investigation in PITFALLS.md.
+
+**Confidence:** LOW -- how competitors achieve auto-return is unknown. Public APIs don't support programmatic app switching. May require private API usage or creative workarounds.
+
+### 5. Waveform Animation Rework
+
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | Current waveform works but could be smoother/more fluid. Premium animation quality signals app quality. |
+| **Complexity** | Medium |
+| **Can Reuse Existing Code** | Yes -- BrandWaveform.swift exists, needs animation tuning |
+
+**Confidence:** HIGH -- pure visual polish, no API dependencies.
+
+### 6. Model Catalog Update
+
+| Aspect | Detail |
+|--------|--------|
+| **Value Proposition** | Remove underperforming models, add newer models (Parakeet v3) for better French accuracy. |
+| **Complexity** | Medium |
+| **New Subsystem Required** | No -- model manager already exists, needs catalog data update |
+
+**Confidence:** MEDIUM -- depends on what models WhisperKit supports and Parakeet v3 compatibility.
 
 ---
 
 ## Anti-Features
 
-Things to deliberately NOT build, with reasoning.
+Features to explicitly NOT build in v1.1.
 
-### 1. Cloud transcription / server-side processing
-**Reasoning**: Defeats the privacy advantage, adds infrastructure cost, creates a subscription dependency, and introduces latency from network round-trips. Wispr Flow requires cloud and charges $15/mo for it. Dictus's entire identity is "no cloud, no account, no subscription." Adding cloud transcription as an optional mode confuses the value proposition and splits the codebase.
-
-### 2. Text prediction / autocorrect (in MVP)
-**Reasoning**: Text prediction is the most complex feature in any keyboard — Apple has entire teams dedicated to it, and third-party implementations require large language model integration, n-gram dictionaries, and per-user learning databases. It's 2-3 sprints of work minimum. Apple's native autocorrect already exists in every iOS text field through the system text input system — Dictus does not need to replicate it. This is explicitly deferred to post-MVP in PROJECT.md.
-
-### 3. LLM post-processing / "smart modes" (in MVP)
-**Reasoning**: Super Whisper's killer feature on macOS is LLM post-processing (GPT-4/Claude to rewrite dictated text). This is complex to implement correctly, adds API cost or model size, and creates a dependency on either a server or a large local LLM. The core STT pipeline must be reliable first. Smart modes are v1+ and the on-device LLM story on iOS is still immature (limited context windows, slow inference for large models in extensions). Do not build this until the base keyboard is excellent.
-
-### 4. Real-time streaming transcription
-**Reasoning**: Streaming (word-by-word as you speak) is visually impressive but technically demanding: it requires a streaming-compatible Whisper inference path, careful buffer management, and significantly more CPU during recording. WhisperKit does support streaming but it's a harder implementation path. The user experience benefit is real but the marginal value over "record then transcribe in 1-2 seconds" does not justify the complexity for MVP. Deferred to v2.
-
-### 5. iCloud sync / cross-device history
-**Reasoning**: Dictation history stored in iCloud requires entitlements, CloudKit setup, conflict resolution, and user data policies. The keyboard extension already has severe limitations — adding iCloud sync adds another axis of failure. The primary use case is ephemeral: dictate, insert, done. History is a nice-to-have but not a reason users adopt a voice keyboard. Deferred to v2+.
-
-### 6. iPad or multi-window support
-**Reasoning**: iPad keyboards have different layout constraints, split-screen adds edge cases, and the primary user profile is iPhone. Supporting iPad doubles the QA surface for a solo developer learning Swift. Deferred to v2+.
-
-### 7. Multiple LLM provider integrations (in MVP)
-**Reasoning**: Claude, Groq, Ollama — adding provider choice is useful eventually but creates a settings sprawl that confuses new users and multiplies the test surface. If smart modes ship in v1+, start with one provider and add others based on user demand. The v1 question is "does LLM post-processing improve the experience?" not "which LLM is best?"
-
-### 8. Subscription model or any monetization
-**Reasoning**: The explicit positioning is free + open source. Adding a subscription — even optional — changes the nature of the project, creates support obligations, and undermines the trust advantage over Wispr Flow and Super Whisper. If monetization is ever needed (App Store hosting costs, etc.), a one-time tip/donation model aligns better with the project's character.
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Custom emoji picker (built-in) | 500+ lines of UI code, memory pressure in extension, Apple already provides emoji keyboard | Use `advanceToNextInputMode()` to cycle to system emoji keyboard |
+| Next-word prediction | Requires custom ML model or n-gram database. UITextChecker cannot do this. Would need KeyboardKit Pro ($) or custom training. | Stick with word completion and spell-check via UITextChecker |
+| Swipe typing (gesture typing) | Extremely complex gesture recognition + dictionary lookup. Gboard/SwiftKey spent years perfecting this. | Not in scope -- users who need swipe typing use Apple/Gboard |
+| Text selection via trackpad | Apple does this on iPad (two-finger gesture), not on iPhone. Implementing it on iPhone would confuse users. | Only implement cursor movement (single-finger horizontal) |
+| Auto-capitalize after punctuation | UITextChecker doesn't handle this. Would need custom logic for French rules (capitalize after `.`, `!`, `?` but NOT after `:` in French). | Defer to v1.2 -- could be a quick add but needs French-specific rules |
+| Keyboard themes / custom colors | Nice-to-have, large surface area, distracts from core UX improvements. | Keep Liquid Glass as the single theme. Themes are a v2+ feature. |
+| Clipboard history | Requires Full Access (already have it), but adds privacy concerns and UI complexity. | Defer indefinitely -- not aligned with privacy-first positioning |
 
 ---
 
 ## Feature Dependencies
 
-Which features depend on which — relevant for sequencing development.
-
 ```
-WhisperKit model download (app)
-  └─ On-device transcription (core pipeline)
-       ├─ Filler word removal (post-process step, trivial once transcription works)
-       ├─ Automatic punctuation (native in Whisper output, no extra work)
-       └─ Transcription result (feeds everything below)
-
-iOS keyboard extension (Full Access + microphone)
-  ├─ AZERTY layout (key rendering, text input proxy)
-  │    └─ QWERTY layout option (secondary, same architecture)
-  ├─ Microphone recording in extension (requires Full Access)
-  │    ├─ Visual/haptic recording feedback (UI layer on top of recording)
-  │    └─ Transcription trigger → WhisperKit pipeline (via App Group shared memory)
-  ├─ Transcription preview zone (UI component inside keyboard)
-  │    └─ Inline edit before insert (text editing within preview zone)
-  └─ Auto-insert into active text field (textDocumentProxy.insertText)
-       └─ Undo inserted text (textDocumentProxy.deleteBackward x N)
-
-App Group (group.com.pivi.dictus)
-  └─ Shared data channel between app and extension
-       ├─ Model selection setting
-       ├─ Language preference
-       └─ Filler word toggle
-
-Onboarding flow (app)
-  ├─ Microphone permission request
-  ├─ Full Access setup instructions
-  └─ Model download trigger → model manager
-
-Settings (app)
-  ├─ Model selection → model manager
-  ├─ Language toggle (French / English)
-  ├─ Keyboard layout toggle (AZERTY / QWERTY)
-  └─ Filler word toggle
-
-iOS 26 Liquid Glass design
-  └─ Applied as UI layer on top of all components above — no functional dependency
-       but must be considered from the first component built to avoid rework
+Existing v1.0 infrastructure (keyboard, layout, gesture system)
+  |
+  +-- Spacebar Trackpad (builds on SpaceKey + DragGesture pattern from KeyButton)
+  |     Requires: adjustTextPosition API, greyed-out overlay state
+  |     No dependency on other v1.1 features
+  |
+  +-- Haptic Feedback on All Keys (builds on existing HapticFeedback utility)
+  |     Requires: audit of all key views
+  |     No dependency on other v1.1 features
+  |
+  +-- Adaptive Apostrophe Key (builds on KeyDefinition + KeyboardLayout)
+  |     Requires: new key in AZERTY row 3, documentContextBeforeInput reading
+  |     No dependency on other v1.1 features
+  |
+  +-- Bottom Row Reorganization (builds on KeyboardLayout)
+  |     Requires: emoji/globe button replacing mic slot
+  |     Blocks: emoji picker (needs button to exist first)
+  |
+  +-- Pill-Shaped Buttons (builds on AnimatedMicButton + RecordingOverlay)
+  |     Requires: Capsule() shape, label text
+  |     No dependency on other v1.1 features
+  |
+  +-- Text Prediction / Suggestion Bar [HIGH EFFORT]
+  |     Requires: UITextChecker integration, suggestion bar UI, word replacement logic
+  |     Depends on: bottom row reorganization (suggestion bar placement)
+  |     Should be built AFTER simpler keyboard parity features
+  |
+  +-- Cold Start Auto-Return [HIGH RISK]
+  |     Requires: deep research into competitor approaches
+  |     No dependency on other v1.1 features
+  |     Can be worked on in parallel
+  |
+  +-- Waveform Animation Rework (builds on BrandWaveform)
+  |     No dependency on other v1.1 features
+  |
+  +-- Model Catalog Update (builds on model manager)
+        No dependency on other v1.1 features
 ```
 
-### Critical path for MVP
+---
 
-1. **WhisperKit integration** (app target) — proves transcription works on device
-2. **Keyboard extension scaffold** (extension target + App Group) — proves the pipe exists
-3. **Microphone recording in extension** — proves Full Access + mic works end-to-end
-4. **AZERTY keyboard layout** — core differentiator, needed before any user testing
-5. **Transcription preview + insert** — completes the basic dictation loop
-6. **Filler word removal** — trivial once pipeline works, high perceived quality impact
-7. **Onboarding + model manager** — required for any user beyond the developer
-8. **Settings** — model/language/layout preferences
-9. **Liquid Glass polish** — applied throughout but non-blocking on core loop
+## MVP Recommendation for v1.1
 
-Undo and QWERTY layout are high-value but can ship in the first patch after the core MVP loop is working.
+### Phase 1 -- Keyboard Parity (ship first, highest user impact)
+
+Prioritize these -- they are fast to implement and close the biggest gaps:
+
+1. **Adaptive apostrophe key** -- French users need this immediately. Static apostrophe between N and delete. Low-medium effort, huge impact.
+2. **Spacebar trackpad** -- Every iOS user expects this. Medium effort, clear implementation path via `adjustTextPosition`.
+3. **Haptic feedback on all keys** -- Audit and fix. Low effort, noticeable quality improvement.
+4. **Bottom row reorganization** -- Replace mic slot with emoji button, clean up layout. Low effort.
+5. **Pill-shaped buttons** -- Pure visual upgrade. Low effort, premium feel.
+
+### Phase 2 -- UX Polish (ship second)
+
+6. **Waveform animation rework** -- Visual polish, medium effort.
+7. **Recording screen redesign** -- Visual polish, medium effort.
+
+### Phase 3 -- Complex Features (ship third, needs prototyping)
+
+8. **Text prediction / suggestion bar** -- High effort, uncertain quality with UITextChecker for French. Prototype first, validate quality before committing.
+9. **Model catalog update** -- Research Parakeet v3 compatibility, medium effort.
+
+### Separate Track (parallel investigation)
+
+10. **Cold start auto-return** -- High risk, needs dedicated research. Work on this in parallel with Phase 1-2, don't block other features on it.
+
+**Defer to v1.2+:**
+- Built-in emoji picker (use system keyboard cycling for now)
+- Next-word prediction (needs custom ML, beyond UITextChecker)
+- Swipe typing
+- Keyboard themes
+
+---
+
+## Sources
+
+- [Apple UITextDocumentProxy Documentation](https://developer.apple.com/documentation/uikit/uitextdocumentproxy)
+- [adjustTextPosition(byCharacterOffset:) API](https://developer.apple.com/documentation/uikit/uitextdocumentproxy/1618194-adjusttextposition)
+- [UITextChecker Documentation](https://developer.apple.com/documentation/uikit/uitextchecker)
+- [UITextChecker - NSHipster](https://nshipster.com/uitextchecker/) -- detailed analysis of UITextChecker capabilities and limitations
+- [ios-uitextchecker-autocorrect GitHub](https://github.com/ansonl/ios-uitextchecker-autocorrect) -- reference autocorrect implementation
+- [KeyboardKit Features](https://keyboardkit.com/features) -- commercial framework feature comparison
+- [SwiftKey Cursor Control](https://support.microsoft.com/en-us/topic/how-do-i-use-cursor-control-on-my-microsoft-swiftkey-keyboard-748643ba-8485-43ad-9729-8e5c908603e3)
+- [Apple Capsule Shape Documentation](https://developer.apple.com/documentation/swiftui/capsule)
+- [ISEmojiView GitHub](https://github.com/isaced/ISEmojiView) -- open-source emoji picker for iOS
+- [MCEmojiPicker GitHub](https://github.com/izyumkin/MCEmojiPicker) -- SwiftUI emoji picker
+- [Macworld: iPhone Keyboard Trackpad](https://www.macworld.com/article/558720/how-to-iphone-keyboard-trackpad.html)
+- [9to5Mac: Keyboard Trackpad Mode](https://9to5mac.com/2018/09/17/how-to-use-keyboard-trackpad-mode-on-every-iphone-and-ipad-with-ios-12/)
+- [Handling text interactions in custom keyboards - Apple](https://developer.apple.com/documentation/uikit/handling-text-interactions-in-custom-keyboards)
