@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>StringsTable</key>
+	<string>Root</string>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<!-- Activation steps -->
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Activer Dictus</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>1. Touchez Claviers</string>
+			<key>Key</key>
+			<string>step1</string>
+			<key>DefaultValue</key>
+			<string></string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>2. Activez Dictus</string>
+			<key>Key</key>
+			<string>step2</string>
+			<key>DefaultValue</key>
+			<string></string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>3. Activez Autoriser l'acces complet</string>
+			<key>Key</key>
+			<string>step3</string>
+			<key>DefaultValue</key>
+			<string></string>
+		</dict>
+		<!-- Privacy -->
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Vie privee</string>
+			<key>FooterText</key>
+			<string>Dictus ne stocke ni ne transmet vos donnees vocales. L'acces complet permet uniquement au clavier de communiquer avec l'app pour la transcription.</string>
+		</dict>
+		<!-- Troubleshooting -->
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Claviers introuvable ?</string>
+			<key>FooterText</key>
+			<string>Fermez les Reglages puis reessayez. Ou ouvrez Dictus et touchez Activer dans les Reglages.</string>
+		</dict>
+		<!-- Version -->
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Informations</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Version</string>
+			<key>Key</key>
+			<string>version_preference</string>
+			<key>DefaultValue</key>
+			<string>1.0</string>
+		</dict>
+	</array>
+</dict>
+</plist>
