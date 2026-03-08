@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 9 of 9 in current phase (9 complete)
+Plan: 11 of 11 in current phase (11 complete)
 Status: In progress
-Last activity: 2026-03-08 — Plan 07-10 complete (accent uppercase, special key colors, shift styling)
+Last activity: 2026-03-08 — Plan 07-11 complete (trackpad line movement, 3-category key sounds)
 
-Progress: [█████████░] 93% (Phase 7: 9/9 plans complete)
+Progress: [██████████] 100% (Phase 7: 11/11 plans complete)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 93% (Phase 7: 9/9 plans complete)
 | Phase 07 P06 | 4min | 1 tasks | 3 files |
 | Phase 07 P08 | 4min | 2 tasks | 7 files |
 | Phase 07 P07 | 4min | 2 tasks | 4 files |
+| Phase 07 P11 | 6min | 2 tasks | 2 files |
 | Phase 07 P12 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
@@ -101,6 +102,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Toolbar 48pt height for mic pill glow room; 0.05 silence threshold; unconditional playInputClick on all keys
 - [Phase 07]: Cancel uses collectSamples() not stopRecording() to preserve engine for background recording
 - [Phase 07]: Emoji key cycling accepted as iOS limitation — no public API to target emoji keyboard
+- [07-11]: AudioServicesPlaySystemSound over playInputClick for 3-category key sounds (letter/delete/modifier)
+- [07-11]: 40-char line estimate for vertical cursor jumps (UITextDocumentProxy has no line-width API)
+- [07-11]: Delete sound in DeleteKey view, not callbacks, to avoid duplication
 
 ### Pending Todos
 
@@ -114,8 +118,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T14:17:32.689Z
-Stopped at: Completed 07-12-PLAN.md
+Last session: 2026-03-08T14:20:33Z
+Stopped at: Completed 07-11-PLAN.md
 Resume file: None
 
 ---

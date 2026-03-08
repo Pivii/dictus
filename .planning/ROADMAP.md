@@ -30,7 +30,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Milestone Goal:** Bring the keyboard to Apple-level parity and polish the overall UX — cold start, trackpad, prediction, haptics, animations, and model catalog.
 
 - [ ] **Phase 6: Infrastructure & App Polish** - Consolidate design files into shared package, generate app icon, fix app-side visual bugs and onboarding flow (UAT gap closure in progress)
-- [ ] **Phase 7: Keyboard Parity & Visual** - Spacebar trackpad, adaptive accent key, haptics, bottom row cleanup, mic/recording pill redesign, waveform rework, performance optimization
+- [x] **Phase 7: Keyboard Parity & Visual** - Spacebar trackpad, adaptive accent key, haptics, bottom row cleanup, mic/recording pill redesign, waveform rework, performance optimization (completed 2026-03-08)
 - [ ] **Phase 8: Text Prediction** - 3-slot suggestion bar with French autocorrect and accent suggestions
 - [ ] **Phase 9: Cold Start** - Minimize cold start frequency, optimize init time, research auto-return
 - [ ] **Phase 10: Model Catalog** - Clean underperforming models, integrate Parakeet v3, update model selection UI
@@ -136,7 +136,7 @@ Note: Phase 9 (Cold Start) is independent of Phases 7-8 and could execute in par
 | 4. Main App & Polish | v1.0 | 5/5 | Complete | 2026-03-07 |
 | 5. Wire Settings & Hygiene | v1.0 | 2/2 | Complete | 2026-03-07 |
 | 6. Infrastructure & App Polish | v1.1 | 3/5 | Gap closure | - |
-| 7. Keyboard Parity & Visual | 11/12 | In Progress|  | - |
+| 7. Keyboard Parity & Visual | 12/12 | Complete   | 2026-03-08 | - |
 | 8. Text Prediction | v1.1 | 0/? | Not started | - |
 | 9. Cold Start | v1.1 | 0/? | Not started | - |
 | 10. Model Catalog | v1.1 | 0/? | Not started | - |
