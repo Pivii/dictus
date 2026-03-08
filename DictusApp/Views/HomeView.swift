@@ -157,7 +157,7 @@ struct HomeView: View {
         } label: {
             HStack {
                 Image(systemName: "waveform")
-                Text("Tester la dictee")
+                Text("Nouvelle dictee")
                     .font(.dictusBody)
             }
             .frame(maxWidth: .infinity)
