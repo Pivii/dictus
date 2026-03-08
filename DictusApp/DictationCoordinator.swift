@@ -228,70 +228,80 @@ class DictationCoordinator: ObservableObject {
         // iOS forbids setActive(true) from background, so this must happen first.
         try? audioRecorder.configureAudioSession()
 
-        // COLD START PATH: WhisperKit not loaded yet — use RawAudioCapture for instant recording
-        // WHY: On cold start, ensureWhisperKitReady() takes 3-4s. Instead of blocking,
-        // we start recording immediately with RawAudioCapture (plain AVAudioEngine, <100ms)
-        // and load WhisperKit in parallel. Samples are transcribed at stopDictation().
+        // Three recording paths based on WhisperKit state and caller:
+        //
+        // 1. COLD START FROM KEYBOARD (fromURL + whisperKit nil):
+        //    Use RawAudioCapture for instant recording while WhisperKit loads.
+        //    Auto-background after WhisperKit is ready.
+        //
+        // 2. COLD START IN-APP (whisperKit nil, not fromURL):
+        //    Wait for WhisperKit first (old behavior). The init() pre-load usually
+        //    finishes before the user taps the record button, so recording feels
+        //    instant. If not, the user sees a brief loading state — but transcription
+        //    after stopping is instant (no waiting at the end).
+        //
+        // 3. WARM START (whisperKit loaded):
+        //    Start recording immediately via WhisperKit's AudioProcessor.
         let isColdStart = whisperKit == nil
 
-        if isColdStart {
+        if isColdStart && fromURL {
+            // PATH 1: Cold start from keyboard — RawAudioCapture for instant recording
             dictationTask = Task {
                 do {
-                    // Step 1: Check microphone permission
                     let hasPermission = try await audioRecorder.ensureMicrophonePermission()
                     guard hasPermission else {
                         handleError("Microphone permission denied")
                         return
                     }
 
-                    // Step 2: Start raw capture immediately (<100ms)
+                    // Start raw capture immediately (<100ms)
                     try rawCapture.startCapture()
                     updateStatus(.recording)
-                    PersistentLog.log("Cold start: RawAudioCapture started, WhisperKit loading in parallel")
+                    PersistentLog.log("Cold start (keyboard): RawAudioCapture started, WhisperKit loading in parallel")
 
-                    // Step 3: Load WhisperKit while app is STILL in foreground.
+                    // Load WhisperKit while app is STILL in foreground.
                     // WHY before auto-background: iOS severely throttles CPU for background
-                    // apps. WhisperKit model loading takes ~4s in foreground but 20+ seconds
-                    // from background. The user sees DictusApp for ~4s with recording already
-                    // active (waveform visible), then auto-returns to keyboard.
-                    PersistentLog.log("Cold start: loading WhisperKit (app stays foreground)...")
+                    // apps. WhisperKit takes ~4s in foreground but 20+ seconds from background.
+                    PersistentLog.log("Cold start (keyboard): loading WhisperKit (app stays foreground)...")
                     try await ensureWhisperKitReady()
-                    PersistentLog.log("Cold start: WhisperKit ready")
+                    PersistentLog.log("Cold start (keyboard): WhisperKit ready, auto-backgrounding")
 
-                    // Step 4: NOW auto-return to keyboard (WhisperKit is loaded)
-                    if fromURL {
-                        PersistentLog.log("Cold start: auto-backgrounding now that WhisperKit is ready")
-                        autoBackgroundApp(afterDelay: 0.3)
-                    }
+                    // NOW auto-return to keyboard (WhisperKit is loaded)
+                    autoBackgroundApp(afterDelay: 0.3)
                 } catch {
-                    // WhisperKit init failed — recording continues via rawCapture,
-                    // we'll handle the error at stopDictation() time
-                    PersistentLog.log("Cold start: WhisperKit parallel load FAILED: \(error.localizedDescription)")
+                    PersistentLog.log("Cold start (keyboard): WhisperKit load FAILED: \(error.localizedDescription)")
                 }
             }
         } else {
-            // WARM START PATH: WhisperKit already loaded — use existing flow
+            // PATH 2 & 3: In-app recording (cold or warm start)
+            // Wait for WhisperKit if needed, then use AudioRecorder (standard flow).
             dictationTask = Task {
                 do {
-                    // Step 1: Check microphone permission
                     let hasPermission = try await audioRecorder.ensureMicrophonePermission()
                     guard hasPermission else {
                         handleError("Microphone permission denied")
                         return
                     }
 
-                    // Step 2: Start recording via WhisperKit's AudioProcessor
+                    // Wait for WhisperKit if not yet loaded (cold start in-app)
+                    if whisperKit == nil {
+                        PersistentLog.log("In-app cold start: waiting for WhisperKit...")
+                        try await ensureWhisperKitReady()
+                        PersistentLog.log("In-app cold start: WhisperKit ready")
+                    }
+
+                    // Start recording via WhisperKit's AudioProcessor
                     updateStatus(.recording)
                     try audioRecorder.startRecording()
-                    PersistentLog.log("Warm start: recording started successfully")
+                    PersistentLog.log("Recording started (whisperKit loaded, engineRunning: \(audioRecorder.isEngineRunning))")
 
-                    // Step 3: Auto-return to keyboard if opened via URL scheme
+                    // Auto-return to keyboard if opened via URL scheme (warm start from keyboard)
                     if fromURL {
-                        PersistentLog.log("Warm start: scheduling auto-background in 0.5s")
+                        PersistentLog.log("Warm start (keyboard): scheduling auto-background")
                         autoBackgroundApp(afterDelay: 0.5)
                     }
                 } catch {
-                    PersistentLog.log("Warm start FAILED: \(error.localizedDescription)")
+                    PersistentLog.log("Recording FAILED: \(error.localizedDescription)")
                     handleError(error.localizedDescription)
                 }
             }
