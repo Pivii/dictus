@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 9 of 9 in current phase (8 complete)
+Plan: 9 of 9 in current phase (9 complete)
 Status: In progress
-Last activity: 2026-03-08 — Plan 07-07 complete (trackpad smoothing, delete acceleration, autocap)
+Last activity: 2026-03-08 — Plan 07-10 complete (accent uppercase, special key colors, shift styling)
 
-Progress: [█████████░] 88% (Phase 7: 8/9 plans complete)
+Progress: [█████████░] 93% (Phase 7: 9/9 plans complete)
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Recent decisions affecting current work:
 - [07-07]: Word-level delete via manual word boundary detection (UITextDocumentProxy lacks deleteWordBackward)
 - [07-07]: Autocap uses NotificationCenter for textDidChange bridging between UIKit controller and SwiftUI view
 - [07-06]: Accent replacement logic in KeyboardView onAccentAdaptive handler (deleteBackward+insert pattern)
+- [07-10]: Accent case derived from lastTypedChar not isShifted -- avoids auto-unshift timing bug
 - [07-06]: SF Symbol face.smiling for emoji key matches Apple native AZERTY visual style
 - [Phase 07]: Toolbar 48pt height for mic pill glow room; 0.05 silence threshold; unconditional playInputClick on all keys
 - [Phase 07]: Cancel uses collectSamples() not stopRecording() to preserve engine for background recording
