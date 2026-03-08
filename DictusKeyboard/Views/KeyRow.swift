@@ -9,6 +9,7 @@ struct KeyRow: View {
     let shiftState: Binding<ShiftState>
     let onCharacter: (String) -> Void
     let onDelete: () -> Void
+    let onWordDelete: () -> Void
     let onGlobe: () -> Void
     let onLayerSwitch: () -> Void
     let onSymbolToggle: () -> Void
@@ -49,7 +50,7 @@ struct KeyRow: View {
             ShiftKey(shiftState: shiftState, width: keyWidth)
 
         case .delete:
-            DeleteKey(width: keyWidth, onDelete: onDelete)
+            DeleteKey(width: keyWidth, onDelete: onDelete, onWordDelete: onWordDelete)
 
         case .space:
             SpaceKey(

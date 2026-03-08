@@ -13,6 +13,7 @@ struct ShiftKey: View {
     var body: some View {
         Button {
             HapticFeedback.keyTapped()
+            UIDevice.current.playInputClick()
             let now = Date()
             let interval = now.timeIntervalSince(lastTapTime)
             lastTapTime = now
@@ -62,19 +63,30 @@ enum ShiftState {
     case capsLocked
 }
 
-/// Delete key with repeat-on-hold behavior.
+/// Delete key with repeat-on-hold behavior and word-level acceleration.
 /// Uses Task + Task.sleep instead of Timer.scheduledTimer, which is
 /// unreliable in keyboard extensions (RunLoop may not be active).
 /// Includes ~400ms initial delay before repeat begins (native iOS feel).
+///
+/// ACCELERATION PATTERN (matches Apple):
+/// - First 10 deletions: character-by-character at 100ms intervals
+/// - After 10 deletions: word-by-word at 120ms intervals (slightly slower
+///   to give visual feedback of larger jumps)
+/// - Counter resets on finger lift
 struct DeleteKey: View {
     let width: CGFloat
     let onDelete: () -> Void
+    let onWordDelete: () -> Void
 
     @State private var isHolding = false
     @State private var repeatTask: Task<Void, Never>?
+    @State private var deleteCount: Int = 0
+
+    /// Number of character deletions before switching to word-level mode
+    private let wordModeThreshold = 10
 
     var body: some View {
-        Image(systemName: "delete.left.fill")
+        Image(systemName: "delete.backward")
             .font(.system(size: 16, weight: .medium))
             .frame(width: width)
             .frame(height: KeyMetrics.keyHeight)
@@ -89,14 +101,25 @@ struct DeleteKey: View {
                         if !isHolding {
                             isHolding = true
                             onDelete() // Immediate first delete
+                            HapticFeedback.keyTapped()
+                            deleteCount = 1
                             repeatTask = Task { @MainActor in
                                 // Initial delay before repeat begins (~400ms,
                                 // matching native iOS delete key behavior)
                                 try? await Task.sleep(nanoseconds: 400_000_000)
-                                // Repeat at ~100ms intervals while held
+                                // Repeat while held, accelerating after threshold
                                 while !Task.isCancelled {
-                                    onDelete()
-                                    try? await Task.sleep(nanoseconds: 100_000_000)
+                                    if deleteCount >= wordModeThreshold {
+                                        // Word-level deletion: delete back to previous word boundary
+                                        onWordDelete()
+                                        HapticFeedback.keyTapped()
+                                        try? await Task.sleep(nanoseconds: 120_000_000)
+                                    } else {
+                                        onDelete()
+                                        HapticFeedback.keyTapped()
+                                        try? await Task.sleep(nanoseconds: 100_000_000)
+                                    }
+                                    deleteCount += 1
                                 }
                             }
                         }
@@ -105,6 +128,7 @@ struct DeleteKey: View {
                         isHolding = false
                         repeatTask?.cancel()
                         repeatTask = nil
+                        deleteCount = 0
                     }
             )
     }
@@ -138,10 +162,12 @@ struct SpaceKey: View {
     @State private var accumulatedOffsetX: CGFloat = 0
     @State private var accumulatedOffsetY: CGFloat = 0
 
-    // Sensitivity: ~9pt per character (Apple parity)
+    // Sensitivity: ~9pt per character horizontally (Apple parity)
     private let pointsPerCharacter: CGFloat = 9.0
-    // Vertical sensitivity for line movement (less sensitive than horizontal)
-    private let pointsPerLine: CGFloat = 20.0
+    // Vertical sensitivity: ~15pt per character for smooth proportional movement.
+    // Previously 20pt with 40-char line jumps, which felt "locked to lines".
+    // Now each 15pt of vertical drag = 1 character offset, creating smooth vertical scrolling.
+    private let pointsPerVerticalChar: CGFloat = 15.0
 
     var body: some View {
         Text("espace")
@@ -192,24 +218,37 @@ struct SpaceKey: View {
         let deltaY = currentLocation.y - lastDragLocation.y
         lastDragLocation = currentLocation
 
-        // Horizontal cursor movement
+        // Horizontal cursor movement with velocity-based acceleration
         accumulatedOffsetX += deltaX
-        let horizontalChars = Int(accumulatedOffsetX / pointsPerCharacter)
+        let horizontalChars = acceleratedOffset(accumulatedOffsetX, sensitivity: pointsPerCharacter)
         if horizontalChars != 0 {
             onCursorMove(horizontalChars)
             accumulatedOffsetX -= CGFloat(horizontalChars) * pointsPerCharacter
         }
 
-        // Vertical cursor movement (up/down lines approximated as multiple chars)
-        // Moving up = negative offset (move cursor back ~40 chars per line)
-        // Moving down = positive offset (move cursor forward ~40 chars per line)
+        // Vertical cursor movement: smooth proportional movement (1 char per 15pt).
+        // Previously used 40-char line jumps which felt jarring. Now moves the cursor
+        // by individual character offsets for smooth vertical scrolling through text.
         accumulatedOffsetY += deltaY
-        let verticalLines = Int(accumulatedOffsetY / pointsPerLine)
-        if verticalLines != 0 {
-            let charOffset = verticalLines * 40
-            onCursorMove(charOffset)
-            accumulatedOffsetY -= CGFloat(verticalLines) * pointsPerLine
+        let verticalChars = acceleratedOffset(accumulatedOffsetY, sensitivity: pointsPerVerticalChar)
+        if verticalChars != 0 {
+            onCursorMove(verticalChars)
+            accumulatedOffsetY -= CGFloat(verticalChars) * pointsPerVerticalChar
         }
+    }
+
+    /// Velocity-based acceleration curve for trackpad cursor movement.
+    /// Faster drag = more characters per point of movement.
+    /// - Parameter rawAccumulated: accumulated drag distance in points
+    /// - Parameter sensitivity: points per character at base speed
+    /// - Returns: number of characters to move (positive = forward, negative = backward)
+    private func acceleratedOffset(_ rawAccumulated: CGFloat, sensitivity: CGFloat) -> Int {
+        let baseChars = rawAccumulated / sensitivity
+        // Apply acceleration: faster drag produces larger accumulated values,
+        // so we use the magnitude of accumulated offset as a velocity proxy
+        let velocity = abs(rawAccumulated)
+        let multiplier: CGFloat = velocity > 20 ? 2.0 : (velocity > 10 ? 1.5 : 1.0)
+        return Int(baseChars * multiplier)
     }
 
     private func deactivateTrackpad() {
@@ -232,8 +271,8 @@ struct ReturnKey: View {
 
     var body: some View {
         Button(action: onTap) {
-            Text("retour")
-                .font(.system(size: 15, weight: .medium))
+            Image(systemName: "return.left")
+                .font(.system(size: 16, weight: .medium))
                 .frame(width: width)
                 .frame(height: KeyMetrics.keyHeight)
                 .background(
@@ -279,8 +318,8 @@ struct EmojiKey: View {
 
     var body: some View {
         Button(action: onTap) {
-            Text("\u{1F60A}")  // smiling face emoji
-                .font(.system(size: 18))
+            Image(systemName: "face.smiling")
+                .font(.system(size: 18, weight: .medium))
                 .frame(width: width)
                 .frame(height: KeyMetrics.keyHeight)
                 .background(
@@ -288,6 +327,7 @@ struct EmojiKey: View {
                         .fill(Color(.systemGray3))
                 )
         }
+        .foregroundColor(Color(.label))
     }
 }
 

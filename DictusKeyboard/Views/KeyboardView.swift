@@ -49,23 +49,35 @@ struct KeyboardView: View {
                                 insertCharacter(char)
                             },
                             onDelete: {
-                                HapticFeedback.keyTapped()
                                 if hasFullAccess {
                                     UIDevice.current.playInputClick()
                                 }
                                 controller.textDocumentProxy.deleteBackward()
                                 lastTypedChar = nil
                             },
+                            onWordDelete: {
+                                // Delete backward to the previous word boundary.
+                                // textDocumentProxy has no deleteWordBackward(), so we
+                                // read the text before the cursor and find the last word boundary.
+                                if hasFullAccess {
+                                    UIDevice.current.playInputClick()
+                                }
+                                deleteWordBackward()
+                                lastTypedChar = nil
+                            },
                             onGlobe: {
                                 HapticFeedback.keyTapped()
+                                UIDevice.current.playInputClick()
                                 controller.advanceToNextInputMode()
                             },
                             onLayerSwitch: {
                                 HapticFeedback.keyTapped()
+                                UIDevice.current.playInputClick()
                                 toggleLettersNumbers()
                             },
                             onSymbolToggle: {
                                 HapticFeedback.keyTapped()
+                                UIDevice.current.playInputClick()
                                 toggleNumbersSymbols()
                             },
                             onSpace: {
@@ -85,6 +97,12 @@ struct KeyboardView: View {
                             },
                             onAccentAdaptive: { char in
                                 HapticFeedback.keyTapped()
+                                UIDevice.current.playInputClick()
+                                // If the accent key is replacing a vowel (not inserting apostrophe),
+                                // delete the previous vowel first, then insert the accented version.
+                                if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
+                                    controller.textDocumentProxy.deleteBackward()
+                                }
                                 insertCharacter(char)
                             },
                             onCursorMove: { offset in
@@ -139,6 +157,41 @@ struct KeyboardView: View {
         // Auto-unshift after one character (unless caps locked)
         if shiftState == .shifted {
             shiftState = .off
+        }
+    }
+
+    /// Delete backward to the previous word boundary.
+    /// Since UITextDocumentProxy doesn't provide deleteWordBackward(),
+    /// we read the text before the cursor, find the last word boundary
+    /// (space or start of string), and delete that many characters.
+    private func deleteWordBackward() {
+        let proxy = controller.textDocumentProxy
+        guard let before = proxy.documentContextBeforeInput, !before.isEmpty else {
+            // Nothing to delete — fall back to single char delete
+            proxy.deleteBackward()
+            return
+        }
+
+        // Trim trailing spaces first (delete spaces before the word)
+        var trimmed = before
+        var trailingSpaces = 0
+        while trimmed.hasSuffix(" ") {
+            trimmed = String(trimmed.dropLast())
+            trailingSpaces += 1
+        }
+
+        // Find the last word boundary (space) in the remaining text
+        let charsInWord: Int
+        if let lastSpace = trimmed.lastIndex(of: " ") {
+            charsInWord = trimmed.distance(from: trimmed.index(after: lastSpace), to: trimmed.endIndex)
+        } else {
+            // No space found — delete everything remaining
+            charsInWord = trimmed.count
+        }
+
+        let totalToDelete = trailingSpaces + charsInWord
+        for _ in 0..<totalToDelete {
+            proxy.deleteBackward()
         }
     }
 
