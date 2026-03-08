@@ -472,11 +472,16 @@ class DictationCoordinator: ObservableObject {
             let hostBundleID = self.defaults.string(forKey: SharedKeys.hostBundleID)
             PersistentLog.log("Auto-return: hostBundleID=\(hostBundleID ?? "nil")")
 
-            if let bundleID = hostBundleID, self.openAppByBundleID(bundleID) {
+            // Validate: must be a real bundle ID (contains dots, not empty/null)
+            let validBundleID = hostBundleID.flatMap { id in
+                id.contains(".") && !id.isEmpty ? id : nil
+            }
+
+            if let bundleID = validBundleID, self.openAppByBundleID(bundleID) {
                 PersistentLog.log("Returned to host app: \(bundleID)")
             } else {
                 // Fallback: simulate Home button press
-                PersistentLog.log("Fallback: suspend (Home) — no host bundle ID")
+                PersistentLog.log("Fallback: suspend (Home) — hostBundleID invalid or LSApplicationWorkspace failed")
                 UIControl().sendAction(
                     #selector(URLSessionTask.suspend),
                     to: UIApplication.shared,

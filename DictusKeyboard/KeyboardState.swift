@@ -239,13 +239,35 @@ class KeyboardState: ObservableObject {
     /// Save the host app's bundle ID to App Group for auto-return.
     ///
     /// WHY this technique: UIInputViewController doesn't expose the host bundle ID
-    /// publicly. We use the parent view controller's private _hostBundleID property
-    /// via key-value coding. This is the same approach used by other published
-    /// App Store apps (Wispr Flow, SuperWhisper) for auto-return functionality.
+    /// publicly. We try multiple known locations for this private property via KVC.
+    /// This is the same approach used by other published App Store apps (Wispr Flow,
+    /// SuperWhisper) for auto-return functionality.
+    ///
+    /// WHY multiple attempts: The _hostBundleID property location varies across iOS
+    /// versions and view controller hierarchies. We try the most common locations.
     private func saveHostBundleID() {
-        if let bundleID = controller?.parent?.value(forKey: "_hostBundleID") as? String {
-            defaults.set(bundleID, forKey: SharedKeys.hostBundleID)
+        var bundleID: String?
+
+        // Attempt 1: directly on the UIInputViewController
+        bundleID = controller?.value(forKey: "_hostBundleID") as? String
+
+        // Attempt 2: on the parent view controller
+        if bundleID == nil {
+            bundleID = controller?.parent?.value(forKey: "_hostBundleID") as? String
+        }
+
+        // Attempt 3: via the host's bundle identifier in the extension context
+        // WHY: On some iOS versions, extensionContext exposes host info differently
+        if bundleID == nil {
+            bundleID = controller?.extensionContext?.value(forKey: "_hostBundleIdentifier") as? String
+        }
+
+        if let id = bundleID, !id.isEmpty {
+            defaults.set(id, forKey: SharedKeys.hostBundleID)
             defaults.synchronize()
+            PersistentLog.log("Keyboard: saved hostBundleID=\(id)")
+        } else {
+            PersistentLog.log("Keyboard: could not retrieve hostBundleID")
         }
     }
 
