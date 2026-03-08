@@ -14,6 +14,7 @@ struct KeyboardView: View {
     /// After typing a vowel (e, a, u, i, o), the adaptive key shows the most
     /// common accent for that vowel. Reset on space, delete, return, or layer switch.
     @State private var lastTypedChar: String? = nil
+    @State private var isTrackpadActive = false
 
     private var isShifted: Bool {
         shiftState == .shifted || shiftState == .capsLocked
@@ -36,62 +37,81 @@ struct KeyboardView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: KeyMetrics.rowSpacing) {
-                ForEach(Array(currentRows.enumerated()), id: \.offset) { _, row in
-                    KeyRow(
-                        keys: row,
-                        rowWidth: geometry.size.width,
-                        isShifted: isShifted,
-                        shiftState: $shiftState,
-                        onCharacter: { char in
-                            insertCharacter(char)
-                        },
-                        onDelete: {
-                            HapticFeedback.keyTapped()
-                            if hasFullAccess {
-                                UIDevice.current.playInputClick()
-                            }
-                            controller.textDocumentProxy.deleteBackward()
-                            lastTypedChar = nil
-                        },
-                        onGlobe: {
-                            HapticFeedback.keyTapped()
-                            controller.advanceToNextInputMode()
-                        },
-                        onLayerSwitch: {
-                            HapticFeedback.keyTapped()
-                            toggleLettersNumbers()
-                        },
-                        onSymbolToggle: {
-                            HapticFeedback.keyTapped()
-                            toggleNumbersSymbols()
-                        },
-                        onSpace: {
-                            HapticFeedback.keyTapped()
-                            if hasFullAccess {
-                                UIDevice.current.playInputClick()
-                            }
-                            controller.textDocumentProxy.insertText(" ")
-                            lastTypedChar = nil
-                        },
-                        onReturn: {
-                            HapticFeedback.keyTapped()
-                            if hasFullAccess {
-                                UIDevice.current.playInputClick()
-                            }
-                            controller.textDocumentProxy.insertText("\n")
-                            lastTypedChar = nil
-                        },
-                        onAccentAdaptive: { char in
-                            HapticFeedback.keyTapped()
-                            insertCharacter(char)
-                        },
-                        lastTypedChar: lastTypedChar,
-                        hasFullAccess: hasFullAccess
-                    )
+            ZStack {
+                VStack(spacing: KeyMetrics.rowSpacing) {
+                    ForEach(Array(currentRows.enumerated()), id: \.offset) { _, row in
+                        KeyRow(
+                            keys: row,
+                            rowWidth: geometry.size.width,
+                            isShifted: isShifted,
+                            shiftState: $shiftState,
+                            onCharacter: { char in
+                                insertCharacter(char)
+                            },
+                            onDelete: {
+                                HapticFeedback.keyTapped()
+                                if hasFullAccess {
+                                    UIDevice.current.playInputClick()
+                                }
+                                controller.textDocumentProxy.deleteBackward()
+                                lastTypedChar = nil
+                            },
+                            onGlobe: {
+                                HapticFeedback.keyTapped()
+                                controller.advanceToNextInputMode()
+                            },
+                            onLayerSwitch: {
+                                HapticFeedback.keyTapped()
+                                toggleLettersNumbers()
+                            },
+                            onSymbolToggle: {
+                                HapticFeedback.keyTapped()
+                                toggleNumbersSymbols()
+                            },
+                            onSpace: {
+                                if hasFullAccess {
+                                    UIDevice.current.playInputClick()
+                                }
+                                controller.textDocumentProxy.insertText(" ")
+                                lastTypedChar = nil
+                            },
+                            onReturn: {
+                                HapticFeedback.keyTapped()
+                                if hasFullAccess {
+                                    UIDevice.current.playInputClick()
+                                }
+                                controller.textDocumentProxy.insertText("\n")
+                                lastTypedChar = nil
+                            },
+                            onAccentAdaptive: { char in
+                                HapticFeedback.keyTapped()
+                                insertCharacter(char)
+                            },
+                            onCursorMove: { offset in
+                                controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+                            },
+                            onTrackpadStateChange: { active in
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    isTrackpadActive = active
+                                }
+                            },
+                            lastTypedChar: lastTypedChar,
+                            hasFullAccess: hasFullAccess
+                        )
+                    }
+                }
+                .padding(.vertical, 4)
+
+                // Greyed-out overlay during trackpad mode (Apple behavior).
+                // allowsHitTesting(false) ensures the spacebar's DragGesture
+                // continues receiving touch events while the overlay is visible.
+                if isTrackpadActive {
+                    Color(.systemBackground).opacity(0.6)
+                        .cornerRadius(8)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
                 }
             }
-            .padding(.vertical, 4)
         }
         .frame(height: keyboardHeight)
     }

@@ -15,6 +15,8 @@ struct KeyRow: View {
     let onSpace: () -> Void
     let onReturn: () -> Void
     let onAccentAdaptive: (String) -> Void
+    let onCursorMove: (Int) -> Void
+    let onTrackpadStateChange: (Bool) -> Void
     let lastTypedChar: String?
     let hasFullAccess: Bool
 
@@ -50,7 +52,12 @@ struct KeyRow: View {
             DeleteKey(width: keyWidth, onDelete: onDelete)
 
         case .space:
-            SpaceKey(width: keyWidth, onTap: onSpace)
+            SpaceKey(
+                width: keyWidth,
+                onTap: onSpace,
+                onCursorMove: onCursorMove,
+                onTrackpadStateChange: onTrackpadStateChange
+            )
 
         case .returnKey:
             ReturnKey(width: keyWidth, onTap: onReturn)
