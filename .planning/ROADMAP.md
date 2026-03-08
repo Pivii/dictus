@@ -66,12 +66,14 @@ Plans:
   3. Every key tap (letters, space, return, delete, symbols) produces haptic feedback
   4. Bottom row has emoji button (cycles to system emoji keyboard) instead of duplicate globe, and Apple dictation mic is removed
   5. Mic button and recording validate/cancel buttons are pill-shaped, larger, and waveform animation runs at smooth 60fps
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
-- [ ] 07-03: TBD
+- [ ] 07-01-PLAN.md — Haptic pre-allocation, universal key haptics, dynamic height, banner fix, popup clipping
+- [ ] 07-02-PLAN.md — Emoji button replacing globe, adaptive accent key on AZERTY
+- [ ] 07-03-PLAN.md — Mic pill redesign, recording pill buttons, Canvas waveform with zero-energy stillness
+- [ ] 07-04-PLAN.md — Spacebar trackpad mode (long-press, cursor drag, overlay)
+- [ ] 07-05-PLAN.md — Full keyboard UAT checkpoint
 
 ### Phase 8: Text Prediction
 **Goal**: Users get French word completions and spelling corrections as they type, bridging the gap between dictation keyboard and full replacement keyboard
@@ -127,7 +129,7 @@ Note: Phase 9 (Cold Start) is independent of Phases 7-8 and could execute in par
 | 4. Main App & Polish | v1.0 | 5/5 | Complete | 2026-03-07 |
 | 5. Wire Settings & Hygiene | v1.0 | 2/2 | Complete | 2026-03-07 |
 | 6. Infrastructure & App Polish | v1.1 | 3/5 | Gap closure | - |
-| 7. Keyboard Parity & Visual | v1.1 | 0/? | Not started | - |
+| 7. Keyboard Parity & Visual | v1.1 | 0/5 | Planned | - |
 | 8. Text Prediction | v1.1 | 0/? | Not started | - |
 | 9. Cold Start | v1.1 | 0/? | Not started | - |
 | 10. Model Catalog | v1.1 | 0/? | Not started | - |
