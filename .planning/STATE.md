@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-03-08T11:38:21.790Z"
-last_activity: 2026-03-08 — Plan 07-04 complete (spacebar trackpad mode)
+stopped_at: Completed 07-08-PLAN.md
+last_updated: "2026-03-08T12:53:06.990Z"
+last_activity: 2026-03-08 — Plan 07-06 complete (accent key fix & SF Symbol icons)
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 10
-  completed_plans: 9
-  percent: 90
+  total_plans: 14
+  completed_plans: 13
+  percent: 79
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 5 of 5 in current phase (4 complete)
+Plan: 6 of 8 in current phase (6 complete)
 Status: In progress
-Last activity: 2026-03-08 — Plan 07-04 complete (spacebar trackpad mode)
+Last activity: 2026-03-08 — Plan 07-06 complete (accent key fix & SF Symbol icons)
 
-Progress: [█████████░] 90% (Phase 7: 4/5 plans complete)
+Progress: [████████░░] 79% (Phase 7: 6/8 plans complete)
 
 ## Performance Metrics
 
@@ -61,6 +61,8 @@ Progress: [█████████░] 90% (Phase 7: 4/5 plans complete)
 | Phase 07 P01 | 5min | 2 tasks | 6 files |
 | Phase 07 P02 | 5min | 2 tasks | 7 files |
 | Phase 07 P04 | 2min | 2 tasks | 3 files |
+| Phase 07 P06 | 4min | 1 tasks | 3 files |
+| Phase 07 P08 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -89,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Long-press on adaptive key only when showing accent (not apostrophe)
 - [Phase 07]: Removed duplicate haptic from onSpace -- SpaceKey handles own haptics via DragGesture
 - [Phase 07]: Vertical cursor movement: 40-char jumps per line at 20pt sensitivity (no API for actual line length)
+- [07-06]: Accent replacement logic in KeyboardView onAccentAdaptive handler (deleteBackward+insert pattern)
+- [07-06]: SF Symbol face.smiling for emoji key matches Apple native AZERTY visual style
+- [Phase 07]: Toolbar 48pt height for mic pill glow room; 0.05 silence threshold; unconditional playInputClick on all keys
 
 ### Pending Todos
 
@@ -102,8 +107,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T11:38:21.788Z
-Stopped at: Completed 07-04-PLAN.md
+Last session: 2026-03-08T12:53:06.988Z
+Stopped at: Completed 07-08-PLAN.md
 Resume file: None
 
 ---
