@@ -14,7 +14,7 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 
 ### Keyboard Parity
 
-- [ ] **KBD-01**: User can long-press spacebar to activate trackpad mode (greyed-out keyboard, drag to move cursor, haptic tick per character)
+- [x] **KBD-01**: User can long-press spacebar to activate trackpad mode (greyed-out keyboard, drag to move cursor, haptic tick per character)
 - [x] **KBD-02**: Adaptive key next to N displays apostrophe or accent based on typing context
 - [x] **KBD-03**: Haptic feedback fires on every key tap (space, return, delete, letters, symbols)
 - [x] **KBD-04**: Duplicate globe key removed, replaced with emoji button (cycles to system emoji keyboard via advanceToNextInputMode)
@@ -94,7 +94,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | INFRA-01 | Phase 6 | Complete |
 | INFRA-02 | Phase 6 | Complete |
-| KBD-01 | Phase 7 | Pending |
+| KBD-01 | Phase 7 | Complete |
 | KBD-02 | Phase 7 | Complete |
 | KBD-03 | Phase 7 | Complete |
 | KBD-04 | Phase 7 | Complete |

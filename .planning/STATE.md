@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-03-08T11:32:47.842Z"
-last_activity: "2026-03-08 — Plan 07-03 complete (visual polish: pill buttons, Canvas waveform)"
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-03-08T11:38:21.790Z"
+last_activity: 2026-03-08 — Plan 07-04 complete (spacebar trackpad mode)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
-  percent: 20
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 3 of 5 in current phase (2 complete)
+Plan: 5 of 5 in current phase (4 complete)
 Status: In progress
-Last activity: 2026-03-08 — Plan 07-02 complete (emoji key + adaptive accent key)
+Last activity: 2026-03-08 — Plan 07-04 complete (spacebar trackpad mode)
 
-Progress: [████████░░░░░░░░░░░░] 40% (Phase 7: 2/5 plans complete)
+Progress: [█████████░] 90% (Phase 7: 4/5 plans complete)
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████████░░░░░░░░░░░░] 40% (Ph
 | Phase 07 P03 | 5min | 2 tasks | 4 files |
 | Phase 07 P01 | 5min | 2 tasks | 6 files |
 | Phase 07 P02 | 5min | 2 tasks | 7 files |
+| Phase 07 P04 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,8 @@ Recent decisions affecting current work:
 - [Phase 07]: KBD-05: system dictation mic icon is iOS limitation with no public API to suppress
 - [Phase 07]: Apostrophe as adaptive key default -- most common non-letter char in French
 - [Phase 07]: Long-press on adaptive key only when showing accent (not apostrophe)
+- [Phase 07]: Removed duplicate haptic from onSpace -- SpaceKey handles own haptics via DragGesture
+- [Phase 07]: Vertical cursor movement: 40-char jumps per line at 20pt sensitivity (no API for actual line length)
 
 ### Pending Todos
 
@@ -99,8 +102,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T11:32:41.232Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-03-08T11:38:21.788Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
 
 ---
