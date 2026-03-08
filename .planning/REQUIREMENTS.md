@@ -29,9 +29,9 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 
 ### Visual Polish
 
-- [ ] **VIS-01**: Mic button redesigned as pill shape (larger, more visible)
-- [ ] **VIS-02**: Recording validate/cancel buttons redesigned as pill shape, same size
-- [ ] **VIS-03**: Waveform animation reworked — smoother via TimelineView + Canvas (60fps interpolation)
+- [x] **VIS-01**: Mic button redesigned as pill shape (larger, more visible)
+- [x] **VIS-02**: Recording validate/cancel buttons redesigned as pill shape, same size
+- [x] **VIS-03**: Waveform animation reworked — smoother via TimelineView + Canvas (60fps interpolation)
 - [x] **VIS-04**: Test recording screen in app redesigned
 - [x] **VIS-05**: Recording stop screen redesigned (more cohesive with app theme)
 - [x] **VIS-06**: Duplicate "Dictus" navigation title removed from HomeView (keep only logo + blue title)
@@ -103,9 +103,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRED-01 | Phase 8 | Pending |
 | PRED-02 | Phase 8 | Pending |
 | PRED-03 | Phase 8 | Pending |
-| VIS-01 | Phase 7 | Pending |
-| VIS-02 | Phase 7 | Pending |
-| VIS-03 | Phase 7 | Pending |
+| VIS-01 | Phase 7 | Complete |
+| VIS-02 | Phase 7 | Complete |
+| VIS-03 | Phase 7 | Complete |
 | VIS-04 | Phase 6 | Complete |
 | VIS-05 | Phase 6 | Complete |
 | VIS-06 | Phase 6 | Complete |

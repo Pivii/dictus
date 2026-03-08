@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
-status: completed
-stopped_at: Phase 7 context gathered
-last_updated: "2026-03-08T11:03:03.372Z"
-last_activity: 2026-03-07 — Phase 6 complete (3/3 plans), checkpoint approved
+status: executing
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-03-08T11:32:28.740Z"
+last_activity: "2026-03-08 — Plan 07-03 complete (visual polish: pill buttons, Canvas waveform)"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_plans: 10
+  completed_plans: 8
+  percent: 20
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Phase 6 complete — ready for Phase 7
+**Current focus:** Phase 7 — Keyboard Parity & Visual Polish
 
 ## Current Position
 
-Phase: 6 of 10 (Infrastructure & App Polish) -- COMPLETE
-Plan: 3 of 3 in current phase (all complete)
-Status: Phase complete
-Last activity: 2026-03-07 — Phase 6 complete (3/3 plans), checkpoint approved
+Phase: 7 of 10 (Keyboard Parity & Visual)
+Plan: 3 of 5 in current phase (1 complete)
+Status: In progress
+Last activity: 2026-03-08 — Plan 07-03 complete (visual polish: pill buttons, Canvas waveform)
 
-Progress: [████████████████████] 100% (Phase 6: 3/3 plans complete)
+Progress: [████░░░░░░░░░░░░░░░░] 20% (Phase 7: 1/5 plans complete)
 
 ## Performance Metrics
 
@@ -57,6 +57,8 @@ Progress: [████████████████████] 100% (P
 
 *Updated after each plan completion*
 | Phase 06 P03 | 5min | 3 tasks | 6 files |
+| Phase 07 P03 | 5min | 2 tasks | 4 files |
+| Phase 07 P01 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -75,6 +77,9 @@ Recent decisions affecting current work:
 - [06-03]: switch/case replaces TabView to block onboarding step swiping
 - [06-03]: Keyboard auto-detection via UITextInputMode.activeInputModes, no manual confirm
 - [Phase 06]: RecordingMode enum (.onboarding/.standalone) for shared RecordingView
+- [07-03]: AnyShape type erasure for conditional Circle/Capsule rendering in AnimatedMicButton
+- [07-03]: Canvas single-pass rendering for BrandWaveform (solid Color, not per-bar gradient)
+- [07-03]: dictusSuccess green for validate button to distinguish from cancel
 
 ### Pending Todos
 
@@ -88,9 +93,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T11:03:03.369Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-keyboard-parity-visual/07-CONTEXT.md
+Last session: 2026-03-08T11:31:02Z
+Stopped at: Completed 07-03-PLAN.md
+Resume file: .planning/phases/07-keyboard-parity-visual/07-03-SUMMARY.md
 
 ---
 *State initialized: 2026-03-04*
