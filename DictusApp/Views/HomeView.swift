@@ -144,9 +144,16 @@ struct HomeView: View {
     // MARK: - Test Dictation Link
 
     /// Prominent button to test dictation. Only shown when a model is ready.
+    ///
+    /// WHY a Button instead of NavigationLink to TestDictationView:
+    /// NavigationLink pushes TestDictationView inside the NavigationStack. Meanwhile,
+    /// MainTabView shows a RecordingView overlay when coordinator.status != .idle.
+    /// This creates TWO stacked RecordingViews. When the overlay dismisses (status → idle),
+    /// the pushed TestDictationView is still there with its nav bar visible.
+    /// A Button just starts dictation — the MainTabView overlay handles the full UI.
     private var testDictationLink: some View {
-        NavigationLink {
-            TestDictationView()
+        Button {
+            coordinator.startDictation()
         } label: {
             HStack {
                 Image(systemName: "waveform")
