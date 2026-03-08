@@ -110,24 +110,118 @@ struct DeleteKey: View {
     }
 }
 
-/// Space bar key.
+/// Space bar key with trackpad mode.
+///
+/// Short tap inserts a space. Long-pressing for 400ms activates trackpad mode:
+/// dragging moves the cursor through text via `onCursorMove`. A greyed-out overlay
+/// is managed by the parent through `onTrackpadStateChange`.
+///
+/// WHY DragGesture instead of LongPressGesture + DragGesture combo:
+/// Same reason as DeleteKey — LongPressGesture is unreliable in keyboard extensions.
+/// DragGesture(minimumDistance: 0) fires immediately on touch, then a Task.sleep
+/// handles the 400ms threshold for trackpad activation.
+///
+/// HAPTIC PATTERN (matches Apple):
+/// - Initial touch: light impact (keyTapped)
+/// - Mode activation at 400ms: medium impact (trackpadActivated)
+/// - During drag: NO haptics (Apple doesn't fire haptics while dragging)
 struct SpaceKey: View {
     let width: CGFloat
     let onTap: () -> Void
+    let onCursorMove: (Int) -> Void              // character offset for cursor movement
+    let onTrackpadStateChange: (Bool) -> Void     // notify parent of trackpad mode for overlay
+
+    @State private var isPressed = false
+    @State private var isTrackpadMode = false
+    @State private var longPressTask: Task<Void, Never>?
+    @State private var lastDragLocation: CGPoint = .zero
+    @State private var accumulatedOffsetX: CGFloat = 0
+    @State private var accumulatedOffsetY: CGFloat = 0
+
+    // Sensitivity: ~9pt per character (Apple parity)
+    private let pointsPerCharacter: CGFloat = 9.0
+    // Vertical sensitivity for line movement (less sensitive than horizontal)
+    private let pointsPerLine: CGFloat = 20.0
 
     var body: some View {
-        Button(action: onTap) {
-            Text("espace")
-                .font(.system(size: 15))
-                .frame(width: width)
-                .frame(height: KeyMetrics.keyHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
-                        .fill(KeyMetrics.letterKeyColor)
-                        .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 1)
-                )
+        Text("espace")
+            .font(.system(size: 15))
+            .foregroundColor(Color(.label))
+            .frame(width: width)
+            .frame(height: KeyMetrics.keyHeight)
+            .background(
+                RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
+                    .fill(KeyMetrics.letterKeyColor)
+                    .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 1)
+            )
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isPressed {
+                            // First touch
+                            isPressed = true
+                            lastDragLocation = value.location
+                            HapticFeedback.keyTapped()
+                            startTrackpadTimer()
+                        }
+                        if isTrackpadMode {
+                            handleTrackpadDrag(currentLocation: value.location)
+                        }
+                    }
+                    .onEnded { _ in
+                        if !isTrackpadMode {
+                            onTap()  // Normal space insertion
+                        }
+                        deactivateTrackpad()
+                    }
+            )
+    }
+
+    private func startTrackpadTimer() {
+        longPressTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)  // 400ms
+            guard !Task.isCancelled else { return }
+            isTrackpadMode = true
+            onTrackpadStateChange(true)
+            HapticFeedback.trackpadActivated()
         }
-        .foregroundColor(Color(.label))
+    }
+
+    private func handleTrackpadDrag(currentLocation: CGPoint) {
+        let deltaX = currentLocation.x - lastDragLocation.x
+        let deltaY = currentLocation.y - lastDragLocation.y
+        lastDragLocation = currentLocation
+
+        // Horizontal cursor movement
+        accumulatedOffsetX += deltaX
+        let horizontalChars = Int(accumulatedOffsetX / pointsPerCharacter)
+        if horizontalChars != 0 {
+            onCursorMove(horizontalChars)
+            accumulatedOffsetX -= CGFloat(horizontalChars) * pointsPerCharacter
+        }
+
+        // Vertical cursor movement (up/down lines approximated as multiple chars)
+        // Moving up = negative offset (move cursor back ~40 chars per line)
+        // Moving down = positive offset (move cursor forward ~40 chars per line)
+        accumulatedOffsetY += deltaY
+        let verticalLines = Int(accumulatedOffsetY / pointsPerLine)
+        if verticalLines != 0 {
+            let charOffset = verticalLines * 40
+            onCursorMove(charOffset)
+            accumulatedOffsetY -= CGFloat(verticalLines) * pointsPerLine
+        }
+    }
+
+    private func deactivateTrackpad() {
+        isPressed = false
+        if isTrackpadMode {
+            isTrackpadMode = false
+            onTrackpadStateChange(false)
+        }
+        longPressTask?.cancel()
+        longPressTask = nil
+        accumulatedOffsetX = 0
+        accumulatedOffsetY = 0
     }
 }
 
