@@ -90,7 +90,6 @@ struct RecordingView: View {
 
                 // MARK: - Result area (text appears here after transcription)
                 resultSection
-                    .frame(minHeight: 80)
                     .padding(.horizontal, 32)
                     .padding(.top, 16)
 
@@ -251,8 +250,7 @@ struct RecordingView: View {
                     .multilineTextAlignment(.center)
             }
         } else {
-            // Empty placeholder — maintains vertical space
-            Color.clear
+            EmptyView()
         }
     }
 
