@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Completed 07-07-PLAN.md
-last_updated: "2026-03-08T12:53:36.230Z"
+stopped_at: Completed 07-12-PLAN.md
+last_updated: "2026-03-08T14:17:32.690Z"
 last_activity: 2026-03-08 — Plan 07-07 complete (trackpad smoothing, delete acceleration, autocap)
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 14
-  completed_plans: 13
-  percent: 93
+  total_plans: 17
+  completed_plans: 15
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 8 of 9 in current phase (7 complete)
+Plan: 9 of 9 in current phase (8 complete)
 Status: In progress
 Last activity: 2026-03-08 — Plan 07-07 complete (trackpad smoothing, delete acceleration, autocap)
 
-Progress: [█████████░] 93% (Phase 7: 7/9 plans complete)
+Progress: [█████████░] 88% (Phase 7: 8/9 plans complete)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 93% (Phase 7: 7/9 plans complete)
 | Phase 07 P06 | 4min | 1 tasks | 3 files |
 | Phase 07 P08 | 4min | 2 tasks | 7 files |
 | Phase 07 P07 | 4min | 2 tasks | 4 files |
+| Phase 07 P12 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [07-06]: Accent replacement logic in KeyboardView onAccentAdaptive handler (deleteBackward+insert pattern)
 - [07-06]: SF Symbol face.smiling for emoji key matches Apple native AZERTY visual style
 - [Phase 07]: Toolbar 48pt height for mic pill glow room; 0.05 silence threshold; unconditional playInputClick on all keys
+- [Phase 07]: Cancel uses collectSamples() not stopRecording() to preserve engine for background recording
+- [Phase 07]: Emoji key cycling accepted as iOS limitation — no public API to target emoji keyboard
 
 ### Pending Todos
 
@@ -110,8 +113,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T12:53:36.228Z
-Stopped at: Completed 07-07-PLAN.md
+Last session: 2026-03-08T14:17:32.689Z
+Stopped at: Completed 07-12-PLAN.md
 Resume file: None
 
 ---
