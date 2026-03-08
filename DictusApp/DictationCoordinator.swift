@@ -249,17 +249,20 @@ class DictationCoordinator: ObservableObject {
                     updateStatus(.recording)
                     PersistentLog.log("Cold start: RawAudioCapture started, WhisperKit loading in parallel")
 
-                    // Step 3: Auto-return to keyboard if opened via URL scheme
-                    if fromURL {
-                        PersistentLog.log("Cold start: scheduling auto-background in 0.5s")
-                        autoBackgroundApp(afterDelay: 0.5)
-                    }
-
-                    // Step 4: Load WhisperKit in parallel (non-blocking for the user)
-                    // This runs while the user is already recording and back in their app.
-                    PersistentLog.log("Cold start: loading WhisperKit in parallel...")
+                    // Step 3: Load WhisperKit while app is STILL in foreground.
+                    // WHY before auto-background: iOS severely throttles CPU for background
+                    // apps. WhisperKit model loading takes ~4s in foreground but 20+ seconds
+                    // from background. The user sees DictusApp for ~4s with recording already
+                    // active (waveform visible), then auto-returns to keyboard.
+                    PersistentLog.log("Cold start: loading WhisperKit (app stays foreground)...")
                     try await ensureWhisperKitReady()
-                    PersistentLog.log("Cold start: WhisperKit ready while recording continues via RawAudioCapture")
+                    PersistentLog.log("Cold start: WhisperKit ready")
+
+                    // Step 4: NOW auto-return to keyboard (WhisperKit is loaded)
+                    if fromURL {
+                        PersistentLog.log("Cold start: auto-backgrounding now that WhisperKit is ready")
+                        autoBackgroundApp(afterDelay: 0.3)
+                    }
                 } catch {
                     // WhisperKit init failed — recording continues via rawCapture,
                     // we'll handle the error at stopDictation() time
@@ -605,6 +608,7 @@ class DictationCoordinator: ObservableObject {
     private func cleanupRecordingKeys() {
         defaults.removeObject(forKey: SharedKeys.waveformEnergy)
         defaults.removeObject(forKey: SharedKeys.recordingElapsedSeconds)
+        defaults.removeObject(forKey: SharedKeys.hostBundleID)
         defaults.set(false, forKey: SharedKeys.stopRequested)
         defaults.set(false, forKey: SharedKeys.cancelRequested)
         defaults.synchronize()
