@@ -67,6 +67,14 @@ struct KeyRow: View {
 
         case .symbolToggle:
             LayerSwitchKey(label: key.label, width: keyWidth, onTap: onSymbolToggle)
+
+        case .emoji:
+            // Placeholder — full implementation in Task 2
+            EmojiKey(width: keyWidth, onTap: onGlobe)
+
+        case .accentAdaptive:
+            // Placeholder — full implementation in Task 2
+            EmptyView()
         }
     }
 }

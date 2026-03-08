@@ -21,7 +21,9 @@ enum KeyboardLayout {
         ["Q", "S", "D", "F", "G", "H", "J", "K", "L", "M"].map {
             KeyDefinition($0, output: $0.lowercased())
         },
-        // Row 3: bottom letter row with shift and delete
+        // Row 3: bottom letter row with shift, adaptive accent key, and delete.
+        // The adaptive accent key sits between N and delete — it shows apostrophe
+        // by default, switching to the most common accent after typing a vowel.
         [
             KeyDefinition("shift", type: .shift, width: 1.5),
             KeyDefinition("W", output: "w"),
@@ -30,14 +32,17 @@ enum KeyboardLayout {
             KeyDefinition("V", output: "v"),
             KeyDefinition("B", output: "b"),
             KeyDefinition("N", output: "n"),
+            KeyDefinition("'", type: .accentAdaptive, width: 1.0),
             KeyDefinition("delete", type: .delete, width: 1.5),
         ],
-        // Row 4: bottom function row
+        // Row 4: bottom function row.
+        // Emoji replaces globe (emoji icon instead of globe icon, same advanceToNextInputMode behavior).
+        // Mic removed from layout — it lives in the toolbar (Plan 03-02).
+        // Mic's width redistributed to space bar for a wider touch target.
         [
-            KeyDefinition("globe", type: .globe, width: 1.2),
+            KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("123", type: .layerSwitch, width: 1.2),
-            KeyDefinition("mic", type: .mic, width: 1.0),
-            KeyDefinition("space", output: " ", type: .space, width: 3.5),
+            KeyDefinition("space", output: " ", type: .space, width: 4.5),
             KeyDefinition("return", type: .returnKey, width: 1.8),
         ],
     ]
@@ -69,8 +74,9 @@ enum KeyboardLayout {
             KeyDefinition("delete", type: .delete, width: 1.5),
         ],
         // Row 4: bottom function row (no mic -- mic is in toolbar per Plan 03-02)
+        // Emoji replaces globe — same as AZERTY. No adaptive accent key on QWERTY (Apple convention).
         [
-            KeyDefinition("globe", type: .globe, width: 1.2),
+            KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("123", type: .layerSwitch, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 5.7),
             KeyDefinition("return", type: .returnKey, width: 1.8),
@@ -118,9 +124,10 @@ enum KeyboardLayout {
             KeyDefinition("delete", type: .delete, width: 1.5),
         ],
         // Row 4: back to letters + space + return (no mic — letters only)
+        // Emoji replaces globe for consistency across all layers.
         [
             KeyDefinition("ABC", type: .layerSwitch, width: 1.2),
-            KeyDefinition("globe", type: .globe, width: 1.2),
+            KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 4.7),
             KeyDefinition("return", type: .returnKey, width: 1.8),
         ],
@@ -147,10 +154,10 @@ enum KeyboardLayout {
             KeyDefinition("'", output: "'"),
             KeyDefinition("delete", type: .delete, width: 1.5),
         ],
-        // Row 4: same as numbers
+        // Row 4: same as numbers — emoji replaces globe
         [
             KeyDefinition("ABC", type: .layerSwitch, width: 1.2),
-            KeyDefinition("globe", type: .globe, width: 1.2),
+            KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 4.7),
             KeyDefinition("return", type: .returnKey, width: 1.8),
         ],

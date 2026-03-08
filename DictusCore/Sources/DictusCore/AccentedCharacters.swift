@@ -33,4 +33,38 @@ public enum AccentedCharacters {
     public static func accents(for key: String) -> [String]? {
         return mappings[key.lowercased()]
     }
+
+    // MARK: - Adaptive accent key support
+
+    /// Default accent per vowel (most common in French).
+    /// Used by the adaptive accent key on AZERTY row 3.
+    public static let defaultAccents: [String: String] = [
+        "e": "\u{00E9}",  // e-acute (most common French accent)
+        "a": "\u{00E0}",  // a-grave
+        "u": "\u{00F9}",  // u-grave
+        "i": "\u{00EE}",  // i-circumflex
+        "o": "\u{00F4}",  // o-circumflex
+    ]
+
+    /// Returns what the adaptive key should display based on the last typed character.
+    /// After a vowel: shows the most common accent for that vowel.
+    /// Otherwise: shows apostrophe (').
+    ///
+    /// WHY apostrophe as default:
+    /// In French, the apostrophe is the most common non-letter character after space.
+    /// It appears in "l'", "d'", "n'", "j'", "c'", "s'" etc. Having it one tap away
+    /// on the letters layer eliminates the 3-tap layer switch currently needed.
+    public static func adaptiveKeyLabel(afterTyping lastChar: String?) -> String {
+        guard let lastChar = lastChar?.lowercased() else { return "'" }
+        if let accent = defaultAccents[lastChar] { return accent }
+        return "'"
+    }
+
+    /// Returns the base vowel that triggered the adaptive key's accent display.
+    /// Used to determine which accent variants to show on long-press.
+    /// Returns nil when the adaptive key is showing apostrophe (no long-press popup needed).
+    public static func adaptiveKeyVowel(afterTyping lastChar: String?) -> String? {
+        guard let lastChar = lastChar?.lowercased() else { return nil }
+        return defaultAccents[lastChar] != nil ? lastChar : nil
+    }
 }
