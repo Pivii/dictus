@@ -64,6 +64,7 @@ public struct AnimatedMicButton: View {
                     .scaleEffect(status == .recording ? pulseScale * 0.9 + 0.1 : 1.0)
             }
         }
+        .buttonStyle(GlassPressStyle(pressedScale: 0.88))
         .disabled(status == .recording || status == .transcribing)
         .onChange(of: status) { newStatus in
             handleStatusChange(from: previousStatus, to: newStatus)

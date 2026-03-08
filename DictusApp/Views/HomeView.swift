@@ -166,6 +166,7 @@ struct HomeView: View {
             .foregroundColor(.white)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+        .buttonStyle(GlassPressStyle())
     }
 }
 

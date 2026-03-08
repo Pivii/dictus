@@ -62,6 +62,7 @@ struct RecordingView: View {
                                 .frame(width: 36, height: 36)
                                 .dictusGlass(in: Circle())
                         }
+                        .buttonStyle(GlassPressStyle())
                         .padding(.leading, 20)
                         .padding(.top, 8)
                     }
@@ -96,6 +97,7 @@ struct RecordingView: View {
                                         .frame(maxWidth: .infinity)
                                         .dictusGlass(in: RoundedRectangle(cornerRadius: 14))
                                 }
+                                .buttonStyle(GlassPressStyle(pressedScale: 0.96))
                                 .padding(.horizontal, 32)
                                 .frame(minHeight: geo.size.height)
                             }
@@ -244,6 +246,7 @@ struct RecordingView: View {
                         .frame(width: 26, height: 26)
                 }
             }
+            .buttonStyle(GlassPressStyle(pressedScale: 0.88))
             .accessibilityLabel("Arreter l'enregistrement")
         } else if coordinator.status == .transcribing {
             // Shimmer mic during processing (disabled)

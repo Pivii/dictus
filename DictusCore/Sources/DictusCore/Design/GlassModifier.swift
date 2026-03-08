@@ -26,6 +26,28 @@ public struct GlassModifier<S: Shape>: ViewModifier {
     }
 }
 
+/// Button style mimicking iOS Liquid Glass press interaction.
+///
+/// WHY a custom ButtonStyle:
+/// iOS 26 Liquid Glass elements have a characteristic press animation — a subtle
+/// scale-down on touch with a spring bounce on release. This style replicates that
+/// feel for all interactive glass elements (buttons, cards, close icons).
+public struct GlassPressStyle: ButtonStyle {
+    /// Scale when finger is down. 0.92 = subtle, not cartoonish.
+    private let pressedScale: CGFloat
+
+    public init(pressedScale: CGFloat = 0.92) {
+        self.pressedScale = pressedScale
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? pressedScale : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
 /// Convenience View extension for applying glass effects.
 public extension View {
     /// Apply glass effect with a custom shape (default: rounded rectangle with 16pt corners).
