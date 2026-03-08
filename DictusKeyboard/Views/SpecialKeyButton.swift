@@ -197,6 +197,141 @@ struct EmojiKey: View {
     }
 }
 
+/// Adaptive accent key — sits between N and delete on AZERTY row 3.
+/// Shows apostrophe by default; after typing a vowel, shows the most common accent
+/// for that vowel. Long-press on an accent shows all variants via AccentPopup.
+///
+/// WHY this key exists:
+/// On the native French AZERTY keyboard, there's no dedicated accent key — users
+/// access accents via long-press on vowel keys. But the apostrophe is the most
+/// common non-letter character in French (l', d', n', j', c', s'...). Having it
+/// one tap away on the letters layer eliminates a 3-tap layer switch. The adaptive
+/// behavior adds contextual accent insertion without losing the apostrophe default.
+///
+/// GESTURE PATTERN: Same DragGesture + 400ms Task.sleep as KeyButton.
+/// See KeyButton.swift for detailed rationale on why DragGesture handles both tap
+/// and long-press instead of using LongPressGesture.
+struct AdaptiveAccentKey: View {
+    let width: CGFloat
+    let isShifted: Bool
+    let lastTypedChar: String?
+    let onTap: (String) -> Void
+
+    // MARK: - Long-press state (same pattern as KeyButton)
+
+    @State private var isPressed = false
+    @State private var showingAccents = false
+    @State private var accentOptions: [String] = []
+    @State private var selectedAccentIndex: Int? = nil
+    @State private var longPressTimer: Task<Void, Never>? = nil
+    @State private var dragStartX: CGFloat? = nil
+
+    private let accentCellWidth: CGFloat = 36
+    private let keyFontSize: CGFloat = 22
+
+    /// The character the key should display right now.
+    private var displayChar: String {
+        let base = AccentedCharacters.adaptiveKeyLabel(afterTyping: lastTypedChar)
+        return isShifted ? base.uppercased() : base
+    }
+
+    var body: some View {
+        Text(displayChar)
+            .font(.system(size: keyFontSize, weight: .regular))
+            .foregroundStyle(.primary)
+            .frame(width: width)
+            .frame(height: KeyMetrics.keyHeight)
+            .background(
+                RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
+                    .fill(KeyMetrics.letterKeyColor)
+                    .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 1)
+            )
+            .overlay(
+                // Accent popup on long-press (only when showing an accent, not apostrophe)
+                Group {
+                    if showingAccents {
+                        AccentPopup(
+                            accents: accentOptions,
+                            selectedIndex: selectedAccentIndex
+                        )
+                        .offset(y: -(KeyMetrics.keyHeight + 12))
+                    }
+                },
+                alignment: .top
+            )
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isPressed {
+                            isPressed = true
+                            dragStartX = value.location.x
+                            startLongPressTimer()
+                        }
+                        if showingAccents {
+                            updateSelectedAccent(dragLocation: value.location)
+                        }
+                    }
+                    .onEnded { _ in
+                        isPressed = false
+                        longPressTimer?.cancel()
+                        longPressTimer = nil
+
+                        if showingAccents {
+                            // Long-press mode: insert selected accent or dismiss
+                            if let index = selectedAccentIndex, index >= 0, index < accentOptions.count {
+                                onTap(accentOptions[index])
+                                HapticFeedback.keyTapped()
+                            }
+                            showingAccents = false
+                            accentOptions = []
+                            selectedAccentIndex = nil
+                        } else {
+                            // Normal tap: insert the displayed character
+                            onTap(displayChar)
+                            HapticFeedback.keyTapped()
+                        }
+                        dragStartX = nil
+                    }
+            )
+    }
+
+    // MARK: - Long-press helpers
+
+    private func startLongPressTimer() {
+        longPressTimer?.cancel()
+        longPressTimer = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+
+            // Only show accent popup if the adaptive key is showing an accent (not apostrophe).
+            // Look up the vowel that triggered the current accent display.
+            if let vowel = AccentedCharacters.adaptiveKeyVowel(afterTyping: lastTypedChar),
+               let accents = AccentedCharacters.accents(for: vowel), !accents.isEmpty {
+                if isShifted {
+                    accentOptions = accents.map { $0.uppercased() }
+                } else {
+                    accentOptions = accents
+                }
+                showingAccents = true
+                selectedAccentIndex = nil
+            }
+        }
+    }
+
+    private func updateSelectedAccent(dragLocation: CGPoint) {
+        guard !accentOptions.isEmpty else { return }
+        let totalPopupWidth = CGFloat(accentOptions.count) * accentCellWidth
+        let popupStartX = (dragStartX ?? 0) - totalPopupWidth / 2
+        let relativeX = dragLocation.x - popupStartX
+        let index = Int(relativeX / accentCellWidth)
+        if index >= 0 && index < accentOptions.count {
+            selectedAccentIndex = index
+        } else {
+            selectedAccentIndex = nil
+        }
+    }
+}
+
 /// Layer switch key (123 / ABC).
 struct LayerSwitchKey: View {
     let label: String

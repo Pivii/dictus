@@ -14,6 +14,8 @@ struct KeyRow: View {
     let onSymbolToggle: () -> Void
     let onSpace: () -> Void
     let onReturn: () -> Void
+    let onAccentAdaptive: (String) -> Void
+    let lastTypedChar: String?
     let hasFullAccess: Bool
 
     /// Calculate the width of a 1x key based on row content.
@@ -69,12 +71,15 @@ struct KeyRow: View {
             LayerSwitchKey(label: key.label, width: keyWidth, onTap: onSymbolToggle)
 
         case .emoji:
-            // Placeholder — full implementation in Task 2
             EmojiKey(width: keyWidth, onTap: onGlobe)
 
         case .accentAdaptive:
-            // Placeholder — full implementation in Task 2
-            EmptyView()
+            AdaptiveAccentKey(
+                width: keyWidth,
+                isShifted: isShifted,
+                lastTypedChar: lastTypedChar,
+                onTap: onAccentAdaptive
+            )
         }
     }
 }
