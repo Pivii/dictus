@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Completed 07-08-PLAN.md
-last_updated: "2026-03-08T12:53:06.990Z"
-last_activity: 2026-03-08 — Plan 07-06 complete (accent key fix & SF Symbol icons)
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-03-08T12:53:36.230Z"
+last_activity: 2026-03-08 — Plan 07-07 complete (trackpad smoothing, delete acceleration, autocap)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 14
   completed_plans: 13
-  percent: 79
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 7 of 10 (Keyboard Parity & Visual)
-Plan: 6 of 8 in current phase (6 complete)
+Plan: 8 of 9 in current phase (7 complete)
 Status: In progress
-Last activity: 2026-03-08 — Plan 07-06 complete (accent key fix & SF Symbol icons)
+Last activity: 2026-03-08 — Plan 07-07 complete (trackpad smoothing, delete acceleration, autocap)
 
-Progress: [████████░░] 79% (Phase 7: 6/8 plans complete)
+Progress: [█████████░] 93% (Phase 7: 7/9 plans complete)
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 79% (Phase 7: 6/8 plans complete)
 | Phase 07 P04 | 2min | 2 tasks | 3 files |
 | Phase 07 P06 | 4min | 1 tasks | 3 files |
 | Phase 07 P08 | 4min | 2 tasks | 7 files |
+| Phase 07 P07 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -90,7 +91,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Apostrophe as adaptive key default -- most common non-letter char in French
 - [Phase 07]: Long-press on adaptive key only when showing accent (not apostrophe)
 - [Phase 07]: Removed duplicate haptic from onSpace -- SpaceKey handles own haptics via DragGesture
-- [Phase 07]: Vertical cursor movement: 40-char jumps per line at 20pt sensitivity (no API for actual line length)
+- [Phase 07]: Vertical cursor movement: proportional 1-char-per-15pt with velocity acceleration (replaces 40-char line jumps)
+- [07-07]: Word-level delete via manual word boundary detection (UITextDocumentProxy lacks deleteWordBackward)
+- [07-07]: Autocap uses NotificationCenter for textDidChange bridging between UIKit controller and SwiftUI view
 - [07-06]: Accent replacement logic in KeyboardView onAccentAdaptive handler (deleteBackward+insert pattern)
 - [07-06]: SF Symbol face.smiling for emoji key matches Apple native AZERTY visual style
 - [Phase 07]: Toolbar 48pt height for mic pill glow room; 0.05 silence threshold; unconditional playInputClick on all keys
@@ -107,8 +110,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T12:53:06.988Z
-Stopped at: Completed 07-08-PLAN.md
+Last session: 2026-03-08T12:53:36.228Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
 
 ---
