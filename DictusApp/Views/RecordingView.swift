@@ -69,11 +69,75 @@ struct RecordingView: View {
                     Spacer()
                 }
 
-                Spacer()
+                // MARK: - Upper zone: result text (centered between top and waveform)
+                // WHY above waveform: The waveform+mic are anchored in the bottom
+                // third. Placing the result in the large empty upper zone avoids
+                // pushing anything down when text appears.
+                ZStack {
+                    if showResult, let result = transcriptionResult {
+                        ScrollView {
+                            Button {
+                                UIPasteboard.general.string = result
+                                showCopiedFeedback = true
+                                HapticFeedback.recordingStopped()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    showCopiedFeedback = false
+                                }
+                            } label: {
+                                Text(result)
+                                    .font(.dictusBody)
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.center)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color.dictusSurface.opacity(0.5))
+                                    )
+                            }
+                            .padding(.horizontal, 32)
+                        }
+                        .transition(.opacity)
+                    } else if showError, let error = errorMessage {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.orange)
+                            Text(error)
+                                .font(.dictusCaption)
+                                .foregroundColor(.dictusRecording)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                    }
 
-                // MARK: - Waveform (always visible)
-                // WHY always visible: Creates stable visual anchor. Flat bars when
-                // idle/result, audio-driven when recording, sinusoidal when processing.
+                    // Onboarding finish button (overlaid at bottom of upper zone)
+                    if mode == .onboarding && showResult {
+                        VStack {
+                            Spacer()
+                            Button(action: {
+                                coordinator.resetStatus()
+                                onComplete?()
+                            }) {
+                                Text("Terminer")
+                                    .font(.dictusSubheading)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color.dictusSuccess)
+                                    )
+                            }
+                            .padding(.horizontal, 32)
+                            .padding(.bottom, 16)
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+
+                // MARK: - Waveform (always visible, anchored in bottom third)
                 waveformSection
                     .padding(.horizontal)
                     .frame(height: 120)
@@ -87,32 +151,6 @@ struct RecordingView: View {
                 micOrStopButton
                     .frame(height: 100)
                     .padding(.top, 16)
-
-                // MARK: - Result area (text appears here after transcription)
-                resultSection
-                    .padding(.horizontal, 32)
-                    .padding(.top, 16)
-
-                // Onboarding finish button
-                if mode == .onboarding && showResult {
-                    Button(action: {
-                        coordinator.resetStatus()
-                        onComplete?()
-                    }) {
-                        Text("Terminer")
-                            .font(.dictusSubheading)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.dictusSuccess)
-                            )
-                    }
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
-                    .transition(.opacity)
-                }
 
                 Spacer()
                     .frame(height: 40)
@@ -208,49 +246,6 @@ struct RecordingView: View {
             AnimatedMicButton(status: .idle) {
                 startRecording()
             }
-        }
-    }
-
-    // MARK: - Result Section
-
-    /// Transcription result or error, shown below the fixed elements.
-    @ViewBuilder
-    private var resultSection: some View {
-        if showResult, let result = transcriptionResult {
-            // WHY tap-to-copy: The main use case is dictating text to paste elsewhere.
-            // One tap copies to clipboard — faster than selecting all + copy.
-            Button {
-                UIPasteboard.general.string = result
-                showCopiedFeedback = true
-                HapticFeedback.recordingStopped()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    showCopiedFeedback = false
-                }
-            } label: {
-                Text(result)
-                    .font(.dictusBody)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.dictusSurface.opacity(0.5))
-                    )
-            }
-            .transition(.opacity)
-        } else if showError, let error = errorMessage {
-            VStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.orange)
-                Text(error)
-                    .font(.dictusCaption)
-                    .foregroundColor(.dictusRecording)
-                    .multilineTextAlignment(.center)
-            }
-        } else {
-            EmptyView()
         }
     }
 
