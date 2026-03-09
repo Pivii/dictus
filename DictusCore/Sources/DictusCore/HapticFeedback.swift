@@ -41,6 +41,12 @@ public enum HapticFeedback {
 
     /// Notification generator for success/error feedback (e.g., text inserted).
     private static let notificationGenerator = UINotificationFeedbackGenerator()
+
+    /// Selection feedback generator for cursor movement during trackpad drag.
+    /// UISelectionFeedbackGenerator produces the same subtle "tick" Apple uses
+    /// for pickers and the native cursor — distinct from impact feedback,
+    /// specifically designed for discrete selection changes.
+    private static let selectionGenerator = UISelectionFeedbackGenerator()
     #endif
 
     /// WHY isEnabled() reads from App Group at point of use (not cached):
@@ -68,6 +74,7 @@ public enum HapticFeedback {
         lightGenerator.prepare()
         mediumGenerator.prepare()
         notificationGenerator.prepare()
+        selectionGenerator.prepare()
         #endif
     }
 
@@ -123,6 +130,18 @@ public enum HapticFeedback {
         guard isEnabled() else { return }
         mediumGenerator.impactOccurred()
         mediumGenerator.prepare()
+        #endif
+    }
+
+    /// Selection tick feedback for each character of cursor movement during trackpad drag.
+    /// Uses UISelectionFeedbackGenerator — the same subtle "tick" Apple uses for pickers
+    /// and the native cursor. This is the #1 factor for perceived trackpad fluidity.
+    /// Pre-arms the generator immediately after firing for zero-latency on the next tick.
+    public static func cursorMoved() {
+        #if canImport(UIKit) && !os(macOS)
+        guard isEnabled() else { return }
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
         #endif
     }
 }
