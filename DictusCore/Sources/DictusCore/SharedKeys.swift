@@ -33,4 +33,8 @@ public enum SharedKeys {
     public static let hapticsEnabled = "dictus.hapticsEnabled"
     /// Whether the user has completed onboarding, default false
     public static let hasCompletedOnboarding = "dictus.hasCompletedOnboarding"
+
+    // Text prediction preferences (added for Phase 08)
+    /// Whether autocorrect is enabled, default true
+    public static let autocorrectEnabled = "dictus.autocorrectEnabled"
 }
