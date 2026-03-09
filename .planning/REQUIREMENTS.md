@@ -41,8 +41,8 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 ### Keyboard Modes
 
 - [x] **MODE-01**: Three keyboard modes available — "Micro" (centered mic + globe), "Emoji + Micro" (emoji picker + mic in toolbar), "Clavier complet" (current full AZERTY)
-- [ ] **MODE-02**: User selects preferred keyboard mode in the app's Settings screen
-- [ ] **MODE-03**: Settings shows a non-interactive SwiftUI preview of each keyboard mode
+- [x] **MODE-02**: User selects preferred keyboard mode in the app's Settings screen
+- [x] **MODE-03**: Settings shows a non-interactive SwiftUI preview of each keyboard mode
 - [x] **MODE-04**: Keyboard extension reads selected mode from App Group and renders the correct layout
 
 ### Models
@@ -119,8 +119,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VIS-07 | Phase 6 | Complete |
 | VIS-08 | Phase 6 | Complete |
 | MODE-01 | Phase 9 | Complete |
-| MODE-02 | Phase 9 | Pending |
-| MODE-03 | Phase 9 | Pending |
+| MODE-02 | Phase 9 | Complete |
+| MODE-03 | Phase 9 | Complete |
 | MODE-04 | Phase 9 | Complete |
 | MOD-01 | Phase 10 | Pending |
 | MOD-02 | Phase 10 | Pending |

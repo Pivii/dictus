@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
-status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-09T22:17:41.864Z"
-last_activity: 2026-03-09 — Plan 09-02 complete (MicroModeView + EmojiMicroModeView + mode routing)
+status: In Progress
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-03-09T22:17:47.813Z"
+last_activity: 2026-03-09 — Phase 9 complete (all 3 plans done)
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 22
   completed_plans: 22
-  percent: 95
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 9 of 10 (Keyboard Modes)
-Plan: 2 of 3 in current phase (2 complete)
-Status: In Progress
-Last activity: 2026-03-09 — Plan 09-02 complete (MicroModeView + EmojiMicroModeView + mode routing)
+Plan: 3 of 3 in current phase (3 complete)
+Status: Complete
+Last activity: 2026-03-09 — Phase 9 complete (all 3 plans done)
 
-Progress: [██████████] 95% (Phase 9: 2/3 plans)
+Progress: [██████████] 100% (Phase 9: 3/3 plans)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [██████████] 95% (Phase 9: 2/3 plans)
 | Phase 08 P02 | 12min | 2 tasks | 6 files |
 | Phase 09 P01 | 2min | 1 tasks | 3 files |
 | Phase 09 P02 | 3min | 2 tasks | 4 files |
+| Phase 09 P03 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Recent decisions affecting current work:
 - [Phase 09]: KeyboardMode follows LayoutType pattern exactly for DictusCore consistency
 - [Phase 09]: Custom 120pt mic pill instead of scaleEffect to avoid retina blur
 - [Phase 09]: RecordingOverlay above mode switch for all-mode coverage; isEmojiMode only in .full mode
+- [Phase 09]: Empty string default in onboarding forces explicit mode selection
+- [Phase 09]: Conditional toggles: AZERTY/QWERTY and autocorrect only for Complet, haptics hidden for Micro
 
 ### Pending Todos
 
@@ -133,8 +136,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T22:17:32.181Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-09T22:17:47.811Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
 
 ---
