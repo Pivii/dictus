@@ -26,6 +26,10 @@ public enum SharedKeys {
     /// Double: elapsed recording seconds, updated at ~5Hz during recording
     public static let recordingElapsedSeconds = "dictus.recordingElapsedSeconds"
 
+    // Keyboard mode preference (added for Phase 09 keyboard modes)
+    /// Current keyboard mode stored as String ("micro", "emojiMicro", "full")
+    public static let keyboardMode = "dictus.keyboardMode"
+
     // User preferences (added for Plan 4.1 onboarding + settings)
     /// Language code for transcription ("fr" or "en"), default "fr"
     public static let language = "dictus.language"
