@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-09T18:32:59.191Z"
-last_activity: 2026-03-08 — Plan 07-11 complete (trackpad line movement, 3-category key sounds)
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-03-09T18:48:39.063Z"
+last_activity: 2026-03-09 — Plan 08-02 complete (SuggestionBarView, autocorrect, undo, settings toggle)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 100
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 8 of 10 (Text Prediction)
-Plan: 1 of 3 in current phase (1 complete)
+Plan: 2 of 3 in current phase (2 complete)
 Status: In progress
-Last activity: 2026-03-09 — Plan 08-01 complete (FrequencyDictionary, TextPredictionEngine, SuggestionState)
+Last activity: 2026-03-09 — Plan 08-02 complete (SuggestionBarView, autocorrect, undo, settings toggle)
 
-Progress: [██████████] 95% (Phase 8: 1/3 plans complete)
+Progress: [██████████] 100% (Phase 8: 2/3 plans complete)
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████████] 95% (Phase 8: 1/3 plans complete)
 | Phase 07 P11 | 6min | 2 tasks | 2 files |
 | Phase 07 P12 | 2min | 2 tasks | 2 files |
 | Phase 08 P01 | 7min | 3 tasks | 10 files |
+| Phase 08 P02 | 12min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ Recent decisions affecting current work:
 - [08-01]: TextPredictionEngine as class (not struct) due to UITextChecker reference type
 - [08-01]: Frequency-ranked UITextChecker completions for better suggestion quality
 - [08-01]: Single language loaded at a time to minimize memory in keyboard extension
+- [Phase 08]: Gear icon hidden during suggestions to maximize horizontal space for 3 slots
+- [Phase 08]: DispatchQueue.main.async for suggestion updates after keystroke to avoid stale proxy reads
+- [Phase 08]: Autocorrect undo stores original word and restores on immediate backspace
 
 ### Pending Todos
 
@@ -123,9 +127,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T18:32:12Z
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-text-prediction/08-01-SUMMARY.md
+Last session: 2026-03-09T18:48:39.061Z
+Stopped at: Completed 08-02-PLAN.md
+Resume file: None
 
 ---
 *State initialized: 2026-03-04*
