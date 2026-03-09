@@ -6,6 +6,7 @@ import DictusCore
 /// Shared model for category bar items (recents + standard categories).
 struct CategoryInfo: Identifiable {
     let id: String
+    let name: String
     let icon: String
 }
 
@@ -24,6 +25,8 @@ struct EmojiPickerView: View {
     @State private var isSearchActive: Bool = false
     @State private var searchText: String = ""
     @State private var showCursor: Bool = true
+    @State private var filteredEmojis: [String] = []
+    @State private var searchTask: Task<Void, Never>? = nil
 
     private let categories = EmojiStore.categories
     private let gridRows = Array(repeating: GridItem(.fixed(46), spacing: 2), count: 4)
@@ -61,12 +64,17 @@ struct EmojiPickerView: View {
     private var sectionInfos: [CategoryInfo] {
         var infos: [CategoryInfo] = []
         if !recentEmojis.isEmpty {
-            infos.append(CategoryInfo(id: "recents", icon: "clock"))
+            infos.append(CategoryInfo(id: "recents", name: "Récents", icon: "clock"))
         }
         for cat in categories {
-            infos.append(CategoryInfo(id: cat.id, icon: cat.icon))
+            infos.append(CategoryInfo(id: cat.id, name: cat.name, icon: cat.icon))
         }
         return infos
+    }
+
+    /// Display name for the currently selected category.
+    private var selectedCategoryName: String {
+        sectionInfos.first(where: { $0.id == selectedCategoryID })?.name.uppercased() ?? ""
     }
 
     // MARK: - Body
@@ -79,6 +87,7 @@ struct EmojiPickerView: View {
                 normalMode
             }
         }
+        .frame(maxWidth: .infinity)
         .onAppear {
             recentEmojis = RecentEmojis.load()
             if !recentEmojis.isEmpty {
@@ -91,11 +100,16 @@ struct EmojiPickerView: View {
 
     @ViewBuilder
     private var normalMode: some View {
-        // Search bar (pill shape)
-        searchBarButton
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
-            .padding(.bottom, 4)
+        // Category name label (e.g. "SMILEYS & PEOPLE")
+        HStack {
+            Text(selectedCategoryName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
 
         // Continuous horizontal emoji grid (4 rows, 8 per row)
         ScrollViewReader { proxy in
@@ -103,6 +117,7 @@ struct EmojiPickerView: View {
                 LazyHGrid(rows: gridRows, alignment: .top, spacing: 0) {
                     ForEach(flatItems) { item in
                         Button {
+                            HapticFeedback.keyTapped()
                             onEmojiInsert(item.emoji)
                             RecentEmojis.add(item.emoji)
                         } label: {
@@ -131,27 +146,10 @@ struct EmojiPickerView: View {
                 selectedCategoryID = id
                 scrollToken += 1
             },
+            onSearch: { isSearchActive = true },
             onDelete: onDelete,
             onDismiss: onDismiss
         )
-    }
-
-    /// Normal mode search bar — tapping opens search mode.
-    private var searchBarButton: some View {
-        Button { isSearchActive = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                Text("Rechercher des Emoji")
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                Capsule().fill(Color(.systemGray6))
-            )
-        }
     }
 
     // MARK: - Search mode
@@ -178,6 +176,7 @@ struct EmojiPickerView: View {
                 HStack(spacing: 2) {
                     ForEach(Array(emojiRow.enumerated()), id: \.offset) { _, emoji in
                         Button {
+                            HapticFeedback.keyTapped()
                             onEmojiInsert(emoji)
                             RecentEmojis.add(emoji)
                         } label: {
@@ -194,16 +193,31 @@ struct EmojiPickerView: View {
 
         Spacer(minLength: 0)
 
-        MiniSearchKeyboard(
+        EquatableView(content: MiniSearchKeyboard(
             onCharacter: { searchText.append($0) },
             onDelete: { if !searchText.isEmpty { searchText.removeLast() } },
             onSpace: { searchText.append(" ") }
-        )
+        ))
+        .onChange(of: searchText) { newValue in
+            searchTask?.cancel()
+            if newValue.isEmpty {
+                filteredEmojis = []
+                return
+            }
+            searchTask = Task {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms debounce
+                guard !Task.isCancelled else { return }
+                let results = performSearch(query: newValue)
+                guard !Task.isCancelled else { return }
+                filteredEmojis = results
+            }
+        }
     }
 
     /// Search bar for search mode with cursor.
     private var searchInputBar: some View {
-        HStack(spacing: 0) {
+        let barWidth = UIScreen.main.bounds.width - 16 // 8pt margin each side
+        return HStack(spacing: 0) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
                 .padding(.trailing, 6)
@@ -236,8 +250,10 @@ struct EmojiPickerView: View {
         .lineLimit(1)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+        .frame(width: barWidth)
         .background(
-            Capsule().fill(Color(.systemGray6))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.systemGray6))
         )
     }
 
@@ -252,29 +268,27 @@ struct EmojiPickerView: View {
 
     /// Emojis to show in search mode row.
     /// When nothing typed: recents (or first emojis from catalog if no recents).
-    /// When searching: filtered results.
+    /// When searching: debounced filtered results.
     private var searchModeEmojis: [String] {
         if searchText.isEmpty {
-            // Show recents, or default emojis if no recents exist
             if recentEmojis.isEmpty {
                 return Array(EmojiStore.allEmojis.prefix(30))
             }
             return recentEmojis
         }
-        return searchResults
+        return filteredEmojis
     }
 
-    // MARK: - Search logic (optimized with pre-computed names)
+    // MARK: - Search logic (debounced, pre-computed names)
 
-    private var searchResults: [String] {
-        guard !searchText.isEmpty else { return [] }
-        let query = searchText.lowercased()
+    private func performSearch(query: String) -> [String] {
+        let q = query.lowercased()
         let language = AppGroup.defaults.string(forKey: SharedKeys.language) ?? "fr"
 
         if language == "fr" {
-            return searchFrench(query: query)
+            return searchFrench(query: q)
         } else {
-            return searchUnicodeName(query: query)
+            return searchUnicodeName(query: q)
         }
     }
 
@@ -318,10 +332,15 @@ private struct EmojiGridItem: Identifiable {
 
 /// Mini keyboard for emoji search with key popups and haptic feedback.
 /// Uses 40pt key height to fit within the emoji picker without clipping.
-private struct MiniSearchKeyboard: View {
+/// Equatable to prevent re-renders when search text changes (layout is static).
+private struct MiniSearchKeyboard: View, Equatable {
     let onCharacter: (String) -> Void
     let onDelete: () -> Void
     let onSpace: () -> Void
+
+    static func == (lhs: MiniSearchKeyboard, rhs: MiniSearchKeyboard) -> Bool {
+        true // Layout never changes, only closures differ
+    }
 
     private let keyHeight: CGFloat = 40
 
@@ -390,41 +409,40 @@ private struct MiniSearchKeyboard: View {
 }
 
 /// A single key in the mini search keyboard with press popup.
-/// Uses DragGesture(minimumDistance: 0) to detect press/release and show
-/// a magnified popup above the key (matching the main keyboard behavior).
+/// Uses a lightweight ButtonStyle instead of DragGesture for better performance.
 private struct MiniKeyButton: View {
     let label: String
     let height: CGFloat
     let action: () -> Void
 
-    @State private var isPressed = false
-
     var body: some View {
-        Text(label)
-            .font(.system(size: 22))
-            .foregroundColor(Color(.label))
-            .frame(maxWidth: .infinity)
-            .frame(height: height)
-            .background(KeyMetrics.letterKeyColor)
-            .cornerRadius(KeyMetrics.keyCornerRadius)
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 22))
+                .foregroundColor(Color(.label))
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+                .background(KeyMetrics.letterKeyColor)
+                .cornerRadius(KeyMetrics.keyCornerRadius)
+        }
+        .buttonStyle(MiniKeyButtonStyle(label: label, height: height))
+    }
+}
+
+private struct MiniKeyButtonStyle: ButtonStyle {
+    let label: String
+    let height: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
             .overlay(
                 Group {
-                    if isPressed {
+                    if configuration.isPressed {
                         KeyPopup(label: label)
                             .offset(y: -(height + 8))
                     }
                 },
                 alignment: .top
-            )
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !isPressed { isPressed = true }
-                    }
-                    .onEnded { _ in
-                        isPressed = false
-                        action()
-                    }
             )
     }
 }
