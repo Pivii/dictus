@@ -13,6 +13,10 @@ import DictusCore
 struct KeyboardRootView: View {
     let controller: UIInputViewController
     @StateObject private var state = KeyboardState()
+    /// Observable state for the suggestion bar: holds current suggestions, mode, and autocorrect undo.
+    /// WHY @StateObject: SuggestionState is an ObservableObject that must survive view re-renders.
+    /// @StateObject ensures a single instance is created and owned by this view.
+    @StateObject private var suggestionState = SuggestionState()
     @State private var isEmojiMode = false
 
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
@@ -61,7 +65,12 @@ struct KeyboardRootView: View {
                     ToolbarView(
                         hasFullAccess: controller.hasFullAccess,
                         dictationStatus: state.dictationStatus,
-                        onMicTap: { state.startRecording() }
+                        onMicTap: { state.startRecording() },
+                        suggestions: suggestionState.suggestions,
+                        suggestionMode: suggestionState.mode,
+                        onSuggestionTap: { index in
+                            handleSuggestionTap(index: index)
+                        }
                     )
                 }
 
@@ -96,6 +105,61 @@ struct KeyboardRootView: View {
             // Pre-allocate haptic generators so the first key tap has zero latency.
             // Without this, the Taptic Engine needs ~2-5ms to spin up on first use.
             HapticFeedback.warmUp()
+
+            // Set prediction engine language from App Group shared preference.
+            let lang = AppGroup.defaults.string(forKey: SharedKeys.language) ?? "fr"
+            suggestionState.setLanguage(lang)
+        }
+    }
+
+    // MARK: - Suggestion Handling
+
+    /// Handles a tap on one of the suggestion bar slots.
+    ///
+    /// WHY two modes:
+    /// - Completion mode: the user is typing a word and taps a completion.
+    ///   We replace the partial word with the full suggestion and add a space
+    ///   so the user can continue typing the next word immediately.
+    /// - Accent mode: the user typed a single vowel and wants an accent variant.
+    ///   We replace just the vowel character without adding a space, because
+    ///   the user may continue typing the same word.
+    private func handleSuggestionTap(index: Int) {
+        guard index < suggestionState.suggestions.count else { return }
+        let suggestion = suggestionState.suggestions[index]
+        let proxy = controller.textDocumentProxy
+
+        let addSpace = suggestionState.mode == .completions
+        replaceCurrentWord(
+            proxy: proxy,
+            currentWord: suggestionState.currentWord,
+            replacement: suggestion,
+            addSpace: addSpace
+        )
+
+        suggestionState.lastAutocorrect = nil
+        suggestionState.clear()
+        HapticFeedback.keyTapped()
+    }
+
+    /// Replaces the word currently being typed with a replacement string.
+    ///
+    /// WHY deleteBackward loop:
+    /// UITextDocumentProxy doesn't support selecting or replacing text directly.
+    /// The only way to "replace" is to delete the current word character by character
+    /// and then insert the replacement. This is the standard pattern used by all
+    /// third-party iOS keyboards.
+    private func replaceCurrentWord(
+        proxy: UITextDocumentProxy,
+        currentWord: String,
+        replacement: String,
+        addSpace: Bool
+    ) {
+        for _ in 0..<currentWord.count {
+            proxy.deleteBackward()
+        }
+        proxy.insertText(replacement)
+        if addSpace {
+            proxy.insertText(" ")
         }
     }
 }

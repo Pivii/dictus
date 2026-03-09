@@ -57,6 +57,7 @@
 		AA0000B4 /* EmojiSearchFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B4 /* EmojiSearchFR.swift */; };
 		AA0000D0 /* TextPredictionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D0 /* TextPredictionEngine.swift */; };
 		AA0000D1 /* SuggestionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D1 /* SuggestionState.swift */; };
+		AA0000D4 /* SuggestionBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D4 /* SuggestionBarView.swift */; };
 		AA0000D2 /* fr_frequency.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1000D2 /* fr_frequency.json */; };
 		AA0000D3 /* en_frequency.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1000D3 /* en_frequency.json */; };
 		AA0000C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C0 /* Assets.xcassets */; };
@@ -116,6 +117,7 @@
 		AA1000B4 /* EmojiSearchFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSearchFR.swift; sourceTree = "<group>"; };
 		AA1000D0 /* TextPredictionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPredictionEngine.swift; sourceTree = "<group>"; };
 		AA1000D1 /* SuggestionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionState.swift; sourceTree = "<group>"; };
+		AA1000D4 /* SuggestionBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionBarView.swift; sourceTree = "<group>"; };
 		AA1000D2 /* fr_frequency.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = fr_frequency.json; sourceTree = "<group>"; };
 		AA1000D3 /* en_frequency.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = en_frequency.json; sourceTree = "<group>"; };
 		AA1000C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -308,6 +310,7 @@
 				AA100070 /* AccentPopup.swift */,
 				AA1000B2 /* EmojiPickerView.swift */,
 				AA1000B3 /* EmojiCategoryBar.swift */,
+				AA1000D4 /* SuggestionBarView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -499,6 +502,7 @@
 				AA0000B4 /* EmojiSearchFR.swift in Sources */,
 				AA0000D0 /* TextPredictionEngine.swift in Sources */,
 				AA0000D1 /* SuggestionState.swift in Sources */,
+				AA0000D4 /* SuggestionBarView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

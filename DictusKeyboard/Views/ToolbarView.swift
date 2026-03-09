@@ -14,6 +14,11 @@ struct ToolbarView: View {
     let dictationStatus: DictationStatus
     var onMicTap: () -> Void
 
+    // Suggestion bar integration parameters (default to idle/empty)
+    var suggestions: [String] = []
+    var suggestionMode: SuggestionMode = .idle
+    var onSuggestionTap: ((Int) -> Void)? = nil
+
     /// Icon size scales with Dynamic Type.
     @ScaledMetric private var gearIconSize: CGFloat = 16
 
@@ -23,16 +28,28 @@ struct ToolbarView: View {
         // Both layers are vertically centered by the ZStack's default alignment.
         ZStack {
             if hasFullAccess {
-                // Normal mode: gear left, mic right
+                // Normal mode: gear left (when idle), suggestion bar (when typing), mic right.
+                // WHY hide gear when suggestions showing:
+                // The suggestion bar needs horizontal space to display 3 slots legibly.
+                // The gear icon is rarely needed during active typing, and users can
+                // access settings between typing sessions when the bar reverts to idle.
                 HStack {
-                    Link(destination: URL(string: "dictus://")!) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: gearIconSize, weight: .medium))
-                            .foregroundColor(Color(.systemGray))
-                            .frame(width: 32, height: 32)
-                    }
+                    if suggestions.isEmpty {
+                        Link(destination: URL(string: "dictus://")!) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: gearIconSize, weight: .medium))
+                                .foregroundColor(Color(.systemGray))
+                                .frame(width: 32, height: 32)
+                        }
 
-                    Spacer()
+                        Spacer()
+                    } else {
+                        SuggestionBarView(
+                            suggestions: suggestions,
+                            mode: suggestionMode,
+                            onTap: { index in onSuggestionTap?(index) }
+                        )
+                    }
 
                     AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
                 }
