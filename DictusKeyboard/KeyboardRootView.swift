@@ -77,7 +77,8 @@ struct KeyboardRootView: View {
                 KeyboardView(
                     controller: controller,
                     hasFullAccess: controller.hasFullAccess,
-                    isEmojiMode: $isEmojiMode
+                    isEmojiMode: $isEmojiMode,
+                    suggestionState: suggestionState
                 )
 
                 // Experimental: extra bottom padding to push system keyboard row

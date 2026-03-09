@@ -24,6 +24,11 @@ struct KeyboardView: View {
     let controller: UIInputViewController
     let hasFullAccess: Bool
     @Binding var isEmojiMode: Bool
+    /// Observed suggestion state for updating suggestions on keystrokes and performing autocorrect.
+    /// WHY @ObservedObject (not @StateObject): KeyboardRootView owns the SuggestionState
+    /// instance via @StateObject. KeyboardView merely observes it to trigger suggestion
+    /// updates and read autocorrect settings.
+    @ObservedObject var suggestionState: SuggestionState
 
     @State private var currentLayer: KeyboardLayerType = .letters
     @State private var shiftState: ShiftState = .off
@@ -88,18 +93,45 @@ struct KeyboardView: View {
                                 },
                                 onDelete: {
                                     // Sound is played by DeleteKey directly (alongside haptic)
+                                    // Autocorrect undo: if backspace pressed immediately after
+                                    // autocorrect, restore the original word instead of normal delete.
+                                    if let undo = suggestionState.lastAutocorrect {
+                                        let proxy = controller.textDocumentProxy
+                                        // Delete the corrected word + trailing space if one was inserted
+                                        let deleteCount = undo.correctedWord.count + (undo.insertedSpace ? 1 : 0)
+                                        for _ in 0..<deleteCount {
+                                            proxy.deleteBackward()
+                                        }
+                                        proxy.insertText(undo.originalWord)
+                                        suggestionState.lastAutocorrect = nil
+                                        lastTypedChar = nil
+                                        checkAutocapitalize()
+                                        // Update suggestions for the restored word
+                                        DispatchQueue.main.async {
+                                            suggestionState.update(proxy: controller.textDocumentProxy)
+                                        }
+                                        return
+                                    }
                                     controller.textDocumentProxy.deleteBackward()
                                     lastTypedChar = nil
                                     checkAutocapitalize()
+                                    // Update suggestions after deletion
+                                    DispatchQueue.main.async {
+                                        suggestionState.update(proxy: controller.textDocumentProxy)
+                                    }
                                 },
                                 onWordDelete: {
                                     // Delete backward to the previous word boundary.
                                     // textDocumentProxy has no deleteWordBackward(), so we
                                     // read the text before the cursor and find the last word boundary.
                                     // Sound is played by DeleteKey directly (alongside haptic)
+                                    suggestionState.lastAutocorrect = nil
                                     deleteWordBackward()
                                     lastTypedChar = nil
                                     checkAutocapitalize()
+                                    DispatchQueue.main.async {
+                                        suggestionState.update(proxy: controller.textDocumentProxy)
+                                    }
                                 },
                                 onGlobe: {
                                     HapticFeedback.keyTapped()
@@ -116,29 +148,40 @@ struct KeyboardView: View {
                                 onLayerSwitch: {
                                     HapticFeedback.keyTapped()
                                     AudioServicesPlaySystemSound(KeySound.modifier)
+                                    suggestionState.lastAutocorrect = nil
+                                    suggestionState.clear()
                                     toggleLettersNumbers()
                                 },
                                 onSymbolToggle: {
                                     HapticFeedback.keyTapped()
                                     AudioServicesPlaySystemSound(KeySound.modifier)
+                                    suggestionState.lastAutocorrect = nil
+                                    suggestionState.clear()
                                     toggleNumbersSymbols()
                                 },
                                 onSpace: {
                                     AudioServicesPlaySystemSound(KeySound.modifier)
+                                    // Autocorrect: before inserting space, check if the
+                                    // current word is misspelled and replace it.
+                                    performAutocorrectIfNeeded()
                                     controller.textDocumentProxy.insertText(" ")
                                     lastTypedChar = nil
+                                    suggestionState.clear()
                                     checkAutocapitalize()
                                 },
                                 onReturn: {
                                     HapticFeedback.keyTapped()
                                     AudioServicesPlaySystemSound(KeySound.modifier)
+                                    suggestionState.lastAutocorrect = nil
                                     controller.textDocumentProxy.insertText("\n")
                                     lastTypedChar = nil
+                                    suggestionState.clear()
                                     checkAutocapitalize()
                                 },
                                 onAccentAdaptive: { char in
                                     HapticFeedback.keyTapped()
                                     AudioServicesPlaySystemSound(KeySound.letter)
+                                    suggestionState.lastAutocorrect = nil
                                     // If the accent key is replacing a vowel (not inserting apostrophe),
                                     // delete the previous vowel first, then insert the accented version.
                                     if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
@@ -204,6 +247,10 @@ struct KeyboardView: View {
         // AudioServicesPlaySystemSound respects the ringer/silent switch automatically.
         AudioServicesPlaySystemSound(KeySound.letter)
 
+        // Any character input clears the autocorrect undo state.
+        // The undo window is only valid immediately after the autocorrection.
+        suggestionState.lastAutocorrect = nil
+
         // Track last typed character for the adaptive accent key.
         // The accent key uses this to decide whether to show apostrophe or an accent.
         lastTypedChar = char
@@ -213,6 +260,14 @@ struct KeyboardView: View {
         // Auto-unshift after one character (unless caps locked)
         if shiftState == .shifted {
             shiftState = .off
+        }
+
+        // Update suggestions after the proxy has processed the new character.
+        // WHY DispatchQueue.main.async: UITextDocumentProxy reads can be stale
+        // immediately after insertText(). Deferring by one runloop tick ensures
+        // documentContextBeforeInput reflects the newly inserted character.
+        DispatchQueue.main.async {
+            suggestionState.update(proxy: controller.textDocumentProxy)
         }
     }
 
@@ -308,5 +363,42 @@ struct KeyboardView: View {
         } else {
             currentLayer = .numbers
         }
+    }
+
+    /// Checks the current word for misspellings and auto-corrects if enabled.
+    ///
+    /// Called before inserting a space (or punctuation). If autocorrect is enabled
+    /// and the current word is misspelled, the word is replaced with the best
+    /// correction. The original word is stored so backspace can undo the correction.
+    ///
+    /// WHY before space (not after):
+    /// If we correct after inserting the space, the cursor would be after the space
+    /// and we'd need to move back, correct, then move forward. Correcting before
+    /// the space keeps the proxy in the right position for a simple delete+insert.
+    private func performAutocorrectIfNeeded() {
+        guard suggestionState.autocorrectEnabled else { return }
+
+        let currentWord = suggestionState.currentWord
+        guard !currentWord.isEmpty else { return }
+
+        guard let correction = suggestionState.performSpellCheck(currentWord) else { return }
+
+        // Don't autocorrect to the same word
+        guard correction.lowercased() != currentWord.lowercased() else { return }
+
+        let proxy = controller.textDocumentProxy
+
+        // Delete the current word and insert the correction
+        for _ in 0..<currentWord.count {
+            proxy.deleteBackward()
+        }
+        proxy.insertText(correction)
+
+        // Store undo state so immediate backspace can restore the original word
+        suggestionState.lastAutocorrect = AutocorrectState(
+            originalWord: currentWord,
+            correctedWord: correction,
+            insertedSpace: true
+        )
     }
 }

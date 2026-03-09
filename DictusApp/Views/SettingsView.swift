@@ -26,6 +26,11 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.hapticsEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var hapticsEnabled = true
 
+    /// WHY default true: Most users expect autocorrect to be active by default.
+    /// Power users who find it annoying can toggle it off here.
+    @AppStorage(SharedKeys.autocorrectEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var autocorrectEnabled = true
+
     // MARK: - Body
 
     var body: some View {
@@ -49,6 +54,8 @@ struct SettingsView: View {
                 }
 
                 Toggle("Retour haptique", isOn: $hapticsEnabled)
+
+                Toggle("Correction automatique", isOn: $autocorrectEnabled)
             }
             .listRowBackground(Color.dictusAccent.opacity(0.05))
 
