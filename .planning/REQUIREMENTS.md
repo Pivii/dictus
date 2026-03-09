@@ -38,11 +38,12 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 - [x] **VIS-07**: Post-onboarding bug fixed — HomeView shows correct state after model download (no "Télécharger un modèle" when model exists) + side band artifacts removed
 - [x] **VIS-08**: Onboarding flow improved — progression blocked until each step completed (mic permission granted, keyboard added, model downloaded)
 
-### Cold Start
+### Keyboard Modes
 
-- [ ] **COLD-01**: Cold starts minimized — background audio keep-alive to reduce iOS app kills
-- [ ] **COLD-02**: Cold start optimized — init time < 2s when cold start occurs
-- [ ] **COLD-03**: Auto-return to keyboard after cold start (deep research into Wispr Flow technique, best-effort)
+- [ ] **MODE-01**: Three keyboard modes available — "Micro" (centered mic + globe), "Emoji + Micro" (emoji picker + mic in toolbar), "Clavier complet" (current full AZERTY)
+- [ ] **MODE-02**: User selects preferred keyboard mode in the app's Settings screen
+- [ ] **MODE-03**: Settings shows a non-interactive SwiftUI preview of each keyboard mode
+- [ ] **MODE-04**: Keyboard extension reads selected mode from App Group and renders the correct layout
 
 ### Models
 
@@ -53,6 +54,12 @@ Requirements for v1.1 UX & Keyboard milestone. Each maps to roadmap phases.
 ## v1.2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
+
+### Cold Start (deferred from v1.1)
+
+- **COLD-01**: Cold starts minimized — background audio keep-alive to reduce iOS app kills
+- **COLD-02**: Cold start optimized — init time < 2s when cold start occurs
+- **COLD-03**: Auto-return to keyboard after cold start (deep research into Wispr Flow technique, best-effort)
 
 ### Smart Modes
 
@@ -111,9 +118,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VIS-06 | Phase 6 | Complete |
 | VIS-07 | Phase 6 | Complete |
 | VIS-08 | Phase 6 | Complete |
-| COLD-01 | Phase 9 | Pending |
-| COLD-02 | Phase 9 | Pending |
-| COLD-03 | Phase 9 | Pending |
+| MODE-01 | Phase 9 | Pending |
+| MODE-02 | Phase 9 | Pending |
+| MODE-03 | Phase 9 | Pending |
+| MODE-04 | Phase 9 | Pending |
 | MOD-01 | Phase 10 | Pending |
 | MOD-02 | Phase 10 | Pending |
 | MOD-03 | Phase 10 | Pending |

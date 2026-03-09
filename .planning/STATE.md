@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
-**Current focus:** Phase 8 — Text Prediction
+**Current focus:** Phase 9 — Keyboard Modes
 
 ## Current Position
 
-Phase: 8 of 10 (Text Prediction)
-Plan: 2 of 3 in current phase (2 complete)
-Status: In progress
-Last activity: 2026-03-09 — Plan 08-02 complete (SuggestionBarView, autocorrect, undo, settings toggle)
+Phase: 9 of 10 (Keyboard Modes)
+Plan: 0 of ? in current phase (0 complete)
+Status: Not started
+Last activity: 2026-03-09 — Phase 8 complete, Phase 9 redefined (Cold Start → Keyboard Modes)
 
-Progress: [██████████] 100% (Phase 8: 2/3 plans complete)
+Progress: [░░░░░░░░░░] 0% (Phase 9: 0/? plans)
 
 ## Performance Metrics
 
@@ -122,7 +122,7 @@ None yet.
 ### Blockers/Concerns
 
 - MOD-02 (Parakeet v3) is highest-risk requirement — FluidAudio SDK maturity and French accuracy unproven. May need to defer to v1.2 during Phase 10 planning.
-- COLD-03 (auto-return) has no known public API — research spike needed. Competitors' technique is undocumented.
+- COLD-* requirements deferred to v1.2 — cold start partially addressed manually, full solution needs deeper research
 - PRED memory budget — text prediction must stay under 5MB resident in keyboard extension. Needs real-device profiling.
 
 ## Session Continuity

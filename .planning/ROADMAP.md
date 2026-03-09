@@ -32,7 +32,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [ ] **Phase 6: Infrastructure & App Polish** - Consolidate design files into shared package, generate app icon, fix app-side visual bugs and onboarding flow (UAT gap closure in progress)
 - [x] **Phase 7: Keyboard Parity & Visual** - Spacebar trackpad, adaptive accent key, haptics, bottom row cleanup, mic/recording pill redesign, waveform rework, performance optimization (completed 2026-03-08)
 - [x] **Phase 8: Text Prediction** - 3-slot suggestion bar with French autocorrect and accent suggestions (completed 2026-03-09)
-- [ ] **Phase 9: Cold Start** - Minimize cold start frequency, optimize init time, research auto-return
+- [ ] **Phase 9: Keyboard Modes** - Three switchable keyboard layouts (full, mic-only, emoji+mic) with live preview in settings
 - [ ] **Phase 10: Model Catalog** - Clean underperforming models, integrate Parakeet v3, update model selection UI
 
 ## Phase Details
@@ -96,14 +96,15 @@ Plans:
 - [ ] 08-01-PLAN.md — Core prediction engine, frequency dictionary, suggestion state
 - [ ] 08-02-PLAN.md — Suggestion bar UI, autocorrect wiring, undo-on-backspace, settings toggle
 
-### Phase 9: Cold Start
-**Goal**: Users rarely experience cold starts, and when they do, the app recovers to a usable state in under 2 seconds
-**Depends on**: Phase 6 (app-side infrastructure)
-**Requirements**: COLD-01, COLD-02, COLD-03
+### Phase 9: Keyboard Modes
+**Goal**: Users choose the keyboard layout that fits their usage — dictation-focused (mic only), emoji+mic, or full AZERTY — with a live preview in settings
+**Depends on**: Phase 8 (keyboard features complete), Phase 7 (emoji picker built)
+**Requirements**: MODE-01, MODE-02, MODE-03, MODE-04
 **Success Criteria** (what must be TRUE):
-  1. Background audio keep-alive significantly reduces how often iOS kills the app between dictation sessions
-  2. When a cold start does occur, WhisperKit initializes and the app is ready to record in under 2 seconds
-  3. After cold start, the user is guided back to the keyboard with clear UI direction (auto-return if technically achievable, explicit guidance otherwise)
+  1. Three keyboard modes available: "Micro" (large centered mic button + globe), "Emoji + Micro" (emoji picker with mic in toolbar), "Clavier complet" (current full AZERTY)
+  2. User selects their preferred mode in the app's Settings screen
+  3. Settings screen shows a non-interactive SwiftUI preview of each mode so the user sees what they're choosing
+  4. The keyboard extension reads the selected mode from App Group and renders the correct layout
 **Plans**: TBD
 
 Plans:
@@ -138,7 +139,7 @@ Note: Phase 9 (Cold Start) is independent of Phases 7-8 and could execute in par
 | 6. Infrastructure & App Polish | v1.1 | 3/5 | Gap closure | - |
 | 7. Keyboard Parity & Visual | 12/12 | Complete   | 2026-03-08 | - |
 | 8. Text Prediction | 2/2 | Complete   | 2026-03-09 | - |
-| 9. Cold Start | v1.1 | 0/? | Not started | - |
+| 9. Keyboard Modes | v1.1 | 0/? | Not started | - |
 | 10. Model Catalog | v1.1 | 0/? | Not started | - |
 
 ---
