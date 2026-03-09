@@ -50,6 +50,10 @@
 		AA0000A6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A6 /* SettingsView.swift */; };
 		AA0000A7 /* LicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A7 /* LicensesView.swift */; };
 		AA0000A8 /* DebugLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A8 /* DebugLogView.swift */; };
+		AA0000B0 /* EmojiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B0 /* EmojiData.swift */; };
+		AA0000B1 /* RecentEmojis.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B1 /* RecentEmojis.swift */; };
+		AA0000B2 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B2 /* EmojiPickerView.swift */; };
+		AA0000B3 /* EmojiCategoryBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B3 /* EmojiCategoryBar.swift */; };
 		AA0000C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C0 /* Assets.xcassets */; };
 		AA0000C1 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C1 /* Settings.bundle */; };
 /* End PBXBuildFile section */
@@ -100,6 +104,10 @@
 		AA1000A6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA1000A7 /* LicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensesView.swift; sourceTree = "<group>"; };
 		AA1000A8 /* DebugLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogView.swift; sourceTree = "<group>"; };
+		AA1000B0 /* EmojiData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiData.swift; sourceTree = "<group>"; };
+		AA1000B1 /* RecentEmojis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentEmojis.swift; sourceTree = "<group>"; };
+		AA1000B2 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
+		AA1000B3 /* EmojiCategoryBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCategoryBar.swift; sourceTree = "<group>"; };
 		AA1000C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA1000C1 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 	/* End PBXFileReference section */
@@ -268,6 +276,8 @@
 				AA100060 /* ToolbarView.swift */,
 				AA100061 /* RecordingOverlay.swift */,
 				AA100070 /* AccentPopup.swift */,
+				AA1000B2 /* EmojiPickerView.swift */,
+				AA1000B3 /* EmojiCategoryBar.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -278,6 +288,8 @@
 				AA100036 /* KeyDefinition.swift */,
 				AA100037 /* KeyboardLayer.swift */,
 				AA100038 /* KeyboardLayout.swift */,
+				AA1000B0 /* EmojiData.swift */,
+				AA1000B1 /* RecentEmojis.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -447,6 +459,10 @@
 				AA000060 /* ToolbarView.swift in Sources */,
 				AA000061 /* RecordingOverlay.swift in Sources */,
 				AA000070 /* AccentPopup.swift in Sources */,
+				AA0000B0 /* EmojiData.swift in Sources */,
+				AA0000B1 /* RecentEmojis.swift in Sources */,
+				AA0000B2 /* EmojiPickerView.swift in Sources */,
+				AA0000B3 /* EmojiCategoryBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

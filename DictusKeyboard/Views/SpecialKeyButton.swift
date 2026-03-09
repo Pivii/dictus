@@ -306,19 +306,9 @@ struct GlobeKey: View {
 }
 
 /// Emoji key — shows a face.smiling icon matching Apple's native AZERTY visual style.
-/// Tapping cycles to the next installed input mode via advanceToNextInputMode().
-///
-/// KNOWN iOS LIMITATION: No public API exists to target the emoji keyboard
-/// specifically. advanceToNextInputMode() cycles through ALL installed keyboards
-/// in order. This matches Gboard, SwiftKey, and other third-party keyboard behavior.
-/// The emoji icon is used because Apple's native AZERTY shows this icon, and in most
-/// user configurations, the next input mode IS the emoji keyboard.
-///
-/// WHY emoji icon instead of globe:
-/// Apple's native AZERTY keyboard shows an emoji face icon in the bottom-left,
-/// not a globe. The globe icon appears only when multiple keyboards are installed
-/// AND the user hasn't set a default. Our keyboard always shows emoji to match
-/// the most common native experience.
+/// Tapping opens the built-in emoji picker (EmojiPickerView) within the keyboard extension.
+/// The globe key (managed by iOS, separate from this button) handles switching between
+/// installed keyboards.
 struct EmojiKey: View {
     let width: CGFloat
     let onTap: () -> Void

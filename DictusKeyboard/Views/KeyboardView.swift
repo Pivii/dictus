@@ -23,6 +23,7 @@ enum KeySound {
 struct KeyboardView: View {
     let controller: UIInputViewController
     let hasFullAccess: Bool
+    @Binding var isEmojiMode: Bool
 
     @State private var currentLayer: KeyboardLayerType = .letters
     @State private var shiftState: ShiftState = .off
@@ -31,6 +32,8 @@ struct KeyboardView: View {
     /// common accent for that vowel. Reset on space, delete, return, or layer switch.
     @State private var lastTypedChar: String? = nil
     @State private var isTrackpadActive = false
+    /// Remembers which layer to return to when dismissing the emoji picker.
+    @State private var previousLayer: KeyboardLayerType? = nil
 
     private var isShifted: Bool {
         shiftState == .shifted || shiftState == .capsLocked
@@ -48,98 +51,125 @@ struct KeyboardView: View {
             }
         case .numbers: return KeyboardLayout.numbersRows
         case .symbols: return KeyboardLayout.symbolsRows
+        case .emoji: return [] // Not used — emoji picker replaces the keyboard rows
         }
     }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                VStack(spacing: KeyMetrics.rowSpacing) {
-                    ForEach(Array(currentRows.enumerated()), id: \.offset) { _, row in
-                        KeyRow(
-                            keys: row,
-                            rowWidth: geometry.size.width,
-                            isShifted: isShifted,
-                            shiftState: $shiftState,
-                            onCharacter: { char in
-                                insertCharacter(char)
-                            },
-                            onDelete: {
-                                // Sound is played by DeleteKey directly (alongside haptic)
-                                controller.textDocumentProxy.deleteBackward()
-                                lastTypedChar = nil
-                                checkAutocapitalize()
-                            },
-                            onWordDelete: {
-                                // Delete backward to the previous word boundary.
-                                // textDocumentProxy has no deleteWordBackward(), so we
-                                // read the text before the cursor and find the last word boundary.
-                                // Sound is played by DeleteKey directly (alongside haptic)
-                                deleteWordBackward()
-                                lastTypedChar = nil
-                                checkAutocapitalize()
-                            },
-                            onGlobe: {
-                                HapticFeedback.keyTapped()
-                                AudioServicesPlaySystemSound(KeySound.modifier)
-                                controller.advanceToNextInputMode()
-                            },
-                            onLayerSwitch: {
-                                HapticFeedback.keyTapped()
-                                AudioServicesPlaySystemSound(KeySound.modifier)
-                                toggleLettersNumbers()
-                            },
-                            onSymbolToggle: {
-                                HapticFeedback.keyTapped()
-                                AudioServicesPlaySystemSound(KeySound.modifier)
-                                toggleNumbersSymbols()
-                            },
-                            onSpace: {
-                                AudioServicesPlaySystemSound(KeySound.modifier)
-                                controller.textDocumentProxy.insertText(" ")
-                                lastTypedChar = nil
-                                checkAutocapitalize()
-                            },
-                            onReturn: {
-                                HapticFeedback.keyTapped()
-                                AudioServicesPlaySystemSound(KeySound.modifier)
-                                controller.textDocumentProxy.insertText("\n")
-                                lastTypedChar = nil
-                                checkAutocapitalize()
-                            },
-                            onAccentAdaptive: { char in
-                                HapticFeedback.keyTapped()
-                                AudioServicesPlaySystemSound(KeySound.letter)
-                                // If the accent key is replacing a vowel (not inserting apostrophe),
-                                // delete the previous vowel first, then insert the accented version.
-                                if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
+                if currentLayer == .emoji {
+                    // Emoji picker replaces the keyboard rows entirely
+                    EmojiPickerView(
+                        onEmojiInsert: { emoji in
+                            controller.textDocumentProxy.insertText(emoji)
+                        },
+                        onDelete: {
+                            controller.textDocumentProxy.deleteBackward()
+                        },
+                        onDismiss: {
+                            HapticFeedback.keyTapped()
+                            AudioServicesPlaySystemSound(KeySound.modifier)
+                            currentLayer = previousLayer ?? .letters
+                            previousLayer = nil
+                            isEmojiMode = false
+                        }
+                    )
+                } else {
+                    VStack(spacing: KeyMetrics.rowSpacing) {
+                        ForEach(Array(currentRows.enumerated()), id: \.offset) { _, row in
+                            KeyRow(
+                                keys: row,
+                                rowWidth: geometry.size.width,
+                                isShifted: isShifted,
+                                shiftState: $shiftState,
+                                onCharacter: { char in
+                                    insertCharacter(char)
+                                },
+                                onDelete: {
+                                    // Sound is played by DeleteKey directly (alongside haptic)
                                     controller.textDocumentProxy.deleteBackward()
-                                }
-                                insertCharacter(char)
-                            },
-                            onCursorMove: { offset in
-                                controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
-                            },
-                            onTrackpadStateChange: { active in
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    isTrackpadActive = active
-                                }
-                            },
-                            lastTypedChar: lastTypedChar,
-                            hasFullAccess: hasFullAccess
-                        )
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                },
+                                onWordDelete: {
+                                    // Delete backward to the previous word boundary.
+                                    // textDocumentProxy has no deleteWordBackward(), so we
+                                    // read the text before the cursor and find the last word boundary.
+                                    // Sound is played by DeleteKey directly (alongside haptic)
+                                    deleteWordBackward()
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                },
+                                onGlobe: {
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    controller.advanceToNextInputMode()
+                                },
+                                onEmoji: {
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    previousLayer = currentLayer
+                                    currentLayer = .emoji
+                                    isEmojiMode = true
+                                },
+                                onLayerSwitch: {
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    toggleLettersNumbers()
+                                },
+                                onSymbolToggle: {
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    toggleNumbersSymbols()
+                                },
+                                onSpace: {
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    controller.textDocumentProxy.insertText(" ")
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                },
+                                onReturn: {
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.modifier)
+                                    controller.textDocumentProxy.insertText("\n")
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                },
+                                onAccentAdaptive: { char in
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.letter)
+                                    // If the accent key is replacing a vowel (not inserting apostrophe),
+                                    // delete the previous vowel first, then insert the accented version.
+                                    if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
+                                        controller.textDocumentProxy.deleteBackward()
+                                    }
+                                    insertCharacter(char)
+                                },
+                                onCursorMove: { offset in
+                                    controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+                                },
+                                onTrackpadStateChange: { active in
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        isTrackpadActive = active
+                                    }
+                                },
+                                lastTypedChar: lastTypedChar,
+                                hasFullAccess: hasFullAccess
+                            )
+                        }
                     }
-                }
-                .padding(.vertical, 4)
+                    .padding(.vertical, 4)
 
-                // Greyed-out overlay during trackpad mode (Apple behavior).
-                // allowsHitTesting(false) ensures the spacebar's DragGesture
-                // continues receiving touch events while the overlay is visible.
-                if isTrackpadActive {
-                    Color(.systemBackground).opacity(0.6)
-                        .cornerRadius(8)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+                    // Greyed-out overlay during trackpad mode (Apple behavior).
+                    // allowsHitTesting(false) ensures the spacebar's DragGesture
+                    // continues receiving touch events while the overlay is visible.
+                    if isTrackpadActive {
+                        Color(.systemBackground).opacity(0.6)
+                            .cornerRadius(8)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
                 }
             }
         }
@@ -156,10 +186,17 @@ struct KeyboardView: View {
     }
 
     private var keyboardHeight: CGFloat {
-        let rows = CGFloat(currentRows.count)
-        return (rows * KeyMetrics.keyHeight)
+        let rows: CGFloat = 4
+        let standardHeight = (rows * KeyMetrics.keyHeight)
             + ((rows - 1) * KeyMetrics.rowSpacing)
-            + 8  // vertical padding
+            + 8
+
+        if currentLayer == .emoji {
+            // Emoji picker takes full height: toolbar (48pt) + keyboard + bottom spacer (8pt)
+            // are hidden by the parent, so we expand to fill that space.
+            return standardHeight + 48 + 8
+        }
+        return standardHeight
     }
 
     private func insertCharacter(_ char: String) {

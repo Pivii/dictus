@@ -6,6 +6,7 @@ enum KeyboardLayerType {
     case letters
     case numbers
     case symbols
+    case emoji
 }
 
 struct KeyboardLayer {

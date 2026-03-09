@@ -13,6 +13,7 @@ import DictusCore
 struct KeyboardRootView: View {
     let controller: UIInputViewController
     @StateObject private var state = KeyboardState()
+    @State private var isEmojiMode = false
 
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
@@ -55,23 +56,28 @@ struct KeyboardRootView: View {
                 // Users can disable it in Settings > General > Keyboard > Enable Dictation.
                 // Our mic button in ToolbarView is the Dictus-specific dictation trigger.
 
-                // Toolbar visible only when not recording
-                ToolbarView(
-                    hasFullAccess: controller.hasFullAccess,
-                    dictationStatus: state.dictationStatus,
-                    onMicTap: { state.startRecording() }
-                )
+                // Hide toolbar in emoji mode to give full height to emoji picker
+                if !isEmojiMode {
+                    ToolbarView(
+                        hasFullAccess: controller.hasFullAccess,
+                        dictationStatus: state.dictationStatus,
+                        onMicTap: { state.startRecording() }
+                    )
+                }
 
                 KeyboardView(
                     controller: controller,
-                    hasFullAccess: controller.hasFullAccess
+                    hasFullAccess: controller.hasFullAccess,
+                    isEmojiMode: $isEmojiMode
                 )
 
                 // Experimental: extra bottom padding to push system keyboard row
                 // (globe, dictation mic icons) further down. Wispr Flow appears to use
                 // extra height to overlay-hide the system dictation mic icon.
                 // If this doesn't work, it confirms an iOS limitation (KBD-05).
-                Spacer().frame(height: 8)
+                if !isEmojiMode {
+                    Spacer().frame(height: 8)
+                }
             }
         }
         // WHY .clear: The native iOS keyboard container already provides a

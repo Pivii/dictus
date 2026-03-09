@@ -11,6 +11,7 @@ struct KeyRow: View {
     let onDelete: () -> Void
     let onWordDelete: () -> Void
     let onGlobe: () -> Void
+    let onEmoji: () -> Void
     let onLayerSwitch: () -> Void
     let onSymbolToggle: () -> Void
     let onSpace: () -> Void
@@ -79,7 +80,7 @@ struct KeyRow: View {
             LayerSwitchKey(label: key.label, width: keyWidth, onTap: onSymbolToggle)
 
         case .emoji:
-            EmojiKey(width: keyWidth, onTap: onGlobe)
+            EmojiKey(width: keyWidth, onTap: onEmoji)
 
         case .accentAdaptive:
             AdaptiveAccentKey(
