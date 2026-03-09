@@ -3,6 +3,25 @@ import SwiftUI
 import AudioToolbox
 import DictusCore
 
+/// The popup preview bubble shown above a pressed key (SwiftUI version).
+/// Used by the mini search keyboard in the emoji picker.
+struct KeyPopup: View {
+    let label: String
+    private let popupFontSize: CGFloat = 32
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: popupFontSize, weight: .regular))
+            .foregroundStyle(.primary)
+            .frame(width: 50, height: 56)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(KeyMetrics.letterKeyColor)
+                    .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 2)
+            )
+    }
+}
+
 /// Shared model for category bar items (recents + standard categories).
 struct CategoryInfo: Identifiable {
     let id: String
