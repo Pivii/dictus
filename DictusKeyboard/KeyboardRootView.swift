@@ -18,6 +18,11 @@ struct KeyboardRootView: View {
     /// @StateObject ensures a single instance is created and owned by this view.
     @StateObject private var suggestionState = SuggestionState()
     @State private var isEmojiMode = false
+    /// Active keyboard mode read from App Group on each appearance.
+    /// WHY @State: The mode is read once when the keyboard opens (onAppear) and
+    /// doesn't change during the keyboard session. @State is sufficient — no need
+    /// for @StateObject or continuous observation.
+    @State private var currentMode: KeyboardMode = .full
 
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
@@ -55,38 +60,62 @@ struct KeyboardRootView: View {
                 )
                 .frame(height: totalContentHeight)
             } else {
-                // KBD-05: The system-provided Apple dictation mic icon below the keyboard cannot be
-                // removed by third-party keyboard extensions. No public API exists to suppress it.
-                // Users can disable it in Settings > General > Keyboard > Enable Dictation.
-                // Our mic button in ToolbarView is the Dictus-specific dictation trigger.
+                // Mode-based rendering: each KeyboardMode gets its own layout.
+                // WHY switch instead of if/else: Swift exhaustive switch ensures we
+                // handle every mode — if a new mode is added to KeyboardMode, the
+                // compiler will flag this switch as incomplete.
+                switch currentMode {
+                case .micro:
+                    MicroModeView(
+                        controller: controller,
+                        dictationStatus: state.dictationStatus,
+                        onMicTap: { state.startRecording() },
+                        totalHeight: totalContentHeight
+                    )
 
-                // Hide toolbar in emoji mode to give full height to emoji picker
-                if !isEmojiMode {
-                    ToolbarView(
+                case .emojiMicro:
+                    EmojiMicroModeView(
+                        controller: controller,
                         hasFullAccess: controller.hasFullAccess,
                         dictationStatus: state.dictationStatus,
                         onMicTap: { state.startRecording() },
-                        suggestions: suggestionState.suggestions,
-                        suggestionMode: suggestionState.mode,
-                        onSuggestionTap: { index in
-                            handleSuggestionTap(index: index)
-                        }
+                        totalHeight: totalContentHeight
                     )
-                }
 
-                KeyboardView(
-                    controller: controller,
-                    hasFullAccess: controller.hasFullAccess,
-                    isEmojiMode: $isEmojiMode,
-                    suggestionState: suggestionState
-                )
+                case .full:
+                    // KBD-05: The system-provided Apple dictation mic icon below the keyboard cannot be
+                    // removed by third-party keyboard extensions. No public API exists to suppress it.
+                    // Users can disable it in Settings > General > Keyboard > Enable Dictation.
+                    // Our mic button in ToolbarView is the Dictus-specific dictation trigger.
 
-                // Experimental: extra bottom padding to push system keyboard row
-                // (globe, dictation mic icons) further down. Wispr Flow appears to use
-                // extra height to overlay-hide the system dictation mic icon.
-                // If this doesn't work, it confirms an iOS limitation (KBD-05).
-                if !isEmojiMode {
-                    Spacer().frame(height: 8)
+                    // Hide toolbar in emoji mode to give full height to emoji picker
+                    if !isEmojiMode {
+                        ToolbarView(
+                            hasFullAccess: controller.hasFullAccess,
+                            dictationStatus: state.dictationStatus,
+                            onMicTap: { state.startRecording() },
+                            suggestions: suggestionState.suggestions,
+                            suggestionMode: suggestionState.mode,
+                            onSuggestionTap: { index in
+                                handleSuggestionTap(index: index)
+                            }
+                        )
+                    }
+
+                    KeyboardView(
+                        controller: controller,
+                        hasFullAccess: controller.hasFullAccess,
+                        isEmojiMode: $isEmojiMode,
+                        suggestionState: suggestionState
+                    )
+
+                    // Experimental: extra bottom padding to push system keyboard row
+                    // (globe, dictation mic icons) further down. Wispr Flow appears to use
+                    // extra height to overlay-hide the system dictation mic icon.
+                    // If this doesn't work, it confirms an iOS limitation (KBD-05).
+                    if !isEmojiMode {
+                        Spacer().frame(height: 8)
+                    }
                 }
             }
         }
@@ -102,6 +131,12 @@ struct KeyboardRootView: View {
             // View property, so we pass it on first appearance.
             state.controller = controller
             state.openURL = { url in openURL(url) }
+
+            // Read keyboard mode from App Group each time keyboard opens.
+            // WHY on every appear: The user may have changed the mode in the main app's
+            // settings. The keyboard extension is a separate process, so we re-read the
+            // persisted value each time the keyboard appears.
+            currentMode = KeyboardMode.active
 
             // Pre-allocate haptic generators so the first key tap has zero latency.
             // Without this, the Taptic Engine needs ~2-5ms to spin up on first use.
