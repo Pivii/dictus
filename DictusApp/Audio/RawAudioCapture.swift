@@ -158,10 +158,10 @@ class RawAudioCapture: ObservableObject {
             self.audioSamples.append(contentsOf: samples)
             self.bufferSeconds = Double(self.audioSamples.count) / 16000.0
 
-            // Maintain a rolling window of energy values (last 50 = ~2s at ~25Hz callback rate)
+            // Maintain a rolling window of energy values (last 30 = matches barCount in BrandWaveform)
             self.bufferEnergy.append(energy)
-            if self.bufferEnergy.count > 50 {
-                self.bufferEnergy.removeFirst(self.bufferEnergy.count - 50)
+            if self.bufferEnergy.count > 30 {
+                self.bufferEnergy.removeFirst(self.bufferEnergy.count - 30)
             }
         }
     }

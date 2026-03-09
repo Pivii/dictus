@@ -498,8 +498,13 @@ class DictationCoordinator: ObservableObject {
         guard now.timeIntervalSince(lastWaveformWriteDate) >= 0.2 else { return }
         lastWaveformWriteDate = now
 
+        // Cap to 30 values (one per waveform bar) before encoding.
+        // WHY: AudioRecorder already sends .suffix(30), but this is a safety cap
+        // to ensure the keyboard never receives oversized arrays.
+        let cappedEnergy = Array(energy.suffix(30))
+
         // Encode energy as JSON and write to App Group
-        if let data = try? JSONEncoder().encode(energy) {
+        if let data = try? JSONEncoder().encode(cappedEnergy) {
             defaults.set(data, forKey: SharedKeys.waveformEnergy)
         }
         defaults.set(bufferSeconds, forKey: SharedKeys.recordingElapsedSeconds)

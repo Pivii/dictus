@@ -137,7 +137,11 @@ class AudioRecorder: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, let wk = self.whisperKit else { return }
                 guard self.isRecording else { return }
-                self.bufferEnergy = wk.audioProcessor.relativeEnergy
+                // Only take the last 30 values — one per waveform bar.
+                // WHY: relativeEnergy grows continuously (600+ values after 10s).
+                // Using the full array compresses the entire history into 30 bars,
+                // creating a timeline instead of a real-time level indicator.
+                self.bufferEnergy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
                 self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)
                     / Double(WhisperKit.sampleRate)
             }
@@ -177,7 +181,7 @@ class AudioRecorder: ObservableObject {
                     guard let self, let wk = self.whisperKit else { return }
                     // Only publish energy/duration while actively recording
                     guard self.isRecording else { return }
-                    self.bufferEnergy = wk.audioProcessor.relativeEnergy
+                    self.bufferEnergy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
                     self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)
                         / Double(WhisperKit.sampleRate)
                 }

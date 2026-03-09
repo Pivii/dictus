@@ -38,25 +38,47 @@ public struct BrandWaveform: View {
     /// Without this, white bars on a light background are invisible.
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Smoothed display levels for fluid animation.
+    /// WHY @State instead of using energyLevels directly:
+    /// energyLevels arrive at ~60Hz (app) or ~5Hz (keyboard). Direct rendering causes
+    /// either micro-jitter (60Hz) or visible jumps (5Hz). displayLevels lerps toward
+    /// energyLevels every frame, producing smooth motion regardless of input rate.
+    @State private var displayLevels: [Float] = Array(repeating: 0, count: 30)
+
     /// Number of bars to display.
     private let barCount = 30
 
     /// Consistent spacing between bars.
     private let barSpacing: CGFloat = 2
 
+    /// Smoothing factor for lerp interpolation (0 = no change, 1 = instant snap).
+    /// WHY 0.3: Balances responsiveness (voice feels reactive) with smoothness
+    /// (no jitter between frames). Lower values feel sluggish, higher values
+    /// reintroduce the jitter we're trying to fix.
+    private let smoothingFactor: Float = 0.3
+
+    /// Exponential decay factor for bars returning to zero when energy drops.
+    /// WHY separate from smoothingFactor: We want bars to rise quickly (responsive)
+    /// but fall slowly (visually pleasing decay). 0.85 = bars take ~10 frames to
+    /// fully settle, creating a smooth "fade out" instead of a harsh snap to zero.
+    private let decayFactor: Float = 0.85
+
     public var body: some View {
-        if isProcessing {
-            // WHY TimelineView instead of withAnimation:
-            // sin(2π*(x+0)) == sin(2π*(x+1)), so animating a phase from 0→1 produces
-            // identical start/end values — SwiftUI sees no change and nothing moves.
-            // TimelineView gives us a continuous clock to compute the phase from real time.
-            TimelineView(.animation) { timeline in
-                let phase = timeline.date.timeIntervalSinceReferenceDate / 2.0
-                waveformContent(processingPhase: phase)
-            }
-        } else {
-            waveformContent(processingPhase: 0)
-                .animation(.easeOut(duration: 0.08), value: energyLevels)
+        // WHY TimelineView for both recording AND processing:
+        // Recording mode needs continuous frame updates to lerp displayLevels toward
+        // energyLevels. Without TimelineView, SwiftUI only rerenders when energyLevels
+        // changes — which means 5Hz keyboard updates produce 5fps animation.
+        // TimelineView gives us a 60fps render loop for smooth interpolation in both modes.
+        TimelineView(.animation) { timeline in
+            let phase = isProcessing
+                ? timeline.date.timeIntervalSinceReferenceDate / 2.0
+                : 0
+            waveformContent(processingPhase: phase)
+                .onChange(of: timeline.date) { _ in
+                    if !isProcessing {
+                        updateDisplayLevels()
+                    }
+                }
         }
     }
 
@@ -77,10 +99,18 @@ public struct BrandWaveform: View {
             let barWidth = max((size.width - totalSpacing) / CGFloat(barCount), 2)
 
             for index in 0..<barCount {
-                let energy = energyForBar(at: index, processingPhase: processingPhase)
-                // Zero minHeight when NOT processing -- bars disappear at zero energy
-                let minHeight: CGFloat = isProcessing ? 4 : 0
-                let height = max(minHeight + CGFloat(energy) * (maxHeight - minHeight), isProcessing ? 4 : 0)
+                let energy: Float
+                if isProcessing {
+                    energy = processingEnergy(at: index, phase: processingPhase)
+                } else {
+                    energy = index < displayLevels.count ? displayLevels[index] : 0
+                }
+
+                // Minimum bar height so the waveform baseline is always visible,
+                // even in complete silence. 2pt = thin line, enough to see the
+                // colored bar pattern (blue center, gray edges) without looking "active".
+                let minHeight: CGFloat = isProcessing ? 4 : 2
+                let height = max(minHeight + CGFloat(energy) * (maxHeight - minHeight), minHeight)
 
                 let x = CGFloat(index) * (barWidth + barSpacing)
                 let y = (size.height - height) / 2
@@ -93,36 +123,69 @@ public struct BrandWaveform: View {
         .frame(height: maxHeight)
     }
 
-    /// Map bar index to an energy value from the energyLevels array,
-    /// or generate a synthetic sinusoidal value when in processing mode.
+    /// Update displayLevels toward target energyLevels using lerp + exponential decay.
     ///
-    /// WHY interpolation (normal mode):
-    /// energyLevels may have fewer or more entries than barCount.
-    /// We map each bar position proportionally into the array.
+    /// Called every frame by TimelineView. Each bar interpolates independently:
+    /// - If target > current: lerp UP (responsive to voice)
+    /// - If target < current: decay DOWN (smooth fade-out)
     ///
-    /// WHY sinusoidal (processing mode):
-    /// Creates a smooth traveling wave: each bar computes its energy from a sine
-    /// function offset by processingPhase. The wave "moves" across the bars as
-    /// processingPhase animates from 0 to 1.
-    private func energyForBar(at index: Int, processingPhase: Double) -> Float {
-        if isProcessing {
-            let normalizedIndex = Double(index) / Double(max(barCount - 1, 1))
-            let sineValue = sin(2 * .pi * (normalizedIndex + processingPhase))
-            // Map sine (-1...1) to energy (0.2...0.7) for a subtle ambient effect
-            return Float(0.2 + 0.25 * (sineValue + 1.0))
+    /// WHY lerp for rise, decay for fall:
+    /// Rising bars should feel snappy (voice → immediate visual response).
+    /// Falling bars should feel natural (voice stops → gradual settle, not a snap).
+    private func updateDisplayLevels() {
+        let targets = targetLevels()
+
+        var updated = displayLevels
+        for i in 0..<barCount {
+            let target = i < targets.count ? targets[i] : Float(0)
+            let current = updated[i]
+
+            if target > current {
+                // Rising: lerp toward target
+                updated[i] = current + (target - current) * smoothingFactor
+            } else {
+                // Falling: exponential decay toward target
+                updated[i] = target + (current - target) * decayFactor
+            }
+
+            // Snap to zero below perceptual threshold to avoid infinite decay
+            if updated[i] < 0.005 {
+                updated[i] = 0
+            }
         }
 
-        guard !energyLevels.isEmpty else { return 0 }
-        let position = Float(index) / Float(max(barCount - 1, 1))
-        let arrayIndex = position * Float(energyLevels.count - 1)
-        let lower = Int(arrayIndex)
-        let upper = min(lower + 1, energyLevels.count - 1)
-        let fraction = arrayIndex - Float(lower)
-        let value = energyLevels[lower] * (1 - fraction) + energyLevels[upper] * fraction
-        // Silence threshold: ambient mic noise produces small non-zero energy (0.01-0.05).
-        // Treat anything below 0.05 as true silence so bars are perfectly still.
-        let thresholded = value < 0.05 ? Float(0) : value
-        return min(max(thresholded, 0), 1)
+        displayLevels = updated
+    }
+
+    /// Map energyLevels (variable count) to exactly barCount target values.
+    /// Applies silence thresholding to eliminate ambient mic noise.
+    private func targetLevels() -> [Float] {
+        guard !energyLevels.isEmpty else {
+            return Array(repeating: Float(0), count: barCount)
+        }
+
+        var result = [Float]()
+        for index in 0..<barCount {
+            let position = Float(index) / Float(max(barCount - 1, 1))
+            let arrayIndex = position * Float(energyLevels.count - 1)
+            let lower = Int(arrayIndex)
+            let upper = min(lower + 1, energyLevels.count - 1)
+            let fraction = arrayIndex - Float(lower)
+            let value = energyLevels[lower] * (1 - fraction) + energyLevels[upper] * fraction
+            // Silence threshold: ambient mic noise produces small non-zero energy (0.01-0.05).
+            // Treat anything below 0.05 as true silence so bars are perfectly still.
+            let thresholded = value < 0.05 ? Float(0) : value
+            result.append(min(max(thresholded, 0), 1))
+        }
+        return result
+    }
+
+    /// Generate sinusoidal energy for processing mode.
+    private func processingEnergy(at index: Int, phase: Double) -> Float {
+        let normalizedIndex = Double(index) / Double(max(barCount - 1, 1))
+        let sineValue = sin(2 * .pi * (normalizedIndex + phase))
+        // Map sine (-1...1) to energy (0.2...0.7) for a subtle ambient effect
+        return Float(0.2 + 0.25 * (sineValue + 1.0))
     }
 
     /// Brand-inspired color resolved to a plain Color for Canvas rendering.
