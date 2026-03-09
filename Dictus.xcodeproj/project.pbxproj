@@ -57,6 +57,8 @@
 		AA0000B4 /* EmojiSearchFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000B4 /* EmojiSearchFR.swift */; };
 		AA0000D0 /* TextPredictionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D0 /* TextPredictionEngine.swift */; };
 		AA0000D1 /* SuggestionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D1 /* SuggestionState.swift */; };
+		AA0000D2 /* fr_frequency.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1000D2 /* fr_frequency.json */; };
+		AA0000D3 /* en_frequency.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1000D3 /* en_frequency.json */; };
 		AA0000C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C0 /* Assets.xcassets */; };
 		AA0000C1 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C1 /* Settings.bundle */; };
 /* End PBXBuildFile section */
@@ -114,6 +116,8 @@
 		AA1000B4 /* EmojiSearchFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSearchFR.swift; sourceTree = "<group>"; };
 		AA1000D0 /* TextPredictionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPredictionEngine.swift; sourceTree = "<group>"; };
 		AA1000D1 /* SuggestionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionState.swift; sourceTree = "<group>"; };
+		AA1000D2 /* fr_frequency.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = fr_frequency.json; sourceTree = "<group>"; };
+		AA1000D3 /* en_frequency.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = en_frequency.json; sourceTree = "<group>"; };
 		AA1000C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA1000C1 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 	/* End PBXFileReference section */
@@ -249,6 +253,7 @@
 				AA400005 /* Views */,
 				AA400006 /* Models */,
 				AA40000D /* TextPrediction */,
+				AA40000E /* Resources */,
 				AA100006 /* DictusKeyboard.entitlements */,
 				AA100008 /* Info.plist */,
 			);
@@ -262,6 +267,15 @@
 				AA1000D1 /* SuggestionState.swift */,
 			);
 			path = TextPrediction;
+			sourceTree = "<group>";
+		};
+		AA40000E /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AA1000D2 /* fr_frequency.json */,
+				AA1000D3 /* en_frequency.json */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		AA400003 /* DictusCore (local package) */ = {
@@ -420,6 +434,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000D2 /* fr_frequency.json in Resources */,
+				AA0000D3 /* en_frequency.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
