@@ -33,7 +33,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 7: Keyboard Parity & Visual** - Spacebar trackpad, adaptive accent key, haptics, bottom row cleanup, mic/recording pill redesign, waveform rework, performance optimization (completed 2026-03-08)
 - [x] **Phase 8: Text Prediction** - 3-slot suggestion bar with French autocorrect and accent suggestions (completed 2026-03-09)
 - [ ] **Phase 9: Keyboard Modes** - Three switchable keyboard layouts (full, mic-only, emoji+mic) with live preview in settings (UAT gap closure in progress)
-- [ ] **Phase 10: Model Catalog** - Clean underperforming models, integrate Parakeet v3, update model selection UI
+- [x] **Phase 10: Model Catalog** - Clean underperforming models, integrate Parakeet v3, update model selection UI (completed 2026-03-10)
 
 ## Phase Details
 
@@ -147,7 +147,7 @@ Note: Phase 9 (Cold Start) is independent of Phases 7-8 and could execute in par
 | 7. Keyboard Parity & Visual | 12/12 | Complete   | 2026-03-08 | - |
 | 8. Text Prediction | 2/2 | Complete   | 2026-03-09 | - |
 | 9. Keyboard Modes | 5/6 | In Progress|  | - |
-| 10. Model Catalog | 2/3 | In Progress|  | - |
+| 10. Model Catalog | 3/3 | Complete   | 2026-03-10 | - |
 
 ---
 *Roadmap created: 2026-03-04*
