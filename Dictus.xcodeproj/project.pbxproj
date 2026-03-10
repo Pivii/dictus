@@ -66,7 +66,6 @@
 		AA0000E3 /* ModelCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E3 /* ModelCardView.swift */; };
 		AA0000F0 /* SpeechModelProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F0 /* SpeechModelProtocol.swift */; };
 		AA0000F1 /* ParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F1 /* ParakeetEngine.swift */; };
-		AA0000F2 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = AA900030 /* FluidAudio */; };
 		AA0000C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C0 /* Assets.xcassets */; };
 		AA0000C1 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C1 /* Settings.bundle */; };
 /* End PBXBuildFile section */
@@ -168,7 +167,6 @@
 			files = (
 				AA000010 /* DictusCore in Frameworks */,
 				AA000042 /* WhisperKit in Frameworks */,
-				AA0000F2 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -369,7 +367,6 @@
 			packageProductDependencies = (
 				AA900010 /* DictusCore */,
 				AA900020 /* WhisperKit */,
-				AA900030 /* FluidAudio */,
 			);
 			productName = DictusApp;
 			productReference = AA200001 /* DictusApp.app */;
@@ -812,11 +809,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA800002 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
-		};
-		AA900030 /* FluidAudio */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA800003 /* XCRemoteSwiftPackageReference "FluidAudio" */;
-			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
