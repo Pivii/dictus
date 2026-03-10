@@ -1,5 +1,5 @@
 // DictusKeyboard/Views/MicroModeView.swift
-// Dictation-only keyboard mode: large centered mic button + globe for input switching.
+// Dictation-only keyboard mode: large centered mic button + bottom utility row.
 import SwiftUI
 import DictusCore
 
@@ -12,8 +12,8 @@ import DictusCore
 ///
 /// Layout:
 /// - Large centered mic button (~120pt wide pill) with "Dicter" label below
-/// - Globe button in bottom-left for switching to next input method
-/// - No other controls (no backspace, no space, no suggestions)
+/// - Bottom utility row: emoji, space, return, delete
+/// - No globe button (iOS provides a system globe for all third-party keyboards)
 /// - Uses totalHeight parameter to match other modes' height (no layout jump)
 struct MicroModeView: View {
     let controller: UIInputViewController
@@ -22,8 +22,8 @@ struct MicroModeView: View {
     let totalHeight: CGFloat
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Centered mic button with label
+        VStack(spacing: 0) {
+            // Top area: centered mic button with label (takes remaining space)
             VStack(spacing: 12) {
                 Spacer()
 
@@ -52,7 +52,10 @@ struct MicroModeView: View {
                     }
                 }
                 .buttonStyle(GlassPressStyle(pressedScale: 0.92))
-                .disabled(dictationStatus == .recording || dictationStatus == .transcribing)
+                // WHY .requested is included: prevents double-taps during the 500ms
+                // Darwin notification window where the app hasn't yet confirmed recording
+                // start. Tapping during .requested can race with the URL fallback.
+                .disabled(dictationStatus == .recording || dictationStatus == .transcribing || dictationStatus == .requested)
 
                 Text("Dicter")
                     .font(.system(size: 14, weight: .medium))
@@ -62,26 +65,67 @@ struct MicroModeView: View {
             }
             .frame(maxWidth: .infinity)
 
-            // Globe button -- bottom-left corner for input method switching.
-            // WHY advanceToNextInputMode:
-            // This is the standard iOS API for keyboard extensions to switch
-            // to the next keyboard in the user's keyboard list. Apple requires
-            // all custom keyboards to provide this capability.
-            Button {
-                controller.advanceToNextInputMode()
-            } label: {
-                Image(systemName: "globe")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 44, height: 44)
+            // Bottom utility row: emoji, space, return, delete
+            // WHY these four keys: micro mode users still need basic text editing
+            // (space between words, line breaks, delete typos) and emoji access.
+            HStack(spacing: 0) {
+                // Emoji button -- cycles to next input method which includes emoji.
+                // WHY advanceToNextInputMode: this is the standard iOS API for keyboard
+                // extensions. There is no public API to jump directly to emoji keyboard.
+                utilityButton(icon: "face.smiling") {
+                    controller.advanceToNextInputMode()
+                    HapticFeedback.keyTapped()
+                }
+
+                // Space bar -- takes remaining width
+                Button {
+                    controller.textDocumentProxy.insertText(" ")
+                    HapticFeedback.keyTapped()
+                } label: {
+                    Text("espace")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .background(Color(.systemBackground).opacity(0.6))
+                        .cornerRadius(6)
+                }
+                .padding(.horizontal, 4)
+
+                // Return key
+                utilityButton(icon: "return") {
+                    controller.textDocumentProxy.insertText("\n")
+                    HapticFeedback.keyTapped()
+                }
+
+                // Delete key
+                utilityButton(icon: "delete.left") {
+                    controller.textDocumentProxy.deleteBackward()
+                    HapticFeedback.keyTapped()
+                }
             }
-            .padding(.leading, 8)
+            .padding(.horizontal, 4)
             .padding(.bottom, 4)
+            .frame(height: 50) // Match standard keyboard bottom row height
         }
         .frame(height: totalHeight)
+        .background(Color(.secondarySystemBackground))
     }
 
     // MARK: - Helpers
+
+    /// Uniform utility button for the bottom row (emoji, return, delete).
+    @ViewBuilder
+    private func utilityButton(icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 42)
+                .background(Color(.systemGray4).opacity(0.5))
+                .cornerRadius(6)
+        }
+    }
 
     private var micFillColor: Color {
         switch dictationStatus {
