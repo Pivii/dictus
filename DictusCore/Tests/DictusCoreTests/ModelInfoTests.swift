@@ -7,25 +7,26 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - Catalog visibility
 
     func testAllContainsOnlyAvailableModels() {
-        // ModelInfo.all should contain 5 available models (Small, Small Quantized, Medium, Distil Turbo, Large Turbo)
-        XCTAssertEqual(ModelInfo.all.count, 5)
+        // ModelInfo.all should contain 6 available models (5 WhisperKit + 1 Parakeet)
+        XCTAssertEqual(ModelInfo.all.count, 6)
         let ids = Set(ModelInfo.all.map(\.identifier))
         XCTAssertTrue(ids.contains("openai_whisper-small"))
         XCTAssertTrue(ids.contains("openai_whisper-small_216MB"))
         XCTAssertTrue(ids.contains("openai_whisper-medium"))
         XCTAssertTrue(ids.contains("distil-whisper_distil-large-v3_turbo"))
         XCTAssertTrue(ids.contains("openai_whisper-large-v3-turbo"))
+        XCTAssertTrue(ids.contains("parakeet-tdt-0.6b-v3"))
         XCTAssertFalse(ids.contains("openai_whisper-tiny"))
         XCTAssertFalse(ids.contains("openai_whisper-base"))
     }
 
-    func testAllIncludingDeprecatedContainsSeven() {
-        // allIncludingDeprecated should contain all 7 models
-        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 7)
+    func testAllIncludingDeprecatedContainsEight() {
+        // allIncludingDeprecated should contain all 8 models (2 deprecated + 6 available)
+        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 8)
         let deprecated = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .deprecated }
         XCTAssertEqual(deprecated.count, 2)
         let available = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .available }
-        XCTAssertEqual(available.count, 5)
+        XCTAssertEqual(available.count, 6)
     }
 
     func testDeprecatedModelStillResolvable() {
@@ -64,10 +65,12 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(SpeechEngine.parakeet.displayName, "Parakeet")
     }
 
-    func testAllModelsAreWhisperKit() {
-        for model in ModelInfo.allIncludingDeprecated {
-            XCTAssertEqual(model.engine, .whisperKit, "\(model.identifier) should be WhisperKit")
-        }
+    func testEngineAssignment() {
+        let whisperKitModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .whisperKit }
+        let parakeetModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .parakeet }
+        XCTAssertEqual(whisperKitModels.count, 7, "Should have 7 WhisperKit models")
+        XCTAssertEqual(parakeetModels.count, 1, "Should have 1 Parakeet model")
+        XCTAssertEqual(parakeetModels.first?.identifier, "parakeet-tdt-0.6b-v3")
     }
 
     // MARK: - Supported identifiers
