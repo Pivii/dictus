@@ -81,6 +81,17 @@ class KeyboardViewController: UIInputViewController {
         // Without this, the inputView may retain a stale height from before the switch.
         heightConstraint?.constant = computeKeyboardHeight()
         inputView?.setNeedsLayout()
+
+        // Notify SwiftUI views that the keyboard is (re)appearing so they can
+        // refresh state that may have changed while the extension was suspended
+        // (e.g., keyboard mode changed in Settings).
+        NotificationCenter.default.post(name: .dictusKeyboardWillAppear, object: nil)
+
+        #if DEBUG
+        if #available(iOS 14.0, *) {
+            DictusLogger.keyboard.debug("viewWillAppear — refreshing mode")
+        }
+        #endif
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -114,4 +125,9 @@ extension Notification.Name {
     /// Posted by KeyboardViewController when text changes externally (paste, cursor move).
     /// KeyboardView listens for this to recheck autocapitalisation.
     static let dictusTextDidChange = Notification.Name("dictusTextDidChange")
+
+    /// Posted by KeyboardViewController in viewWillAppear (every keyboard show).
+    /// KeyboardRootView listens for this to re-read KeyboardMode from App Group,
+    /// so mode changes made in Settings take effect without a rebuild.
+    static let dictusKeyboardWillAppear = Notification.Name("dictusKeyboardWillAppear")
 }

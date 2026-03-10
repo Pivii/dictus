@@ -1,5 +1,6 @@
 // DictusKeyboard/KeyboardRootView.swift
 import SwiftUI
+import Combine
 import DictusCore
 
 /// Root SwiftUI view for the keyboard extension.
@@ -145,6 +146,13 @@ struct KeyboardRootView: View {
             // Set prediction engine language from App Group shared preference.
             let lang = AppGroup.defaults.string(forKey: SharedKeys.language) ?? "fr"
             suggestionState.setLanguage(lang)
+        }
+        // Re-read keyboard mode every time the keyboard reappears (not just the
+        // first .onAppear). viewWillAppear fires on every keyboard show, whereas
+        // .onAppear only fires once per extension process lifetime. This ensures
+        // mode changes made in Settings are picked up immediately.
+        .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardWillAppear)) { _ in
+            currentMode = KeyboardMode.active
         }
     }
 
