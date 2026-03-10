@@ -1,14 +1,22 @@
 // DictusApp/Views/ModelManagerView.swift
 // Model management UI: download, select, and delete WhisperKit models.
+// Redesigned with Downloaded/Available sections, gauge-based model cards, and engine descriptions.
 import SwiftUI
 import DictusCore
 
-/// Displays all available WhisperKit models with download/select/delete controls.
+/// Displays WhisperKit models organized in two sections:
+/// - "Telecharges" (downloaded) — models on device, including deprecated ones
+/// - "Disponibles" (available) — models available for download, excludes deprecated
 ///
-/// WHY a dedicated view (not inline in ContentView):
-/// Model management is a distinct feature with its own state and interactions.
-/// Separating it follows Single Responsibility and keeps ContentView focused
-/// on top-level navigation.
+/// WHY two sections instead of a flat list:
+/// Users need to quickly see what's on their device vs. what they can download.
+/// Separating sections provides clear visual hierarchy. Deprecated models (Tiny/Base)
+/// only appear in Downloaded if the user already has them — they're hidden from
+/// Available to guide users toward better models.
+///
+/// WHY engine description paragraphs:
+/// Users may not know what "WhisperKit" means. A brief explanation helps them
+/// understand the technology behind the models they're choosing.
 struct ModelManagerView: View {
     @ObservedObject var modelManager: ModelManager
 
@@ -20,24 +28,49 @@ struct ModelManagerView: View {
     @State private var downloadError: String?
     @State private var showErrorAlert = false
 
+    // MARK: - Computed model lists
+
+    /// Downloaded models — includes deprecated (Tiny/Base) if user has them on device.
+    /// Uses allIncludingDeprecated so deprecated models still show up for management.
+    private var downloadedModels: [ModelInfo] {
+        ModelInfo.allIncludingDeprecated.filter { modelManager.downloadedModels.contains($0.identifier) }
+    }
+
+    /// Available models — only .available visibility, excludes already-downloaded ones.
+    /// Users won't see Tiny/Base here since they're deprecated.
+    private var availableModels: [ModelInfo] {
+        ModelInfo.all.filter { !modelManager.downloadedModels.contains($0.identifier) }
+    }
+
+    /// Which speech engines appear in the downloaded section (for engine descriptions).
+    private var downloadedEngines: Set<SpeechEngine> {
+        Set(downloadedModels.map(\.engine))
+    }
+
+    /// Which speech engines appear in the available section (for engine descriptions).
+    private var availableEngines: Set<SpeechEngine> {
+        Set(availableModels.map(\.engine))
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                ForEach(ModelInfo.all) { model in
-                    ModelRow(
-                        model: model,
-                        modelManager: modelManager,
-                        onDelete: {
-                            modelToDelete = model
-                            showDeleteAlert = true
-                        },
-                        onDownloadError: { error in
-                            downloadError = error
-                            showErrorAlert = true
-                        }
+            VStack(spacing: 24) {
+                // MARK: - Downloaded section
+                if !downloadedModels.isEmpty {
+                    modelSection(
+                        title: "Telecharges",
+                        models: downloadedModels,
+                        engines: downloadedEngines
                     )
-                    .padding(16)
-                    .dictusGlass()
+                }
+
+                // MARK: - Available section
+                if !availableModels.isEmpty {
+                    modelSection(
+                        title: "Disponibles",
+                        models: availableModels,
+                        engines: availableEngines
+                    )
                 }
             }
             .padding(.horizontal, 16)
@@ -68,168 +101,78 @@ struct ModelManagerView: View {
             }
         }
     }
-}
 
-/// A single row in the model list showing metadata and state-dependent controls.
-///
-/// WHY a separate struct (not inline in ForEach):
-/// Each row has its own interaction logic (download task, state display).
-/// Extracting it keeps ModelManagerView's body clean and each row testable.
-private struct ModelRow: View {
-    let model: ModelInfo
-    @ObservedObject var modelManager: ModelManager
-    let onDelete: () -> Void
-    let onDownloadError: (String) -> Void
+    // MARK: - Section builder
 
-    /// The current state for this model, with a safe default.
-    private var state: ModelState {
-        modelManager.modelStates[model.identifier] ?? .notDownloaded
-    }
-
-    /// Whether this model is the currently active one.
-    private var isActive: Bool {
-        modelManager.activeModel == model.identifier
-    }
-
-    /// Whether this is the last downloaded model (cannot be deleted).
-    private var isLastModel: Bool {
-        modelManager.downloadedModels.count <= 1 &&
-        modelManager.downloadedModels.contains(model.identifier)
-    }
-
-    var body: some View {
-        HStack {
-            // Model info (left side)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(model.displayName)
-                        .font(.dictusSubheading)
-
-                    if modelManager.isRecommended(model.identifier) {
-                        Text("Recommande")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.dictusAccent.opacity(0.15))
-                            .foregroundColor(.dictusAccent)
-                            .cornerRadius(4)
-                    }
-                }
-
-                HStack(spacing: 12) {
-                    Label(model.sizeLabel, systemImage: "arrow.down.circle")
-                    Label(model.accuracyLabel, systemImage: "target")
-                    Label(model.speedLabel, systemImage: "bolt")
-                }
-                .font(.dictusCaption)
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // State-dependent trailing content (right side)
-            trailingContent
-        }
-        .padding(.vertical, 4)
-    }
-
-    /// The trailing content changes based on the model's current state.
+    /// Builds a titled section with model cards and engine description paragraphs.
+    ///
+    /// WHY a helper function (not inline):
+    /// Both Downloaded and Available sections have the same layout pattern.
+    /// Extracting avoids duplication and keeps the body clean.
     @ViewBuilder
-    private var trailingContent: some View {
-        switch state {
-        case .notDownloaded:
-            Button {
-                Task {
-                    do {
-                        try await modelManager.downloadModel(model.identifier)
-                    } catch {
-                        onDownloadError(error.localizedDescription)
+    private func modelSection(title: String, models: [ModelInfo], engines: Set<SpeechEngine>) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.dictusSubheading)
+                .foregroundStyle(.secondary)
+
+            ForEach(models) { model in
+                ModelCardView(
+                    model: model,
+                    modelManager: modelManager,
+                    onDelete: {
+                        modelToDelete = model
+                        showDeleteAlert = true
+                    },
+                    onDownloadError: { error in
+                        downloadError = error
+                        showErrorAlert = true
                     }
-                }
-            } label: {
-                Image(systemName: "arrow.down.circle")
-                    .font(.title2)
-                    .foregroundColor(.dictusAccent)
-            }
-            .buttonStyle(.plain)
-
-        case .downloading:
-            VStack(spacing: 2) {
-                ProgressView(value: modelManager.downloadProgress[model.identifier] ?? 0, total: 1.0)
-                    .frame(width: 60)
-                    .tint(.dictusAccent)
-                let pct = Int((modelManager.downloadProgress[model.identifier] ?? 0) * 100)
-                Text("\(pct)%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                )
             }
 
-        case .prewarming:
-            VStack(spacing: 2) {
-                ProgressView()
-                Text("Optimisation...")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-        case .ready:
-            if isActive {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.dictusSuccess)
-                    Text("Actif")
-                        .font(.dictusCaption)
-                        .foregroundColor(.dictusSuccess)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Button("Choisir") {
-                        modelManager.selectModel(model.identifier)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.dictusAccent)
-
-                    if !isLastModel {
-                        Button {
-                            onDelete()
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.dictusRecording)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-        case .error(let message):
-            HStack(spacing: 8) {
-                Button {
-                    // Reset state and allow retry
-                    modelManager.modelStates[model.identifier] = .notDownloaded
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "arrow.clockwise.circle")
-                            .font(.title3)
-                            .foregroundColor(.orange)
-                        Text("Reessayer")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                // Allow cleanup of failed model files to free disk space
-                Button {
-                    modelManager.cleanupFailedModel(model.identifier)
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundColor(.dictusRecording)
-                }
-                .buttonStyle(.plain)
-            }
-            .help(message)
+            // Engine description paragraphs
+            engineDescriptions(for: engines)
         }
+    }
+
+    // MARK: - Engine descriptions
+
+    /// Shows a brief paragraph for each speech engine represented in the section.
+    ///
+    /// WHY per-section engine descriptions:
+    /// Only show descriptions for engines the user can see. If all models in a section
+    /// are WhisperKit, only the WhisperKit paragraph appears. This avoids confusion
+    /// about engines with no visible models.
+    @ViewBuilder
+    private func engineDescriptions(for engines: Set<SpeechEngine>) -> some View {
+        if engines.contains(.whisperKit) {
+            engineParagraph(
+                icon: "waveform",
+                text: "WhisperKit — moteur de transcription developpe par Argmax, optimise pour les puces Apple. Modeles entraines sur OpenAI Whisper."
+            )
+        }
+
+        if engines.contains(.parakeet) {
+            engineParagraph(
+                icon: "bolt",
+                text: "Parakeet — moteur de transcription developpe par NVIDIA, optimise pour la vitesse. Modeles Parakeet TDT."
+            )
+        }
+    }
+
+    /// A single engine description paragraph with icon.
+    private func engineParagraph(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.dictusCaption)
+                .foregroundStyle(.tertiary)
+
+            Text(text)
+                .font(.dictusCaption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.top, 4)
     }
 }
 
