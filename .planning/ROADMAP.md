@@ -144,7 +144,7 @@ Note: Phase 9 (Cold Start) is independent of Phases 7-8 and could execute in par
 | 6. Infrastructure & App Polish | v1.1 | 3/5 | Gap closure | - |
 | 7. Keyboard Parity & Visual | 12/12 | Complete   | 2026-03-08 | - |
 | 8. Text Prediction | 2/2 | Complete   | 2026-03-09 | - |
-| 9. Keyboard Modes | v1.1 | 3/6 | Gap closure | - |
+| 9. Keyboard Modes | 5/6 | In Progress|  | - |
 | 10. Model Catalog | v1.1 | 0/? | Not started | - |
 
 ---
