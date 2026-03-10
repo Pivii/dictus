@@ -108,6 +108,17 @@ public struct ModelInfo: Identifiable {
             visibility: .available
         ),
         ModelInfo(
+            identifier: "openai_whisper-small_216MB",
+            displayName: "Small (Quantized)",
+            sizeLabel: "~216 MB",
+            sizeBytes: 216_000_000,
+            engine: .whisperKit,
+            accuracyScore: 0.55,
+            speedScore: 0.75,
+            description: "Compact et rapide",
+            visibility: .available
+        ),
+        ModelInfo(
             identifier: "openai_whisper-medium",
             displayName: "Medium",
             sizeLabel: "~750 MB",
@@ -116,6 +127,28 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.8,
             speedScore: 0.4,
             description: "Meilleure precision",
+            visibility: .available
+        ),
+        ModelInfo(
+            identifier: "distil-whisper_distil-large-v3_turbo",
+            displayName: "Distil Large Turbo",
+            sizeLabel: "~600 MB",
+            sizeBytes: 600_000_000,
+            engine: .whisperKit,
+            accuracyScore: 0.85,
+            speedScore: 0.7,
+            description: "Rapide et tres precis",
+            visibility: .available
+        ),
+        ModelInfo(
+            identifier: "openai_whisper-large-v3-turbo",
+            displayName: "Large Turbo",
+            sizeLabel: "~954 MB",
+            sizeBytes: 954_000_000,
+            engine: .whisperKit,
+            accuracyScore: 0.9,
+            speedScore: 0.6,
+            description: "Precision maximale",
             visibility: .available
         ),
     ]

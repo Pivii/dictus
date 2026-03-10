@@ -7,22 +7,25 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - Catalog visibility
 
     func testAllContainsOnlyAvailableModels() {
-        // ModelInfo.all should only contain Small and Medium (2 models)
-        XCTAssertEqual(ModelInfo.all.count, 2)
+        // ModelInfo.all should contain 5 available models (Small, Small Quantized, Medium, Distil Turbo, Large Turbo)
+        XCTAssertEqual(ModelInfo.all.count, 5)
         let ids = Set(ModelInfo.all.map(\.identifier))
         XCTAssertTrue(ids.contains("openai_whisper-small"))
+        XCTAssertTrue(ids.contains("openai_whisper-small_216MB"))
         XCTAssertTrue(ids.contains("openai_whisper-medium"))
+        XCTAssertTrue(ids.contains("distil-whisper_distil-large-v3_turbo"))
+        XCTAssertTrue(ids.contains("openai_whisper-large-v3-turbo"))
         XCTAssertFalse(ids.contains("openai_whisper-tiny"))
         XCTAssertFalse(ids.contains("openai_whisper-base"))
     }
 
-    func testAllIncludingDeprecatedContainsFour() {
-        // allIncludingDeprecated should contain all 4 models
-        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 4)
+    func testAllIncludingDeprecatedContainsSeven() {
+        // allIncludingDeprecated should contain all 7 models
+        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 7)
         let deprecated = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .deprecated }
         XCTAssertEqual(deprecated.count, 2)
         let available = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .available }
-        XCTAssertEqual(available.count, 2)
+        XCTAssertEqual(available.count, 5)
     }
 
     func testDeprecatedModelStillResolvable() {
