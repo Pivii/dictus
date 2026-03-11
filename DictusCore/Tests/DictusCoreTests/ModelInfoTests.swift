@@ -7,26 +7,25 @@ final class ModelInfoTests: XCTestCase {
     // MARK: - Catalog visibility
 
     func testAllContainsOnlyAvailableModels() {
-        // ModelInfo.all should contain 6 available models (5 WhisperKit + 1 Parakeet)
-        XCTAssertEqual(ModelInfo.all.count, 6)
+        // ModelInfo.all should contain 5 available models (4 WhisperKit + 1 Parakeet)
+        XCTAssertEqual(ModelInfo.all.count, 5)
         let ids = Set(ModelInfo.all.map(\.identifier))
         XCTAssertTrue(ids.contains("openai_whisper-small"))
         XCTAssertTrue(ids.contains("openai_whisper-small_216MB"))
         XCTAssertTrue(ids.contains("openai_whisper-medium"))
-        XCTAssertTrue(ids.contains("distil-whisper_distil-large-v3_turbo"))
-        XCTAssertTrue(ids.contains("openai_whisper-large-v3-turbo"))
+        XCTAssertTrue(ids.contains("openai_whisper-large-v3_turbo"))
         XCTAssertTrue(ids.contains("parakeet-tdt-0.6b-v3"))
         XCTAssertFalse(ids.contains("openai_whisper-tiny"))
         XCTAssertFalse(ids.contains("openai_whisper-base"))
     }
 
     func testAllIncludingDeprecatedContainsEight() {
-        // allIncludingDeprecated should contain all 8 models (2 deprecated + 6 available)
-        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 8)
+        // allIncludingDeprecated should contain all 7 models (2 deprecated + 5 available)
+        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 7)
         let deprecated = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .deprecated }
         XCTAssertEqual(deprecated.count, 2)
         let available = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .available }
-        XCTAssertEqual(available.count, 6)
+        XCTAssertEqual(available.count, 5)
     }
 
     func testDeprecatedModelStillResolvable() {
@@ -68,7 +67,7 @@ final class ModelInfoTests: XCTestCase {
     func testEngineAssignment() {
         let whisperKitModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .whisperKit }
         let parakeetModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .parakeet }
-        XCTAssertEqual(whisperKitModels.count, 7, "Should have 7 WhisperKit models")
+        XCTAssertEqual(whisperKitModels.count, 6, "Should have 6 WhisperKit models")
         XCTAssertEqual(parakeetModels.count, 1, "Should have 1 Parakeet model")
         XCTAssertEqual(parakeetModels.first?.identifier, "parakeet-tdt-0.6b-v3")
     }

@@ -145,18 +145,7 @@ public struct ModelInfo: Identifiable {
             visibility: .available
         ),
         ModelInfo(
-            identifier: "distil-whisper_distil-large-v3_turbo",
-            displayName: "Distil Large Turbo",
-            sizeLabel: "~600 MB",
-            sizeBytes: 600_000_000,
-            engine: .whisperKit,
-            accuracyScore: 0.85,
-            speedScore: 0.7,
-            description: "Rapide et tres precis",
-            visibility: .available
-        ),
-        ModelInfo(
-            identifier: "openai_whisper-large-v3-turbo",
+            identifier: "openai_whisper-large-v3_turbo",
             displayName: "Large Turbo",
             sizeLabel: "~954 MB",
             sizeBytes: 954_000_000,
