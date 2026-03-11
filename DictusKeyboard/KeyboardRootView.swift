@@ -153,8 +153,14 @@ struct KeyboardRootView: View {
             // the previous session may have crashed or been abandoned. Refresh from
             // App Group first (the app may have already reset), then force-reset
             // if still stale. This ensures the overlay never gets permanently stuck.
+            //
+            // IMPORTANT: Skip if recording was requested recently (< 5s).
+            // The URL scheme flow briefly opens the app to foreground (~2s),
+            // causing keyboardDidDisappear → keyboardDidAppear. This is normal
+            // and the recording should NOT be killed.
             let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
-            if activeStates.contains(state.dictationStatus) {
+            let timeSinceRequest = Date().timeIntervalSince(state.lastRequestedAt)
+            if activeStates.contains(state.dictationStatus) && timeSinceRequest > 5.0 {
                 state.refreshFromDefaults()
                 // If still stale after reading fresh App Group data, force reset
                 if activeStates.contains(state.dictationStatus) {
