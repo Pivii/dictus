@@ -50,7 +50,7 @@ result: pass
 
 total: 8
 passed: 7
-issues: 1
+issues: 2
 pending: 0
 skipped: 0
 
@@ -74,6 +74,23 @@ skipped: 0
     - "Mark distil-large-v3_turbo as English-only or remove from French catalog"
     - "Add diagnostic logging for language value passed to WhisperKit"
   debug_session: ".planning/debug/language-default-english.md"
+
+- truth: "Large Turbo model can be downloaded from WhisperKit repo"
+  status: failed
+  reason: "User reported: Download fails with error 'No models found matching *openai*openai_whisper-large-v3-turbo/*'. Also distil-large-v3_turbo is English-only and must be removed from catalog."
+  severity: blocker
+  test: 6
+  root_cause: "Two issues: (1) Wrong identifier — catalog has 'openai_whisper-large-v3-turbo' (hyphen) but WhisperKit repo uses 'openai_whisper-large-v3_turbo' (underscore). (2) distil-whisper_distil-large-v3_turbo is English-only (confirmed on HuggingFace) — must be removed from catalog since app targets French."
+  artifacts:
+    - path: "DictusCore/Sources/DictusCore/ModelInfo.swift"
+      issue: "Line 159: identifier 'openai_whisper-large-v3-turbo' has hyphen instead of underscore"
+    - path: "DictusCore/Sources/DictusCore/ModelInfo.swift"
+      issue: "Lines 148-157: distil-large-v3_turbo is English-only, should not be in multilingual catalog"
+  missing:
+    - "Fix identifier to 'openai_whisper-large-v3_turbo'"
+    - "Remove distil-whisper_distil-large-v3_turbo from catalog entirely"
+    - "Update ModelInfoTests for 7→6 model count"
+  debug_session: ""
 
 ## UX Improvement Notes (from passing tests)
 
