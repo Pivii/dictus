@@ -116,9 +116,7 @@ class AudioRecorder: ObservableObject {
         try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         sessionConfigured = true
 
-        if #available(iOS 14.0, *) {
-            DictusLogger.app.info("AVAudioSession configured (.playAndRecord, active)")
-        }
+        PersistentLog.log(.audioSessionConfigured(category: "playAndRecord"))
     }
 
     /// Start the audio engine in idle mode (not recording, just keeping it alive).
@@ -151,9 +149,7 @@ class AudioRecorder: ObservableObject {
         try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
         isEngineRunning = true
 
-        if #available(iOS 14.0, *) {
-            DictusLogger.app.info("Audio engine warmed up (idle, ready for background recording)")
-        }
+        PersistentLog.log(.audioEngineStarted)
     }
 
     /// Start recording audio using WhisperKit's AudioProcessor.
@@ -221,6 +217,7 @@ class AudioRecorder: ObservableObject {
         whisperKit.audioProcessor.stopRecording()
         isRecording = false
         isEngineRunning = false
+        PersistentLog.log(.audioEngineStopped)
         let samples = Array(whisperKit.audioProcessor.audioSamples)
 
         bufferEnergy = []
@@ -233,6 +230,7 @@ class AudioRecorder: ObservableObject {
     func deactivateSession() {
         whisperKit?.audioProcessor.stopRecording()
         isEngineRunning = false
+        PersistentLog.log(.audioEngineStopped)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         sessionConfigured = false
     }

@@ -131,6 +131,7 @@ class ModelManager: ObservableObject {
 
         modelStates[identifier] = .downloading
         downloadProgress[identifier] = 0.0
+        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: 0))
 
         do {
             // Download model files from HuggingFace via WhisperKit's built-in downloader.
@@ -146,7 +147,7 @@ class ModelManager: ObservableObject {
                 }
             )
 
-            DictusLogger.app.info("Model downloaded to: \(modelFolder)")
+            PersistentLog.log(.modelDownloadCompleted(name: identifier))
 
             // Prewarm: compile Core ML model for this device's Neural Engine/GPU.
             // Serialized — only one model compiles at a time. Multiple simultaneous
@@ -163,7 +164,7 @@ class ModelManager: ObservableObject {
             isPrewarming = true
             defer { isPrewarming = false }
 
-            DictusLogger.app.info("Prewarming model: \(identifier)")
+            PersistentLog.log(.modelCompilationStarted(name: identifier))
 
             let config = WhisperKitConfig(
                 model: identifier,
@@ -188,7 +189,7 @@ class ModelManager: ObservableObject {
             modelStates[identifier] = .ready
             persistState()
 
-            DictusLogger.app.info("Model \(identifier) ready")
+            PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: 0))
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -198,7 +199,7 @@ class ModelManager: ObservableObject {
             // that prevent re-download from working correctly.
             cleanupModelFiles(identifier)
 
-            DictusLogger.app.error("Model download/prewarm failed: \(error.localizedDescription)")
+            PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }
     }
@@ -216,6 +217,7 @@ class ModelManager: ObservableObject {
     private func downloadParakeetModel(_ identifier: String) async throws {
         modelStates[identifier] = .downloading
         downloadProgress[identifier] = 0.0
+        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: 0))
 
         do {
             // Wait for any WhisperKit prewarm to finish (ANE conflict avoidance)
@@ -245,12 +247,12 @@ class ModelManager: ObservableObject {
             modelStates[identifier] = .ready
             persistState()
 
-            DictusLogger.app.info("Parakeet model \(identifier) ready")
+            PersistentLog.log(.modelDownloadCompleted(name: identifier))
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
 
-            DictusLogger.app.error("Parakeet download failed: \(error.localizedDescription)")
+            PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }
     }
@@ -260,6 +262,7 @@ class ModelManager: ObservableObject {
         guard downloadedModels.contains(identifier) else { return }
         activeModel = identifier
         persistState()
+        PersistentLog.log(.modelSelected(name: identifier))
     }
 
     /// Deletes a model from disk and updates state.
@@ -287,7 +290,9 @@ class ModelManager: ObservableObject {
         if let whisperKitDir = docsDir?.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(identifier)") {
             if FileManager.default.fileExists(atPath: whisperKitDir.path) {
                 try FileManager.default.removeItem(at: whisperKitDir)
-                DictusLogger.app.info("Deleted model files at: \(whisperKitDir.path)")
+                if #available(iOS 14.0, *) {
+                    DictusLogger.app.info("Deleted model files at: \(whisperKitDir.path)")
+                }
             }
         }
 

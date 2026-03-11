@@ -19,6 +19,9 @@ struct DictusApp: App {
     private var hasCompletedOnboarding = false
 
     init() {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        PersistentLog.log(.appLaunched(version: version))
+
         let result = AppGroupDiagnostic.run()
         DictusLogger.app.info(
             "AppGroup diagnostic: healthy=\(result.isHealthy)"
@@ -35,12 +38,26 @@ struct DictusApp: App {
         }
     }
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             MainTabView()
                 .environmentObject(coordinator)
                 .onOpenURL { url in
                     handleIncomingURL(url)
+                }
+                .onChange(of: scenePhase) { phase in
+                    switch phase {
+                    case .active:
+                        PersistentLog.log(.appDidBecomeActive)
+                    case .inactive:
+                        PersistentLog.log(.appWillResignActive)
+                    case .background:
+                        PersistentLog.log(.appDidEnterBackground)
+                    @unknown default:
+                        break
+                    }
                 }
                 .onChange(of: hasCompletedOnboarding) { completed in
                     // WHY this notification:
@@ -63,15 +80,13 @@ struct DictusApp: App {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        PersistentLog.log("Received URL: \(url.absoluteString)")
         guard url.scheme == "dictus" else { return }
 
         switch url.host {
         case "dictate":
-            PersistentLog.log("URL dictate → calling startDictation(fromURL: true)")
             coordinator.startDictation(fromURL: true)
         default:
-            PersistentLog.log("Unknown URL host: \(url.host ?? "nil")")
+            break
         }
     }
 }

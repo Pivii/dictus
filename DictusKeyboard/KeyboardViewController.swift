@@ -77,6 +77,8 @@ class KeyboardViewController: UIInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        PersistentLog.log(.keyboardDidAppear)
+
         // Force height recalculation when keyboard reappears (e.g., after app switch).
         // Without this, the inputView may retain a stale height from before the switch.
         heightConstraint?.constant = computeKeyboardHeight()
@@ -96,6 +98,7 @@ class KeyboardViewController: UIInputViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        PersistentLog.log(.keyboardDidDisappear)
         // Darwin observers cleaned up by KeyboardState deinit
     }
 

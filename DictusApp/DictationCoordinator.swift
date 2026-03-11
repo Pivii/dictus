@@ -129,9 +129,7 @@ class DictationCoordinator: ObservableObject {
             do {
                 try await ensureEngineReady()
                 try audioRecorder.warmUp()
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.info("WhisperKit + audio engine pre-loaded at launch")
-                }
+                PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
             } catch {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.warning("Pre-load failed (will retry when app returns to foreground): \(error.localizedDescription)")
@@ -204,16 +202,16 @@ class DictationCoordinator: ObservableObject {
         // need audioRecorder's engine — it has its own AVAudioEngine.
         let appState = UIApplication.shared.applicationState
         if !fromURL && appState != .active && !audioRecorder.isEngineRunning {
-            PersistentLog.log("Deferring dictation — engine not running and app state=\(appState.rawValue) (keyboard URL fallback will bring us to foreground)")
+            PersistentLog.log(.dictationDeferred(reason: "engine not running, appState=\(appState.rawValue)"))
             return
         }
 
-        PersistentLog.log("startDictation(fromURL: \(fromURL), appState: \(appState.rawValue), whisperKit: \(whisperKit != nil ? "loaded" : "nil"), engineRunning: \(audioRecorder.isEngineRunning))")
+        PersistentLog.log(.dictationStarted(fromURL: fromURL, appState: "\(appState.rawValue)", engineRunning: audioRecorder.isEngineRunning))
 
         // Check if a model is downloaded and ready
         let modelReady = defaults.bool(forKey: SharedKeys.modelReady)
         guard modelReady else {
-            PersistentLog.log("No model downloaded — aborting")
+            PersistentLog.log(.dictationFailed(error: "No model downloaded"))
             handleError("No model downloaded. Open Dictus to download a model.")
             return
         }
@@ -246,17 +244,17 @@ class DictationCoordinator: ObservableObject {
                     // Step 2: Start raw capture immediately (<100ms)
                     try rawCapture.startCapture()
                     updateStatus(.recording)
-                    PersistentLog.log("Cold start: RawAudioCapture started, WhisperKit loading in parallel")
+                    PersistentLog.log(.audioEngineStarted)
 
                     // Step 3: Load WhisperKit in parallel (non-blocking for the user)
                     // This runs while the user is already recording and back in their app.
-                    PersistentLog.log("Cold start: loading WhisperKit in parallel...")
                     try await ensureEngineReady()
-                    PersistentLog.log("Cold start: WhisperKit ready while recording continues via RawAudioCapture")
+                    let loadedName = self.currentModelName ?? "unknown"
+                    PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
                 } catch {
                     // WhisperKit init failed — recording continues via rawCapture,
                     // we'll handle the error at stopDictation() time
-                    PersistentLog.log("Cold start: WhisperKit parallel load FAILED: \(error.localizedDescription)")
+                    PersistentLog.log(.dictationFailed(error: "Cold start WhisperKit load: \(error.localizedDescription)"))
                 }
             }
         } else {
@@ -273,10 +271,10 @@ class DictationCoordinator: ObservableObject {
                     // Step 2: Start recording via WhisperKit's AudioProcessor
                     updateStatus(.recording)
                     try audioRecorder.startRecording()
-                    PersistentLog.log("Warm start: recording started successfully")
+                    PersistentLog.log(.audioEngineStarted)
 
                 } catch {
-                    PersistentLog.log("Warm start FAILED: \(error.localizedDescription)")
+                    PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
                     handleError(error.localizedDescription)
                 }
             }

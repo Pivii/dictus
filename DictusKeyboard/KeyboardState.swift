@@ -157,11 +157,8 @@ class KeyboardState: ObservableObject {
             defaults.synchronize()
 
             controller?.textDocumentProxy.insertText(transcription)
+            PersistentLog.log(.keyboardTextInserted)
             HapticFeedback.textInserted()
-
-            if #available(iOS 14.0, *) {
-                DictusLogger.keyboard.info("Auto-inserted transcription: \(transcription)")
-            }
 
             // Reset state to idle
             dictationStatus = .idle
@@ -181,6 +178,7 @@ class KeyboardState: ObservableObject {
                     self.defaults.synchronize()
 
                     self.controller?.textDocumentProxy.insertText(transcription)
+                    PersistentLog.log(.keyboardTextInserted)
                     HapticFeedback.textInserted()
 
                     self.dictationStatus = .idle
@@ -207,6 +205,7 @@ class KeyboardState: ObservableObject {
     /// This means: after the first launch, subsequent recordings happen without
     /// switching apps. The user stays in their current app the entire time.
     func startRecording() {
+        PersistentLog.log(.keyboardMicTapped)
         markRequested()
 
         // Try background recording first — if app is alive, it will handle this

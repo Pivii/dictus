@@ -100,14 +100,28 @@ class TranscriptionService {
     /// RawAudioCapture, warm start via AudioRecorder) still use prepare(whisperKit:).
     /// The fallback ensures zero regressions while new engine routing is added.
     func transcribe(audioSamples: [Float]) async throws -> String {
+        let transcriptionStart = Date()
+
         // Read user settings from App Group at transcription time
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
         let language = defaults?.string(forKey: SharedKeys.language) ?? "fr"
-        DictusLogger.app.info("[TranscriptionService] Language for transcription: \(language)")
+
+        // Determine active model name for logging
+        let modelName = defaults?.string(forKey: SharedKeys.activeModel) ?? "unknown"
+        PersistentLog.log(.transcriptionStarted(modelName: modelName))
 
         // Route to active engine if set (multi-engine path)
         if let activeEngine {
-            return try await activeEngine.transcribe(audioSamples: audioSamples, language: language)
+            do {
+                let result = try await activeEngine.transcribe(audioSamples: audioSamples, language: language)
+                let durationMs = Int(Date().timeIntervalSince(transcriptionStart) * 1000)
+                let wordCount = result.split(separator: " ").count
+                PersistentLog.log(.transcriptionCompleted(durationMs: durationMs, wordCount: wordCount))
+                return result
+            } catch {
+                PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
+                throw error
+            }
         }
 
         // Fallback: direct WhisperKit path (backward compatibility)
@@ -142,13 +156,19 @@ class TranscriptionService {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !trimmed.isEmpty else {
+                PersistentLog.log(.transcriptionFailed(error: "Empty transcription result"))
                 throw TranscriptionError.transcriptionFailed("Empty transcription result")
             }
 
+            let durationMs = Int(Date().timeIntervalSince(transcriptionStart) * 1000)
+            let wordCount = trimmed.split(separator: " ").count
+            PersistentLog.log(.transcriptionCompleted(durationMs: durationMs, wordCount: wordCount))
             return trimmed
         } catch let error as TranscriptionError {
+            PersistentLog.log(.transcriptionFailed(error: error.localizedDescription ?? "unknown"))
             throw error
         } catch {
+            PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
             throw TranscriptionError.transcriptionFailed(error.localizedDescription)
         }
     }
