@@ -52,8 +52,22 @@ public struct AnimatedMicButton: View {
         }
     }
 
+    /// Whether the button is tappable in the current status.
+    /// Only idle, ready, and failed allow new dictation starts.
+    private var isTappable: Bool {
+        status == .idle || status == .ready || status == .failed
+    }
+
     public var body: some View {
-        Button(action: onTap) {
+        Button(action: {
+            // Belt-and-suspenders guard: .disabled should prevent this,
+            // but log if somehow reached during a non-tappable state.
+            guard isTappable else {
+                PersistentLog.log(.rapidTapRejected)
+                return
+            }
+            onTap()
+        }) {
             ZStack {
                 // Background ring effects
                 ringEffect
@@ -83,7 +97,7 @@ public struct AnimatedMicButton: View {
             }
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.88))
-        .disabled(status == .recording || status == .transcribing)
+        .disabled(!isTappable)
         .onChange(of: status) { newStatus in
             handleStatusChange(from: previousStatus, to: newStatus)
             previousStatus = newStatus
@@ -176,13 +190,22 @@ public struct AnimatedMicButton: View {
     // MARK: - Animation Control
 
     private func handleStatusChange(from oldStatus: DictationStatus, to newStatus: DictationStatus) {
-        // Success flash when transitioning from transcribing to ready
+        // Log every status transition for diagnostics
+        PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: newStatus.rawValue, source: "micButton"))
+
+        // Reset ALL animation state to concrete values WITHOUT animation first.
+        // WHY: This cancels any existing repeating animations that could stack
+        // with the new ones, causing jitter or incorrect visual state.
+        pulseScale = 1.0
+        glowOpacity = 0.3
+        shimmerOffset = -1.0
+
+        // Success flash when transitioning from transcribing to ready.
+        // WHY withAnimation instead of asyncAfter: SwiftUI animates the transition
+        // from true to false over 0.3s, eliminating the timer race condition.
         if oldStatus == .transcribing && newStatus == .ready {
             showSuccessFlash = true
             withAnimation(.easeOut(duration: 0.3)) {
-                // Flash will fade
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 showSuccessFlash = false
             }
         }
@@ -195,6 +218,8 @@ public struct AnimatedMicButton: View {
         case .transcribing:
             startTranscribingAnimation()
         case .requested:
+            // Static state -- no animations. Button is disabled via isTappable.
+            // Visual: standard accent color, no pulse, no glow animation.
             break
         }
     }

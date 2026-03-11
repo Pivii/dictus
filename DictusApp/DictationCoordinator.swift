@@ -180,7 +180,7 @@ class DictationCoordinator: ObservableObject {
         // Guard against duplicate calls while actively recording or transcribing.
         // Allow .ready (previous transcription just finished) and .idle — both are valid
         // states to start a new recording from.
-        guard status == .idle || status == .failed || status == .ready else {
+        guard status == .idle || status == .failed || status == .ready || status == .requested else {
             if #available(iOS 14.0, *) {
                 DictusLogger.app.info("Ignoring duplicate startDictation — already \(self.status.rawValue)")
             }
@@ -690,6 +690,8 @@ class DictationCoordinator: ObservableObject {
 
     /// Write dictation status to App Group so the keyboard can observe it.
     private func updateStatus(_ newStatus: DictationStatus) {
+        let oldStatus = status
+        PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: newStatus.rawValue, source: "coordinator"))
         status = newStatus
         defaults.set(newStatus.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
