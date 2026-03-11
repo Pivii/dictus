@@ -70,6 +70,13 @@ public enum LogEvent: Sendable {
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
 
+    // MARK: Animation
+    case overlayShown(status: String)
+    case overlayHidden(status: String)
+    case statusChanged(from: String, to: String, source: String)
+    case watchdogReset(source: String, staleState: String)
+    case rapidTapRejected
+
     // MARK: Lifecycle
     case appLaunched(version: String)
     case appDidBecomeActive
@@ -91,8 +98,11 @@ public enum LogEvent: Sendable {
         case .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadFailed,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted:
             return .model
-        case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted:
+        case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
+             .overlayShown, .overlayHidden, .rapidTapRejected:
             return .keyboard
+        case .statusChanged, .watchdogReset:
+            return .dictation
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded:
             return .lifecycle
@@ -110,7 +120,7 @@ public enum LogEvent: Sendable {
             return .error
 
         // Warnings
-        case .dictationDeferred:
+        case .dictationDeferred, .watchdogReset:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -120,13 +130,15 @@ public enum LogEvent: Sendable {
              .modelDownloadStarted, .modelDownloadCompleted,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .keyboardDidAppear, .keyboardMicTapped,
-             .appLaunched, .appWhisperKitLoaded:
+             .appLaunched, .appWhisperKitLoaded,
+             .overlayShown, .overlayHidden, .statusChanged:
             return .info
 
         // Debug (internal state transitions)
         case .audioEngineStopped,
              .keyboardDidDisappear, .keyboardTextInserted,
-             .appDidBecomeActive, .appWillResignActive, .appDidEnterBackground:
+             .appDidBecomeActive, .appWillResignActive, .appDidEnterBackground,
+             .rapidTapRejected:
             return .debug
         }
     }
@@ -160,6 +172,11 @@ public enum LogEvent: Sendable {
         case .appWillResignActive: return "appWillResignActive"
         case .appDidEnterBackground: return "appDidEnterBackground"
         case .appWhisperKitLoaded: return "appWhisperKitLoaded"
+        case .overlayShown: return "overlayShown"
+        case .overlayHidden: return "overlayHidden"
+        case .statusChanged: return "statusChanged"
+        case .watchdogReset: return "watchdogReset"
+        case .rapidTapRejected: return "rapidTapRejected"
         }
     }
 
@@ -219,6 +236,18 @@ public enum LogEvent: Sendable {
             return ""
         case .appWhisperKitLoaded(let modelName):
             return "model=\(modelName)"
+
+        // Animation
+        case .overlayShown(let status):
+            return "status=\(status)"
+        case .overlayHidden(let status):
+            return "status=\(status)"
+        case .statusChanged(let from, let to, let source):
+            return "from=\(from) to=\(to) source=\(source)"
+        case .watchdogReset(let source, let staleState):
+            return "source=\(source) staleState=\(staleState)"
+        case .rapidTapRejected:
+            return ""
         }
     }
 

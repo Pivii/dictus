@@ -69,11 +69,11 @@ struct KeyboardRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Conditional: recording overlay (full area) OR toolbar + keyboard
-            if state.dictationStatus == .recording || state.dictationStatus == .transcribing {
+            if state.dictationStatus == .requested || state.dictationStatus == .recording || state.dictationStatus == .transcribing {
                 RecordingOverlay(
+                    dictationStatus: state.dictationStatus,
                     waveformEnergy: state.waveformEnergy,
                     elapsedSeconds: state.recordingElapsed,
-                    isTranscribing: state.dictationStatus == .transcribing,
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() }
                 )
@@ -115,6 +115,14 @@ struct KeyboardRootView: View {
         // gray bands at the top and bottom that didn't match the native chrome.
         // Transparent background lets the native keyboard styling show through.
         .background(Color.clear)
+        .onChange(of: state.dictationStatus) { newStatus in
+            let showsOverlay = newStatus == .requested || newStatus == .recording || newStatus == .transcribing
+            if showsOverlay {
+                PersistentLog.log(.overlayShown(status: newStatus.rawValue))
+            } else {
+                PersistentLog.log(.overlayHidden(status: newStatus.rawValue))
+            }
+        }
         .onAppear {
             // Provide controller reference to KeyboardState for auto-insert.
             // WHY here and not in init: KeyboardState is created by @StateObject

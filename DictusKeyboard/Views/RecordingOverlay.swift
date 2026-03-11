@@ -3,16 +3,19 @@ import SwiftUI
 import DictusCore
 
 /// Full-screen recording overlay that replaces the keyboard during active recording.
-/// Shows a BrandWaveform, elapsed timer, and cancel/stop controls.
+/// Shows different visual states based on DictationStatus:
+/// - .requested: flat waveform bars, "Demarrage..." text, cancel-only button
+/// - .recording: live waveform, elapsed timer, cancel + stop buttons
+/// - .transcribing: shimmer waveform, "Transcription..." text
 ///
 /// WHY this replaces the keyboard:
 /// Wispr Flow-inspired design -- when recording, the keyboard area transforms into
 /// an immersive recording UI. This prevents accidental key presses during dictation
 /// and provides clear visual feedback that the mic is active.
 struct RecordingOverlay: View {
+    let dictationStatus: DictationStatus
     let waveformEnergy: [Float]
     let elapsedSeconds: Double
-    let isTranscribing: Bool
     let onCancel: () -> Void
     let onStop: () -> Void
 
@@ -41,11 +44,56 @@ struct RecordingOverlay: View {
             // No dark rectangle, the overlay blends seamlessly with the keyboard.
             Color.clear
 
-            if isTranscribing {
+            switch dictationStatus {
+            case .requested:
+                requestedContent
+            case .transcribing:
                 transcribingContent
-            } else {
+            default:
                 recordingContent
             }
+        }
+    }
+
+    // MARK: - Requested state (waiting for app to start recording)
+
+    /// Shows flat waveform bars and "Demarrage..." text with cancel-only button.
+    ///
+    /// WHY a distinct visual for .requested:
+    /// The overlay appears immediately on mic tap (before the app starts recording).
+    /// Flat bars + "Demarrage..." gives the user instant visual feedback that their
+    /// tap was registered, while clearly indicating recording hasn't started yet.
+    private var requestedContent: some View {
+        VStack(spacing: 0) {
+            // Top bar: cancel only (no stop button -- nothing to stop yet)
+            HStack {
+                PillButton(icon: "xmark", color: secondaryForeground, action: onCancel)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            // Flat waveform bars -- empty energy array produces flat bars in BrandWaveform
+            GeometryReader { geo in
+                VStack(spacing: 8) {
+                    Spacer(minLength: 0)
+
+                    BrandWaveform(
+                        energyLevels: [],
+                        maxHeight: geo.size.height * 0.7
+                    )
+                    .padding(.horizontal, 2)
+
+                    Spacer(minLength: 0)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+
+            // Footer: "Demarrage..." status text
+            Text("Demarrage...")
+                .font(.dictusCaption)
+                .foregroundColor(secondaryForeground)
+                .padding(.bottom, 8)
         }
     }
 
@@ -53,7 +101,7 @@ struct RecordingOverlay: View {
 
     private var recordingContent: some View {
         VStack(spacing: 0) {
-            // Top bar: cancel (left) and validate (right) — pill-shaped Liquid Glass buttons
+            // Top bar: cancel (left) and validate (right) -- pill-shaped Liquid Glass buttons
             HStack {
                 PillButton(icon: "xmark", color: secondaryForeground, action: onCancel)
 
@@ -82,7 +130,7 @@ struct RecordingOverlay: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
 
-            // Footer: timer + status — fixed height
+            // Footer: timer + status -- fixed height
             Text(formattedTime)
                 .font(.system(size: timerFontSize, weight: .medium, design: .monospaced))
                 .foregroundColor(foregroundColor)
