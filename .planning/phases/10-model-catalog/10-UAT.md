@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 10-model-catalog
 source: 10-01-SUMMARY.md, 10-02-SUMMARY.md, 10-03-SUMMARY.md
 started: 2026-03-11T10:00:00Z
-updated: 2026-03-11T10:15:00Z
+updated: 2026-03-11T12:00:00Z
 ---
 
 ## Current Test
@@ -57,7 +57,7 @@ skipped: 0
 ## Gaps
 
 - truth: "After downloading a WhisperKit model, transcription uses the configured language (French) immediately"
-  status: failed
+  status: resolved
   reason: "User reported: After first download, transcription outputs English instead of French. Must toggle language in settings, restart app, then it works. Also ANE compilation/pre-warming is very slow on first use."
   severity: major
   test: 6
@@ -76,7 +76,7 @@ skipped: 0
   debug_session: ".planning/debug/language-default-english.md"
 
 - truth: "Large Turbo model can be downloaded from WhisperKit repo"
-  status: failed
+  status: resolved
   reason: "User reported: Download fails with error 'No models found matching *openai*openai_whisper-large-v3-turbo/*'. Also distil-large-v3_turbo is English-only and must be removed from catalog."
   severity: blocker
   test: 6
