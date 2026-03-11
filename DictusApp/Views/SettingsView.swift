@@ -1,6 +1,7 @@
 // DictusApp/Views/SettingsView.swift
 // iOS-style grouped settings list with preferences persisted via App Group.
 import SwiftUI
+import UIKit
 import DictusCore
 
 /// Settings screen with 3 sections: Transcription, Clavier, A propos.
@@ -87,6 +88,18 @@ struct SettingsView: View {
                 NavigationLink("Debug Logs") {
                     DebugLogView()
                 }
+
+                Button {
+                    exportLogs()
+                } label: {
+                    HStack {
+                        Text("Exporter les logs")
+                        Spacer()
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .listRowBackground(Color.dictusAccent.opacity(0.05))
         }
@@ -96,6 +109,28 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// Export logs via iOS share sheet.
+    ///
+    /// WHY write to a temp file instead of sharing raw text:
+    /// UIActivityViewController with a file URL shows the file name ("dictus-logs.txt")
+    /// in the share sheet and lets the user save, AirDrop, or attach it to email/GitHub.
+    /// Raw text sharing doesn't give a meaningful filename.
+    private func exportLogs() {
+        let content = PersistentLog.exportContent()
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("dictus-logs.txt")
+        try? content.write(to: tempURL, atomically: true, encoding: .utf8)
+
+        // Present UIActivityViewController via the connected window scene.
+        // WHY this approach: SwiftUI doesn't have a native share sheet API.
+        // We use UIApplication.shared.connectedScenes to find the active window
+        // and present from its root view controller.
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = scene.windows.first?.rootViewController else { return }
+
+        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+        root.present(activityVC, animated: true)
+    }
 
     /// App version string from Info.plist.
     ///
