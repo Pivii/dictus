@@ -148,6 +148,20 @@ struct KeyboardRootView: View {
         // preference changes made in Settings are picked up immediately.
         .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardWillAppear)) { _ in
             defaultLayer = DefaultKeyboardLayer.active.asLayerType
+
+            // Stale state detection: if keyboard reappears while in an active state,
+            // the previous session may have crashed or been abandoned. Refresh from
+            // App Group first (the app may have already reset), then force-reset
+            // if still stale. This ensures the overlay never gets permanently stuck.
+            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
+            if activeStates.contains(state.dictationStatus) {
+                state.refreshFromDefaults()
+                // If still stale after reading fresh App Group data, force reset
+                if activeStates.contains(state.dictationStatus) {
+                    PersistentLog.log(.watchdogReset(source: "keyboardAppear", staleState: state.dictationStatus.rawValue))
+                    state.forceResetToIdle()
+                }
+            }
         }
     }
 

@@ -42,6 +42,12 @@ class DictationCoordinator: ObservableObject {
     /// to WhisperKit's transcribe(audioArray:) once it finishes loading.
     private let rawCapture = RawAudioCapture()
 
+    /// Transcription timeout watchdog: fires after 30s in .transcribing state.
+    /// WHY 30s: WhisperKit transcription of a typical dictation (<60s audio) should
+    /// complete in under 10s even on older devices. 30s provides generous margin
+    /// while still catching genuinely stuck transcriptions.
+    private var transcriptionWatchdog: Timer?
+
     private var whisperKit: WhisperKit?
     private var currentModelName: String?
     private var dictationTask: Task<Void, Never>?
@@ -399,6 +405,7 @@ class DictationCoordinator: ObservableObject {
     func cancelDictation() {
         dictationTask?.cancel()
         dictationTask = nil
+        stopTranscriptionWatchdog()
 
         if rawCapture.isCapturing {
             // Cold start path: stop raw capture and discard samples
@@ -688,6 +695,30 @@ class DictationCoordinator: ObservableObject {
         return models
     }
 
+    // MARK: - Transcription Watchdog
+
+    /// Start a one-shot 30s timer that auto-cancels if transcription hangs.
+    /// WHY non-repeating: We only need one fire — if transcription hasn't
+    /// completed in 30s, it's stuck and should be cancelled.
+    private func startTranscriptionWatchdog() {
+        stopTranscriptionWatchdog()
+        transcriptionWatchdog = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            // Must dispatch to main for @MainActor-isolated properties
+            DispatchQueue.main.async {
+                guard self.status == .transcribing else { return }
+                PersistentLog.log(.watchdogReset(source: "appTranscription", staleState: "transcribing"))
+                self.cancelDictation()
+            }
+        }
+    }
+
+    /// Invalidate and nil the transcription watchdog timer.
+    private func stopTranscriptionWatchdog() {
+        transcriptionWatchdog?.invalidate()
+        transcriptionWatchdog = nil
+    }
+
     /// Write dictation status to App Group so the keyboard can observe it.
     private func updateStatus(_ newStatus: DictationStatus) {
         let oldStatus = status
@@ -695,6 +726,13 @@ class DictationCoordinator: ObservableObject {
         status = newStatus
         defaults.set(newStatus.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
+
+        // Manage transcription watchdog based on status transitions
+        if newStatus == .transcribing {
+            startTranscriptionWatchdog()
+        } else if oldStatus == .transcribing {
+            stopTranscriptionWatchdog()
+        }
 
         // Signal keyboard that status changed
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)

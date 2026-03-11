@@ -42,6 +42,17 @@ class KeyboardState: ObservableObject {
 
     private let defaults = AppGroup.defaults
 
+    /// Watchdog timer that periodically checks for stale active states.
+    /// WHY: If the app crashes or a Darwin notification is lost, the keyboard
+    /// could get stuck showing the recording overlay forever. The watchdog
+    /// detects this by checking if waveform data has stopped updating for 5s
+    /// while status is still .recording or .transcribing.
+    private var watchdogTimer: Timer?
+
+    /// Tracks when waveform energy was last refreshed from App Group.
+    /// Used by the watchdog to detect stale states (no updates for 5s).
+    private var lastWaveformUpdate: Date = Date()
+
     init() {
         // Read initial state from App Group
         refreshFromDefaults()
@@ -77,9 +88,54 @@ class KeyboardState: ObservableObject {
     }
 
     deinit {
+        stopWatchdog()
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.statusChanged)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.transcriptionReady)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.waveformUpdate)
+    }
+
+    // MARK: - Watchdog
+
+    /// Force-reset all dictation state to idle.
+    /// Called by the watchdog timer or stale-state detection on keyboard appear.
+    /// Writes to App Group so the app side sees the reset too.
+    func forceResetToIdle() {
+        dictationStatus = .idle
+        waveformEnergy = []
+        recordingElapsed = 0
+        statusMessage = nil
+        // Write to App Group so app side sees the reset
+        defaults.set(DictationStatus.idle.rawValue, forKey: SharedKeys.dictationStatus)
+        defaults.synchronize()
+        DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
+        stopWatchdog()
+    }
+
+    /// Start a repeating 1s timer that checks for stale active states.
+    /// WHY 5s threshold: Waveform updates arrive at ~5Hz during recording.
+    /// If 5 seconds pass without any update while status is still active,
+    /// the app has likely crashed or been killed by iOS.
+    private func startWatchdog() {
+        stopWatchdog()
+        lastWaveformUpdate = Date()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let activeStates: [DictationStatus] = [.recording, .transcribing]
+            guard activeStates.contains(self.dictationStatus) else {
+                self.stopWatchdog()
+                return
+            }
+            if Date().timeIntervalSince(self.lastWaveformUpdate) > 5.0 {
+                PersistentLog.log(.watchdogReset(source: "keyboard", staleState: self.dictationStatus.rawValue))
+                self.forceResetToIdle()
+            }
+        }
+    }
+
+    /// Invalidate and nil the watchdog timer.
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
     }
 
     // MARK: - Recording commands (keyboard -> app)
@@ -112,16 +168,30 @@ class KeyboardState: ObservableObject {
     // MARK: - State observation
 
     /// Read current state from App Group UserDefaults.
-    private func refreshFromDefaults() {
+    /// Starts/stops the watchdog timer based on the new status.
+    func refreshFromDefaults() {
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
+            let oldStatus = dictationStatus
             dictationStatus = status
+
+            // Start watchdog when entering active states, stop when leaving
+            let activeStates: [DictationStatus] = [.recording, .transcribing]
+            if activeStates.contains(status) && !activeStates.contains(oldStatus) {
+                startWatchdog()
+            } else if !activeStates.contains(status) && activeStates.contains(oldStatus) {
+                stopWatchdog()
+            }
         }
     }
 
     /// Read waveform energy and elapsed time from App Group.
     /// Called when DictusApp posts waveformUpdate notification during recording.
+    /// Updates lastWaveformUpdate so the watchdog knows data is still flowing.
     private func readWaveformData() {
+        // Update watchdog timestamp — data is still flowing from the app
+        lastWaveformUpdate = Date()
+
         // Read elapsed seconds
         recordingElapsed = defaults.double(forKey: SharedKeys.recordingElapsedSeconds)
 
