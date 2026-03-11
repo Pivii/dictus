@@ -1,7 +1,7 @@
 # Requirements: Dictus
 
 **Defined:** 2026-03-11
-**Core Value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard — no subscription, no cloud, no account.
+**Core Value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
 
 ## v1.2 Requirements
 
@@ -18,7 +18,7 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 ### Animation
 
 - [ ] **ANIM-01**: Recording overlay always appears when dictation starts (no intermittent disappearance)
-- [ ] **ANIM-02**: Animation state resets properly on rapid status transitions (recording → transcribing → ready)
+- [ ] **ANIM-02**: Animation state resets properly on rapid status transitions (recording -> transcribing -> ready)
 - [ ] **ANIM-03**: Waveform and mic button animations never get stuck in stale state
 
 ### Cold Start
@@ -30,12 +30,12 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 - [ ] **COLD-05**: Cold start shows dedicated "swipe back" overlay instead of full app UI
 - [ ] **COLD-06**: Direct recording in app remains functional (two recording modes coexist)
 - [ ] **COLD-07**: Recording starts when user returns to keyboard, not when app opens
-- [ ] **COLD-08**: Auto-return to previous app via URL scheme for known apps (bundleID → URL scheme mapping)
+- [ ] **COLD-08**: Auto-return to previous app via URL scheme for known apps (bundleID -> URL scheme mapping)
 - [ ] **COLD-09**: Fallback "swipe back" animation with guided instruction for unknown apps
 
 ### Model Pipeline
 
-- [ ] **MODEL-01**: Large Turbo v3 gated behind device RAM check (hidden on ≤4GB devices) or removed from catalog
+- [ ] **MODEL-01**: Large Turbo v3 gated behind device RAM check (hidden on <=4GB devices) or removed from catalog
 - [ ] **MODEL-02**: CoreML pre-compilation runs immediately after model download with visible progress indication
 - [ ] **MODEL-03**: Onboarding reorders steps to start download earlier (during keyboard setup)
 - [ ] **MODEL-04**: Model download/compilation shows full-screen modal preventing app interference
@@ -46,7 +46,7 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 
 ### Design Polish
 
-- [ ] **DSGN-01**: All French UI strings have correct accents (modèle, dictée, réglages, téléchargés, etc.)
+- [ ] **DSGN-01**: All French UI strings have correct accents (modele, dictee, reglages, telecharges, etc.)
 - [ ] **DSGN-02**: Active model has blue border highlight in model manager (replaces subtle badge)
 - [ ] **DSGN-03**: Model card layout improved (download button placement, badge/gauge alignment)
 - [ ] **DSGN-04**: Tap anywhere on downloaded model card to select it
@@ -60,6 +60,11 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 - [ ] **TF-02**: Privacy Manifest (PrivacyInfo.xcprivacy) created for both DictusApp and DictusKeyboard targets
 - [ ] **TF-03**: App successfully archived and uploaded to App Store Connect
 - [ ] **TF-04**: First TestFlight beta build distributed to testers
+- [ ] **TF-05**: App Store Review Guidelines checklist verified (permissions justified, privacy policy, content rules)
+- [ ] **TF-06**: README.md updated with build instructions, prerequisites (Xcode version, iOS target, SPM dependencies)
+- [ ] **TF-07**: CONTRIBUTING.md with PR guidelines, code conventions, review process
+- [ ] **TF-08**: GitHub issue templates (bug report with debug logs section, feature request)
+- [ ] **TF-09**: Public TestFlight link in README for joining the beta
 
 ## Future Requirements
 
@@ -69,7 +74,7 @@ Deferred to v1.3+. Tracked but not in current roadmap.
 
 - **LOG-F01**: DebugLogView with filtering by level and subsystem
 - **LOG-F02**: Markdown-friendly export format for GitHub issues
-- **LOG-F03**: GitHub issue template with pre-formatted debug logs section
+- **LOG-F03**: Markdown-friendly log export with pre-formatted code blocks
 
 ### Keyboard UX
 
@@ -79,7 +84,7 @@ Deferred to v1.3+. Tracked but not in current roadmap.
 
 ### Model Pipeline
 
-- **MODEL-F01**: Smart queue — transcription waits for compilation to finish instead of running in parallel on ANE
+- **MODEL-F01**: Smart queue -- transcription waits for compilation to finish instead of running in parallel on ANE
 - **MODEL-F02**: Background model downloads with URLSession delegate
 - **MODEL-F03**: Automatic model updates
 
@@ -108,48 +113,53 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOG-01 | — | Pending |
-| LOG-02 | — | Pending |
-| LOG-03 | — | Pending |
-| LOG-04 | — | Pending |
-| LOG-05 | — | Pending |
-| ANIM-01 | — | Pending |
-| ANIM-02 | — | Pending |
-| ANIM-03 | — | Pending |
-| COLD-01 | — | Pending |
-| COLD-02 | — | Pending |
-| COLD-03 | — | Pending |
-| COLD-04 | — | Pending |
-| COLD-05 | — | Pending |
-| COLD-06 | — | Pending |
-| COLD-07 | — | Pending |
-| COLD-08 | — | Pending |
-| COLD-09 | — | Pending |
-| MODEL-01 | — | Pending |
-| MODEL-02 | — | Pending |
-| MODEL-03 | — | Pending |
-| MODEL-04 | — | Pending |
-| MODEL-05 | — | Pending |
-| MODEL-06 | — | Pending |
-| MODEL-07 | — | Pending |
-| MODEL-08 | — | Pending |
-| DSGN-01 | — | Pending |
-| DSGN-02 | — | Pending |
-| DSGN-03 | — | Pending |
-| DSGN-04 | — | Pending |
-| DSGN-05 | — | Pending |
-| DSGN-06 | — | Pending |
-| DSGN-07 | — | Pending |
-| TF-01 | — | Pending |
-| TF-02 | — | Pending |
-| TF-03 | — | Pending |
-| TF-04 | — | Pending |
+| LOG-01 | Phase 11 | Pending |
+| LOG-02 | Phase 11 | Pending |
+| LOG-03 | Phase 11 | Pending |
+| LOG-04 | Phase 11 | Pending |
+| LOG-05 | Phase 11 | Pending |
+| ANIM-01 | Phase 12 | Pending |
+| ANIM-02 | Phase 12 | Pending |
+| ANIM-03 | Phase 12 | Pending |
+| COLD-01 | Phase 13 | Pending |
+| COLD-02 | Phase 13 | Pending |
+| COLD-03 | Phase 13 | Pending |
+| COLD-04 | Phase 13 | Pending |
+| COLD-05 | Phase 13 | Pending |
+| COLD-06 | Phase 13 | Pending |
+| COLD-07 | Phase 13 | Pending |
+| COLD-08 | Phase 13 | Pending |
+| COLD-09 | Phase 13 | Pending |
+| MODEL-01 | Phase 14 | Pending |
+| MODEL-02 | Phase 14 | Pending |
+| MODEL-03 | Phase 14 | Pending |
+| MODEL-04 | Phase 14 | Pending |
+| MODEL-05 | Phase 14 | Pending |
+| MODEL-06 | Phase 14 | Pending |
+| MODEL-07 | Phase 14 | Pending |
+| MODEL-08 | Phase 14 | Pending |
+| DSGN-01 | Phase 15 | Pending |
+| DSGN-02 | Phase 15 | Pending |
+| DSGN-03 | Phase 15 | Pending |
+| DSGN-04 | Phase 15 | Pending |
+| DSGN-05 | Phase 15 | Pending |
+| DSGN-06 | Phase 15 | Pending |
+| DSGN-07 | Phase 15 | Pending |
+| TF-01 | Phase 16 | Pending |
+| TF-02 | Phase 16 | Pending |
+| TF-03 | Phase 16 | Pending |
+| TF-04 | Phase 16 | Pending |
+| TF-05 | Phase 16 | Pending |
+| TF-06 | Phase 16 | Pending |
+| TF-07 | Phase 16 | Pending |
+| TF-08 | Phase 16 | Pending |
+| TF-09 | Phase 16 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 36 total
-- Mapped to phases: 0
-- Unmapped: 36 ⚠️
+- v1.2 requirements: 41 total
+- Mapped to phases: 41
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after roadmap creation*
