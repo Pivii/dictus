@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX & Keyboard
 status: completed
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-03-10T22:15:02.018Z"
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-03-11T09:26:09.018Z"
 last_activity: 2026-03-10 — Plan 10-03 Parakeet integration shipped (iOS 17, FluidAudio)
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 28
-  completed_plans: 28
+  total_plans: 29
+  completed_plans: 29
   percent: 100
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 10 of 10 (Model Catalog)
-Plan: 3 of 3 in current phase (3 complete)
+Plan: 4 of 4 in current phase (4 complete)
 Status: Completed
-Last activity: 2026-03-10 — Plan 10-03 Parakeet integration shipped (iOS 17, FluidAudio)
+Last activity: 2026-03-11 — Plan 10-04 UAT gap closure (catalog fixes, language default, accents)
 
-Progress: [██████████] 100% (Phase 10: 3/3 plans)
+Progress: [██████████] 100% (Phase 10: 4/4 plans)
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [██████████] 100% (Phase 10: 3/3 plans)
 | Phase 10 P01 | 3min | 3 tasks | 7 files |
 | Phase 10 P02 | 8min | 3 tasks | 4 files |
 | Phase 10 P03 | 3min | 3 tasks | 9 files |
+| Phase 10 P04 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,7 @@ Recent decisions affecting current work:
 - [Phase 10]: 5-segment gauge bar for model accuracy/speed visualization in catalog UI
 - [Phase 10]: Downloaded section uses allIncludingDeprecated so deprecated models remain visible if on device
 - [Phase 10-03]: Ship Parakeet: raise deployment target from iOS 16 to iOS 17, remove conditional compilation
+- [Phase 10]: Persist language default in App Group at init() rather than relying on @AppStorage defaults
 
 ### Pending Todos
 
@@ -153,8 +155,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T22:06:38.055Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-03-11T09:26:09.016Z
+Stopped at: Completed 10-04-PLAN.md
 Resume file: None
 
 ---
