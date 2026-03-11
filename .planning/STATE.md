@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-11T15:19:24.173Z"
-last_activity: 2026-03-11 -- Plan 11-02 executed (subsystem instrumentation + log UI)
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-03-11T20:18:31.924Z"
+last_activity: 2026-03-11 -- Plan 12-01 executed (overlay visibility, animation race fixes, log events)
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 16
+  total_plans: 4
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 11 - Logging Foundation (complete)
+**Current focus:** Phase 12 - Animation State Fixes (in progress)
 
 ## Current Position
 
-Phase: 11 of 16 (Logging Foundation)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 11 complete
-Last activity: 2026-03-11 -- Plan 11-02 executed (subsystem instrumentation + log UI)
+Phase: 12 of 16 (Animation State Fixes)
+Plan: 1 of 2 in current phase
+Status: Plan 12-01 complete, 12-02 remaining
+Last activity: 2026-03-11 -- Plan 12-01 executed (overlay visibility, animation race fixes, log events)
 
-Progress: [██........] 16%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0: 18 plans in 4 days (~25 min avg)
 - v1.1: 29 plans in 5 days (~4 min avg)
-- v1.2: 2 plans (~6 min avg)
-- Total: 48 plans across 2 milestones
+- v1.2: 3 plans (~5 min avg)
+- Total: 49 plans across 2 milestones
 
 ## Accumulated Context
 
@@ -47,6 +47,8 @@ Progress: [██........] 16%
 All decisions logged in PROJECT.md Key Decisions table.
 
 - Phase 11-02: Level color/icon defined in DebugLogView (UI concern) not LogLevel enum (keeps DictusCore framework-agnostic)
+- [Phase 12]: Replace asyncAfter with withAnimation for success flash to eliminate timer race condition
+- [Phase 12]: Reset all animation @State properties before new animations to prevent stacking
 
 ### Pending Todos
 
@@ -61,9 +63,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T15:19:24.171Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-animation-state-fixes/12-CONTEXT.md
+Last session: 2026-03-11T20:18:31.922Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None
 
 ---
 *State initialized: 2026-03-04*

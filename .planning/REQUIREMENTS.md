@@ -17,8 +17,8 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 
 ### Animation
 
-- [ ] **ANIM-01**: Recording overlay always appears when dictation starts (no intermittent disappearance)
-- [ ] **ANIM-02**: Animation state resets properly on rapid status transitions (recording -> transcribing -> ready)
+- [x] **ANIM-01**: Recording overlay always appears when dictation starts (no intermittent disappearance)
+- [x] **ANIM-02**: Animation state resets properly on rapid status transitions (recording -> transcribing -> ready)
 - [ ] **ANIM-03**: Waveform and mic button animations never get stuck in stale state
 
 ### Cold Start
@@ -118,8 +118,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LOG-03 | Phase 11 | Complete |
 | LOG-04 | Phase 11 | Pending |
 | LOG-05 | Phase 11 | Complete |
-| ANIM-01 | Phase 12 | Pending |
-| ANIM-02 | Phase 12 | Pending |
+| ANIM-01 | Phase 12 | Complete |
+| ANIM-02 | Phase 12 | Complete |
 | ANIM-03 | Phase 12 | Pending |
 | COLD-01 | Phase 13 | Pending |
 | COLD-02 | Phase 13 | Pending |
