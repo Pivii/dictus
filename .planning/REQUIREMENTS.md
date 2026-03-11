@@ -11,9 +11,9 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 
 - [ ] **LOG-01**: App logs events with 4 levels (debug/info/warning/error) across all subsystems
 - [ ] **LOG-02**: Logs never contain transcription text, keystrokes, or audio content (privacy-safe)
-- [ ] **LOG-03**: User can export logs with device header (iOS version, app version, active model) for GitHub issues
+- [x] **LOG-03**: User can export logs with device header (iOS version, app version, active model) for GitHub issues
 - [ ] **LOG-04**: Logs rotate automatically at 500 lines max
-- [ ] **LOG-05**: Logging covers all subsystems: DictationCoordinator, AudioRecorder, TranscriptionService, ModelManager, keyboard extension, app lifecycle
+- [x] **LOG-05**: Logging covers all subsystems: DictationCoordinator, AudioRecorder, TranscriptionService, ModelManager, keyboard extension, app lifecycle
 
 ### Animation
 
@@ -115,9 +115,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | LOG-01 | Phase 11 | Pending |
 | LOG-02 | Phase 11 | Pending |
-| LOG-03 | Phase 11 | Pending |
+| LOG-03 | Phase 11 | Complete |
 | LOG-04 | Phase 11 | Pending |
-| LOG-05 | Phase 11 | Pending |
+| LOG-05 | Phase 11 | Complete |
 | ANIM-01 | Phase 12 | Pending |
 | ANIM-02 | Phase 12 | Pending |
 | ANIM-03 | Phase 12 | Pending |
