@@ -61,11 +61,11 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. Exported logs contain zero transcription text, keystrokes, or audio content regardless of log level
   3. User can tap a button in Settings to share a log file that includes device header (iOS version, app version, active model)
   4. Log file never exceeds 500 lines -- oldest entries are discarded when limit is reached
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 11-01: TBD
-- [ ] 11-02: TBD
+- [ ] 11-01-PLAN.md — Structured logging API (LogEvent types, PersistentLog evolution, unit tests)
+- [ ] 11-02-PLAN.md — Subsystem instrumentation, DebugLogView upgrade, export in Settings
 
 ### Phase 12: Animation State Fixes
 **Goal**: Recording overlay and waveform animations behave reliably across all dictation state transitions
