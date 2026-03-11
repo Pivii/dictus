@@ -5,7 +5,7 @@ import SwiftUI
 import DictusCore
 
 /// Displays WhisperKit models organized in two sections:
-/// - "Telecharges" (downloaded) — models on device, including deprecated ones
+/// - "Téléchargés" (downloaded) — models on device, including deprecated ones
 /// - "Disponibles" (available) — models available for download, excludes deprecated
 ///
 /// WHY two sections instead of a flat list:
@@ -58,7 +58,7 @@ struct ModelManagerView: View {
                 // MARK: - Downloaded section
                 if !downloadedModels.isEmpty {
                     modelSection(
-                        title: "Telecharges",
+                        title: "Téléchargés",
                         models: downloadedModels,
                         engines: downloadedEngines
                     )
@@ -76,10 +76,10 @@ struct ModelManagerView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
         }
-        .navigationTitle("Modeles")
+        .navigationTitle("Modèles")
         .background(Color.dictusBackground.ignoresSafeArea())
         // Delete confirmation alert
-        .alert("Supprimer le modele ?", isPresented: $showDeleteAlert, presenting: modelToDelete) { model in
+        .alert("Supprimer le modèle ?", isPresented: $showDeleteAlert, presenting: modelToDelete) { model in
             Button("Annuler", role: .cancel) { }
             Button("Supprimer", role: .destructive) {
                 do {
@@ -90,7 +90,7 @@ struct ModelManagerView: View {
                 }
             }
         } message: { model in
-            Text("Supprimer \(model.displayName) ? (\(model.sizeLabel) seront liberes)")
+            Text("Supprimer \(model.displayName) ? (\(model.sizeLabel) seront libérés)")
         }
         // Error alert
         .alert("Erreur", isPresented: $showErrorAlert) {
@@ -149,14 +149,14 @@ struct ModelManagerView: View {
         if engines.contains(.whisperKit) {
             engineParagraph(
                 icon: "waveform",
-                text: "WhisperKit — moteur de transcription developpe par Argmax, optimise pour les puces Apple. Modeles entraines sur OpenAI Whisper."
+                text: "WhisperKit — moteur de transcription développé par Argmax, optimisé pour les puces Apple. Modèles entraînés sur OpenAI Whisper."
             )
         }
 
         if engines.contains(.parakeet) {
             engineParagraph(
                 icon: "bolt",
-                text: "Parakeet — moteur de transcription developpe par NVIDIA, optimise pour la vitesse. Modeles Parakeet TDT."
+                text: "Parakeet — moteur de transcription développé par NVIDIA, optimisé pour la vitesse. Modèles Parakeet TDT."
             )
         }
     }

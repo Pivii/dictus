@@ -20,10 +20,18 @@ struct DictusApp: App {
 
     init() {
         let result = AppGroupDiagnostic.run()
-        if #available(iOS 14.0, *) {
-            DictusLogger.app.info(
-                "AppGroup diagnostic: healthy=\(result.isHealthy)"
-            )
+        DictusLogger.app.info(
+            "AppGroup diagnostic: healthy=\(result.isHealthy)"
+        )
+
+        // Persist language default so TranscriptionService always reads "fr"
+        // even before user visits Settings. @AppStorage defaults are in-memory only
+        // and never written to UserDefaults until the Picker is interacted with.
+        // WHY `if nil` check: Only write if the key doesn't exist yet. If user already
+        // set a language preference (e.g., "en"), don't overwrite it.
+        let defaults = UserDefaults(suiteName: AppGroup.identifier)
+        if defaults?.string(forKey: SharedKeys.language) == nil {
+            defaults?.set("fr", forKey: SharedKeys.language)
         }
     }
 

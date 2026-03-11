@@ -103,6 +103,7 @@ class TranscriptionService {
         // Read user settings from App Group at transcription time
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
         let language = defaults?.string(forKey: SharedKeys.language) ?? "fr"
+        DictusLogger.app.info("[TranscriptionService] Language for transcription: \(language)")
 
         // Route to active engine if set (multi-engine path)
         if let activeEngine {
