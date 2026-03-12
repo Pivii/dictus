@@ -43,6 +43,11 @@ class AudioRecorder: ObservableObject {
     /// Elapsed recording time in seconds.
     @Published var bufferSeconds: Double = 0
 
+    /// Timestamp of last heartbeat write to App Group.
+    /// Written from the audio callback thread at ~1Hz so the keyboard watchdog
+    /// can detect the app is still recording even when main thread is throttled.
+    private nonisolated(unsafe) var lastHeartbeatWrite: TimeInterval = 0
+
     /// Whether the audio session has been configured at least once.
     /// WHY: iOS forbids changing AVAudioSession category from background.
     /// We configure once (first recording) and keep the category set forever.
@@ -123,14 +128,34 @@ class AudioRecorder: ObservableObject {
     /// Must be called from foreground. Keeps the app alive in background via
     /// UIBackgroundModes:audio so subsequent recordings work without app switch.
     func warmUp() throws {
+        PersistentLog.log(.engineWarmUpAttempt(context: "warmUp called"))
+        PersistentLog.log(.engineStateSnapshot(
+            engineRunning: isEngineRunning,
+            isRecording: isRecording,
+            hasWhisperKit: whisperKit != nil,
+            sessionConfigured: sessionConfigured,
+            context: "warmUp-entry"
+        ))
         guard let whisperKit else { throw AudioRecorderError.notReady }
-        guard !isEngineRunning else { return }
+        guard !isEngineRunning else {
+            PersistentLog.log(.engineWarmUpSuccess(context: "already running"))
+            return
+        }
 
         if !sessionConfigured {
             try configureAudioSession()
         }
 
         try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
+            // Write heartbeat directly from the audio callback thread (~1Hz).
+            // Bypasses main thread throttling in background.
+            if let self {
+                let now = Date().timeIntervalSince1970
+                if now - self.lastHeartbeatWrite >= 1.0 {
+                    self.lastHeartbeatWrite = now
+                    AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
+                }
+            }
             DispatchQueue.main.async {
                 guard let self, let wk = self.whisperKit else { return }
                 guard self.isRecording else { return }
@@ -150,6 +175,7 @@ class AudioRecorder: ObservableObject {
         isEngineRunning = true
 
         PersistentLog.log(.audioEngineStarted)
+        PersistentLog.log(.engineWarmUpSuccess(context: "engine started"))
     }
 
     /// Start recording audio using WhisperKit's AudioProcessor.
@@ -159,6 +185,13 @@ class AudioRecorder: ObservableObject {
     /// - **Warm start** (engine already running from previous recording): just purges
     ///   accumulated idle samples. No engine restart needed — works from background.
     func startRecording() throws {
+        PersistentLog.log(.engineStateSnapshot(
+            engineRunning: isEngineRunning,
+            isRecording: isRecording,
+            hasWhisperKit: whisperKit != nil,
+            sessionConfigured: sessionConfigured,
+            context: "startRecording-entry"
+        ))
         guard let whisperKit else { throw AudioRecorderError.notReady }
 
         // Configure session if first time (must be foreground)
@@ -172,6 +205,13 @@ class AudioRecorder: ObservableObject {
         } else {
             // Cold start — launch the engine
             try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
+                if let self {
+                    let now = Date().timeIntervalSince1970
+                    if now - self.lastHeartbeatWrite >= 1.0 {
+                        self.lastHeartbeatWrite = now
+                        AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
+                    }
+                }
                 DispatchQueue.main.async {
                     guard let self, let wk = self.whisperKit else { return }
                     // Only publish energy/duration while actively recording
@@ -199,9 +239,14 @@ class AudioRecorder: ObservableObject {
     /// The microphone indicator stays visible in the Dynamic Island/status bar,
     /// same behavior as Wispr Flow.
     func collectSamples() -> [Float] {
-        guard let whisperKit else { return [] }
+        guard let whisperKit else {
+            PersistentLog.log(.engineCollectResult(sampleCount: 0, engineRunning: isEngineRunning))
+            return []
+        }
         isRecording = false
         let samples = Array(whisperKit.audioProcessor.audioSamples)
+
+        PersistentLog.log(.engineCollectResult(sampleCount: samples.count, engineRunning: isEngineRunning))
 
         // Reset published state
         bufferEnergy = []

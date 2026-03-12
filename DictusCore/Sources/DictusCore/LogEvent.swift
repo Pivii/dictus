@@ -55,6 +55,7 @@ public enum LogEvent: Sendable {
     case transcriptionStarted(modelName: String)
     case transcriptionCompleted(durationMs: Int, wordCount: Int)
     case transcriptionFailed(error: String)
+    case recordingTooShort(durationMs: Int)
 
     // MARK: Model
     case modelDownloadStarted(name: String, sizeMB: Int)
@@ -77,6 +78,14 @@ public enum LogEvent: Sendable {
     case watchdogReset(source: String, staleState: String)
     case rapidTapRejected
 
+    // MARK: Engine Diagnostics (temporary — remove after debug)
+    case engineWarmUpAttempt(context: String)
+    case engineWarmUpSuccess(context: String)
+    case engineWarmUpFailed(context: String, error: String)
+    case engineStateSnapshot(engineRunning: Bool, isRecording: Bool, hasWhisperKit: Bool, sessionConfigured: Bool, context: String)
+    case engineCollectResult(sampleCount: Int, engineRunning: Bool)
+    case engineDarwinStartReceived(appState: String, engineRunning: Bool)
+
     // MARK: Lifecycle
     case appLaunched(version: String)
     case appDidBecomeActive
@@ -93,7 +102,7 @@ public enum LogEvent: Sendable {
             return .dictation
         case .audioEngineStarted, .audioEngineStopped, .audioSessionConfigured, .audioSessionFailed:
             return .audio
-        case .transcriptionStarted, .transcriptionCompleted, .transcriptionFailed:
+        case .transcriptionStarted, .transcriptionCompleted, .transcriptionFailed, .recordingTooShort:
             return .transcription
         case .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadFailed,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted:
@@ -103,6 +112,9 @@ public enum LogEvent: Sendable {
             return .keyboard
         case .statusChanged, .watchdogReset:
             return .dictation
+        case .engineWarmUpAttempt, .engineWarmUpSuccess, .engineWarmUpFailed,
+             .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived:
+            return .audio
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded:
             return .lifecycle
@@ -120,7 +132,7 @@ public enum LogEvent: Sendable {
             return .error
 
         // Warnings
-        case .dictationDeferred, .watchdogReset:
+        case .dictationDeferred, .watchdogReset, .engineWarmUpFailed, .recordingTooShort:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -138,7 +150,9 @@ public enum LogEvent: Sendable {
         case .audioEngineStopped,
              .keyboardDidDisappear, .keyboardTextInserted,
              .appDidBecomeActive, .appWillResignActive, .appDidEnterBackground,
-             .rapidTapRejected:
+             .rapidTapRejected,
+             .engineWarmUpAttempt, .engineWarmUpSuccess,
+             .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived:
             return .debug
         }
     }
@@ -157,6 +171,7 @@ public enum LogEvent: Sendable {
         case .transcriptionStarted: return "transcriptionStarted"
         case .transcriptionCompleted: return "transcriptionCompleted"
         case .transcriptionFailed: return "transcriptionFailed"
+        case .recordingTooShort: return "recordingTooShort"
         case .modelDownloadStarted: return "modelDownloadStarted"
         case .modelDownloadCompleted: return "modelDownloadCompleted"
         case .modelDownloadFailed: return "modelDownloadFailed"
@@ -167,6 +182,12 @@ public enum LogEvent: Sendable {
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
         case .keyboardTextInserted: return "keyboardTextInserted"
+        case .engineWarmUpAttempt: return "engineWarmUpAttempt"
+        case .engineWarmUpSuccess: return "engineWarmUpSuccess"
+        case .engineWarmUpFailed: return "engineWarmUpFailed"
+        case .engineStateSnapshot: return "engineStateSnapshot"
+        case .engineCollectResult: return "engineCollectResult"
+        case .engineDarwinStartReceived: return "engineDarwinStartReceived"
         case .appLaunched: return "appLaunched"
         case .appDidBecomeActive: return "appDidBecomeActive"
         case .appWillResignActive: return "appWillResignActive"
@@ -209,6 +230,8 @@ public enum LogEvent: Sendable {
             return "duration=\(durationMs)ms words=\(wordCount)"
         case .transcriptionFailed(let error):
             return "error=\(error)"
+        case .recordingTooShort(let durationMs):
+            return "duration=\(durationMs)ms"
 
         // Model
         case .modelDownloadStarted(let name, let sizeMB):
@@ -228,6 +251,20 @@ public enum LogEvent: Sendable {
         case .keyboardDidAppear, .keyboardDidDisappear,
              .keyboardMicTapped, .keyboardTextInserted:
             return ""
+
+        // Engine Diagnostics
+        case .engineWarmUpAttempt(let context):
+            return "context=\(context)"
+        case .engineWarmUpSuccess(let context):
+            return "context=\(context)"
+        case .engineWarmUpFailed(let context, let error):
+            return "context=\(context) error=\(error)"
+        case .engineStateSnapshot(let engineRunning, let isRecording, let hasWhisperKit, let sessionConfigured, let context):
+            return "engineRunning=\(engineRunning) isRecording=\(isRecording) hasWhisperKit=\(hasWhisperKit) sessionConfigured=\(sessionConfigured) context=\(context)"
+        case .engineCollectResult(let sampleCount, let engineRunning):
+            return "sampleCount=\(sampleCount) engineRunning=\(engineRunning)"
+        case .engineDarwinStartReceived(let appState, let engineRunning):
+            return "appState=\(appState) engineRunning=\(engineRunning)"
 
         // Lifecycle
         case .appLaunched(let version):

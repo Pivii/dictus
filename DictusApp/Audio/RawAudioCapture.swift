@@ -47,6 +47,21 @@ class RawAudioCapture: ObservableObject {
         interleaved: false
     )!
 
+    /// Start the engine in idle mode (capturing but not actively "recording").
+    /// Keeps the app alive in background via UIBackgroundModes:audio.
+    /// Called after Parakeet transcription completes to prepare for next recording.
+    ///
+    /// WHY this exists:
+    /// When using Parakeet, AudioRecorder.warmUp() fails (no WhisperKit).
+    /// RawAudioCapture takes over as the persistent background engine.
+    /// The engine captures audio continuously; purgeIdleSamples() is called
+    /// when a new recording starts to discard the idle audio.
+    func warmUp() throws {
+        guard !isCapturing else { return }
+        try startCapture()
+        PersistentLog.log(.engineWarmUpSuccess(context: "rawCapture-warmUp"))
+    }
+
     /// Start capturing audio immediately using native AVAudioEngine.
     /// Requires AVAudioSession to be configured and active beforehand.
     ///
@@ -83,9 +98,55 @@ class RawAudioCapture: ObservableObject {
         }
     }
 
-    /// Stop capturing and return all accumulated samples in 16kHz mono Float32.
+    /// Collect recorded samples WITHOUT stopping the engine.
+    /// Mirrors AudioRecorder.collectSamples() pattern — keeps engine alive for
+    /// subsequent recordings via Darwin notification (no cold start needed).
     ///
-    /// - Returns: Audio samples ready for `whisperKit.transcribe(audioArray:)`.
+    /// WHY this exists:
+    /// When using Parakeet (no WhisperKit), AudioRecorder.warmUp() fails because
+    /// whisperKit is nil. RawAudioCapture becomes the persistent engine instead.
+    /// Keeping it alive maintains UIBackgroundModes:audio so the app stays alive
+    /// in background and can respond to Darwin notifications for next recording.
+    ///
+    /// - Returns: Audio samples ready for transcription. Engine keeps running.
+    func collectSamples() -> [Float] {
+        guard isCapturing else { return [] }
+
+        let samples = audioSamples
+        audioSamples = []
+
+        PersistentLog.log(.engineCollectResult(sampleCount: samples.count, engineRunning: engine.isRunning))
+
+        if #available(iOS 14.0, *) {
+            DictusLogger.app.info("RawAudioCapture collectSamples. Samples: \(samples.count), Duration: \(String(format: "%.1f", Double(samples.count) / 16000.0))s, engine still running")
+        }
+
+        // Reset published state but keep engine running
+        bufferEnergy = []
+        bufferSeconds = 0
+
+        return samples
+    }
+
+    /// Purge accumulated idle samples without stopping the engine.
+    /// Called at the start of a new recording to discard audio captured
+    /// while the engine was idling between recordings.
+    func purgeIdleSamples() {
+        audioSamples = []
+        bufferEnergy = []
+        bufferSeconds = 0
+    }
+
+    /// Whether the underlying AVAudioEngine is currently running.
+    /// Used by DictationCoordinator to check if the persistent engine is alive.
+    var isEngineRunning: Bool {
+        engine.isRunning
+    }
+
+    /// Stop capturing and return all accumulated samples in 16kHz mono Float32.
+    /// Fully stops the engine — use collectSamples() to keep engine alive instead.
+    ///
+    /// - Returns: Audio samples ready for transcription.
     func stopCapture() -> [Float] {
         guard isCapturing else { return [] }
 
@@ -108,6 +169,11 @@ class RawAudioCapture: ObservableObject {
     }
 
     // MARK: - Private
+
+    /// Timestamp of last heartbeat write to App Group.
+    /// Throttled to ~1Hz to avoid excessive UserDefaults writes from the audio thread.
+    /// WHY nonisolated(unsafe): Written only from the audio callback thread (single writer).
+    private nonisolated(unsafe) var lastHeartbeatWrite: TimeInterval = 0
 
     /// Process incoming audio buffer: convert to 16kHz and compute energy for waveform.
     ///
@@ -152,6 +218,18 @@ class RawAudioCapture: ObservableObject {
         let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / Float(max(samples.count, 1)))
         // Scale to approximate WhisperKit's relativeEnergy range
         let energy = min(rms * 5.0, 1.0)
+
+        // Write heartbeat directly from the audio thread (~1Hz).
+        // WHY from the audio thread (not main): When the app is in background, iOS
+        // throttles DispatchQueue.main.async delivery. The audio thread keeps running
+        // (UIBackgroundModes:audio), so writing here guarantees the keyboard watchdog
+        // sees fresh heartbeats even when the main run loop is stalled.
+        // UserDefaults is thread-safe on iOS — no synchronization needed.
+        let now = Date().timeIntervalSince1970
+        if now - lastHeartbeatWrite >= 1.0 {
+            lastHeartbeatWrite = now
+            AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

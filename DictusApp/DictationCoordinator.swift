@@ -134,11 +134,18 @@ class DictationCoordinator: ObservableObject {
 
             do {
                 try await ensureEngineReady()
+                PersistentLog.log(.engineWarmUpAttempt(context: "init-preload"))
                 try audioRecorder.warmUp()
                 PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
             } catch {
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.warning("Pre-load failed (will retry when app returns to foreground): \(error.localizedDescription)")
+                PersistentLog.log(.engineWarmUpFailed(context: "init-preload-audioRecorder", error: error.localizedDescription))
+                // Fallback: warm up RawAudioCapture if AudioRecorder can't (Parakeet model)
+                do {
+                    try rawCapture.warmUp()
+                    PersistentLog.log(.engineWarmUpSuccess(context: "init-preload-rawCapture-fallback"))
+                    PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
+                } catch {
+                    PersistentLog.log(.engineWarmUpFailed(context: "init-preload-rawCapture", error: error.localizedDescription))
                 }
             }
         }
@@ -154,20 +161,38 @@ class DictationCoordinator: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                guard !self.audioRecorder.isEngineRunning else { return }
+                PersistentLog.log(.engineStateSnapshot(
+                    engineRunning: self.audioRecorder.isEngineRunning,
+                    isRecording: self.audioRecorder.isRecording,
+                    hasWhisperKit: self.whisperKit != nil,
+                    sessionConfigured: true, // can't access private, but session was configured in init
+                    context: "didBecomeActive"
+                ))
+                guard !self.audioRecorder.isEngineRunning && !self.rawCapture.isEngineRunning else {
+                    PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive-already-running"))
+                    return
+                }
                 let modelReady = self.defaults.bool(forKey: SharedKeys.modelReady)
-                guard modelReady else { return }
+                guard modelReady else {
+                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: "modelReady=false"))
+                    return
+                }
 
                 do {
                     try self.audioRecorder.configureAudioSession()
+                    PersistentLog.log(.engineWarmUpAttempt(context: "didBecomeActive"))
                     try await self.ensureEngineReady()
                     try self.audioRecorder.warmUp()
-                    if #available(iOS 14.0, *) {
-                        DictusLogger.app.info("Audio engine warmed up on foreground return")
-                    }
+                    PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
                 } catch {
-                    if #available(iOS 14.0, *) {
-                        DictusLogger.app.warning("Foreground warmUp failed: \(error.localizedDescription)")
+                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive-audioRecorder", error: error.localizedDescription))
+                    // Fallback: if AudioRecorder can't warm up (Parakeet model = no WhisperKit),
+                    // warm up RawAudioCapture instead to keep an engine alive in background.
+                    do {
+                        try self.rawCapture.warmUp()
+                        PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive-rawCapture-fallback"))
+                    } catch {
+                        PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive-rawCapture-fallback", error: error.localizedDescription))
                     }
                 }
             }
@@ -207,12 +232,13 @@ class DictationCoordinator: ObservableObject {
         // here would prevent cold start recording entirely. RawAudioCapture doesn't
         // need audioRecorder's engine — it has its own AVAudioEngine.
         let appState = UIApplication.shared.applicationState
-        if !fromURL && appState != .active && !audioRecorder.isEngineRunning {
-            PersistentLog.log(.dictationDeferred(reason: "engine not running, appState=\(appState.rawValue)"))
+        let anyEngineRunning = audioRecorder.isEngineRunning || rawCapture.isEngineRunning
+        if !fromURL && appState != .active && !anyEngineRunning {
+            PersistentLog.log(.dictationDeferred(reason: "no engine running, appState=\(appState.rawValue)"))
             return
         }
 
-        PersistentLog.log(.dictationStarted(fromURL: fromURL, appState: "\(appState.rawValue)", engineRunning: audioRecorder.isEngineRunning))
+        PersistentLog.log(.dictationStarted(fromURL: fromURL, appState: "\(appState.rawValue)", engineRunning: anyEngineRunning))
 
         // Check if a model is downloaded and ready
         let modelReady = defaults.bool(forKey: SharedKeys.modelReady)
@@ -231,57 +257,73 @@ class DictationCoordinator: ObservableObject {
         // iOS forbids setActive(true) from background, so this must happen first.
         try? audioRecorder.configureAudioSession()
 
-        // COLD START PATH: WhisperKit not loaded yet — use RawAudioCapture for instant recording
-        // WHY: On cold start, ensureEngineReady() takes 3-4s. Instead of blocking,
-        // we start recording immediately with RawAudioCapture (plain AVAudioEngine, <100ms)
-        // and load WhisperKit in parallel. Samples are transcribed at stopDictation().
-        let isColdStart = whisperKit == nil
+        // Determine which recording path to use:
+        // 1. WARM WhisperKit: AudioRecorder engine running → purge + collect (fastest)
+        // 2. WARM Parakeet: RawAudioCapture engine running → purge + collect (fast)
+        // 3. COLD: Neither engine running → start RawAudioCapture + load engine in parallel
+        let useWhisperKitWarm = whisperKit != nil && audioRecorder.isEngineRunning
+        let useRawCaptureWarm = rawCapture.isEngineRunning && !useWhisperKitWarm
 
-        if isColdStart {
+        if useWhisperKitWarm {
+            // WARM START PATH: WhisperKit already loaded, engine running
             dictationTask = Task {
                 do {
-                    // Step 1: Check microphone permission
                     let hasPermission = try await audioRecorder.ensureMicrophonePermission()
                     guard hasPermission else {
                         handleError("Microphone permission denied")
                         return
                     }
-
-                    // Step 2: Start raw capture immediately (<100ms)
+                    updateStatus(.recording)
+                    try audioRecorder.startRecording()
+                    PersistentLog.log(.audioEngineStarted)
+                } catch {
+                    PersistentLog.log(.dictationFailed(error: "Warm WhisperKit start: \(error.localizedDescription)"))
+                    handleError(error.localizedDescription)
+                }
+            }
+        } else if useRawCaptureWarm {
+            // WARM PARAKEET PATH: RawAudioCapture engine already running
+            // Purge idle samples and start collecting fresh audio.
+            dictationTask = Task {
+                do {
+                    let hasPermission = try await audioRecorder.ensureMicrophonePermission()
+                    guard hasPermission else {
+                        handleError("Microphone permission denied")
+                        return
+                    }
+                    rawCapture.purgeIdleSamples()
+                    updateStatus(.recording)
+                    PersistentLog.log(.audioEngineStarted)
+                    PersistentLog.log(.engineStateSnapshot(
+                        engineRunning: rawCapture.isEngineRunning,
+                        isRecording: true,
+                        hasWhisperKit: whisperKit != nil,
+                        sessionConfigured: true,
+                        context: "warm-parakeet-start"
+                    ))
+                } catch {
+                    PersistentLog.log(.dictationFailed(error: "Warm Parakeet start: \(error.localizedDescription)"))
+                    handleError(error.localizedDescription)
+                }
+            }
+        } else {
+            // COLD START PATH: No engine running — use RawAudioCapture + load engine in parallel
+            dictationTask = Task {
+                do {
+                    let hasPermission = try await audioRecorder.ensureMicrophonePermission()
+                    guard hasPermission else {
+                        handleError("Microphone permission denied")
+                        return
+                    }
                     try rawCapture.startCapture()
                     updateStatus(.recording)
                     PersistentLog.log(.audioEngineStarted)
 
-                    // Step 3: Load WhisperKit in parallel (non-blocking for the user)
-                    // This runs while the user is already recording and back in their app.
                     try await ensureEngineReady()
                     let loadedName = self.currentModelName ?? "unknown"
                     PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
                 } catch {
-                    // WhisperKit init failed — recording continues via rawCapture,
-                    // we'll handle the error at stopDictation() time
-                    PersistentLog.log(.dictationFailed(error: "Cold start WhisperKit load: \(error.localizedDescription)"))
-                }
-            }
-        } else {
-            // WARM START PATH: WhisperKit already loaded — use existing flow
-            dictationTask = Task {
-                do {
-                    // Step 1: Check microphone permission
-                    let hasPermission = try await audioRecorder.ensureMicrophonePermission()
-                    guard hasPermission else {
-                        handleError("Microphone permission denied")
-                        return
-                    }
-
-                    // Step 2: Start recording via WhisperKit's AudioProcessor
-                    updateStatus(.recording)
-                    try audioRecorder.startRecording()
-                    PersistentLog.log(.audioEngineStarted)
-
-                } catch {
-                    PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
-                    handleError(error.localizedDescription)
+                    PersistentLog.log(.dictationFailed(error: "Cold start engine load: \(error.localizedDescription)"))
                 }
             }
         }
@@ -295,6 +337,13 @@ class DictationCoordinator: ObservableObject {
     ///   transcribe the raw samples, then warm up audioRecorder for subsequent recordings.
     /// - **AudioRecorder active** (warm start): collect samples from WhisperKit's AudioProcessor
     ///   and transcribe (existing flow).
+    /// Minimum audio duration required for transcription (in seconds).
+    /// WHY 1.0s: Parakeet requires at least 1 second of 16kHz audio.
+    /// WhisperKit also produces garbage on very short clips. Enforcing this
+    /// prevents the cascade: short clip → transcription error → user retaps
+    /// rapidly → even shorter clips → more errors.
+    private let minimumRecordingDuration: TimeInterval = 1.0
+
     func stopDictation() {
         dictationTask?.cancel()
 
@@ -303,8 +352,15 @@ class DictationCoordinator: ObservableObject {
                 let samples: [Float]
 
                 if rawCapture.isCapturing {
-                    // COLD START PATH: audio was captured via RawAudioCapture
-                    samples = rawCapture.stopCapture()
+                    // RAWCAPTURE PATH: audio was captured via RawAudioCapture.
+                    // Use collectSamples (keep engine alive) when Parakeet is active,
+                    // stopCapture (kill engine) when WhisperKit will take over.
+                    let isParakeetActive = self.whisperKit == nil
+                    if isParakeetActive {
+                        samples = rawCapture.collectSamples()
+                    } else {
+                        samples = rawCapture.stopCapture()
+                    }
 
                     guard !samples.isEmpty else {
                         handleError("No audio recorded")
@@ -312,27 +368,43 @@ class DictationCoordinator: ObservableObject {
                     }
 
                     let audioDuration = Double(samples.count) / 16000.0
-                    if #available(iOS 14.0, *) {
-                        DictusLogger.app.info("Cold start stop. Raw samples: \(samples.count), Duration: \(String(format: "%.1f", audioDuration))s")
+
+                    // Reject recordings shorter than minimum duration.
+                    // WHY here (not in the keyboard): The keyboard doesn't know the actual
+                    // sample count — only the app has the audio data. Checking here prevents
+                    // Parakeet's "Invalid audio data" error and gives a friendly message.
+                    guard audioDuration >= minimumRecordingDuration else {
+                        PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
+                        handleError("Recording too short")
+                        return
                     }
 
-                    // Ensure WhisperKit is ready before transcription.
-                    // WHY: If the user recorded for >3s, WhisperKit should already be loaded
-                    // (parallel init started in startDictation). For very short recordings (<3s),
-                    // the user waits 1-2s extra here — acceptable tradeoff for instant start.
+                    PersistentLog.log(.engineStateSnapshot(
+                        engineRunning: rawCapture.isEngineRunning,
+                        isRecording: rawCapture.isCapturing,
+                        hasWhisperKit: !isParakeetActive,
+                        sessionConfigured: true,
+                        context: "stop-rawCapture-samples=\(samples.count)-dur=\(String(format: "%.1f", audioDuration))s"
+                    ))
+
                     updateStatus(.transcribing)
                     try await ensureEngineReady()
 
                     let text = try await transcriptionService.transcribe(audioSamples: samples)
 
-                    // Warm up audioRecorder for subsequent recordings (warm start path).
-                    // WHY: Now that WhisperKit is loaded, prepare the WhisperKit-based
-                    // AudioRecorder so the next recording uses the warm start path.
-                    // RawAudioCapture's engine is already stopped, so no conflict.
-                    try? audioRecorder.warmUp()
-
-                    if #available(iOS 14.0, *) {
-                        DictusLogger.app.info("AudioRecorder warmed up for subsequent recordings")
+                    // Warm up the appropriate engine for subsequent recordings.
+                    if isParakeetActive {
+                        // Parakeet: RawAudioCapture still alive (collectSamples kept it running).
+                        PersistentLog.log(.engineWarmUpSuccess(context: "post-stop-parakeet-rawCapture-alive"))
+                    } else {
+                        // WhisperKit: warm up AudioRecorder, RawAudioCapture was stopped.
+                        PersistentLog.log(.engineWarmUpAttempt(context: "post-coldstart-transcription"))
+                        do {
+                            try audioRecorder.warmUp()
+                            PersistentLog.log(.engineWarmUpSuccess(context: "post-coldstart-transcription"))
+                        } catch {
+                            PersistentLog.log(.engineWarmUpFailed(context: "post-coldstart-transcription", error: error.localizedDescription))
+                        }
                     }
 
                     // Write result to App Group
@@ -361,6 +433,12 @@ class DictationCoordinator: ObservableObject {
                     }
 
                     let audioDuration = Double(samples.count) / 16000.0
+
+                    guard audioDuration >= minimumRecordingDuration else {
+                        PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
+                        handleError("Recording too short")
+                        return
+                    }
 
                     if #available(iOS 14.0, *) {
                         DictusLogger.app.info("Recording stopped. Samples: \(samples.count), Duration: \(String(format: "%.1f", audioDuration))s")
@@ -408,12 +486,21 @@ class DictationCoordinator: ObservableObject {
         stopTranscriptionWatchdog()
 
         if rawCapture.isCapturing {
-            // Cold start path: stop raw capture and discard samples
-            _ = rawCapture.stopCapture()
-
-            // Warm up audioRecorder if WhisperKit is ready, for subsequent recordings
-            if whisperKit != nil {
-                try? audioRecorder.warmUp()
+            let isParakeetActive = whisperKit == nil
+            if isParakeetActive {
+                // Parakeet: discard samples but keep engine alive
+                _ = rawCapture.collectSamples()
+                PersistentLog.log(.engineWarmUpSuccess(context: "post-cancel-parakeet-rawCapture-alive"))
+            } else {
+                // WhisperKit: stop raw capture, warm up AudioRecorder
+                _ = rawCapture.stopCapture()
+                PersistentLog.log(.engineWarmUpAttempt(context: "post-cancel-coldstart"))
+                do {
+                    try audioRecorder.warmUp()
+                    PersistentLog.log(.engineWarmUpSuccess(context: "post-cancel-coldstart"))
+                } catch {
+                    PersistentLog.log(.engineWarmUpFailed(context: "post-cancel-coldstart", error: error.localizedDescription))
+                }
             }
         } else {
             // Warm start path: discard samples but keep engine alive for next recording.
@@ -477,9 +564,11 @@ class DictationCoordinator: ObservableObject {
         DarwinNotificationCenter.addObserver(for: DarwinNotificationName.startRecording) { [weak self] in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.info("Start recording requested via Darwin notification (background)")
-                }
+                let appState = UIApplication.shared.applicationState
+                PersistentLog.log(.engineDarwinStartReceived(
+                    appState: "\(appState.rawValue)",
+                    engineRunning: self.audioRecorder.isEngineRunning
+                ))
                 self.startDictation()
             }
         }
@@ -523,6 +612,7 @@ class DictationCoordinator: ObservableObject {
     private func cleanupRecordingKeys() {
         defaults.removeObject(forKey: SharedKeys.waveformEnergy)
         defaults.removeObject(forKey: SharedKeys.recordingElapsedSeconds)
+        defaults.removeObject(forKey: SharedKeys.recordingHeartbeat)
         defaults.set(false, forKey: SharedKeys.stopRequested)
         defaults.set(false, forKey: SharedKeys.cancelRequested)
         defaults.synchronize()

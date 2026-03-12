@@ -103,10 +103,22 @@ class KeyboardState: ObservableObject {
 
     // MARK: - Watchdog
 
+    /// Prevents re-entrant calls to forceResetToIdle().
+    /// WHY: forceResetToIdle posts a statusChanged notification, which triggers
+    /// refreshFromDefaults on the next run loop. If the watchdog timer fires
+    /// again before that run loop pass (e.g., stacked timer events), a second
+    /// forceResetToIdle call would post a duplicate notification.
+    private var isResettingToIdle = false
+
     /// Force-reset all dictation state to idle.
     /// Called by the watchdog timer or stale-state detection on keyboard appear.
     /// Writes to App Group so the app side sees the reset too.
     func forceResetToIdle() {
+        guard !isResettingToIdle else { return }
+        isResettingToIdle = true
+        defer { isResettingToIdle = false }
+
+        stopWatchdog()
         dictationStatus = .idle
         waveformEnergy = []
         recordingElapsed = 0
@@ -115,7 +127,6 @@ class KeyboardState: ObservableObject {
         defaults.set(DictationStatus.idle.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
-        stopWatchdog()
     }
 
     /// Start a repeating 1s timer that checks for stale active states.
@@ -138,6 +149,16 @@ class KeyboardState: ObservableObject {
             let inGracePeriod = self.coldStartGraceEnd.map { Date() < $0 } ?? false
             let threshold: TimeInterval = inGracePeriod ? 15.0 : 5.0
             if Date().timeIntervalSince(self.lastWaveformUpdate) > threshold {
+                // Before resetting, check the audio-thread heartbeat.
+                // WHY: In background, iOS throttles the main thread so waveform
+                // Darwin notifications may not arrive. But the audio thread keeps
+                // writing a heartbeat directly to App Group. If the heartbeat is
+                // fresh, the app IS still recording — don't kill the overlay.
+                let heartbeat = self.defaults.double(forKey: SharedKeys.recordingHeartbeat)
+                if heartbeat > 0, Date().timeIntervalSince1970 - heartbeat < threshold {
+                    self.lastWaveformUpdate = Date()
+                    return
+                }
                 PersistentLog.log(.watchdogReset(source: "keyboard", staleState: self.dictationStatus.rawValue))
                 self.forceResetToIdle()
             }
@@ -255,7 +276,13 @@ class KeyboardState: ObservableObject {
             PersistentLog.log(.keyboardTextInserted)
             HapticFeedback.textInserted()
 
-            // Reset state to idle
+            // Reset state to idle.
+            // WHY explicit stopWatchdog: refreshFromDefaults() above may have read
+            // .transcribing from App Group (before .ready propagated), starting the
+            // watchdog. Setting dictationStatus = .idle here bypasses refreshFromDefaults
+            // so the watchdog wouldn't self-stop until its next 1s tick. Stopping
+            // explicitly prevents false-positive watchdog resets.
+            stopWatchdog()
             dictationStatus = .idle
             waveformEnergy = []
             recordingElapsed = 0
@@ -276,6 +303,7 @@ class KeyboardState: ObservableObject {
                     PersistentLog.log(.keyboardTextInserted)
                     HapticFeedback.textInserted()
 
+                    self.stopWatchdog()
                     self.dictationStatus = .idle
                     self.waveformEnergy = []
                     self.recordingElapsed = 0
@@ -285,6 +313,14 @@ class KeyboardState: ObservableObject {
             }
         }
     }
+
+    /// Timestamp of last mic tap — used for debouncing.
+    /// WHY 1.5s debounce: After a recording completes (transcription inserted),
+    /// there's a brief window where the overlay hides and the mic button appears.
+    /// Accidental double-taps or frustrated rapid-tapping during this transition
+    /// cause sub-1-second recordings that Parakeet rejects, triggering a cascade
+    /// of errors. 1.5s matches the natural human rhythm between dictation sessions.
+    private var lastMicTapDate = Date.distantPast
 
     /// Start recording: set local state, then signal DictusApp.
     ///
@@ -300,6 +336,14 @@ class KeyboardState: ObservableObject {
     /// This means: after the first launch, subsequent recordings happen without
     /// switching apps. The user stays in their current app the entire time.
     func startRecording() {
+        // Debounce: reject taps within 1.5s of the last tap.
+        let now = Date()
+        guard now.timeIntervalSince(lastMicTapDate) >= 1.5 else {
+            PersistentLog.log(.rapidTapRejected)
+            return
+        }
+        lastMicTapDate = now
+
         PersistentLog.log(.keyboardMicTapped)
         markRequested()
 

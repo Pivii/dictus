@@ -46,6 +46,13 @@ public enum SharedKeys {
     /// Whether autocorrect is enabled, default true
     public static let autocorrectEnabled = "dictus.autocorrectEnabled"
 
+    // Audio heartbeat (added for background waveform reliability)
+    /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
+    /// during active recording. The keyboard watchdog reads this as a fallback
+    /// when Darwin waveform notifications don't arrive (iOS main thread throttling
+    /// in background). If the heartbeat is fresh (< 5s), the app is still recording.
+    public static let recordingHeartbeat = "dictus.recordingHeartbeat"
+
     // Cold start detection keys (added for Phase 13)
     /// Bool flag: true when the app was opened from the keyboard for cold start dictation.
     /// Set by handleIncomingURL when source=keyboard query parameter is present.
