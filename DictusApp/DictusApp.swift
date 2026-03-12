@@ -86,53 +86,35 @@ struct DictusApp: App {
         }
     }
 
-    /// Attempt to auto-return to the user's source app after cold start dictation.
-    ///
-    /// WHY iterate instead of reading sourceAppScheme: The keyboard's source app detection
-    /// always writes "unknown" because there is no public API to detect the active host app
-    /// from a keyboard extension. Instead, we try known app schemes in popularity order and
-    /// open the FIRST installed one. This is a best-effort heuristic for v1.2.
-    ///
-    /// If no known app is installed, the swipe-back overlay (Plan 02) handles navigation.
-    private func attemptAutoReturn() {
-        for appScheme in KnownAppSchemes.all {
-            guard let url = URL(string: appScheme.scheme) else { continue }
-            if UIApplication.shared.canOpenURL(url) {
-                DictusLogger.app.info("Auto-returning to \(appScheme.name) via \(appScheme.scheme)")
-                UIApplication.shared.open(url)
-                return
-            }
-        }
-        DictusLogger.app.info("No known app installed for auto-return, showing swipe-back overlay")
-    }
+    /// In-memory flag: true after the app has handled its first URL or become active.
+    /// Resets naturally when iOS terminates the process (true cold start).
+    /// WHY static: @State/@StateObject reset on view recreation, but a static var persists
+    /// for the entire process lifetime — exactly matching "app was killed vs still in memory".
+    private static var hasBeenActive = false
 
     private func handleIncomingURL(_ url: URL) {
         guard url.scheme == "dictus" else { return }
 
         switch url.host {
         case "dictate":
-            // Detect cold start mode: the keyboard appends ?source=keyboard to signal
-            // it opened the app for dictation. This flag drives MainTabView's conditional
-            // rendering (swipe-back placeholder vs normal tabs).
             let isFromKeyboard = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?
                 .first(where: { $0.name == "source" })?
                 .value == "keyboard"
 
-            if isFromKeyboard {
-                DictusLogger.app.info("Cold start dictation requested from keyboard")
+            // Only show cold start overlay on TRUE cold start: app was terminated by iOS
+            // and keyboard just launched it. If app is already in memory (hasBeenActive),
+            // just start recording — no overlay, no app switch.
+            if isFromKeyboard && !Self.hasBeenActive {
+                DictusLogger.app.info("Cold start dictation requested from keyboard (first launch)")
                 AppGroup.defaults.set(true, forKey: SharedKeys.coldStartActive)
                 AppGroup.defaults.synchronize()
+            } else if isFromKeyboard {
+                DictusLogger.app.info("Warm start dictation from keyboard — skipping overlay")
             }
 
+            Self.hasBeenActive = true
             coordinator.startDictation(fromURL: true)
-
-            // Auto-return: attempt to send user back to source app after starting dictation.
-            // WHY after startDictation: Audio session must be activated before switching apps
-            // (research pitfall #3). startDictation activates the session synchronously.
-            if isFromKeyboard {
-                attemptAutoReturn()
-            }
         default:
             break
         }

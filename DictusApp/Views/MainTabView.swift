@@ -85,14 +85,16 @@ struct MainTabView: View {
             }
         }
         // WHY onOpenURL here AND in DictusApp:
-        // DictusApp.handleIncomingURL sets the App Group flag for cross-process persistence.
-        // MainTabView.onOpenURL drives the local SwiftUI @State for reactive rendering.
-        // Both fire on the same URL event — SwiftUI propagates onOpenURL through the view tree.
+        // DictusApp.handleIncomingURL writes the App Group flag (only on true cold start).
+        // MainTabView reads that flag to decide whether to show the overlay.
+        // This avoids duplicating the cold start detection logic.
         .onOpenURL { url in
-            if let host = url.host, host == "dictate",
-               let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-               query.contains(where: { $0.name == "source" && $0.value == "keyboard" }) {
-                isColdStartMode = true
+            if let host = url.host, host == "dictate" {
+                // Read the flag that DictusApp.handleIncomingURL just set.
+                // It's only true on genuine cold start (app was terminated by iOS).
+                if AppGroup.defaults.bool(forKey: SharedKeys.coldStartActive) {
+                    isColdStartMode = true
+                }
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
