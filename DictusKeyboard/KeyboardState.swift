@@ -53,11 +53,6 @@ class KeyboardState: ObservableObject {
     /// Used by the watchdog to detect stale states (no updates for 5s).
     private var lastWaveformUpdate: Date = Date()
 
-    /// Tracks when recording was last requested (mic tap → .requested).
-    /// Used by keyboardAppear watchdog to avoid killing recordings that
-    /// just started — the URL scheme flow briefly opens the app (~2s),
-    /// so the keyboard disappears/reappears and should NOT reset.
-    private(set) var lastRequestedAt: Date = .distantPast
 
     init() {
         // Read initial state from App Group
@@ -126,7 +121,7 @@ class KeyboardState: ObservableObject {
         lastWaveformUpdate = Date()
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let activeStates: [DictationStatus] = [.recording, .transcribing]
+            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
             guard activeStates.contains(self.dictationStatus) else {
                 self.stopWatchdog()
                 return
@@ -182,7 +177,7 @@ class KeyboardState: ObservableObject {
             dictationStatus = status
 
             // Start watchdog when entering active states, stop when leaving
-            let activeStates: [DictationStatus] = [.recording, .transcribing]
+            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
             if activeStates.contains(status) && !activeStates.contains(oldStatus) {
                 startWatchdog()
             } else if !activeStates.contains(status) && activeStates.contains(oldStatus) {
@@ -310,7 +305,6 @@ class KeyboardState: ObservableObject {
         defaults.set(DictationStatus.requested.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
         dictationStatus = .requested
-        lastRequestedAt = Date()
         HapticFeedback.recordingStarted()
     }
 }

@@ -149,25 +149,16 @@ struct KeyboardRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardWillAppear)) { _ in
             defaultLayer = DefaultKeyboardLayer.active.asLayerType
 
-            // Stale state detection: if keyboard reappears while in an active state,
-            // the previous session may have crashed or been abandoned. Refresh from
-            // App Group first (the app may have already reset), then force-reset
-            // if still stale. This ensures the overlay never gets permanently stuck.
+            // Refresh status from App Group on every keyboard appear.
+            // If the app is actively recording, waveform data will arrive
+            // within 200ms and the overlay will show correctly.
+            // If the app crashed, the 5-second waveform watchdog in
+            // KeyboardState handles the reset — no instant kill here.
             //
-            // IMPORTANT: Skip if recording was requested recently (< 5s).
-            // The URL scheme flow briefly opens the app to foreground (~2s),
-            // causing keyboardDidDisappear → keyboardDidAppear. This is normal
-            // and the recording should NOT be killed.
-            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
-            let timeSinceRequest = Date().timeIntervalSince(state.lastRequestedAt)
-            if activeStates.contains(state.dictationStatus) && timeSinceRequest > 5.0 {
-                state.refreshFromDefaults()
-                // If still stale after reading fresh App Group data, force reset
-                if activeStates.contains(state.dictationStatus) {
-                    PersistentLog.log(.watchdogReset(source: "keyboardAppear", staleState: state.dictationStatus.rawValue))
-                    state.forceResetToIdle()
-                }
-            }
+            // WHY no instant reset: The URL scheme flow causes
+            // keyboardDidDisappear → keyboardDidAppear within ~2s.
+            // An instant reset would kill legitimate recordings.
+            state.refreshFromDefaults()
         }
     }
 
