@@ -1,14 +1,15 @@
 // DictusApp/Onboarding/ModelDownloadPage.swift
-// Step 4 of onboarding: download the recommended Whisper model.
+// Step 4 of onboarding: download the recommended model (RAM-based).
 import SwiftUI
 import DictusCore
 
-/// Downloads the recommended Whisper model with visible progress.
+/// Downloads the recommended model with visible progress.
 ///
-/// WHY pre-select "small" model:
-/// The "small" model offers a good balance of accuracy and speed for most modern
-/// iPhones (A12+). We recommend it during onboarding to get users started with
-/// quality transcription. Users can change models later in the Models tab.
+/// WHY dynamic recommendation:
+/// ModelInfo.recommendedIdentifier() picks the best model for the device's RAM:
+/// - >=6 GB RAM → Parakeet v3 (fast, accurate, NVIDIA)
+/// - <=4 GB RAM → Whisper Small (compact, good accuracy)
+/// The model card displays name, size, and description from the ModelInfo catalog.
 ///
 /// WHY @StateObject for ModelManager:
 /// Each page in the TabView needs its own lifecycle. @StateObject ensures
@@ -19,7 +20,11 @@ struct ModelDownloadPage: View {
     @StateObject private var modelManager = ModelManager()
 
     /// The recommended model to download during onboarding.
-    private let recommendedModel = "openai_whisper-small"
+    /// WHY computed property: Uses ModelInfo.recommendedIdentifier() to pick
+    /// the best model for this device's RAM, instead of hardcoding "whisper-small".
+    private var recommendedModel: String {
+        ModelInfo.recommendedIdentifier()
+    }
 
     @State private var isDownloading = false
     @State private var downloadComplete = false
@@ -42,7 +47,7 @@ struct ModelDownloadPage: View {
                 .padding(.bottom, 12)
 
             // Explanatory text
-            Text("Pour transcrire votre voix, Dictus a besoin d'un modele vocal. Le telechargement prend environ 1 minute.")
+            Text("Pour transcrire votre voix, Dictus a besoin d'un modele vocal. Le telechargement peut prendre quelques minutes.")
                 .font(.dictusBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -74,7 +79,7 @@ struct ModelDownloadPage: View {
                 VStack(spacing: 8) {
                     ProgressView()
                         .tint(.dictusAccent)
-                    Text("Preparation du modele...")
+                    Text("Optimisation en cours...")
                         .font(.dictusCaption)
                         .foregroundStyle(.secondary)
                 }
@@ -139,23 +144,27 @@ struct ModelDownloadPage: View {
 
     // MARK: - Model Card
 
+    /// Model card that displays name, size, and description from the ModelInfo catalog.
+    /// WHY data-driven: On a 6GB+ device this shows "Parakeet v3 / ~800 MB / Rapide et precis (NVIDIA)"
+    /// instead of the old hardcoded "Whisper Small / ~500 Mo / Bonne precision".
     private var modelCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Whisper Small")
+        let info = ModelInfo.forIdentifier(recommendedModel)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(info?.displayName ?? "Modele vocal")
                 .font(.dictusSubheading)
                 .foregroundStyle(.primary)
 
             HStack(spacing: 16) {
-                Label("~500 Mo", systemImage: "internaldrive")
+                Label(info?.sizeLabel ?? "~500 Mo", systemImage: "internaldrive")
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
 
-                Label("Bonne precision", systemImage: "waveform")
+                Label(info?.description ?? "Precis et equilibre", systemImage: "waveform")
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
             }
 
-            Text("Recommande pour la plupart des appareils")
+            Text("Recommande pour votre iPhone")
                 .font(.dictusCaption)
                 .foregroundColor(.dictusAccent)
         }
