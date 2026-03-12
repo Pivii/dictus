@@ -236,11 +236,13 @@ class RawAudioCapture: ObservableObject {
         let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
 
         // Compute RMS energy for this buffer (0.0-1.0 range)
-        // WHY RMS: Root Mean Square gives a perceptually meaningful energy level,
-        // matching what WhisperKit's relativeEnergy provides.
+        // WHY RMS: Root Mean Square gives a perceptually meaningful energy level.
         let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / Float(max(samples.count, 1)))
-        // Scale to approximate WhisperKit's relativeEnergy range
-        let energy = min(rms * 5.0, 1.0)
+        // Scale RMS to waveform range. Typical speech RMS at 16kHz is ~0.01-0.05.
+        // 15x scaling maps: quiet speech (0.01) → 0.15, normal (0.05) → 0.75,
+        // loud (0.07+) → 1.0 capped. This produces visible, dynamic bars above
+        // BrandWaveform's 0.05 silence threshold.
+        let energy = min(rms * 15.0, 1.0)
 
         // === Audio thread writes (bypass main thread throttling in background) ===
 
