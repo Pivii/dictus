@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: in-progress
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-03-12T22:19:52Z"
-last_activity: 2026-03-12 -- Plan 14-02 executed (dynamic onboarding recommendation, Parakeet verification)
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-03-12T22:34:00Z"
+last_activity: 2026-03-12 -- Plan 14-03 executed (ModelInfoTests gap closure after Large Turbo v3 removal)
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 10
+  completed_plans: 10
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 14 complete -- Model Pipeline done. Phase 15 next.
+**Current focus:** Phase 14 complete -- Model Pipeline done (including gap closure). Phase 15 next.
 
 ## Current Position
 
 Phase: 14 of 16 (Model Pipeline) -- COMPLETE
-Plan: 2 of 2 in current phase (all done)
+Plan: 3 of 3 in current phase (all done, including gap closure plan)
 Status: Phase 14 complete, ready for Phase 15
-Last activity: 2026-03-12 -- Plan 14-02 executed (dynamic onboarding recommendation, Parakeet verification)
+Last activity: 2026-03-12 -- Plan 14-03 executed (ModelInfoTests gap closure after Large Turbo v3 removal)
 
 Progress: [██████████] 100%
 
@@ -37,8 +37,8 @@ Progress: [██████████] 100%
 **Velocity:**
 - v1.0: 18 plans in 4 days (~25 min avg)
 - v1.1: 29 plans in 5 days (~4 min avg)
-- v1.2: 9 plans (~7 min avg)
-- Total: 56 plans across 2 milestones
+- v1.2: 10 plans (~7 min avg)
+- Total: 57 plans across 2 milestones
 
 ## Accumulated Context
 
@@ -59,6 +59,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 14-01]: Recommendation logic in ModelInfo (catalog layer), not ModelManager -- accessible from onboarding and model manager without ObservableObject.
 - [Phase 14-01]: PersistentLog uses structured LogEvent enum, not freeform messages -- used #if DEBUG print() for RAM diagnostics.
 - [Phase 14-02]: No code changes needed for Parakeet routing or display names -- verified correct as-is.
+- [Phase 14-03]: Added assertFalse for large-v3_turbo in tests (explicit regression guard) rather than just removing assertTrue.
 
 ### Pending Todos
 
@@ -73,8 +74,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T22:19:52Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-03-12T22:34:00Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: Phase 15 next
 
 ---

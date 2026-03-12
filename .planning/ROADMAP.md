@@ -108,11 +108,12 @@ Plans:
   3. If model prewarming fails, user sees a retry option that cleans up and re-attempts instead of a permanent error
   4. Mic button in keyboard is disabled with a message while a model is compiling in the main app
   5. Selecting a Parakeet model actually invokes Parakeet for transcription, and the model displays as "Parakeet v3" (not "Whisper Parakeet v3")
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — Remove Large Turbo, RAM-based recommendation, compilation progress fix, retry-with-cleanup
-- [ ] 14-02-PLAN.md — Dynamic onboarding model selection, Parakeet routing and display name verification
+- [x] 14-01-PLAN.md — Remove Large Turbo, RAM-based recommendation, compilation progress fix, retry-with-cleanup
+- [x] 14-02-PLAN.md — Dynamic onboarding model selection, Parakeet routing and display name verification
+- [x] 14-03-PLAN.md — Gap closure: fix stale ModelInfoTests after Large Turbo v3 removal
 
 ### Phase 15: Design Polish
 **Goal**: All user-facing UI reaches beta quality with correct French localization and polished interaction details
@@ -168,7 +169,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 16
 | 11. Logging Foundation | v1.2 | 2/2 | Complete | 2026-03-11 |
 | 12. Animation State Fixes | v1.2 | Complete    | 2026-03-12 | 2026-03-12 |
 | 13. Cold Start Audio Bridge | 3/3 | Complete   | 2026-03-12 | - |
-| 14. Model Pipeline | 2/2 | Complete   | 2026-03-12 | - |
+| 14. Model Pipeline | v1.2 | 3/3 | Complete | 2026-03-12 |
 | 15. Design Polish | v1.2 | 0/2 | Not started | - |
 | 16. TestFlight Deployment | v1.2 | 0/2 | Not started | - |
 
