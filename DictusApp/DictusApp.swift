@@ -86,6 +86,26 @@ struct DictusApp: App {
         }
     }
 
+    /// Attempt to auto-return to the user's source app after cold start dictation.
+    ///
+    /// WHY iterate instead of reading sourceAppScheme: The keyboard's source app detection
+    /// always writes "unknown" because there is no public API to detect the active host app
+    /// from a keyboard extension. Instead, we try known app schemes in popularity order and
+    /// open the FIRST installed one. This is a best-effort heuristic for v1.2.
+    ///
+    /// If no known app is installed, the swipe-back overlay (Plan 02) handles navigation.
+    private func attemptAutoReturn() {
+        for appScheme in KnownAppSchemes.all {
+            guard let url = URL(string: appScheme.scheme) else { continue }
+            if UIApplication.shared.canOpenURL(url) {
+                DictusLogger.app.info("Auto-returning to \(appScheme.name) via \(appScheme.scheme)")
+                UIApplication.shared.open(url)
+                return
+            }
+        }
+        DictusLogger.app.info("No known app installed for auto-return, showing swipe-back overlay")
+    }
+
     private func handleIncomingURL(_ url: URL) {
         guard url.scheme == "dictus" else { return }
 
@@ -106,6 +126,13 @@ struct DictusApp: App {
             }
 
             coordinator.startDictation(fromURL: true)
+
+            // Auto-return: attempt to send user back to source app after starting dictation.
+            // WHY after startDictation: Audio session must be activated before switching apps
+            // (research pitfall #3). startDictation activates the session synchronously.
+            if isFromKeyboard {
+                attemptAutoReturn()
+            }
         default:
             break
         }

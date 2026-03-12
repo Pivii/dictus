@@ -89,6 +89,17 @@ class KeyboardViewController: UIInputViewController {
         // (e.g., keyboard mode changed in Settings).
         NotificationCenter.default.post(name: .dictusKeyboardWillAppear, object: nil)
 
+        // Cold start return detection: if the app set coldStartActive=true during
+        // URL scheme handling, the keyboard is now returning after a cold start launch.
+        // Clear the flag so subsequent keyboard appearances don't re-trigger.
+        // The recording overlay appears naturally via the existing dictationStatus flow
+        // (app sets status to .recording, keyboard picks it up via refreshFromDefaults).
+        if AppGroup.defaults.bool(forKey: SharedKeys.coldStartActive) {
+            DictusLogger.keyboard.info("Keyboard returned from cold start, recording should be active")
+            AppGroup.defaults.set(false, forKey: SharedKeys.coldStartActive)
+            AppGroup.defaults.synchronize()
+        }
+
         #if DEBUG
         if #available(iOS 14.0, *) {
             DictusLogger.keyboard.debug("viewWillAppear — refreshing mode")
