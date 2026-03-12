@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-03-11T20:18:31.924Z"
-last_activity: 2026-03-11 -- Plan 12-01 executed (overlay visibility, animation race fixes, log events)
+stopped_at: Completed 12-02-PLAN.md (Phase 12 complete)
+last_updated: "2026-03-12T08:15:00Z"
+last_activity: 2026-03-12 -- Plan 12-02 executed (watchdog recovery, device verification approved)
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 12 - Animation State Fixes (in progress)
+**Current focus:** Phase 12 complete, Phase 13 next (Cold Start Audio Bridge)
 
 ## Current Position
 
-Phase: 12 of 16 (Animation State Fixes)
-Plan: 1 of 2 in current phase
-Status: Plan 12-01 complete, 12-02 remaining
-Last activity: 2026-03-11 -- Plan 12-01 executed (overlay visibility, animation race fixes, log events)
+Phase: 12 of 16 (Animation State Fixes) -- COMPLETE
+Plan: 2 of 2 in current phase (all done)
+Status: Phase 12 complete, ready for Phase 13
+Last activity: 2026-03-12 -- Plan 12-02 executed (watchdog recovery, device verification approved)
 
-Progress: [████████░░] 75%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0: 18 plans in 4 days (~25 min avg)
 - v1.1: 29 plans in 5 days (~4 min avg)
-- v1.2: 3 plans (~5 min avg)
-- Total: 49 plans across 2 milestones
+- v1.2: 4 plans (~8 min avg)
+- Total: 50 plans across 2 milestones
 
 ## Accumulated Context
 
@@ -49,6 +49,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Phase 11-02: Level color/icon defined in DebugLogView (UI concern) not LogLevel enum (keeps DictusCore framework-agnostic)
 - [Phase 12]: Replace asyncAfter with withAnimation for success flash to eliminate timer race condition
 - [Phase 12]: Reset all animation @State properties before new animations to prevent stacking
+- [Phase 12-02]: Do NOT instant-reset on keyboardAppear -- URL scheme causes rapid disappear/appear within ~2s, killing legitimate recordings. Use refreshFromDefaults + 5s watchdog instead.
 
 ### Pending Todos
 
@@ -63,8 +64,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T20:18:31.922Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-03-12T08:15:00Z
+Stopped at: Completed 12-02-PLAN.md (Phase 12 complete)
 Resume file: None
 
 ---

@@ -44,7 +44,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 **Milestone Goal:** Fix bugs, improve UX, and deploy to TestFlight for public beta.
 
 - [x] **Phase 11: Logging Foundation** - Production-ready persistent logging across all subsystems with privacy safeguards and export (completed 2026-03-11)
-- [ ] **Phase 12: Animation State Fixes** - Eliminate intermittent recording overlay and waveform animation bugs
+- [x] **Phase 12: Animation State Fixes** - Eliminate intermittent recording overlay and waveform animation bugs (completed 2026-03-12)
 - [ ] **Phase 13: Cold Start Audio Bridge** - Audio Bridge pattern for keyboard-captured audio with graceful return-to-keyboard UX
 - [ ] **Phase 14: Model Pipeline** - CoreML compilation UX, model download modal, device RAM gating, Parakeet fixes
 - [ ] **Phase 15: Design Polish** - French accent audit, model manager redesign, recording overlay and keyboard UX refinements
@@ -78,8 +78,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Overlay visibility fix, .requested state, animation race fixes, diagnostic log events
-- [ ] 12-02-PLAN.md — Watchdog recovery mechanisms (keyboard + app), reset-on-appear, device verification
+- [x] 12-01-PLAN.md — Overlay visibility fix, .requested state, animation race fixes, diagnostic log events
+- [x] 12-02-PLAN.md — Watchdog recovery mechanisms (keyboard + app), reset-on-appear, device verification
 
 ### Phase 13: Cold Start Audio Bridge
 **Goal**: Users experience seamless dictation even when the app was killed by iOS, with minimal manual intervention to return to the keyboard
@@ -166,8 +166,8 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 16
 | 8. Text Prediction | v1.1 | 2/2 | Complete | 2026-03-09 |
 | 9. Keyboard Modes | v1.1 | 6/6 | Complete | 2026-03-10 |
 | 10. Model Catalog | v1.1 | 4/4 | Complete | 2026-03-11 |
-| 11. Logging Foundation | 2/2 | Complete    | 2026-03-11 | - |
-| 12. Animation State Fixes | 1/2 | In Progress|  | - |
+| 11. Logging Foundation | v1.2 | 2/2 | Complete | 2026-03-11 |
+| 12. Animation State Fixes | v1.2 | 2/2 | Complete | 2026-03-12 |
 | 13. Cold Start Audio Bridge | v1.2 | 0/3 | Not started | - |
 | 14. Model Pipeline | v1.2 | 0/3 | Not started | - |
 | 15. Design Polish | v1.2 | 0/2 | Not started | - |
