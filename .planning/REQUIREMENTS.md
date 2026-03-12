@@ -35,11 +35,11 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 
 ### Model Pipeline
 
-- [ ] **MODEL-01**: Large Turbo v3 gated behind device RAM check (hidden on <=4GB devices) or removed from catalog
-- [ ] **MODEL-02**: CoreML pre-compilation runs immediately after model download with visible progress indication
+- [x] **MODEL-01**: Large Turbo v3 gated behind device RAM check (hidden on <=4GB devices) or removed from catalog
+- [x] **MODEL-02**: CoreML pre-compilation runs immediately after model download with visible progress indication
 - [ ] **MODEL-03**: Onboarding reorders steps to start download earlier (during keyboard setup)
 - [ ] **MODEL-04**: Model download/compilation shows full-screen modal preventing app interference
-- [ ] **MODEL-05**: Prewarming failure triggers retry-with-cleanup instead of permanent error state
+- [x] **MODEL-05**: Prewarming failure triggers retry-with-cleanup instead of permanent error state
 - [ ] **MODEL-06**: Mic button disabled (or shows message) in keyboard while model is compiling
 - [ ] **MODEL-07**: Parakeet transcription bug fixed (engine routing actually invokes Parakeet, not WhisperKit)
 - [ ] **MODEL-08**: Parakeet model displays correct name ("Parakeet v3" not "Whisper Parakeet v3")
@@ -130,11 +130,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COLD-07 | Phase 13 | Complete |
 | COLD-08 | Phase 13 | Complete |
 | COLD-09 | Phase 13 | Complete |
-| MODEL-01 | Phase 14 | Pending |
-| MODEL-02 | Phase 14 | Pending |
+| MODEL-01 | Phase 14 | Complete |
+| MODEL-02 | Phase 14 | Complete |
 | MODEL-03 | Phase 14 | Pending |
 | MODEL-04 | Phase 14 | Pending |
-| MODEL-05 | Phase 14 | Pending |
+| MODEL-05 | Phase 14 | Complete |
 | MODEL-06 | Phase 14 | Pending |
 | MODEL-07 | Phase 14 | Pending |
 | MODEL-08 | Phase 14 | Pending |

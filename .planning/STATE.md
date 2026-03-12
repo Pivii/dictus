@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
-status: completed
-stopped_at: Completed 13-03-PLAN.md (Phase 13 complete)
-last_updated: "2026-03-12T21:21:00Z"
-last_activity: 2026-03-12 -- Plan 13-03 executed (auto-return removed, waveform bridge added)
+status: in-progress
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-03-12T22:15:56Z"
+last_activity: 2026-03-12 -- Plan 14-01 executed (Large Turbo removed, RAM recommendation, UX fixes)
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_plans: 9
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 13 complete -- Cold Start Audio Bridge (all 3 plans done). Ready for Phase 14.
+**Current focus:** Phase 14 in progress -- Model Pipeline (plan 1 of 2 done).
 
 ## Current Position
 
-Phase: 13 of 16 (Cold Start Audio Bridge) -- COMPLETE
-Plan: 3 of 3 in current phase (all done)
-Status: Phase 13 complete, ready for Phase 14
-Last activity: 2026-03-12 -- Plan 13-03 executed (auto-return removed, waveform bridge)
+Phase: 14 of 16 (Model Pipeline)
+Plan: 1 of 2 in current phase (14-01 done)
+Status: Phase 14 in progress, plan 02 next
+Last activity: 2026-03-12 -- Plan 14-01 executed (Large Turbo removed, RAM recommendation, UX fixes)
 
-Progress: [██████████] 100%
+Progress: [████████░░] 89%
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0: 18 plans in 4 days (~25 min avg)
 - v1.1: 29 plans in 5 days (~4 min avg)
-- v1.2: 7 plans (~10 min avg)
-- Total: 54 plans across 2 milestones
+- v1.2: 8 plans (~8 min avg)
+- Total: 55 plans across 2 milestones
 
 ## Accumulated Context
 
@@ -56,6 +56,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 13-02]: Color(hex: UInt) from DictusColors used for brand gradient -- consistent with existing color system.
 - [Phase 13-03]: Auto-return removed -- attemptAutoReturn() always opened first installed app (WhatsApp), not actual source app. Swipe-back overlay is correct UX.
 - [Phase 13-03]: Audio-thread waveform writes bypass iOS main thread throttling in background -- write from installTap callback, not main-thread timer.
+- [Phase 14-01]: Recommendation logic in ModelInfo (catalog layer), not ModelManager -- accessible from onboarding and model manager without ObservableObject.
+- [Phase 14-01]: PersistentLog uses structured LogEvent enum, not freeform messages -- used #if DEBUG print() for RAM diagnostics.
 
 ### Pending Todos
 
@@ -70,9 +72,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T21:21:00Z
-Stopped at: Completed 13-03-PLAN.md (Phase 13 complete)
-Resume file: Next phase (14)
+Last session: 2026-03-12T22:15:56Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: .planning/phases/14-model-pipeline/14-02-PLAN.md
 
 ---
 *State initialized: 2026-03-04*
