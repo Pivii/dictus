@@ -152,15 +152,19 @@ class ModelManager: ObservableObject {
             // Prewarm: compile Core ML model for this device's Neural Engine/GPU.
             // Serialized — only one model compiles at a time. Multiple simultaneous
             // CoreML compilations crash the ANE with "E5 bundle" errors.
+            //
+            // WHY transition state BEFORE removing progress:
+            // If we remove downloadProgress first while state is still .downloading,
+            // ModelCardView's .downloading case reads progress ?? 0 = 0%, showing a
+            // stuck-at-zero bar. Setting .prewarming first eliminates this gap.
+            modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
 
             // Wait for any other prewarm to finish (poll on MainActor is safe)
             while isPrewarming {
-                modelStates[identifier] = .prewarming
                 try await Task.sleep(nanoseconds: 500_000_000) // 500ms
             }
 
-            modelStates[identifier] = .prewarming
             isPrewarming = true
             defer { isPrewarming = false }
 

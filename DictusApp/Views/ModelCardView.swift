@@ -127,14 +127,21 @@ struct ModelCardView: View {
             .buttonStyle(.plain)
 
         case .downloading:
-            VStack(spacing: 2) {
-                ProgressView(value: modelManager.downloadProgress[model.identifier] ?? 0, total: 1.0)
-                    .frame(width: 60)
-                    .tint(.dictusAccent)
-                let pct = Int((modelManager.downloadProgress[model.identifier] ?? 0) * 100)
-                Text("\(pct)%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            // WHY if-let instead of ?? 0:
+            // Defensive fallback — if downloadProgress is nil (removed before state
+            // transitions to .prewarming), show an indeterminate spinner instead of
+            // a determinate bar stuck at 0%.
+            if let progress = modelManager.downloadProgress[model.identifier] {
+                VStack(spacing: 2) {
+                    ProgressView(value: progress, total: 1.0)
+                        .frame(width: 60)
+                        .tint(.dictusAccent)
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ProgressView()
             }
 
         case .prewarming:
