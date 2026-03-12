@@ -309,15 +309,12 @@ class ModelManager: ObservableObject {
 
     /// Checks if a model is the device-recommended variant.
     ///
-    /// WHY async:
-    /// WhisperKit.recommendedModels() queries the device hardware (chip, RAM)
-    /// to determine the best model. This is a lightweight call but returns
-    /// an async result. We fall back to "small" if the API fails.
+    /// WHY delegate to ModelInfo:
+    /// The recommendation logic is RAM-based and belongs in the catalog layer
+    /// (ModelInfo), not the state manager. This instance method preserves the
+    /// call-site signature so views don't need to change.
     func isRecommended(_ identifier: String) -> Bool {
-        // Synchronous fallback: recommend "small" as a good balance of speed/accuracy
-        // for most modern iPhones (iPhone 12+).
-        // A future enhancement could cache WhisperKit.recommendedModels() result.
-        return identifier == "openai_whisper-small"
+        ModelInfo.isRecommended(identifier)
     }
 
     /// Cleans up a failed model's files and resets its state to not downloaded.

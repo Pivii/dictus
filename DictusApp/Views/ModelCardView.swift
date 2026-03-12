@@ -140,7 +140,7 @@ struct ModelCardView: View {
         case .prewarming:
             VStack(spacing: 2) {
                 ProgressView()
-                Text("Optimisation...")
+                Text("Optimisation en cours...")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -176,29 +176,21 @@ struct ModelCardView: View {
             }
 
         case .error(let message):
-            HStack(spacing: 8) {
-                Button {
-                    modelManager.modelStates[model.identifier] = .notDownloaded
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "arrow.clockwise.circle")
-                            .font(.title3)
-                            .foregroundColor(.orange)
-                        Text("Reessayer")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
+            Button {
+                // Clean up corrupted/partial files before resetting state.
+                // cleanupFailedModel already sets state to .notDownloaded.
+                modelManager.cleanupFailedModel(model.identifier)
+            } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: "arrow.clockwise.circle")
+                        .font(.title3)
+                        .foregroundColor(.orange)
+                    Text("Reessayer")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
                 }
-                .buttonStyle(.plain)
-
-                Button {
-                    modelManager.cleanupFailedModel(model.identifier)
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundColor(.dictusRecording)
-                }
-                .buttonStyle(.plain)
             }
+            .buttonStyle(.plain)
             .help(message)
         }
     }
