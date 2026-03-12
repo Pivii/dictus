@@ -48,6 +48,10 @@ class AudioRecorder: ObservableObject {
     /// can detect the app is still recording even when main thread is throttled.
     private nonisolated(unsafe) var lastHeartbeatWrite: TimeInterval = 0
 
+    /// Timestamp of last waveform write to App Group from the audio thread.
+    /// Same pattern as RawAudioCapture: bypasses main thread throttling in background.
+    private nonisolated(unsafe) var lastWaveformWrite: TimeInterval = 0
+
     /// Whether the audio session has been configured at least once.
     /// WHY: iOS forbids changing AVAudioSession category from background.
     /// We configure once (first recording) and keep the category set forever.
@@ -147,22 +151,34 @@ class AudioRecorder: ObservableObject {
         }
 
         try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
-            // Write heartbeat directly from the audio callback thread (~1Hz).
-            // Bypasses main thread throttling in background.
-            if let self {
-                let now = Date().timeIntervalSince1970
-                if now - self.lastHeartbeatWrite >= 1.0 {
-                    self.lastHeartbeatWrite = now
-                    AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
-                }
+            guard let self else { return }
+            let now = Date().timeIntervalSince1970
+
+            // Heartbeat (~1Hz) — bypasses main thread throttling in background
+            if now - self.lastHeartbeatWrite >= 1.0 {
+                self.lastHeartbeatWrite = now
+                AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
             }
-            DispatchQueue.main.async {
+
+            // Waveform data to App Group (~5Hz) — same audio-thread pattern as RawAudioCapture.
+            // WHY: In background, main thread is throttled by iOS. The Combine-based path
+            // (bufferEnergy → Coordinator → forwardWaveformToAppGroup) misses updates.
+            if now - self.lastWaveformWrite >= 0.2, let wk = self.whisperKit {
+                self.lastWaveformWrite = now
+                let energy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
+                if let data = try? JSONEncoder().encode(energy) {
+                    AppGroup.defaults.set(data, forKey: SharedKeys.waveformEnergy)
+                }
+                let elapsed = Double(wk.audioProcessor.audioSamples.count) / Double(WhisperKit.sampleRate)
+                AppGroup.defaults.set(elapsed, forKey: SharedKeys.recordingElapsedSeconds)
+                AppGroup.defaults.synchronize()
+                DarwinNotificationCenter.post(DarwinNotificationName.waveformUpdate)
+            }
+
+            // Main thread: update @Published for in-app UI (RecordingView)
+            DispatchQueue.main.async { [weak self] in
                 guard let self, let wk = self.whisperKit else { return }
                 guard self.isRecording else { return }
-                // Only take the last 30 values — one per waveform bar.
-                // WHY: relativeEnergy grows continuously (600+ values after 10s).
-                // Using the full array compresses the entire history into 30 bars,
-                // creating a timeline instead of a real-time level indicator.
                 self.bufferEnergy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
                 self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)
                     / Double(WhisperKit.sampleRate)
@@ -205,16 +221,31 @@ class AudioRecorder: ObservableObject {
         } else {
             // Cold start — launch the engine
             try whisperKit.audioProcessor.startRecordingLive { [weak self] _ in
-                if let self {
-                    let now = Date().timeIntervalSince1970
-                    if now - self.lastHeartbeatWrite >= 1.0 {
-                        self.lastHeartbeatWrite = now
-                        AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
-                    }
+                guard let self else { return }
+                let now = Date().timeIntervalSince1970
+
+                // Heartbeat (~1Hz)
+                if now - self.lastHeartbeatWrite >= 1.0 {
+                    self.lastHeartbeatWrite = now
+                    AppGroup.defaults.set(now, forKey: SharedKeys.recordingHeartbeat)
                 }
-                DispatchQueue.main.async {
+
+                // Waveform to App Group (~5Hz) — audio thread, bypasses main throttling
+                if now - self.lastWaveformWrite >= 0.2, let wk = self.whisperKit {
+                    self.lastWaveformWrite = now
+                    let energy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
+                    if let data = try? JSONEncoder().encode(energy) {
+                        AppGroup.defaults.set(data, forKey: SharedKeys.waveformEnergy)
+                    }
+                    let elapsed = Double(wk.audioProcessor.audioSamples.count) / Double(WhisperKit.sampleRate)
+                    AppGroup.defaults.set(elapsed, forKey: SharedKeys.recordingElapsedSeconds)
+                    AppGroup.defaults.synchronize()
+                    DarwinNotificationCenter.post(DarwinNotificationName.waveformUpdate)
+                }
+
+                // Main thread: @Published for in-app UI
+                DispatchQueue.main.async { [weak self] in
                     guard let self, let wk = self.whisperKit else { return }
-                    // Only publish energy/duration while actively recording
                     guard self.isRecording else { return }
                     self.bufferEnergy = Array(wk.audioProcessor.relativeEnergy.suffix(30))
                     self.bufferSeconds = Double(wk.audioProcessor.audioSamples.count)

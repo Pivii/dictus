@@ -78,12 +78,13 @@ class DictationCoordinator: ObservableObject {
     private var rawSecondsCancellable: AnyCancellable?
 
     private init() {
-        // Forward AudioRecorder's energy levels and seconds to coordinator
+        // Forward AudioRecorder's energy levels and seconds to coordinator.
+        // NOTE: App Group forwarding for the keyboard is now handled directly from
+        // the audio thread in AudioRecorder's startRecordingLive callback.
         energyCancellable = audioRecorder.$bufferEnergy
             .receive(on: DispatchQueue.main)
             .sink { [weak self] energy in
                 self?.bufferEnergy = energy
-                self?.forwardWaveformToAppGroup(energy: energy)
             }
         secondsCancellable = audioRecorder.$bufferSeconds
             .receive(on: DispatchQueue.main)
