@@ -176,11 +176,16 @@ class KeyboardState: ObservableObject {
             let oldStatus = dictationStatus
             dictationStatus = status
 
-            // Start watchdog when entering active states, stop when leaving
+            // Start/restart watchdog on any active state transition, stop when leaving.
+            // WHY restart (not just start): transitioning .requested → .recording
+            // must reset lastWaveformUpdate. Without this, the watchdog fires
+            // immediately because it still has the timestamp from markRequested().
             let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
-            if activeStates.contains(status) && !activeStates.contains(oldStatus) {
-                startWatchdog()
-            } else if !activeStates.contains(status) && activeStates.contains(oldStatus) {
+            if activeStates.contains(status) {
+                if !activeStates.contains(oldStatus) || status != oldStatus {
+                    startWatchdog()
+                }
+            } else {
                 stopWatchdog()
             }
         }
@@ -305,6 +310,7 @@ class KeyboardState: ObservableObject {
         defaults.set(DictationStatus.requested.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
         dictationStatus = .requested
+        startWatchdog()
         HapticFeedback.recordingStarted()
     }
 }
