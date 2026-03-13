@@ -61,4 +61,14 @@ public enum SharedKeys {
     /// String: URL scheme of the source app (e.g., "whatsapp") or "unknown".
     /// Used by auto-return logic to navigate back to the correct app after dictation.
     public static let sourceAppScheme = "dictus.sourceAppScheme"
+
+    // MARK: - Sound Feedback
+    /// Whether sound feedback is enabled for recording events, default true
+    public static let soundFeedbackEnabled = "dictus.soundFeedbackEnabled"
+    /// Name of the WAV file (without extension) to play when recording starts
+    public static let recordStartSoundName = "dictus.recordStartSoundName"
+    /// Name of the WAV file (without extension) to play when recording stops
+    public static let recordStopSoundName = "dictus.recordStopSoundName"
+    /// Name of the WAV file (without extension) to play when recording is cancelled
+    public static let recordCancelSoundName = "dictus.recordCancelSoundName"
 }

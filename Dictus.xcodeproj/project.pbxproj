@@ -48,6 +48,7 @@
 		AA0000A3 /* KeyboardSetupPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A3 /* KeyboardSetupPage.swift */; };
 		AA0000A4 /* ModelDownloadPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A4 /* ModelDownloadPage.swift */; };
 		AA0000A5 /* TestRecordingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A5 /* TestRecordingPage.swift */; };
+		AA0000A9 /* OnboardingSuccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A9 /* OnboardingSuccessView.swift */; };
 		AA0000A6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A6 /* SettingsView.swift */; };
 		AA0000A7 /* LicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A7 /* LicensesView.swift */; };
 		AA0000A8 /* DebugLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000A8 /* DebugLogView.swift */; };
@@ -70,6 +71,9 @@
 		AA0000F1 /* ParakeetEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F1 /* ParakeetEngine.swift */; };
 		AA0000C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C0 /* Assets.xcassets */; };
 		AA0000C1 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = AA1000C1 /* Settings.bundle */; };
+		AA0000F2 /* SoundFeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F2 /* SoundFeedbackService.swift */; };
+		AA0000F3 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F3 /* SoundSettingsView.swift */; };
+		AA0000F4 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AA1000F4 /* Sounds */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -115,6 +119,7 @@
 		AA1000A3 /* KeyboardSetupPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSetupPage.swift; sourceTree = "<group>"; };
 		AA1000A4 /* ModelDownloadPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloadPage.swift; sourceTree = "<group>"; };
 		AA1000A5 /* TestRecordingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestRecordingPage.swift; sourceTree = "<group>"; };
+		AA1000A9 /* OnboardingSuccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSuccessView.swift; sourceTree = "<group>"; };
 		AA1000A6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA1000A7 /* LicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicensesView.swift; sourceTree = "<group>"; };
 		AA1000A8 /* DebugLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogView.swift; sourceTree = "<group>"; };
@@ -137,6 +142,9 @@
 		AA1000F1 /* ParakeetEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetEngine.swift; sourceTree = "<group>"; };
 		AA1000C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA1000C1 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
+		AA1000F2 /* SoundFeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFeedbackService.swift; sourceTree = "<group>"; };
+		AA1000F3 /* SoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSettingsView.swift; sourceTree = "<group>"; };
+		AA1000F4 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Dictus/Sounds; sourceTree = SOURCE_ROOT; };
 	/* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -206,8 +214,10 @@
 				AA40000B /* Onboarding */,
 				AA400008 /* Views */,
 				AA400009 /* Models */,
+				AA40000F /* Services */,
 				AA1000C0 /* Assets.xcassets */,
 				AA1000C1 /* Settings.bundle */,
+				AA1000F4 /* Sounds */,
 				AA100005 /* DictusApp.entitlements */,
 				AA100007 /* Info.plist */,
 			);
@@ -224,6 +234,7 @@
 				AA1000A4 /* ModelDownloadPage.swift */,
 				AA1000A5 /* TestRecordingPage.swift */,
 				AA1000E1 /* ModeSelectionPage.swift */,
+				AA1000A9 /* OnboardingSuccessView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -256,8 +267,17 @@
 				AA1000E2 /* GaugeBarView.swift */,
 				AA1000E3 /* ModelCardView.swift */,
 				AA1000E4 /* SwipeBackOverlayView.swift */,
+				AA1000F3 /* SoundSettingsView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		AA40000F /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AA1000F2 /* SoundFeedbackService.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		AA400009 /* Models */ = {
@@ -455,6 +475,7 @@
 			files = (
 				AA0000C0 /* Assets.xcassets in Resources */,
 				AA0000C1 /* Settings.bundle in Resources */,
+				AA0000F4 /* Sounds in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -494,6 +515,7 @@
 				AA0000A3 /* KeyboardSetupPage.swift in Sources */,
 				AA0000A4 /* ModelDownloadPage.swift in Sources */,
 				AA0000A5 /* TestRecordingPage.swift in Sources */,
+				AA0000A9 /* OnboardingSuccessView.swift in Sources */,
 				AA0000A6 /* SettingsView.swift in Sources */,
 				AA0000A7 /* LicensesView.swift in Sources */,
 				AA0000A8 /* DebugLogView.swift in Sources */,
@@ -504,6 +526,8 @@
 				AA0000E2 /* GaugeBarView.swift in Sources */,
 				AA0000E3 /* ModelCardView.swift in Sources */,
 				AA0000E4 /* SwipeBackOverlayView.swift in Sources */,
+				AA0000F2 /* SoundFeedbackService.swift in Sources */,
+				AA0000F3 /* SoundSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
