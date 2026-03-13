@@ -41,13 +41,13 @@ struct ModelDownloadPage: View {
                 .padding(.bottom, 24)
 
             // Title
-            Text("Modele vocal")
+            Text("Modèle vocal")
                 .font(.dictusHeading)
                 .foregroundStyle(.primary)
                 .padding(.bottom, 12)
 
             // Explanatory text
-            Text("Pour transcrire votre voix, Dictus a besoin d'un modele vocal. Le telechargement peut prendre quelques minutes.")
+            Text("Pour transcrire votre voix, Dictus a besoin d'un modèle vocal. Le téléchargement peut prendre quelques minutes.")
                 .font(.dictusBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -115,7 +115,7 @@ struct ModelDownloadPage: View {
             } else if !isDownloading {
                 VStack(spacing: 16) {
                     Button(action: startDownload) {
-                        Text("Installer le modele")
+                        Text("Installer le modèle")
                             .font(.dictusSubheading)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -149,7 +149,7 @@ struct ModelDownloadPage: View {
     private var modelCard: some View {
         let info = ModelInfo.forIdentifier(recommendedModel)
         return VStack(alignment: .leading, spacing: 12) {
-            Text(info?.displayName ?? "Modele vocal")
+            Text(info?.displayName ?? "Modèle vocal")
                 .font(.dictusSubheading)
                 .foregroundStyle(.primary)
 
@@ -158,12 +158,12 @@ struct ModelDownloadPage: View {
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
 
-                Label(info?.description ?? "Precis et equilibre", systemImage: "waveform")
+                Label(info?.description ?? "Précis et équilibré", systemImage: "waveform")
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
             }
 
-            Text("Recommande pour votre iPhone")
+            Text("Recommandé pour votre iPhone")
                 .font(.dictusCaption)
                 .foregroundColor(.dictusAccent)
         }

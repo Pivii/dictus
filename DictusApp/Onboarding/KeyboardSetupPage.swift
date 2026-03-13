@@ -18,6 +18,13 @@ struct KeyboardSetupPage: View {
 
     @State private var keyboardDetected = false
 
+    /// Guard to prevent concurrent keyboard checks (race condition on Settings return).
+    /// WHY this guard: When returning from iOS Settings after enabling the keyboard,
+    /// scenePhase can change rapidly (.inactive -> .active). Without this guard,
+    /// multiple concurrent calls to checkKeyboardInstalled() race and can crash
+    /// when accessing UITextInputMode.activeInputModes.
+    @State private var isCheckingKeyboard = false
+
     // Animation state for the fake toggles
     @State private var dictusToggleOn = false
     @State private var fullAccessToggleOn = false
@@ -47,14 +54,14 @@ struct KeyboardSetupPage: View {
 
                 // Open Settings link — plain text, no card wrapper
                 Button(action: openSettings) {
-                    Label("Ouvrir les Reglages", systemImage: "arrow.up.right")
+                    Label("Ouvrir les Réglages", systemImage: "arrow.up.right")
                         .font(.dictusBody)
                         .foregroundColor(.dictusAccent)
                 }
                 .padding(.bottom, 20)
 
                 // Auto-detection helper text
-                Text("Le clavier sera detecte automatiquement")
+                Text("Le clavier sera détecté automatiquement")
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 16)
@@ -62,7 +69,7 @@ struct KeyboardSetupPage: View {
                 // Detection feedback + continue button
                 if keyboardDetected {
                     VStack(spacing: 16) {
-                        Label("Clavier detecte", systemImage: "checkmark.circle.fill")
+                        Label("Clavier détecté", systemImage: "checkmark.circle.fill")
                             .font(.dictusBody)
                             .foregroundColor(.dictusSuccess)
 
@@ -95,9 +102,25 @@ struct KeyboardSetupPage: View {
             animationTimer = nil
         }
         .onChange(of: scenePhase) { newPhase in
+            // WHY debounced check with 500ms delay:
+            // When returning from iOS Settings, scenePhase fires .active before
+            // UITextInputMode.activeInputModes has updated. The 500ms delay gives
+            // iOS time to register the newly-enabled keyboard. The isCheckingKeyboard
+            // guard prevents concurrent checks from rapid phase transitions.
             if newPhase == .active {
-                checkKeyboardInstalled()
+                guard !isCheckingKeyboard else { return }
+                isCheckingKeyboard = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    await MainActor.run {
+                        checkKeyboardInstalled()
+                        isCheckingKeyboard = false
+                    }
+                }
             }
+            #if DEBUG
+            print("[KeyboardSetupPage] scenePhase changed to: \(newPhase)")
+            #endif
         }
         .onChange(of: keyboardDetected) { detected in
             if detected {
@@ -126,7 +149,7 @@ struct KeyboardSetupPage: View {
                 Image(systemName: "gearshape.fill")
                     .foregroundStyle(.secondary)
                     .font(.footnote)
-                Text("Reglages > Dictus")
+                Text("Réglages > Dictus")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
