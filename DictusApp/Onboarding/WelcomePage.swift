@@ -23,8 +23,8 @@ struct WelcomePage: View {
                 .opacity(0.5)
                 .padding(.bottom, 24)
 
-            // "dictus" wordmark
-            Text("dictus")
+            // "Dictus" wordmark
+            Text("Dictus")
                 .font(.system(size: 42, weight: .ultraLight, design: .rounded))
                 .kerning(-0.5)
                 .foregroundStyle(.primary)
