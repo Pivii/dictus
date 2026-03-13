@@ -61,6 +61,10 @@ struct SettingsView: View {
 
                 Toggle("Retour haptique", isOn: $hapticsEnabled)
 
+                NavigationLink("Sons") {
+                    SoundSettingsView()
+                }
+
                 Toggle("Correction automatique", isOn: $autocorrectEnabled)
             }
 

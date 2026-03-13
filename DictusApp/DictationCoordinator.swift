@@ -254,6 +254,13 @@ class DictationCoordinator: ObservableObject {
         // Cancel any in-flight dictation before starting a new one
         dictationTask?.cancel()
 
+        // Play start sound BEFORE configuring the audio session.
+        // WHY before: Once WhisperKit configures AVAudioSession with its own category,
+        // AudioServicesPlaySystemSound may be suppressed. Playing first ensures the user
+        // hears the feedback. The natural delay of Task creation + mic permission check
+        // provides enough gap for the short WAV to play (~100-200ms).
+        SoundFeedbackService.playRecordStart()
+
         // Configure audio session NOW while we're in the foreground.
         // WHY before the Task: ensureEngineReady() takes 4-5s on cold start.
         // By then the app may be backgrounded (opened via URL from keyboard).
@@ -391,6 +398,7 @@ class DictationCoordinator: ObservableObject {
                     ))
 
                     updateStatus(.transcribing)
+                    SoundFeedbackService.playRecordStop()
                     try await ensureEngineReady()
 
                     let text = try await transcriptionService.transcribe(audioSamples: samples)
@@ -449,6 +457,7 @@ class DictationCoordinator: ObservableObject {
 
                     // Transcribe with the already-loaded model (no model switching).
                     updateStatus(.transcribing)
+                    SoundFeedbackService.playRecordStop()
                     let text = try await transcriptionService.transcribe(audioSamples: samples)
 
                     // Write result to App Group
@@ -514,6 +523,7 @@ class DictationCoordinator: ObservableObject {
         bufferEnergy = []
         bufferSeconds = 0
         cleanupRecordingKeys()
+        SoundFeedbackService.playRecordCancel()
         updateStatus(.idle)
 
         if #available(iOS 14.0, *) {
