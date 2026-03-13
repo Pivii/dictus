@@ -46,8 +46,8 @@ struct GaugeBarView: View {
 
 #Preview {
     VStack(spacing: 16) {
-        GaugeBarView(value: 0.6, label: "Precision", color: .dictusAccent)
-        GaugeBarView(value: 0.8, label: "Vitesse", color: .dictusSuccess)
+        GaugeBarView(value: 0.6, label: "Précision", color: .dictusAccent)
+        GaugeBarView(value: 0.8, label: "Vitesse", color: .dictusAccentHighlight)
     }
     .padding()
     .background(Color.dictusBackground)

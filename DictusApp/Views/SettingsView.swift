@@ -39,7 +39,7 @@ struct SettingsView: View {
             // Section 1: Transcription
             Section {
                 Picker("Langue", selection: $language) {
-                    Text("Francais").tag("fr")
+                    Text("Français").tag("fr")
                     Text("English").tag("en")
                 }
             } header: {
@@ -64,7 +64,7 @@ struct SettingsView: View {
             .listRowBackground(Color.dictusAccent.opacity(0.05))
 
             // Section 3: A propos
-            Section("A propos") {
+            Section("À propos") {
                 LabeledContent("Version", value: appVersion)
 
                 Link(destination: URL(string: "https://github.com/Pivii/dictus")!) {
@@ -105,7 +105,7 @@ struct SettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.dictusBackground.ignoresSafeArea())
-        .navigationTitle("Reglages")
+        .navigationTitle("Réglages")
     }
 
     // MARK: - Private

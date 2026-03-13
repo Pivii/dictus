@@ -37,7 +37,7 @@ struct RecordingView: View {
     @State private var showResult = false
     @State private var showError = false
     @State private var errorMessage: String?
-    /// Brief "Copie !" feedback when user taps the transcription result.
+    /// Brief "Copié !" feedback when user taps the transcription result.
     @State private var showCopiedFeedback = false
     /// Two-step dismissal: animate out first, then reset coordinator status.
     @State private var isDismissing = false
@@ -220,7 +220,7 @@ struct RecordingView: View {
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
         } else if showCopiedFeedback {
-            Text("Copie !")
+            Text("Copié !")
                 .font(.dictusCaption)
                 .foregroundStyle(Color.dictusSuccess)
         } else if showResult {
@@ -259,7 +259,7 @@ struct RecordingView: View {
                 }
             }
             .buttonStyle(GlassPressStyle(pressedScale: 0.88))
-            .accessibilityLabel("Arreter l'enregistrement")
+            .accessibilityLabel("Arrêter l'enregistrement")
         } else if coordinator.status == .transcribing {
             // Shimmer mic during processing (disabled)
             AnimatedMicButton(status: .transcribing) {}
@@ -304,7 +304,7 @@ struct RecordingView: View {
             }
         case .failed:
             showError = true
-            errorMessage = coordinator.lastResult ?? "La transcription a echoue. Verifiez que le modele est telecharge."
+            errorMessage = coordinator.lastResult ?? "La transcription a échoué. Vérifiez que le modèle est téléchargé."
         default:
             break
         }

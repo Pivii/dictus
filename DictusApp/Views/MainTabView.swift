@@ -57,7 +57,7 @@ struct MainTabView: View {
                         ModelManagerView(modelManager: modelManager)
                     }
                     .tabItem {
-                        Label("Modeles", systemImage: "cpu")
+                        Label("Modèles", systemImage: "cpu")
                     }
                     .tag(1)
 
@@ -66,7 +66,7 @@ struct MainTabView: View {
                         SettingsView()
                     }
                     .tabItem {
-                        Label("Reglages", systemImage: "gearshape.fill")
+                        Label("Réglages", systemImage: "gearshape.fill")
                     }
                     .tag(2)
                 }
