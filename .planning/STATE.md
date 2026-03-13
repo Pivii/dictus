@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: executing
-stopped_at: Completed 15.1-02-PLAN.md
-last_updated: "2026-03-13T17:36:21.581Z"
-last_activity: 2026-03-13 -- Plan 15.1-01 executed (app name, icon, button alignment, swipe-back)
+stopped_at: Completed 15.1-03-PLAN.md
+last_updated: "2026-03-13T20:57:00Z"
+last_activity: 2026-03-13 -- Plan 15.1-03 executed (sound playback fix, picker layout, overlay alignment)
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 23
-  completed_plans: 23
-  percent: 89
+  completed_phases: 7
+  total_plans: 24
+  completed_plans: 24
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 15 gap closure -- Design Polish hotfix plans. Ready for Phase 16 (TestFlight).
+**Current focus:** Phase 15.1 complete -- all UAT gaps closed. Ready for Phase 16 (TestFlight).
 
 ## Current Position
 
-Phase: 15.1 of 16 (UI Polish Fixes) -- IN PROGRESS
-Plan: 1 of 2 in current phase
-Status: Executing Phase 15.1 UI polish plans
-Last activity: 2026-03-13 -- Plan 15.1-01 executed (app name, icon, button alignment, swipe-back)
+Phase: 15.1 of 16 (UI Polish Fixes) -- COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase 15.1 complete, ready for Phase 16
+Last activity: 2026-03-13 -- Plan 15.1-03 executed (sound playback fix, picker layout, overlay alignment)
 
-Progress: [█████████░] 89%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -85,6 +85,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15.1]: Used cairosvg for SVG-to-PNG rendering (ImageMagick MSVG renders gradients as grayscale)
 - [Phase 15.1]: AudioServicesPlaySystemSound over AVAudioPlayer -- respects silent switch natively
 - [Phase 15.1]: Start sound before configureAudioSession to avoid WhisperKit session suppression
+- [Phase 15.1-03]: subdirectory:"Sounds" required for Bundle.main.url -- Xcode folder references nest files in subdirectory
+- [Phase 15.1-03]: .pickerStyle(.menu) for inline sound picker layout -- .automatic renders stacked in List
+- [Phase 15.1-03]: 5pt extra trailing padding on overlay HStack matches AnimatedMicButton ring-to-pill inset
 
 ### Pending Todos
 
@@ -103,8 +106,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T17:32:02.013Z
-Stopped at: Completed 15.1-02-PLAN.md
+Last session: 2026-03-13T20:57:00Z
+Stopped at: Completed 15.1-03-PLAN.md
 Resume file: None
 
 ---
