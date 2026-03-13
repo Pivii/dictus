@@ -29,7 +29,11 @@ enum SoundFeedbackService {
 
     private static func isEnabled() -> Bool {
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        return defaults?.object(forKey: SharedKeys.soundFeedbackEnabled) as? Bool ?? true
+        // Default OFF: AVAudioSession is .playAndRecord (for recording), which ignores
+        // the hardware silent switch. Sounds would play even in silent mode. Rather than
+        // risk breaking recording by switching categories, we default to off and let
+        // users opt-in via Settings, knowing sounds will always play.
+        return defaults?.object(forKey: SharedKeys.soundFeedbackEnabled) as? Bool ?? false
     }
 
     /// Read the user's volume preference (0.0–1.0), default 0.5.
