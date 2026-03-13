@@ -4,7 +4,7 @@ import DictusCore
 
 /// Full-screen recording overlay that replaces the keyboard during active recording.
 /// Shows different visual states based on DictationStatus:
-/// - .requested: flat waveform bars, "Demarrage..." text, cancel-only button
+/// - .requested: flat waveform bars, "D\u{00E9}marrage..." text, cancel-only button
 /// - .recording: live waveform, elapsed timer, cancel + stop buttons
 /// - .transcribing: shimmer waveform, "Transcription..." text
 ///
@@ -53,21 +53,37 @@ struct RecordingOverlay: View {
                 recordingContent
             }
         }
+        .onAppear {
+            // Diagnostic logging for waveform disappearance bug investigation.
+            // Logs once on overlay appear to capture initial state.
+            PersistentLog.log("[Waveform] Overlay appeared — status=\(dictationStatus), energyCount=\(waveformEnergy.count)")
+        }
+        .onChange(of: waveformEnergy.count) { newCount in
+            // Log significant changes in waveform energy count to diagnose
+            // intermittent waveform disappearance. Only logs transitions to/from 0
+            // to avoid flooding the log on every audio frame.
+            if newCount == 0 || waveformEnergy.count == 0 {
+                PersistentLog.log("[Waveform] Energy count changed — status=\(dictationStatus), count=\(newCount)")
+            }
+        }
     }
 
     // MARK: - Requested state (waiting for app to start recording)
 
-    /// Shows flat waveform bars and "Demarrage..." text with cancel-only button.
+    /// Shows flat waveform bars and "D\u{00E9}marrage..." text with cancel-only button.
     ///
     /// WHY a distinct visual for .requested:
     /// The overlay appears immediately on mic tap (before the app starts recording).
-    /// Flat bars + "Demarrage..." gives the user instant visual feedback that their
+    /// Flat bars + "D\u{00E9}marrage..." gives the user instant visual feedback that their
     /// tap was registered, while clearly indicating recording hasn't started yet.
     private var requestedContent: some View {
         VStack(spacing: 0) {
             // Top bar: cancel only (no stop button -- nothing to stop yet)
             HStack {
-                PillButton(icon: "xmark", color: secondaryForeground, action: onCancel)
+                PillButton(icon: "xmark", color: secondaryForeground) {
+                    HapticFeedback.recordingStopped()
+                    onCancel()
+                }
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -89,8 +105,8 @@ struct RecordingOverlay: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
 
-            // Footer: "Demarrage..." status text
-            Text("Demarrage...")
+            // Footer: "D\u{00E9}marrage..." status text
+            Text("D\u{00E9}marrage...")
                 .font(.dictusCaption)
                 .foregroundColor(secondaryForeground)
                 .padding(.bottom, 8)
@@ -103,11 +119,17 @@ struct RecordingOverlay: View {
         VStack(spacing: 0) {
             // Top bar: cancel (left) and validate (right) -- pill-shaped Liquid Glass buttons
             HStack {
-                PillButton(icon: "xmark", color: secondaryForeground, action: onCancel)
+                PillButton(icon: "xmark", color: secondaryForeground) {
+                    HapticFeedback.recordingStopped()
+                    onCancel()
+                }
 
                 Spacer()
 
-                PillButton(icon: "checkmark", color: .dictusSuccess, action: onStop)
+                PillButton(icon: "checkmark", color: .dictusSuccess) {
+                    HapticFeedback.recordingStopped()
+                    onStop()
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -190,7 +212,8 @@ struct RecordingOverlay: View {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(color)
-                    .frame(width: 56, height: 36)
+                    .frame(width: 56, height: 44)
+                    .contentShape(Rectangle())
                     .dictusGlass(in: Capsule())
             }
             .buttonStyle(GlassPressStyle())
