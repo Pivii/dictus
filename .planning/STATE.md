@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Completed 15-05-PLAN.md
-last_updated: "2026-03-13T11:01:03.062Z"
+stopped_at: Completed 15-08-PLAN.md
+last_updated: "2026-03-13T12:15:14.158Z"
 last_activity: 2026-03-13 -- Plan 15-05 executed (French accent gap closure)
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 16
+  completed_phases: 4
+  total_plans: 19
+  completed_plans: 18
   percent: 100
 ---
 
@@ -71,6 +71,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15]: Success screen as ZStack overlay on TestRecordingPage, not navigation push
 - [Phase 15]: 500ms debounce on keyboard detection after Settings return -- matches iOS Settings sync timing
 - [Phase 15]: Fixed 'autorise' -> 'autorise' accent alongside planned 'Reglages' fix (Rule 2 auto-fix)
+- [Phase 15]: Auto-advance after 1.5s delay in onboarding -- user sees transcription before success screen
+- [Phase 15]: SettingsRowStyle ButtonStyle restores tap feedback without removing scrollContentBackground
 
 ### Pending Todos
 
@@ -85,8 +87,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T10:57:55.814Z
-Stopped at: Completed 15-05-PLAN.md
+Last session: 2026-03-13T12:15:14.156Z
+Stopped at: Completed 15-07-PLAN.md
 Resume file: None
 
 ---
