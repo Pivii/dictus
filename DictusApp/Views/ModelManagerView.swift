@@ -1,6 +1,7 @@
 // DictusApp/Views/ModelManagerView.swift
 // Model management UI: download, select, and delete WhisperKit models.
 // Redesigned with Downloaded/Available sections, gauge-based model cards, and engine descriptions.
+// Swipe-to-delete on downloaded non-active model cards (like iOS Mail).
 import SwiftUI
 import DictusCore
 
@@ -13,6 +14,10 @@ import DictusCore
 /// Separating sections provides clear visual hierarchy. Deprecated models (Tiny/Base)
 /// only appear in Downloaded if the user already has them — they're hidden from
 /// Available to guide users toward better models.
+///
+/// WHY List instead of ScrollView+VStack:
+/// SwiftUI's .swipeActions modifier only works inside List context. We style the List
+/// with transparent backgrounds and hidden separators to preserve the glass card aesthetic.
 ///
 /// WHY engine description paragraphs:
 /// Users may not know what "WhisperKit" means. A brief explanation helps them
@@ -52,32 +57,98 @@ struct ModelManagerView: View {
         Set(availableModels.map(\.engine))
     }
 
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // MARK: - Downloaded section
-                if !downloadedModels.isEmpty {
-                    modelSection(
-                        title: "Téléchargés",
-                        models: downloadedModels,
-                        engines: downloadedEngines
-                    )
-                }
+    /// Whether a given model can be deleted (not active, not the last one).
+    private func canDelete(_ model: ModelInfo) -> Bool {
+        let state = modelManager.modelStates[model.identifier] ?? .notDownloaded
+        guard case .ready = state else { return false }
+        let isActive = modelManager.activeModel == model.identifier
+        let isLastDownloaded = modelManager.downloadedModels.count <= 1
+        return !isActive && !isLastDownloaded
+    }
 
-                // MARK: - Available section
-                if !availableModels.isEmpty {
-                    modelSection(
-                        title: "Disponibles",
-                        models: availableModels,
-                        engines: availableEngines
-                    )
+    var body: some View {
+        List {
+            // MARK: - Downloaded section
+            if !downloadedModels.isEmpty {
+                Section {
+                    ForEach(downloadedModels) { model in
+                        ModelCardView(
+                            model: model,
+                            modelManager: modelManager,
+                            onDownloadError: { error in
+                                downloadError = error
+                                showErrorAlert = true
+                            }
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if canDelete(model) {
+                                Button("Supprimer", role: .destructive) {
+                                    modelToDelete = model
+                                    showDeleteAlert = true
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    }
+
+                    // Engine description paragraphs for downloaded section
+                    engineDescriptions(for: downloadedEngines)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                } header: {
+                    Text("Téléchargés")
+                        .font(.dictusSubheading)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+
+            // MARK: - Available section
+            if !availableModels.isEmpty {
+                Section {
+                    ForEach(availableModels) { model in
+                        ModelCardView(
+                            model: model,
+                            modelManager: modelManager,
+                            onDownloadError: { error in
+                                downloadError = error
+                                showErrorAlert = true
+                            }
+                        )
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    }
+
+                    // Engine description paragraphs for available section
+                    engineDescriptions(for: availableEngines)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                } header: {
+                    Text("Disponibles")
+                        .font(.dictusSubheading)
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Modèles")
         .background(Color.dictusBackground.ignoresSafeArea())
+        // Sync state from onboarding's separate ModelManager instance (Bug #25 fix).
+        // WHY onAppear loadState:
+        // When the user downloads a model during onboarding, a separate ModelManager
+        // writes state to App Group defaults. This view's ModelManager instance may
+        // not reflect that. Calling loadState() on appear re-reads from the shared
+        // UserDefaults so the model shows as downloaded and active.
+        .onAppear {
+            modelManager.loadState()
+        }
         // Delete confirmation alert
         .alert("Supprimer le modèle ?", isPresented: $showDeleteAlert, presenting: modelToDelete) { model in
             Button("Annuler", role: .cancel) { }
@@ -90,7 +161,7 @@ struct ModelManagerView: View {
                 }
             }
         } message: { model in
-            Text("Supprimer \(model.displayName) ? (\(model.sizeLabel) seront libérés)")
+            Text("Supprimer \(model.displayName) ? Le modèle sera supprimé de votre appareil.")
         }
         // Error alert
         .alert("Erreur", isPresented: $showErrorAlert) {
@@ -102,48 +173,9 @@ struct ModelManagerView: View {
         }
     }
 
-    // MARK: - Section builder
-
-    /// Builds a titled section with model cards and engine description paragraphs.
-    ///
-    /// WHY a helper function (not inline):
-    /// Both Downloaded and Available sections have the same layout pattern.
-    /// Extracting avoids duplication and keeps the body clean.
-    @ViewBuilder
-    private func modelSection(title: String, models: [ModelInfo], engines: Set<SpeechEngine>) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.dictusSubheading)
-                .foregroundStyle(.secondary)
-
-            ForEach(models) { model in
-                ModelCardView(
-                    model: model,
-                    modelManager: modelManager,
-                    onDelete: {
-                        modelToDelete = model
-                        showDeleteAlert = true
-                    },
-                    onDownloadError: { error in
-                        downloadError = error
-                        showErrorAlert = true
-                    }
-                )
-            }
-
-            // Engine description paragraphs
-            engineDescriptions(for: engines)
-        }
-    }
-
     // MARK: - Engine descriptions
 
     /// Shows a brief paragraph for each speech engine represented in the section.
-    ///
-    /// WHY per-section engine descriptions:
-    /// Only show descriptions for engines the user can see. If all models in a section
-    /// are WhisperKit, only the WhisperKit paragraph appears. This avoids confusion
-    /// about engines with no visible models.
     @ViewBuilder
     private func engineDescriptions(for engines: Set<SpeechEngine>) -> some View {
         if engines.contains(.whisperKit) {
