@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
-status: executing
-stopped_at: Completed 15.1-03-PLAN.md
-last_updated: "2026-03-13T20:57:00Z"
+status: completed
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-03-13T23:08:14.453Z"
 last_activity: 2026-03-13 -- Plan 15.1-03 executed (sound playback fix, picker layout, overlay alignment)
 progress:
   total_phases: 7
-  completed_phases: 7
-  total_plans: 24
-  completed_plans: 24
+  completed_phases: 6
+  total_plans: 27
+  completed_plans: 25
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 15.1 complete -- all UAT gaps closed. Ready for Phase 16 (TestFlight).
+**Current focus:** Phase 16 in progress -- open-source repo presentation complete (Plan 02). Next: TestFlight submission (Plan 03).
 
 ## Current Position
 
-Phase: 15.1 of 16 (UI Polish Fixes) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase 15.1 complete, ready for Phase 16
-Last activity: 2026-03-13 -- Plan 15.1-03 executed (sound playback fix, picker layout, overlay alignment)
+Phase: 16 of 16 (TestFlight Deployment)
+Plan: 2 of 3 in current phase
+Status: Plan 16-02 complete (README, CONTRIBUTING, issue templates)
+Last activity: 2026-03-14 -- Plan 16-02 executed (README rewrite, CONTRIBUTING, GitHub issue templates)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -88,6 +88,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15.1-03]: subdirectory:"Sounds" required for Bundle.main.url -- Xcode folder references nest files in subdirectory
 - [Phase 15.1-03]: .pickerStyle(.menu) for inline sound picker layout -- .automatic renders stacked in List
 - [Phase 15.1-03]: 5pt extra trailing padding on overlay HStack matches AnimatedMicButton ring-to-pill inset
+- [Phase 16]: No logo SVG found -- used dictus-icon-512.png for README header
 
 ### Pending Todos
 
@@ -106,8 +107,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T20:57:00Z
-Stopped at: Completed 15.1-03-PLAN.md
+Last session: 2026-03-13T23:08:14.451Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
 
 ---

@@ -194,7 +194,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 16
 | 14. Model Pipeline | 4/4 | Complete   | 2026-03-13 | - |
 | 15. Design Polish | 10/10 | Complete    | 2026-03-13 | - |
 | 15.1. UI Polish Fixes | 3/3 | Complete   | 2026-03-13 | - |
-| 16. TestFlight Deployment | v1.2 | 0/3 | Not started | - |
+| 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---
 *Roadmap created: 2026-03-04*

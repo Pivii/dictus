@@ -61,9 +61,9 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 - [ ] **TF-03**: App successfully archived and uploaded to App Store Connect
 - [ ] **TF-04**: First TestFlight beta build distributed to testers
 - [ ] **TF-05**: App Store Review Guidelines checklist verified (permissions justified, privacy policy, content rules)
-- [ ] **TF-06**: README.md updated with build instructions, prerequisites (Xcode version, iOS target, SPM dependencies)
-- [ ] **TF-07**: CONTRIBUTING.md with PR guidelines, code conventions, review process
-- [ ] **TF-08**: GitHub issue templates (bug report with debug logs section, feature request)
+- [x] **TF-06**: README.md updated with build instructions, prerequisites (Xcode version, iOS target, SPM dependencies)
+- [x] **TF-07**: CONTRIBUTING.md with PR guidelines, code conventions, review process
+- [x] **TF-08**: GitHub issue templates (bug report with debug logs section, feature request)
 - [ ] **TF-09**: Public TestFlight link in README for joining the beta
 
 ## Future Requirements
@@ -150,9 +150,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TF-03 | Phase 16 | Pending |
 | TF-04 | Phase 16 | Pending |
 | TF-05 | Phase 16 | Pending |
-| TF-06 | Phase 16 | Pending |
-| TF-07 | Phase 16 | Pending |
-| TF-08 | Phase 16 | Pending |
+| TF-06 | Phase 16 | Complete |
+| TF-07 | Phase 16 | Complete |
+| TF-08 | Phase 16 | Complete |
 | TF-09 | Phase 16 | Pending |
 
 **Coverage:**
