@@ -89,11 +89,25 @@ class RawAudioCapture: ObservableObject {
         // Install tap on input node to receive audio buffers
         // WHY bus 0 with hardware format: The input node's output format on bus 0
         // reflects the actual hardware format. We convert to 16kHz in the callback.
+        // Remove any stale tap before installing a new one.
+        // WHY this is needed:
+        // If a previous startCapture() installed a tap but engine.start() threw
+        // (e.g., app was in background → AUIOClient_StartIO error), the tap remains
+        // on the node but isCapturing stays false. The next startCapture() call passes
+        // the guard but crashes on installTap because a tap already exists.
+        inputNode.removeTap(onBus: 0)
+
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
             self?.processBuffer(buffer)
         }
 
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            // Clean up the tap we just installed so we don't leave a stale tap
+            inputNode.removeTap(onBus: 0)
+            throw error
+        }
         isCapturing = true
 
         if #available(iOS 14.0, *) {
