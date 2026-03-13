@@ -4,6 +4,25 @@ import SwiftUI
 import UIKit
 import DictusCore
 
+/// Brief gray flash on press, restoring the native iOS Settings tap feedback
+/// that `.scrollContentBackground(.hidden)` removes.
+///
+/// WHY a custom ButtonStyle instead of removing scrollContentBackground:
+/// We need `.scrollContentBackground(.hidden)` for the dark background design.
+/// But that modifier also strips the default List row press highlight. This style
+/// adds it back for all interactive rows (Button, NavigationLink, Link).
+struct SettingsRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed
+                    ? Color.gray.opacity(0.15)
+                    : Color.clear
+            )
+            .contentShape(Rectangle())
+    }
+}
+
 /// Settings screen with 3 sections: Transcription, Clavier, À propos.
 ///
 /// WHY @AppStorage with App Group store:
@@ -111,6 +130,7 @@ struct SettingsView: View {
             }
             .listRowBackground(Color.dictusAccent.opacity(0.05))
         }
+        .buttonStyle(SettingsRowStyle())
         .scrollContentBackground(.hidden)
         .background(Color.dictusBackground.ignoresSafeArea())
         .navigationTitle("Réglages")
