@@ -4,7 +4,7 @@ milestone: v1.2
 milestone_name: Beta Ready
 status: executing
 stopped_at: Completed 15-06-PLAN.md
-last_updated: "2026-03-13T12:16:32.969Z"
+last_updated: "2026-03-13T12:18:19.934Z"
 last_activity: 2026-03-13 -- Plan 15-06 executed (model card UX polish)
 progress:
   total_phases: 6
