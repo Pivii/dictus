@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
-status: completed
-stopped_at: Completed 15-08-PLAN.md
-last_updated: "2026-03-13T12:16:08.706Z"
-last_activity: 2026-03-13 -- Plan 15-08 executed (keyboard detection crash resilience)
+status: executing
+stopped_at: Completed 15-06-PLAN.md
+last_updated: "2026-03-13T12:16:32.969Z"
+last_activity: 2026-03-13 -- Plan 15-06 executed (model card UX polish)
 progress:
   total_phases: 6
   completed_phases: 5
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 15 of 16 (Design Polish) -- COMPLETE
-Plan: 5 of 5 in current phase (all plans done)
-Status: Phase 15 complete, ready for Phase 16
-Last activity: 2026-03-13 -- Plan 15-08 executed (keyboard detection crash resilience)
+Plan: 6 of 8 in current phase
+Status: Executing Phase 15 gap closure plans
+Last activity: 2026-03-13 -- Plan 15-06 executed (model card UX polish)
 
 Progress: [█████████░] 89%
 
@@ -75,6 +75,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15]: SettingsRowStyle ButtonStyle restores tap feedback without removing scrollContentBackground
 - [Phase 15-08]: Used structured LogEvent cases for onboarding logging instead of deprecated freeform API
 - [Phase 15-08]: Increased keyboard detection debounce from 500ms to 800ms with 2s retry backoff
+- [Phase 15-06]: Inline Text rows as section headers (not Section header: parameter) to prevent iOS sticky header behavior
+- [Phase 15-06]: Active model highlight changed from background tint to border stroke overlay on glass
+- [Phase 15-06]: Engine descriptions consolidated into single footer section instead of per-section duplicates
 
 ### Pending Todos
 
@@ -89,8 +92,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T12:16:06.085Z
-Stopped at: Completed 15-08-PLAN.md
+Last session: 2026-03-13T12:16:32.966Z
+Stopped at: Completed 15-06-PLAN.md
 Resume file: None
 
 ---
