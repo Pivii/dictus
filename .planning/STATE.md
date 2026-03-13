@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: executing
-stopped_at: Phase 16 context gathered
-last_updated: "2026-03-13T14:07:28.222Z"
+stopped_at: Phase 15.1 context gathered
+last_updated: "2026-03-13T17:12:53.673Z"
 last_activity: 2026-03-13 -- Plan 15-06 executed (model card UX polish)
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 5
   total_plans: 21
   completed_plans: 21
@@ -87,6 +87,10 @@ All decisions logged in PROJECT.md Key Decisions table.
 
 None.
 
+### Roadmap Evolution
+
+- Phase 15.1 inserted after Phase 15: UI polish fixes (#30, #33, #34, #24) (URGENT)
+
 ### Blockers/Concerns
 
 - Cold start auto-return has no public API -- Audio Bridge + UX messaging is the pragmatic path (Phase 13)
@@ -96,9 +100,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T14:07:28.220Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-testflight-deployment/16-CONTEXT.md
+Last session: 2026-03-13T17:12:53.666Z
+Stopped at: Phase 15.1 context gathered
+Resume file: .planning/phases/15.1-ui-polish-fixes-30-33-34-24/15.1-CONTEXT.md
 
 ---
 *State initialized: 2026-03-04*
