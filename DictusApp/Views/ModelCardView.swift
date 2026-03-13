@@ -32,9 +32,6 @@ struct ModelCardView: View {
     @ObservedObject var modelManager: ModelManager
     let onDownloadError: (String) -> Void
 
-    /// Tracks brief spinner while switching active model.
-    @State private var isSwitching = false
-
     /// The current state for this model, with a safe default.
     private var state: ModelState {
         modelManager.modelStates[model.identifier] ?? .notDownloaded
@@ -149,6 +146,14 @@ struct ModelCardView: View {
             }
         }
         .padding(16)
+        .background(
+            Group {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.dictusAccent.opacity(0.10))
+                }
+            }
+        )
         .dictusGlass()
         .overlay(
             // Active model gets a dark blue border stroke on top of glass
@@ -172,13 +177,7 @@ struct ModelCardView: View {
         switch state {
         case .ready:
             if !isActive {
-                isSwitching = true
-                Task {
-                    modelManager.selectModel(model.identifier)
-                    // Brief delay so spinner is visible (model switch is near-instant)
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    isSwitching = false
-                }
+                modelManager.selectModel(model.identifier)
             }
         case .notDownloaded:
             Task {
@@ -218,13 +217,8 @@ struct ModelCardView: View {
             EmptyView()
 
         case .ready:
-            if isSwitching {
-                // Brief spinner while model switch is preparing
-                ProgressView()
-            } else {
-                // No checkmark, no button — active state shown via border stroke
-                EmptyView()
-            }
+            // No checkmark, no button — active state shown via background tint + border
+            EmptyView()
 
         case .error(let message):
             VStack(spacing: 2) {
