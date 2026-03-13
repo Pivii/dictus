@@ -124,32 +124,21 @@ struct RecordingView: View {
                                 .foregroundColor(.dictusRecording)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 32)
+
+                            if mode == .onboarding {
+                                Button("Réessayer") {
+                                    errorMessage = nil
+                                    showError = false
+                                    showResult = false
+                                }
+                                .font(.dictusBody)
+                                .foregroundColor(.dictusAccent)
+                                .padding(.top, 8)
+                            }
                         }
                     }
 
-                    // Onboarding finish button (overlaid at bottom of upper zone)
-                    if mode == .onboarding && showResult {
-                        VStack {
-                            Spacer()
-                            Button(action: {
-                                coordinator.resetStatus()
-                                onComplete?()
-                            }) {
-                                Text("Terminer")
-                                    .font(.dictusSubheading)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 14)
-                                            .fill(Color.dictusSuccess)
-                                    )
-                            }
-                            .padding(.horizontal, 32)
-                            .padding(.bottom, 16)
-                        }
-                        .transition(.opacity)
-                    }
+                    // Onboarding: auto-advance handled in handleStatusChange
                 }
                 .frame(maxHeight: .infinity)
 
@@ -300,6 +289,17 @@ struct RecordingView: View {
                 transcriptionResult = result
                 withAnimation(.easeOut(duration: 0.4)) {
                     showResult = true
+                }
+                // Auto-advance to success screen in onboarding mode
+                // Shows transcription result for 1.5s then triggers onComplete
+                if mode == .onboarding {
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(1500))
+                        await MainActor.run {
+                            coordinator.resetStatus()
+                            onComplete?()
+                        }
+                    }
                 }
             }
         case .failed:
