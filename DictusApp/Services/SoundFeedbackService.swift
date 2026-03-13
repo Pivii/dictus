@@ -38,14 +38,20 @@ enum SoundFeedbackService {
     /// @AppStorage stores Double in UserDefaults. Casting directly to Float via
     /// `as? Float` fails silently because Swift doesn't bridge Double→Float.
     /// We read as Double first, then convert.
+    ///
+    /// WHY maxVolume = 0.2:
+    /// The bundled WAV files are recorded at very high gain. Even at slider minimum
+    /// (5%), the raw volume is too loud for subtle feedback sounds. The 0.2 cap means
+    /// the slider controls a 1%–20% range of the original audio, which feels right
+    /// for short UI feedback beeps.
+    private static let maxVolume: Float = 0.2
+
     private static func volume() -> Float {
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
         let val = defaults?.double(forKey: SharedKeys.soundVolume)
         // double(forKey:) returns 0.0 if key not set — treat 0 as "use default"
-        if let val, val > 0 {
-            return Float(val)
-        }
-        return 0.5
+        let sliderValue: Float = (val ?? 0) > 0 ? Float(val!) : 0.5
+        return sliderValue * maxVolume
     }
 
     // MARK: - Playback
