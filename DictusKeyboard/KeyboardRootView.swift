@@ -86,7 +86,10 @@ struct KeyboardRootView: View {
                     onStop: { state.requestStop() }
                 )
                 .frame(height: totalContentHeight)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .bottom)),
+                    removal: .opacity
+                ))
             } else {
                 // Single keyboard layout — no more mode switching.
                 // The only variable is which layer opens first (letters vs numbers),
