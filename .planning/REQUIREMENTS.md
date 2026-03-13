@@ -47,9 +47,9 @@ Requirements for v1.2 Beta Ready milestone. Each maps to roadmap phases.
 ### Design Polish
 
 - [x] **DSGN-01**: All French UI strings have correct accents (modele, dictee, reglages, telecharges, etc.)
-- [ ] **DSGN-02**: Active model has blue border highlight in model manager (replaces subtle badge)
-- [ ] **DSGN-03**: Model card layout improved (download button placement, badge/gauge alignment)
-- [ ] **DSGN-04**: Tap anywhere on downloaded model card to select it
+- [x] **DSGN-02**: Active model has blue border highlight in model manager (replaces subtle badge)
+- [x] **DSGN-03**: Model card layout improved (download button placement, badge/gauge alignment)
+- [x] **DSGN-04**: Tap anywhere on downloaded model card to select it
 - [ ] **DSGN-05**: X close button on recording overlay has 44pt hit area + haptic feedback
 - [ ] **DSGN-06**: Recording overlay dismissal uses smooth easeOut animation
 - [x] **DSGN-07**: Mic button shows reduced opacity during transcription processing
@@ -139,9 +139,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MODEL-07 | Phase 14 | Complete |
 | MODEL-08 | Phase 14 | Complete |
 | DSGN-01 | Phase 15 | Complete |
-| DSGN-02 | Phase 15 | Pending |
-| DSGN-03 | Phase 15 | Pending |
-| DSGN-04 | Phase 15 | Pending |
+| DSGN-02 | Phase 15 | Complete |
+| DSGN-03 | Phase 15 | Complete |
+| DSGN-04 | Phase 15 | Complete |
 | DSGN-05 | Phase 15 | Pending |
 | DSGN-06 | Phase 15 | Pending |
 | DSGN-07 | Phase 15 | Complete |
