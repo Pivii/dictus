@@ -1,0 +1,27 @@
+<svg width="1024" height="1024" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- App icon squircle background -->
+  <rect width="80" height="80" rx="18" fill="url(#grad-dark)"/>
+  <!-- Subtle inner glow ring -->
+  <rect width="80" height="80" rx="18" fill="none" stroke="url(#stroke-glow)" stroke-width="1"/>
+  <!-- Waveform bars (recentered: y-3 shift to center at y=40) -->
+  <!-- Bar 1 (short left): 18pt height -->
+  <rect x="19" y="31" width="9" height="18" rx="4.5" fill="white" opacity="0.45"/>
+  <!-- Bar 2 (tall center): 42pt height -->
+  <rect x="35.5" y="19" width="9" height="42" rx="4.5" fill="url(#bar-accent)"/>
+  <!-- Bar 3 (medium right): 27pt height -->
+  <rect x="52" y="26" width="9" height="27" rx="4.5" fill="white" opacity="0.65"/>
+  <defs>
+    <linearGradient id="grad-dark" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0D2040"/>
+      <stop offset="100%" stop-color="#071020"/>
+    </linearGradient>
+    <linearGradient id="stroke-glow" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3D7EFF" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#3D7EFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bar-accent" x1="35.5" y1="19" x2="44.5" y2="61" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6BA3FF"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+</svg>

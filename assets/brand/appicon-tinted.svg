@@ -1,0 +1,8 @@
+<svg width="1024" height="1024" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tinted mode: single-color silhouette for iOS tinted icon -->
+  <rect width="80" height="80" rx="18" fill="black"/>
+  <!-- Waveform bars as white silhouette (recentered: y-3 shift) -->
+  <rect x="19" y="31" width="9" height="18" rx="4.5" fill="white"/>
+  <rect x="35.5" y="19" width="9" height="42" rx="4.5" fill="white"/>
+  <rect x="52" y="26" width="9" height="27" rx="4.5" fill="white"/>
+</svg>
