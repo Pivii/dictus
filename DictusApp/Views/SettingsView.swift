@@ -4,7 +4,7 @@ import SwiftUI
 import UIKit
 import DictusCore
 
-/// Settings screen with 3 sections: Transcription, Clavier, A propos.
+/// Settings screen with 3 sections: Transcription, Clavier, À propos.
 ///
 /// WHY @AppStorage with App Group store:
 /// Preferences need to be readable by both the main app AND the keyboard extension.
@@ -31,6 +31,9 @@ struct SettingsView: View {
     /// Power users who find it annoying can toggle it off here.
     @AppStorage(SharedKeys.autocorrectEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var autocorrectEnabled = true
+
+    /// Tracks log export async operation for spinner display.
+    @State private var isExporting = false
 
     // MARK: - Body
 
@@ -95,11 +98,16 @@ struct SettingsView: View {
                     HStack {
                         Text("Exporter les logs")
                         Spacer()
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if isExporting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                .disabled(isExporting)
             }
             .listRowBackground(Color.dictusAccent.opacity(0.05))
         }
@@ -116,20 +124,31 @@ struct SettingsView: View {
     /// UIActivityViewController with a file URL shows the file name ("dictus-logs.txt")
     /// in the share sheet and lets the user save, AirDrop, or attach it to email/GitHub.
     /// Raw text sharing doesn't give a meaningful filename.
+    /// WHY async with isExporting flag:
+    /// Log gathering reads from disk and can take a moment on large log files.
+    /// The spinner gives visual feedback that something is happening. The share
+    /// sheet presentation must happen on the main thread (UIKit requirement).
     private func exportLogs() {
-        let content = PersistentLog.exportContent()
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("dictus-logs.txt")
-        try? content.write(to: tempURL, atomically: true, encoding: .utf8)
+        isExporting = true
+        Task {
+            let content = PersistentLog.exportContent()
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("dictus-logs.txt")
+            try? content.write(to: tempURL, atomically: true, encoding: .utf8)
 
-        // Present UIActivityViewController via the connected window scene.
-        // WHY this approach: SwiftUI doesn't have a native share sheet API.
-        // We use UIApplication.shared.connectedScenes to find the active window
-        // and present from its root view controller.
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
+            await MainActor.run {
+                isExporting = false
 
-        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
-        root.present(activityVC, animated: true)
+                // Present UIActivityViewController via the connected window scene.
+                // WHY this approach: SwiftUI doesn't have a native share sheet API.
+                // We use UIApplication.shared.connectedScenes to find the active window
+                // and present from its root view controller.
+                guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                      let root = scene.windows.first?.rootViewController else { return }
+
+                let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+                root.present(activityVC, animated: true)
+            }
+        }
     }
 
     /// App version string from Info.plist.
