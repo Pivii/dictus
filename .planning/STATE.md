@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Completed 15-04-PLAN.md
-last_updated: "2026-03-13T10:43:29.988Z"
-last_activity: 2026-03-13 -- Plan 15-03 executed (Recording overlay polish)
+stopped_at: Completed 15-05-PLAN.md
+last_updated: "2026-03-13T10:57:55.817Z"
+last_activity: 2026-03-13 -- Plan 15-05 executed (French accent gap closure)
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 15
-  completed_plans: 15
-  percent: 93
+  total_plans: 16
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A user can dictate text in French in any iOS app and correct it immediately on the same keyboard -- no subscription, no cloud, no account.
-**Current focus:** Phase 15 in progress -- Design Polish (plans 01-03 done, plan 04 remaining).
+**Current focus:** Phase 15 complete -- Design Polish (all 5 plans done). Ready for Phase 16 (TestFlight).
 
 ## Current Position
 
-Phase: 15 of 16 (Design Polish) -- IN PROGRESS
-Plan: 3 of 4 in current phase (plans 01-03 done)
-Status: Plan 15-03 complete, continuing Phase 15
-Last activity: 2026-03-13 -- Plan 15-03 executed (Recording overlay polish)
+Phase: 15 of 16 (Design Polish) -- COMPLETE
+Plan: 5 of 5 in current phase (all plans done)
+Status: Phase 15 complete, ready for Phase 16
+Last activity: 2026-03-13 -- Plan 15-05 executed (French accent gap closure)
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15-03]: Animation value bound to showsOverlay Bool (not dictationStatus enum) for cleaner SwiftUI animation trigger.
 - [Phase 15]: Success screen as ZStack overlay on TestRecordingPage, not navigation push
 - [Phase 15]: 500ms debounce on keyboard detection after Settings return -- matches iOS Settings sync timing
+- [Phase 15]: Fixed 'autorise' -> 'autorise' accent alongside planned 'Reglages' fix (Rule 2 auto-fix)
 
 ### Pending Todos
 
@@ -84,8 +85,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T10:43:29.986Z
-Stopped at: Completed 15-04-PLAN.md
+Last session: 2026-03-13T10:57:55.814Z
+Stopped at: Completed 15-05-PLAN.md
 Resume file: None
 
 ---
