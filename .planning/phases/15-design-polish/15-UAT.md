@@ -1,14 +1,14 @@
 ---
-status: testing
+status: diagnosed
 phase: 15-design-polish
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md
 started: 2026-03-13T11:00:00Z
-updated: 2026-03-13T14:15:00Z
+updated: 2026-03-13T14:30:00Z
 ---
 
 ## Current Test
 
-[retest complete]
+[testing complete]
 
 ## Tests
 
@@ -64,7 +64,7 @@ note: "OK mais le success screen pourrait arriver un peu plus vite (réduire le 
 ### 11. Keyboard Detection After Settings Return
 expected: During onboarding on the keyboard setup step, go to iOS Settings to enable the Dictus keyboard. Return to the app. The app should detect the keyboard without crashing or freezing. No race condition issues.
 result: pass
-note: "Crash encore intermittent mais pas bloquant. Logging ajouté — à surveiller en bêta. Pas d'issue GitHub existante, à créer."
+note: "Crash encore intermittent mais pas bloquant. Logging ajouté — à surveiller en bêta. GitHub issue #32 créée."
 
 ### 12. Active Model Name on Home Screen
 expected: Home screen shows correct model name without engine prefix. Parakeet models show "Parakeet v3", WhisperKit models show "Small", "Medium", etc.
@@ -103,37 +103,62 @@ skipped: 0
   reason: "User reported: Remettre le fond teinté bleu en plus de la bordure. Enlever le spinner de chargement au switch — instantané, spinner cause bug visuel d'agrandissement de carte."
   severity: minor
   test: 5
-  artifacts: []
-  missing: []
+  root_cause: "ModelCardView.swift:153-161 only has border stroke overlay, no background fill. isSwitching state (L35-36) triggers ProgressView spinner (L220-227) with artificial 300ms delay (L179) that causes card layout reflow/enlargement."
+  artifacts:
+    - path: "DictusApp/Views/ModelCardView.swift"
+      issue: "No background tint on active (L153-161), isSwitching spinner causes enlargement (L35-36, L174-181, L220-227)"
+  missing:
+    - "Add .background(Color.dictusAccent.opacity(0.10)) RoundedRectangle before the overlay stroke when isActive"
+    - "Remove isSwitching state variable, spinner display, and 300ms delay entirely"
 
 - truth: "Active model card has both blue background tint AND dark blue border"
   status: failed
   reason: "User reported: Même retour — fond teinté + bordure ensemble. Enlever spinner switch modèle."
   severity: minor
   test: 6
-  artifacts: []
-  missing: []
+  root_cause: "Same as test 5 — ModelCardView.swift active state only has border, no background tint. Spinner causes layout bug."
+  artifacts:
+    - path: "DictusApp/Views/ModelCardView.swift"
+      issue: "Same as test 5"
+  missing:
+    - "Same fix as test 5"
 
 - truth: "Swipe delete button matches card height"
   status: failed
   reason: "User reported: Bouton Supprimer ne fait pas la même hauteur que la carte"
   severity: cosmetic
   test: 7
-  artifacts: []
-  missing: []
+  root_cause: "ModelManagerView.swift:100-108 swipeActions Button sizes to text content by default. SwiftUI swipe action buttons don't auto-scale to fill row height."
+  artifacts:
+    - path: "DictusApp/Views/ModelManagerView.swift"
+      issue: "swipeActions Button not stretched to card height (L100-108)"
+  missing:
+    - "Add .frame(maxHeight: .infinity) to the swipe delete Button"
 
 - truth: "Waveform stays at same vertical position across recording/transcription states"
   status: failed
   reason: "User reported: Décalage vertical de la waveform entre recording (texte Listening pousse vers le bas) et transcription (pas de texte, waveform remonte). Aussi Listening doit être en français."
   severity: major
   test: 9
-  artifacts: []
-  missing: []
+  root_cause: "RecordingOverlay.swift uses different layout strategies: recording state (L118-166) has GeometryReader + footer with timer + 'Listening...' text (~40pt below waveform), transcription state (L170-187) uses symmetric Spacers with no footer. Footer disappears on transition, waveform jumps up. Also 'Listening...' hardcoded in English at L161."
+  artifacts:
+    - path: "DictusKeyboard/Views/RecordingOverlay.swift"
+      issue: "Recording footer (timer + Listening text, L156-164) has no equivalent in transcription state (L170-187). Waveform Y position differs. 'Listening...' hardcoded English (L161)."
+  missing:
+    - "Synchronize vertical layout: reserve same footer space in both states (placeholder or matching text)"
+    - "Change 'Listening...' to 'En écoute...' at L161"
+    - "Consider unified layout with fixed waveform position regardless of state"
 
 - truth: "Settings tap feedback covers full row area on all interactive items"
   status: failed
   reason: "User reported: Flash gris uniquement sur la hauteur du texte, pas toute la surface. Ne fonctionne que sur le lien GitHub, pas sur Licence/Diagnostic/Debug Logs."
   severity: major
   test: 13
-  artifacts: []
-  missing: []
+  root_cause: "SettingsRowStyle (ButtonStyle, L14-24) only applies to Button controls. NavigationLink (Licences L102, Diagnostic L106, Debug Logs L110) and Link (GitHub L92) are different control types that don't respond to ButtonStyle. The background in SettingsRowStyle wraps configuration.label (text content) not the full row."
+  artifacts:
+    - path: "DictusApp/Views/SettingsView.swift"
+      issue: "SettingsRowStyle is ButtonStyle — doesn't affect NavigationLink/Link (L14-24, L133). Background wraps label not full row."
+  missing:
+    - "Replace ButtonStyle approach with row-level pressable wrapper that works for all control types"
+    - "Apply tap feedback to NavigationLink rows (Licences, Diagnostic, Debug Logs) and Link row (GitHub)"
+    - "Ensure background covers full listRowInsets area, not just text"
