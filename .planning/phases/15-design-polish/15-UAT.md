@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 15-design-polish
 source: 15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md
 started: 2026-03-13T11:00:00Z
@@ -84,57 +84,85 @@ skipped: 0
   reason: "User reported: 1) Download progress bar too small, should be full-width hiding gauges during download/optimization (like Handy app). 2) Card should move from Available to Downloaded section when download starts. 3) Tap area not responsive enough, must tap center, multiple taps needed. 4) Missing iOS standard press animation (scale bounce). 5) Active model should have dark blue border instead of background tint."
   severity: major
   test: 5
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "1) ProgressView width hardcoded to 60pt in ModelCardView.swift:184. 2) downloadedModels computed property in ModelManagerView.swift:40-48 only includes completed downloads. 3) Button wraps cardContent but no .contentShape(Rectangle()) to expand hitbox. 4) GlassPressStyle pressedScale 0.97 too subtle. 5) Active state uses background fill instead of stroke border."
+  artifacts:
+    - path: "DictusApp/Views/ModelCardView.swift"
+      issue: "Progress bar 60pt hardcoded (L184), no contentShape on Button (L55-62), active highlight is background fill not border (L126-134)"
+    - path: "DictusApp/Views/ModelManagerView.swift"
+      issue: "downloadedModels filter excludes downloading state (L40-48)"
+    - path: "DictusCore/Sources/DictusCore/Design/GlassModifier.swift"
+      issue: "GlassPressStyle pressedScale 0.97 too subtle (L35-48)"
+  missing:
+    - "Full-width progress bar replacing gauge bars during download/optimization"
+    - "Add downloading models to downloadedModels section immediately"
+    - "Add .contentShape(Rectangle()) to Button for full-area tap"
+    - "Increase pressedScale to ~0.95 for more visible bounce"
+    - "Replace background fill with RoundedRectangle stroke for active model"
 
 - truth: "Swipe-to-delete button appears in red (destructive action)"
   status: failed
   reason: "User reported: Le bouton Supprimer en swipe est bleu au lieu de rouge"
   severity: minor
   test: 7
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Button role: .destructive is set (ModelManagerView.swift:85) but color not rendering red — likely needs explicit .tint(.red)"
+  artifacts:
+    - path: "DictusApp/Views/ModelManagerView.swift"
+      issue: "swipeActions Button missing explicit .tint(.red) (L83-90)"
+  missing:
+    - "Add .tint(.red) to the swipe delete Button"
 
 - truth: "Recording overlay disappears with smooth matching animation"
   status: failed
   reason: "User reported: Fade in à l'apparition est bien, mais la disparition slide vers le bas — préfère un simple fade out sans mouvement"
   severity: minor
   test: 9
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Transition uses .opacity.combined(with: .move(edge: .bottom)) symmetrically for both appear and disappear (KeyboardRootView.swift:89)"
+  artifacts:
+    - path: "DictusKeyboard/KeyboardRootView.swift"
+      issue: ".transition(.opacity.combined(with: .move(edge: .bottom))) applies slide to both insert and removal (L89)"
+  missing:
+    - "Use .asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)), removal: .opacity) for fade-only disappear"
 
 - truth: "Onboarding success screen flows smoothly after test recording"
   status: failed
   reason: "User reported: Le success screen marche mais le gros bouton vert Terminé juste avant est moche. Supprimer ce bouton, afficher le résultat de transcription brièvement puis enchaîner auto sur success screen. Si échec transcription, proposer réessayer."
   severity: minor
   test: 10
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "RecordingView.swift:130-152 shows Terminé button on showResult when mode == .onboarding. User must tap it to trigger onComplete callback in TestRecordingPage.swift:28-30. No auto-transition."
+  artifacts:
+    - path: "DictusApp/Views/RecordingView.swift"
+      issue: "Terminé button shown immediately on transcription complete (L130-152), blocks auto-transition"
+    - path: "DictusApp/Onboarding/TestRecordingPage.swift"
+      issue: "showSuccess only set on manual button tap callback (L28-30)"
+  missing:
+    - "Remove Terminé button from RecordingView onboarding mode"
+    - "Auto-trigger onComplete after brief delay (1-2s) showing transcription result"
+    - "Add retry option on transcription failure"
 
 - truth: "Keyboard detection after iOS Settings return works without crash"
   status: failed
   reason: "User reported: Crash intermittent au retour de Settings après activation du clavier. App se relance. Pas de stack trace disponible. Besoin de logging supplémentaire autour de l'onboarding keyboard detection pour diagnostiquer."
   severity: major
   test: 11
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Race condition in KeyboardSetupPage.swift:234-243 — UITextInputMode.activeInputModes accessed during rapid scenePhase transitions. No error handling around the access. 500ms debounce (L111-118) guards concurrent calls but not crashes inside the call itself."
+  artifacts:
+    - path: "DictusApp/Onboarding/KeyboardSetupPage.swift"
+      issue: "UITextInputMode.activeInputModes access without error handling (L234-243), debounce guard insufficient (L111-118)"
+  missing:
+    - "Wrap UITextInputMode access in error handling"
+    - "Add comprehensive logging: scenePhase transitions, detection start/end, mode count, errors"
+    - "Consider longer debounce or exponential backoff for resilience"
 
 - truth: "Active model card visually distinct with blue background tint"
   status: failed
   reason: "User reported: Veut bordure bleu foncé au lieu du fond teinté. Enlever le check vert en bas à droite de la carte active. Ajouter feedback de chargement (animation préparation) quand on switch de modèle car le switch peut prendre 1-2s et l'utilisateur ne sait pas si le clic a été pris en compte."
   severity: major
   test: 6
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "1) Active state uses .fill(Color.dictusAccent.opacity(0.10)) background (ModelCardView.swift:126-134). 2) Green checkmark hardcoded in .ready+isActive case (L202-209). 3) selectModel() is sync with no UI feedback (L145-150)."
+  artifacts:
+    - path: "DictusApp/Views/ModelCardView.swift"
+      issue: "Background fill for active (L126-134), green checkmark (L202-209), no loading state on selectModel (L145-150)"
+  missing:
+    - "Replace background fill with dark blue stroke border"
+    - "Remove green checkmark from active card"
+    - "Add transient switching state with spinner/progress indicator"
