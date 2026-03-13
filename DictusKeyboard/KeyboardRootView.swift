@@ -66,10 +66,18 @@ struct KeyboardRootView: View {
         toolbarHeight + keyboardHeight
     }
 
+    /// Whether the recording overlay should be visible.
+    /// Extracted as a computed property for clear animation binding.
+    private var showsOverlay: Bool {
+        state.dictationStatus == .requested
+            || state.dictationStatus == .recording
+            || state.dictationStatus == .transcribing
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Conditional: recording overlay (full area) OR toolbar + keyboard
-            if state.dictationStatus == .requested || state.dictationStatus == .recording || state.dictationStatus == .transcribing {
+            if showsOverlay {
                 RecordingOverlay(
                     dictationStatus: state.dictationStatus,
                     waveformEnergy: state.waveformEnergy,
@@ -78,6 +86,7 @@ struct KeyboardRootView: View {
                     onStop: { state.requestStop() }
                 )
                 .frame(height: totalContentHeight)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
                 // Single keyboard layout — no more mode switching.
                 // The only variable is which layer opens first (letters vs numbers),
@@ -115,6 +124,11 @@ struct KeyboardRootView: View {
         // gray bands at the top and bottom that didn't match the native chrome.
         // Transparent background lets the native keyboard styling show through.
         .background(Color.clear)
+        // Smooth easeOut animation for overlay show/hide transitions.
+        // WHY on the parent VStack: SwiftUI requires .animation() on the container
+        // that holds the if/else conditional, not inside the branches. This ensures
+        // both appearance and dismissal (cancel or transcription complete) animate.
+        .animation(.easeOut(duration: 0.25), value: showsOverlay)
         .onChange(of: state.dictationStatus) { newStatus in
             let showsOverlay = newStatus == .requested || newStatus == .recording || newStatus == .transcribing
             if showsOverlay {
