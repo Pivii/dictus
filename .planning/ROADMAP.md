@@ -125,11 +125,13 @@ Plans:
   2. Active model in model manager has a visible blue border highlight, and tapping anywhere on a downloaded model card selects it
   3. Recording overlay X button has a generous tap area (44pt minimum) with haptic feedback and smooth easeOut dismiss animation
   4. Mic button shows reduced opacity during transcription processing, giving clear visual feedback that work is happening
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 15-01: TBD
-- [ ] 15-02: TBD
+- [ ] 15-01-PLAN.md — French accent audit, gauge colors, mic button opacity, settings UX
+- [ ] 15-02-PLAN.md — Model card redesign (tap-to-select, swipe-to-delete, active highlight)
+- [ ] 15-03-PLAN.md — Recording overlay polish (hit area, haptics, dismiss animation, waveform logging)
+- [ ] 15-04-PLAN.md — Onboarding success screen, bug fixes (#25 model sync, #26 crash)
 
 ### Phase 16: TestFlight Deployment
 **Goal**: First beta build distributed to testers, with open-source repo ready for contributors
@@ -171,7 +173,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 16
 | 12. Animation State Fixes | v1.2 | Complete    | 2026-03-12 | 2026-03-12 |
 | 13. Cold Start Audio Bridge | 3/3 | Complete   | 2026-03-12 | - |
 | 14. Model Pipeline | 4/4 | Complete   | 2026-03-13 | - |
-| 15. Design Polish | v1.2 | 0/2 | Not started | - |
+| 15. Design Polish | v1.2 | 0/4 | Not started | - |
 | 16. TestFlight Deployment | v1.2 | 0/2 | Not started | - |
 
 ---
