@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 14-model-pipeline
 source: [14-01-SUMMARY.md, 14-02-SUMMARY.md, 14-03-SUMMARY.md]
 started: 2026-03-12T22:40:00Z
@@ -50,5 +50,13 @@ skipped: 1
   reason: "User reported: Pendant le prewarm, une barre de progression reste bloquee a zero alors qu'elle ne bouge pas. Il faudrait soit la supprimer pendant le prewarm, soit la faire avancer."
   severity: minor
   test: 3
-  artifacts: []
-  missing: []
+  root_cause: "State transition ordering bug in ModelManager.downloadWhisperKitModel() — downloadProgress is removed before modelStates transitions to .prewarming. During this gap, ModelCardView's .downloading case renders a determinate progress bar reading downloadProgress[id] ?? 0 = 0."
+  artifacts:
+    - path: "DictusApp/Models/ModelManager.swift"
+      issue: "downloadProgress removed (line 155) before state set to .prewarming (line 163) — gap during prewarm-lock while-loop"
+    - path: "DictusApp/Views/ModelCardView.swift"
+      issue: "?? 0 fallback on line 131 masks missing progress data, shows bar at 0%"
+  missing:
+    - "Move modelStates[identifier] = .prewarming to immediately after downloadProgress.removeValue(forKey:)"
+    - "Optionally guard in ModelCardView .downloading case: show spinner when progress data is nil"
+  debug_session: ".planning/debug/prewarm-progress-bar.md"
