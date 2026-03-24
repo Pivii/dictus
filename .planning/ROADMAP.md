@@ -51,6 +51,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 15.1: UI Polish Fixes** - Button alignment, app name/logo, swipe-back overlay, recording sound feedback (INSERTED) (completed 2026-03-13)
 - [x] **Phase 15.2: Cleaning and Fix GitHub Issues** - Fix ship-blocking bugs (waveform, DI desync, stale cards) and triage GitHub issues (INSERTED) (gap closure in progress) (completed 2026-03-17)
 - [x] **Phase 15.3: Keyboard Optimization and Responsiveness** - Reduce input latency with UIKit touch handling, device-adaptive key dimensions, and press feedback (INSERTED) (completed 2026-03-24)
+| 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
+- [ ] **Phase 15.4: Zero Dead Zones** - Eliminate dead zones between keyboard keys so every pixel resolves to a key (INSERTED)
 - [ ] **Phase 16: TestFlight Deployment** - Developer account migration, Privacy Manifest, archive, and first beta distribution
 
 ## Phase Details
@@ -163,6 +165,18 @@ Plans:
 - [x] 15.3-03-PLAN.md — Device-adaptive key dimensions and press feedback colors
 - [x] 15.3-04-PLAN.md — Visual verification + UAT fixes (margins, corner radius, space sound)
 
+### Phase 15.4: Zero Dead Zones (INSERTED)
+
+**Goal:** Eliminate dead zones between keyboard keys — every pixel of the keyboard surface must resolve to a key. See Issue #56 for full context, research (AOSP LatinIME, Apple patent US8232973B2, Fleksy), 3 failed approaches, and implementation leads (A: overlay Color.clear, B: improve catch-all, C: incremental hybrid).
+**Requirements**: #56
+**Depends on:** Phase 15.3
+**Canonical refs:** Issue #56, `.planning/phases/15.4-zero-dead-zones/`
+**Plans:** 2 plans
+
+Plans:
+- [ ] 15.4-01-PLAN.md — Version/build logging (#58) + temporary dead zone touch logging
+- [ ] 15.4-02-PLAN.md — Improve catch-all resolution, systematic UAT, remove temp logging
+
 ### Phase 15.2: Cleaning and Fix GitHub Issues (INSERTED)
 
 **Goal:** Fix ship-blocking bugs (waveform rendering in keyboard extension, Dynamic Island desync after chaining, stale transcription cards) and triage GitHub issues before TestFlight beta
@@ -215,7 +229,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 16
+Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 15.4 -> 16
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -237,6 +251,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 1
 | 15.1. UI Polish Fixes | 3/3 | Complete   | 2026-03-13 | - |
 | 15.2. Cleaning & Fix Issues | 4/4 | Complete   | 2026-03-17 | - |
 | 15.3. Keyboard Optimization | 4/4 | Complete    | 2026-03-24 | - |
+| 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
 | 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---
