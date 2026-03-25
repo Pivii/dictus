@@ -403,6 +403,14 @@ struct KeyboardView: View {
             x += keyWidth
         }
 
+        // TEMPORARY: Touch logging for dead zone validation (remove after Phase 15.4 UAT)
+        PersistentLog.log(.diagnosticProbe(
+            component: "DeadZone",
+            instanceID: "touch",
+            action: "gap-tap",
+            details: "x=\(Int(point.x)) y=\(Int(point.y)) row=\(rowIndex) key='\(targetKey.label)' type=\(targetKey.type) rowWidth=\(Int(rowWidth))"
+        ))
+
         // Play audio + haptic
         switch targetKey.type {
         case .character:
