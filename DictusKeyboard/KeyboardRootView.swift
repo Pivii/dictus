@@ -317,32 +317,45 @@ struct KeyboardRootView: View {
                         )
                         .frame(height: keyboardHeight)
 
-                        // Key popup overlay (SwiftUI, reads from touchState)
-                        if let label = touchState.pressedKeyLabel, !touchState.showingAccents {
-                            KeyPopup(label: label)
-                                .position(x: touchState.pressedKeyFrame.midX,
-                                          y: touchState.pressedKeyFrame.minY - 36)
-                                .allowsHitTesting(false)
-                        }
-
-                        // Accent popup overlay (SwiftUI, reads from touchState)
-                        if touchState.showingAccents {
-                            AccentPopup(
-                                accents: touchState.accentOptions,
-                                selectedIndex: touchState.selectedAccentIndex
-                            )
-                            .position(x: touchState.accentKeyFrame.midX,
-                                      y: touchState.accentKeyFrame.minY - 40)
-                            .allowsHitTesting(false)
-                        }
-
-                        // Trackpad overlay (greyed-out during space trackpad mode)
+                        // Trackpad overlay stays inside ZStack (fills keyboard area)
                         if touchState.isTrackpadActive {
                             Color(.systemBackground).opacity(0.6)
                                 .cornerRadius(8)
                                 .allowsHitTesting(false)
                                 .transition(.opacity)
                         }
+                    }
+                    // Popup overlays outside ZStack frame via .overlay -- won't clip on first row
+                    .overlay(alignment: .topLeading) {
+                        ZStack(alignment: .topLeading) {
+                            // Key popup overlay (SwiftUI, reads from touchState)
+                            if let label = touchState.pressedKeyLabel, !touchState.showingAccents {
+                                KeyPopup(label: label)
+                                    .position(x: touchState.pressedKeyFrame.midX,
+                                              y: touchState.pressedKeyFrame.minY - 28)
+                                    .allowsHitTesting(false)
+                            }
+
+                            // Accent popup overlay with edge clamping
+                            if touchState.showingAccents {
+                                let accentCount = CGFloat(touchState.accentOptions.count)
+                                let totalWidth = accentCount * 36
+                                let halfWidth = totalWidth / 2
+                                let kbWidth = touchState.keyboardWidth
+                                let rawX = touchState.accentKeyFrame.midX
+                                let clampedX = max(halfWidth, min(rawX, kbWidth - halfWidth))
+
+                                AccentPopup(
+                                    accents: touchState.accentOptions,
+                                    selectedIndex: touchState.selectedAccentIndex
+                                )
+                                .position(x: clampedX,
+                                          y: touchState.accentKeyFrame.minY - 28)
+                                .allowsHitTesting(false)
+                            }
+                        }
+                        .frame(width: touchState.keyboardWidth > 0 ? touchState.keyboardWidth : nil,
+                               height: keyboardHeight)
                     }
                 }
 

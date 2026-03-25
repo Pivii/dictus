@@ -760,8 +760,17 @@ class AdaptiveAccentKeyButton: BaseSpecialKeyButton {
         let accentCount = touchState?.accentOptions.count ?? 0
         guard accentCount > 0 else { return }
 
+        // Apply same edge clamping as the SwiftUI accent overlay
         let totalWidth = CGFloat(accentCount) * accentCellWidth
-        let popupStartX = bounds.midX - totalWidth / 2
+        let kbWidth = touchState?.keyboardWidth ?? bounds.width * 10  // fallback: no clamping
+        let frameInKB = frameInKeyboardCoordinateSpace()
+        let rawMidX = frameInKB.midX
+        let halfWidth = totalWidth / 2
+        let clampedMidX = max(halfWidth, min(rawMidX, kbWidth - halfWidth))
+
+        // Convert clamped position back to button-local coordinates
+        let clampedLocalMidX = bounds.midX + (clampedMidX - rawMidX)
+        let popupStartX = clampedLocalMidX - totalWidth / 2
         let index = Int((location.x - popupStartX) / accentCellWidth)
 
         if index >= 0 && index < accentCount {

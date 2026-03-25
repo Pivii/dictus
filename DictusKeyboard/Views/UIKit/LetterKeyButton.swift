@@ -92,16 +92,37 @@ class LetterKeyButton: UIButton {
         commonInit()
     }
 
+    /// Inner view for visual appearance (background color, corner radius, shadow).
+    /// Inset from button bounds so visual keys have gaps while touch area fills 100%.
+    private let backgroundView = UIView()
+
     private func commonInit() {
         titleLabel?.font = .systemFont(ofSize: 22)
         setTitleColor(.label, for: .normal)
-        backgroundColor = Self.normalBackground
-        layer.cornerRadius = KeyMetrics.keyCornerRadius
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.15
-        layer.shadowOffset = CGSize(width: 0, height: 1)
-        layer.shadowRadius = 0
+
+        // Button itself is transparent — touch area fills entire frame
+        backgroundColor = .clear
+
+        // Visual appearance lives on the inner backgroundView
+        backgroundView.backgroundColor = Self.normalBackground
+        backgroundView.layer.cornerRadius = KeyMetrics.keyCornerRadius
+        backgroundView.layer.shadowColor = UIColor.black.cgColor
+        backgroundView.layer.shadowOpacity = 0.15
+        backgroundView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        backgroundView.layer.shadowRadius = 0
+        backgroundView.clipsToBounds = false
+        backgroundView.isUserInteractionEnabled = false
+        addSubview(backgroundView)
+        sendSubviewToBack(backgroundView)
+
         clipsToBounds = false
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let hInset = KeyMetrics.keySpacing / 2
+        let vInset = KeyMetrics.rowSpacing / 2
+        backgroundView.frame = bounds.insetBy(dx: hInset, dy: vInset)
     }
 
     // MARK: - Hit testing
@@ -120,7 +141,7 @@ class LetterKeyButton: UIButton {
         let touchDownState = KeyTapSignposter.beginTouchDown()
 
         // 1. Visual highlight
-        backgroundColor = Self.pressedBackground
+        backgroundView.backgroundColor = Self.pressedBackground
         KeyTapSignposter.emitHighlight(touchDownState)
 
         // 2. Audio on touchDown
@@ -160,8 +181,17 @@ class LetterKeyButton: UIButton {
         let accentCount = touchState?.accentOptions.count ?? 0
         guard accentCount > 0 else { return }
 
+        // Apply same edge clamping as the SwiftUI accent overlay
         let totalWidth = CGFloat(accentCount) * accentCellWidth
-        let popupStartX = bounds.midX - totalWidth / 2
+        let kbWidth = touchState?.keyboardWidth ?? bounds.width * 10  // fallback: no clamping
+        let frameInKB = frameInKeyboardCoordinateSpace()
+        let rawMidX = frameInKB.midX
+        let halfWidth = totalWidth / 2
+        let clampedMidX = max(halfWidth, min(rawMidX, kbWidth - halfWidth))
+
+        // Convert clamped position back to button-local coordinates
+        let clampedLocalMidX = bounds.midX + (clampedMidX - rawMidX)
+        let popupStartX = clampedLocalMidX - totalWidth / 2
         let index = Int((location.x - popupStartX) / accentCellWidth)
 
         if index >= 0 && index < accentCount {
@@ -178,7 +208,7 @@ class LetterKeyButton: UIButton {
         longPressTimer = nil
 
         // Reset visual state
-        backgroundColor = Self.normalBackground
+        backgroundView.backgroundColor = Self.normalBackground
 
         if let state = touchState, state.showingAccents,
            let index = state.selectedAccentIndex,
@@ -205,7 +235,7 @@ class LetterKeyButton: UIButton {
         longPressTimer = nil
 
         // Reset visual state -- NO character insertion on cancel
-        backgroundColor = Self.normalBackground
+        backgroundView.backgroundColor = Self.normalBackground
         touchState?.hidePress()
         touchState?.hideAccents()
         longPressFired = false

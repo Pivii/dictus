@@ -71,6 +71,7 @@ struct EmojiCategoryBar: View {
                     .padding(.vertical, 6)
             }
         }
+        .padding(.horizontal, KeyMetrics.rowSidePadding + 4)
         .frame(height: 40)
     }
 }

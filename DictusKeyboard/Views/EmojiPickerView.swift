@@ -87,6 +87,8 @@ struct EmojiPickerView: View {
                 normalMode
             }
         }
+        .padding(.horizontal, KeyMetrics.rowSidePadding + 4)
+        .padding(.top, 4)
         .frame(maxWidth: .infinity)
         .onAppear {
             recentEmojis = RecentEmojis.load()
