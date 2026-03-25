@@ -39,6 +39,12 @@ class KeyboardTouchState: ObservableObject {
     /// Frame of the key showing accents, for popup positioning.
     @Published var accentKeyFrame: CGRect = .zero
 
+    // MARK: - Keyboard dimensions
+
+    /// Width of the keyboard container, used for accent strip edge clamping.
+    /// Set by KeyboardContainerView.layoutSubviews() after Auto Layout resolves.
+    @Published var keyboardWidth: CGFloat = 0
+
     // MARK: - Trackpad state
 
     /// Whether the space bar trackpad cursor mode is active.

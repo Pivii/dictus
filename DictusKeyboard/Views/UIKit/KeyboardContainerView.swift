@@ -50,6 +50,10 @@ class KeyboardContainerView: UIView {
     private var returnButton: ReturnKeyButton?
     private var accentButton: AdaptiveAccentKeyButton?
 
+    /// Flat array of all created buttons for hitTest fallback routing.
+    /// Populated in buildKeys() -- includes both LetterKeyButton and BaseSpecialKeyButton subclasses.
+    private var allButtons: [UIView] = []
+
     /// Stored actions for deferred queries (e.g., returnKeyType).
     private var actions: KeyboardActions?
 
@@ -105,6 +109,7 @@ class KeyboardContainerView: UIView {
         }
         rowStacks.removeAll()
         letterButtons.removeAll()
+        allButtons.removeAll()
         shiftButton = nil
         deleteButton = nil
         spaceButton = nil
@@ -124,6 +129,7 @@ class KeyboardContainerView: UIView {
                 if let button = createButton(for: key, actions: actions) {
                     rowStack.addArrangedSubview(button)
                     createdButtons.append((button, key))
+                    allButtons.append(button)
                 }
             }
 
@@ -242,6 +248,9 @@ class KeyboardContainerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
 
+        // Publish keyboard width for accent strip edge clamping in SwiftUI overlay
+        touchState?.keyboardWidth = bounds.width
+
         let rowCount = rowStacks.count
 
         for (rowIndex, rowStack) in rowStacks.enumerated() {
@@ -303,6 +312,39 @@ class KeyboardContainerView: UIView {
                 }
             }
         }
+    }
+
+    // MARK: - Hit test fallback
+
+    /// Route touches that miss the UIStackView chain to the nearest button.
+    ///
+    /// WHY this override:
+    /// The mainStack is inset by KeyMetrics.rowSidePadding (3-5pt) from the container edges.
+    /// Touches in that padding zone hit no button because the UIStackView chain never forwards
+    /// them. This override catches those missed touches and routes to the nearest button by
+    /// center distance, eliminating dead zones at keyboard edges and sub-pixel gaps.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // First, try the normal hit-test chain (UIStackView routing)
+        if let hit = super.hitTest(point, with: event) {
+            return hit
+        }
+        // If normal chain missed (touch in side padding or sub-pixel gaps),
+        // find the nearest button by distance to its center
+        guard bounds.contains(point) else { return nil }
+        var bestButton: UIView?
+        var bestDistance: CGFloat = .greatestFiniteMagnitude
+        for button in allButtons {
+            guard let parent = button.superview else { continue }
+            let center = parent.convert(button.center, to: self)
+            let dx = point.x - center.x
+            let dy = point.y - center.y
+            let dist = dx * dx + dy * dy  // squared distance (skip sqrt for perf)
+            if dist < bestDistance {
+                bestDistance = dist
+                bestButton = button
+            }
+        }
+        return bestButton
     }
 
     // MARK: - Update methods (avoid full rebuild)
