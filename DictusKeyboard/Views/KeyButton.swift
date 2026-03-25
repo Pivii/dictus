@@ -58,7 +58,7 @@ struct KeyButton: View {
             .font(.system(size: keyFontSize, weight: .regular))
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 keyBackground
                     .padding(.horizontal, KeyMetrics.keySpacing / 2)
@@ -88,8 +88,6 @@ struct KeyButton: View {
                 alignment: .top
             )
             // Extend hit area to entire frame (including gap padding).
-            // Without this, only the Text content is tappable — the expanded
-            // .frame() area is NOT tappable by default in SwiftUI.
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -97,7 +95,6 @@ struct KeyButton: View {
                         if !isPressed {
                             handleTouchDown(position: value.location)
                         }
-                        // Track drag position for accent selection after long-press fires
                         if showingAccents {
                             updateSelectedAccent(viewPosition: value.location)
                         }

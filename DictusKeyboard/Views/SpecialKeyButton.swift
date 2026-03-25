@@ -20,7 +20,7 @@ struct ShiftKey: View {
         Image(systemName: shiftIconName)
             .font(.system(size: 16, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -102,7 +102,7 @@ struct DeleteKey: View {
         Image(systemName: "delete.backward")
             .font(.system(size: 16, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isHolding ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -220,7 +220,7 @@ struct SpaceKey: View {
             .font(.system(size: 15))
             .foregroundColor(Color(.label))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -371,7 +371,7 @@ struct ReturnKey: View {
         Image(systemName: "return.left")
             .font(.system(size: 16, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -409,7 +409,7 @@ struct GlobeKey: View {
         Image(systemName: "globe")
             .font(.system(size: 16, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -447,7 +447,7 @@ struct EmojiKey: View {
         Image(systemName: "face.smiling")
             .font(.system(size: 18, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)
@@ -518,7 +518,7 @@ struct AdaptiveAccentKey: View {
             .font(.system(size: keyFontSize, weight: .regular))
             .foregroundStyle(.primary)
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(KeyMetrics.letterKeyColor)
@@ -637,7 +637,7 @@ struct LayerSwitchKey: View {
         Text(label)
             .font(.system(size: 15, weight: .medium))
             .frame(width: width)
-            .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+            .frame(maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: KeyMetrics.keyCornerRadius)
                     .fill(isPressed ? KeyMetrics.pressedKeyColor : KeyMetrics.letterKeyColor)

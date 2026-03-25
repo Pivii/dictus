@@ -31,8 +31,7 @@ struct KeyRow: View {
     /// bounds now extend to the keyboard edge with no clipping gap).
     private var unitKeyWidth: CGFloat {
         let totalMultiplier = keys.reduce(0) { $0 + $1.widthMultiplier }
-        let availableWidth = rowWidth - (KeyMetrics.rowSidePadding * 2)
-        return availableWidth / totalMultiplier
+        return rowWidth / totalMultiplier
     }
 
     var body: some View {
@@ -41,7 +40,7 @@ struct KeyRow: View {
                 keyView(for: key)
             }
         }
-        .padding(.horizontal, KeyMetrics.rowSidePadding)
+        .frame(height: KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
     }
 
     @ViewBuilder

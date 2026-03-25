@@ -87,6 +87,7 @@ class KeyboardViewController: UIInputViewController {
 
         // Assign as the controller's inputView — this activates audio feedback
         self.inputView = kbInputView
+
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -181,5 +182,5 @@ extension Notification.Name {
     /// Posted by KeyboardViewController when text changes externally (paste, cursor move).
     /// KeyboardView listens for this to recheck autocapitalisation.
     static let dictusTextDidChange = Notification.Name("dictusTextDidChange")
-
 }
+
