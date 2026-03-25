@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Phase 15.5 context gathered
-last_updated: "2026-03-25T14:03:59.840Z"
-last_activity: 2026-03-25 -- Plan 15.4-01 execution (commits 4ab7b10, 673a3df)
+stopped_at: Completed 15.5-01-PLAN.md
+last_updated: "2026-03-25T17:46:48.701Z"
+last_activity: 2026-03-25 -- Plan 15.5-01 execution (commits 1bd78c7, a99922c, 27b01ff)
 progress:
   total_phases: 11
   completed_phases: 8
-  total_plans: 37
-  completed_plans: 34
-  percent: 92
+  total_plans: 40
+  completed_plans: 35
+  percent: 88
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 
 ## Current Position
 
-Phase: 15.4 (Zero Dead Zones)
-Plan: 1 of 2 in current phase
-Status: Plan 15.4-01 complete. Version/build logging and dead zone touch coordinate logging.
-Last activity: 2026-03-25 -- Plan 15.4-01 execution (commits 4ab7b10, 673a3df)
+Phase: 15.5 (UIKit Keyboard Rebuild)
+Plan: 2 of 3 in current phase
+Status: Plan 15.5-01 complete. UIKit keyboard building blocks (5 files, zero dead zones via point(inside:with:)).
+Last activity: 2026-03-25 -- Plan 15.5-01 execution (commits 1bd78c7, a99922c, 27b01ff)
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -101,6 +101,10 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15.3]: UIViewRepresentable touch overlay: transparent UIView captures touches, SwiftUI handles rendering -- zero gesture disambiguation delay
 - [Phase 15.4]: Modified existing diagnosticProbe call instead of adding a second -- keeps log compact, version first
 - [Phase 15.4]: Touch coordinate log marked TEMPORARY with explicit removal instruction for Phase 15.4 UAT
+- [Phase 15.5]: BaseSpecialKeyButton shared superclass avoids ~30 lines duplication per special key subclass
+- [Phase 15.5]: KeyboardActions struct consolidates 12 callbacks for clean UIViewRepresentable boundary crossing
+- [Phase 15.5]: Coordinator tracks row counts (not full array equality) since KeyDefinition UUIDs prevent meaningful comparison
+- [Phase 15.5]: Touch insets computed in layoutSubviews after Auto Layout resolves button positions
 
 ### Pending Todos
 
@@ -123,9 +127,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T14:03:59.832Z
-Stopped at: Phase 15.5 context gathered
-Resume file: .planning/phases/15.5-uikit-keyboard-rebuild-issue-59/15.5-CONTEXT.md
+Last session: 2026-03-25T17:46:48.698Z
+Stopped at: Completed 15.5-01-PLAN.md
+Resume file: None
 
 ---
 *State initialized: 2026-03-04*
