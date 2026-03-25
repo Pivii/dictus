@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Completed 15.5-02-PLAN.md
-last_updated: "2026-03-25T17:46:48.701Z"
-last_activity: 2026-03-25 -- Plan 15.5-02 execution (commits e57bd65, 7a7441e)
+stopped_at: Completed 15.5-04-PLAN.md
+last_updated: "2026-03-25T21:20:00Z"
+last_activity: 2026-03-25 -- Plan 15.5-04 execution (commits 1bae3e6, ff79a14)
 progress:
   total_phases: 11
   completed_phases: 8
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 15.5 (UIKit Keyboard Rebuild)
-Plan: 3 of 3 in current phase
-Status: Plan 15.5-02 complete. UIKit keyboard wired into KeyboardRootView, 4 old SwiftUI key files deleted.
-Last activity: 2026-03-25 -- Plan 15.5-02 execution (commits e57bd65, 7a7441e)
+Plan: 4 of 4 in current phase
+Status: Plan 15.5-04 complete. Fixed layer switch, SF Symbol icons, return key context, delete haptic gating.
+Last activity: 2026-03-25 -- Plan 15.5-04 execution (commits 1bae3e6, ff79a14)
 
 Progress: [█████████░] 90%
 
@@ -108,6 +108,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15.5]: Keyboard logic consolidated in KeyboardRootView (not separate view) -- eliminates unnecessary intermediate SwiftUI view now that UIKit handles rendering
 - [Phase 15.5]: KeyboardTypes.swift created for shared types (KeySound, ShiftState, DeviceClass, KeyMetrics, KeyPopup) used by both UIKit and SwiftUI
 - [Phase 15.5]: Old SwiftUI key files fully deleted (not deprecated) -- single code path through UIKit layer
+- [Phase 15.5-04]: Direct layer comparison replaces row-count comparison -- all layouts have identical dimensions (4 rows, 10 keys)
+- [Phase 15.5-04]: ensureImageOnTop() in layoutSubviews for UIButton imageView z-order -- UIButton may reorder subviews during layout
+- [Phase 15.5-04]: onDelete returns Bool to gate haptics -- cleaner than separate hasText query
 
 ### Pending Todos
 
@@ -130,8 +133,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T17:56:07Z
-Stopped at: Completed 15.5-02-PLAN.md
+Last session: 2026-03-25T21:20:00Z
+Stopped at: Completed 15.5-04-PLAN.md
 Resume file: None
 
 ---
