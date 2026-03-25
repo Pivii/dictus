@@ -210,6 +210,7 @@ struct KeyboardRootView: View {
                         // UIKit keyboard layer -- zero dead zones via point(inside:with:)
                         KeyboardUIView(
                             rows: currentRows,
+                            currentLayer: currentLayer,
                             isShifted: isShifted,
                             shiftState: shiftState,
                             lastTypedChar: lastTypedChar,
@@ -234,7 +235,12 @@ struct KeyboardRootView: View {
                                         DispatchQueue.main.async {
                                             suggestionState.update(proxy: controller.textDocumentProxy)
                                         }
-                                        return
+                                        return true // Autocorrect undo always deletes text
+                                    }
+                                    // Check if there's text to delete before calling deleteBackward
+                                    let before = controller.textDocumentProxy.documentContextBeforeInput
+                                    guard before != nil && !before!.isEmpty else {
+                                        return false // Nothing to delete
                                     }
                                     controller.textDocumentProxy.deleteBackward()
                                     lastTypedChar = nil
@@ -243,6 +249,7 @@ struct KeyboardRootView: View {
                                     DispatchQueue.main.async {
                                         suggestionState.update(proxy: controller.textDocumentProxy)
                                     }
+                                    return true
                                 },
                                 onWordDelete: {
                                     // Delete backward to the previous word boundary.
@@ -302,6 +309,9 @@ struct KeyboardRootView: View {
                                 },
                                 onShiftChanged: { newState in
                                     shiftState = newState
+                                },
+                                onReturnKeyType: {
+                                    controller.textDocumentProxy.returnKeyType ?? .default
                                 }
                             )
                         )
