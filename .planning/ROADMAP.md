@@ -53,6 +53,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 15.3: Keyboard Optimization and Responsiveness** - Reduce input latency with UIKit touch handling, device-adaptive key dimensions, and press feedback (INSERTED) (completed 2026-03-24)
 | 15.4. Zero Dead Zones | 1/2 | In Progress|  | - |
 - [ ] **Phase 15.4: Zero Dead Zones** - Eliminate dead zones between keyboard keys so every pixel resolves to a key (INSERTED)
+- [ ] **Phase 15.5: UIKit Keyboard Rebuild (Issue #59)** - Rebuild keyboard key layer from SwiftUI to UIKit with UIButton point(inside:with:) for zero dead zones (INSERTED)
 - [ ] **Phase 16: TestFlight Deployment** - Developer account migration, Privacy Manifest, archive, and first beta distribution
 
 ## Phase Details
@@ -144,6 +145,29 @@ Plans:
 - [ ] 15-09-PLAN.md — UAT gap closure: active card blue tint + remove switch spinner + swipe delete height
 - [ ] 15-10-PLAN.md — UAT gap closure: waveform vertical stability + settings tap feedback
 
+### Phase 15.5: UIKit Keyboard Rebuild (Issue #59) (INSERTED)
+
+**Goal:** Rebuild the keyboard key layer from SwiftUI to UIKit -- each key becomes a UIButton subclass with point(inside:with:) override to extend touch areas beyond visual bounds, covering 100% of the keyboard surface with zero dead zones
+**Requirements**: DZ-01, DZ-02, DZ-03, DZ-04, DZ-05, DZ-06, DZ-07, DZ-08, DZ-09, DZ-10
+**Depends on:** Phase 15.4
+**Success Criteria** (what must be TRUE):
+  1. Every pixel on the keyboard surface resolves to a key tap (zero dead zones)
+  2. Audio and haptic fire on touchDown (touchesBegan), not touchUp
+  3. Key popup preview appears above pressed key via SwiftUI overlay
+  4. Accent long-press shows accent strip after 400ms with slide-to-select
+  5. Delete repeat accelerates from character to word level on hold
+  6. Space trackpad mode activates on long-press with cursor movement
+  7. Shift toggles labels, double-tap caps lock works
+  8. Layer switching rebuilds correct keys (letters/numbers/symbols)
+  9. Dark/light mode colors adapt automatically
+  10. All text insertion works correctly (type a sentence, verify in text field)
+**Plans:** 3 plans
+
+Plans:
+- [ ] 15.5-01-PLAN.md — UIKit key buttons (LetterKeyButton, SpecialKeyButtons, KeyboardTouchState, KeyboardContainerView, KeyboardUIView)
+- [ ] 15.5-02-PLAN.md — Integration into KeyboardRootView, popup overlays, delete old SwiftUI key files
+- [ ] 15.5-03-PLAN.md — Full UAT verification (10 DZ requirements)
+
 ### Phase 15.3: Keyboard optimization and responsiveness (INSERTED)
 
 **Goal:** Reduce keyboard input latency to match native iOS keyboard feel and adjust key spacing/dimensions to match Apple keyboard proportions
@@ -229,7 +253,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 15.4 -> 16
+Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 15.4 -> 15.5 -> 16
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -252,6 +276,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 1
 | 15.2. Cleaning & Fix Issues | 4/4 | Complete   | 2026-03-17 | - |
 | 15.3. Keyboard Optimization | 4/4 | Complete    | 2026-03-24 | - |
 | 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
+| 15.5. UIKit Keyboard Rebuild | v1.2 | 0/3 | Planned | - |
 | 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---
