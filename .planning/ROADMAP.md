@@ -51,7 +51,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 15.1: UI Polish Fixes** - Button alignment, app name/logo, swipe-back overlay, recording sound feedback (INSERTED) (completed 2026-03-13)
 - [x] **Phase 15.2: Cleaning and Fix GitHub Issues** - Fix ship-blocking bugs (waveform, DI desync, stale cards) and triage GitHub issues (INSERTED) (gap closure in progress) (completed 2026-03-17)
 - [x] **Phase 15.3: Keyboard Optimization and Responsiveness** - Reduce input latency with UIKit touch handling, device-adaptive key dimensions, and press feedback (INSERTED) (completed 2026-03-24)
-| 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
+| 15.4. Zero Dead Zones | 1/2 | In Progress|  | - |
 - [ ] **Phase 15.4: Zero Dead Zones** - Eliminate dead zones between keyboard keys so every pixel resolves to a key (INSERTED)
 - [ ] **Phase 16: TestFlight Deployment** - Developer account migration, Privacy Manifest, archive, and first beta distribution
 
@@ -171,7 +171,7 @@ Plans:
 **Requirements**: #56
 **Depends on:** Phase 15.3
 **Canonical refs:** Issue #56, `.planning/phases/15.4-zero-dead-zones/`
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 15.4-01-PLAN.md — Version/build logging (#58) + temporary dead zone touch logging
