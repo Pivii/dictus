@@ -478,9 +478,18 @@ class SpaceKeyButton: BaseSpecialKeyButton {
 // MARK: - ReturnKeyButton
 
 /// Return key with touchDown haptic/audio feedback.
+///
+/// For action contexts (Go, Search, Send), shows blue background with white text/icon
+/// matching Apple's native keyboard styling.
 class ReturnKeyButton: BaseSpecialKeyButton {
 
     var onTap: (() -> Void)?
+
+    /// Whether the current returnKeyType uses the blue "action" style.
+    private var isActionStyle = false
+
+    /// Blue background for action return keys (Go, Search, Send).
+    private static let actionBackground = UIColor.systemBlue
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -505,13 +514,26 @@ class ReturnKeyButton: BaseSpecialKeyButton {
     /// iOS text fields declare a returnKeyType (Search, Send, Go, etc.) that tells keyboards
     /// what label to show on the return key. The native keyboard adapts automatically, but
     /// custom keyboards must read the proxy's returnKeyType and update manually.
+    ///
+    /// Action types (go, search, send) get blue background + white icon/text like Apple.
     func updateReturnKeyType(_ type: UIReturnKeyType) {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
 
+        // Determine if this is an "action" type that gets blue styling
+        let wantsAction: Bool
+        switch type {
+        case .go, .search, .send:
+            wantsAction = true
+        default:
+            wantsAction = false
+        }
+
         switch type {
         case .go:
-            setImage(nil, for: .normal)
-            setTitle("Go", for: .normal)
+            setTitle(nil, for: .normal)
+            let arrowConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
+            setImage(UIImage(systemName: "arrow.right", withConfiguration: arrowConfig), for: .normal)
+            ensureImageOnTop()
         case .search:
             setTitle(nil, for: .normal)
             setImage(UIImage(systemName: "magnifyingglass", withConfiguration: config), for: .normal)
@@ -539,6 +561,35 @@ class ReturnKeyButton: BaseSpecialKeyButton {
             setTitle(nil, for: .normal)
             setImage(UIImage(systemName: "return.left", withConfiguration: config), for: .normal)
             ensureImageOnTop()
+        }
+
+        // Apply blue action style or restore normal style
+        if wantsAction {
+            isActionStyle = true
+            backgroundView.backgroundColor = Self.actionBackground
+            tintColor = .white
+            setTitleColor(.white, for: .normal)
+        } else {
+            isActionStyle = false
+            backgroundView.backgroundColor = Self.normalBackground
+            tintColor = .label
+            setTitleColor(.label, for: .normal)
+        }
+    }
+
+    override func showPressedState() {
+        if isActionStyle {
+            backgroundView.backgroundColor = Self.actionBackground.withAlphaComponent(0.7)
+        } else {
+            super.showPressedState()
+        }
+    }
+
+    override func showNormalState() {
+        if isActionStyle {
+            backgroundView.backgroundColor = Self.actionBackground
+        } else {
+            super.showNormalState()
         }
     }
 

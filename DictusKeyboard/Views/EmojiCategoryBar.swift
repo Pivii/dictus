@@ -38,8 +38,8 @@ struct EmojiCategoryBar: View {
                     .frame(width: 28, height: 28)
             }
 
-            // Category icons
-            HStack(spacing: 12) {
+            // Category icons — expanded tap targets to eliminate dead zones
+            HStack(spacing: 0) {
                 ForEach(sections) { section in
                     let isSelected = selectedCategoryID == section.id
                     Button {
@@ -48,10 +48,11 @@ struct EmojiCategoryBar: View {
                         Image(systemName: section.icon)
                             .font(.system(size: 17))
                             .foregroundColor(isSelected ? Color(.label) : Color(.tertiaryLabel))
-                            .frame(width: 28, height: 28)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(
                                 Circle()
                                     .fill(isSelected ? Color(.systemGray4) : Color.clear)
+                                    .frame(width: 28, height: 28)
                             )
                     }
                 }
@@ -71,7 +72,6 @@ struct EmojiCategoryBar: View {
                     .padding(.vertical, 6)
             }
         }
-        .padding(.horizontal, KeyMetrics.rowSidePadding + 4)
-        .frame(height: 40)
+        .frame(height: 44)
     }
 }

@@ -107,14 +107,14 @@ enum KeyMetrics {
 /// Apple's native keyboard popup has a stem connecting the bubble to the pressed key.
 /// This gives the user a clear visual link between the magnified letter and the key.
 struct KeyPopupShape: Shape {
-    var cornerRadius: CGFloat = 8
-    var stemWidth: CGFloat = 16
-    var stemHeight: CGFloat = 10
+    var cornerRadius: CGFloat = 6
+    var stemWidth: CGFloat = 14
+    var stemHeight: CGFloat = 8
 
     func path(in rect: CGRect) -> Path {
         let bubbleRect = CGRect(x: rect.minX, y: rect.minY,
                                 width: rect.width, height: rect.height - stemHeight)
-        let stemTipWidth: CGFloat = 8  // Narrower at the tip for Apple-style taper
+        let stemTipWidth: CGFloat = 6  // Narrower at the tip for Apple-style taper
 
         var path = Path()
 
@@ -140,12 +140,12 @@ struct KeyPopupShape: Shape {
 struct KeyPopup: View {
     let label: String
 
-    /// Fixed popup font size -- same rationale as key labels.
-    private let popupFontSize: CGFloat = 32
+    /// Fixed popup font size -- reduced to fit within first-row space like competitors.
+    private let popupFontSize: CGFloat = 26
 
-    /// Bubble height (text area) and stem height.
-    private let bubbleHeight: CGFloat = 56
-    private let stemHeight: CGFloat = 10
+    /// Bubble height (text area) and stem height -- reduced ~25% to avoid first-row clipping.
+    private let bubbleHeight: CGFloat = 42
+    private let stemHeight: CGFloat = 8
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -158,8 +158,8 @@ struct KeyPopup: View {
             Text(label)
                 .font(.system(size: popupFontSize, weight: .regular))
                 .foregroundStyle(.primary)
-                .frame(width: 50, height: bubbleHeight)
+                .frame(width: 44, height: bubbleHeight)
         }
-        .frame(width: 50, height: bubbleHeight + stemHeight)
+        .frame(width: 44, height: bubbleHeight + stemHeight)
     }
 }

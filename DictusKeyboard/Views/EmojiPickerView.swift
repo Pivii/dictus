@@ -32,9 +32,9 @@ struct EmojiPickerView: View {
     private let gridRows = Array(repeating: GridItem(.fixed(46), spacing: 2), count: 4)
 
     /// Dynamic cell width: exactly 8 emojis per row on any device.
-    /// (screenWidth - 4pt grid padding) / 8
+    /// screenWidth / 8 (grid goes edge-to-edge, cells fill available width)
     private var emojiCellWidth: CGFloat {
-        (UIScreen.main.bounds.width - 4) / 8
+        UIScreen.main.bounds.width / 8
     }
 
     // MARK: - Computed data
@@ -87,7 +87,6 @@ struct EmojiPickerView: View {
                 normalMode
             }
         }
-        .padding(.horizontal, KeyMetrics.rowSidePadding + 4)
         .padding(.top, 4)
         .frame(maxWidth: .infinity)
         .onAppear {
@@ -109,7 +108,7 @@ struct EmojiPickerView: View {
                 .foregroundColor(.secondary)
             Spacer()
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, KeyMetrics.rowSidePadding + 6)
         .padding(.top, 6)
         .padding(.bottom, 2)
 
@@ -130,7 +129,6 @@ struct EmojiPickerView: View {
                         .id(item.id)
                     }
                 }
-                .padding(.horizontal, 2)
             }
             .onChange(of: scrollToken) { _ in
                 if let firstID = categoryFirstIDs[selectedCategoryID] {

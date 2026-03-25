@@ -332,7 +332,7 @@ struct KeyboardRootView: View {
                             if let label = touchState.pressedKeyLabel, !touchState.showingAccents {
                                 KeyPopup(label: label)
                                     .position(x: touchState.pressedKeyFrame.midX,
-                                              y: touchState.pressedKeyFrame.minY - 28)
+                                              y: touchState.pressedKeyFrame.minY - 25)
                                     .allowsHitTesting(false)
                             }
 
@@ -350,7 +350,7 @@ struct KeyboardRootView: View {
                                     selectedIndex: touchState.selectedAccentIndex
                                 )
                                 .position(x: clampedX,
-                                          y: touchState.accentKeyFrame.minY - 28)
+                                          y: touchState.accentKeyFrame.minY - 25)
                                 .allowsHitTesting(false)
                             }
                         }

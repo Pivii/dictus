@@ -325,7 +325,11 @@ class KeyboardContainerView: UIView {
     /// center distance, eliminating dead zones at keyboard edges and sub-pixel gaps.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         // First, try the normal hit-test chain (UIStackView routing)
-        if let hit = super.hitTest(point, with: event) {
+        // IMPORTANT: check `hit !== self` — UIView.hitTest returns self when the point
+        // is inside bounds but no subview claims it (e.g., side padding area between
+        // container edge and mainStack). Without this check, the fallback never fires
+        // for edge touches and they become dead zones.
+        if let hit = super.hitTest(point, with: event), hit !== self {
             return hit
         }
         // If normal chain missed (touch in side padding or sub-pixel gaps),
