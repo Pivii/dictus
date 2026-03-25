@@ -1,6 +1,7 @@
 // DictusKeyboard/KeyboardRootView.swift
 import SwiftUI
 import Combine
+import AudioToolbox
 import DictusCore
 
 /// Bridge between DictusCore's DefaultKeyboardLayer and DictusKeyboard's KeyboardLayerType.
@@ -14,13 +15,20 @@ extension DefaultKeyboardLayer {
 }
 
 /// Root SwiftUI view for the keyboard extension.
-/// Phase 3 layout: ToolbarView + (KeyboardView OR RecordingOverlay).
+/// Phase 15.5 layout: ToolbarView + (KeyboardUIView with popup overlays OR RecordingOverlay).
 ///
 /// WHY conditional rendering instead of overlay:
 /// When recording, the keyboard letters must be completely replaced by the recording UI
 /// to prevent accidental key presses. SwiftUI's conditional rendering (`if/else`) fully
 /// removes the inactive view from the hierarchy, freeing its memory and preventing
 /// ghost touches. An overlay or ZStack would keep both views alive.
+///
+/// WHY keyboard logic lives here (not in a separate SwiftUI view):
+/// KeyboardView.swift previously held all keyboard logic (layer state, character insertion,
+/// autocorrect, etc.) and rendered SwiftUI key views. With the UIKit migration (Phase 15.5),
+/// key rendering moved to KeyboardUIView (UIViewRepresentable). The logic that wires
+/// keyboard actions to the text document proxy stays in SwiftUI, consolidated here to
+/// avoid an unnecessary intermediate view.
 struct KeyboardRootView: View {
     let controller: UIInputViewController
     let controllerID: String
@@ -32,13 +40,37 @@ struct KeyboardRootView: View {
     /// @StateObject ensures a single instance is created and owned by this view.
     @StateObject private var suggestionState = SuggestionState()
     @State private var isEmojiMode = false
+
+    // MARK: - Keyboard layer and input state (migrated from KeyboardView)
+
+    /// Which keyboard layer is currently displayed (letters, numbers, symbols, emoji).
+    @State private var currentLayer: KeyboardLayerType = .letters
+    /// Current shift state: off, shifted (one character), or caps locked.
+    @State private var shiftState: ShiftState = .off
+    /// Tracks the last typed character for the adaptive accent key.
+    /// After typing a vowel (e, a, u, i, o), the adaptive key shows the most
+    /// common accent for that vowel. Reset on space, delete, return, or layer switch.
+    @State private var lastTypedChar: String? = nil
+    /// Remembers which layer to return to when dismissing the emoji picker.
+    @State private var previousLayer: KeyboardLayerType? = nil
+
+    /// Bridge from UIKit touch events to SwiftUI popup overlays.
+    /// WHY @StateObject: KeyboardTouchState is an ObservableObject published by UIKit
+    /// button subclasses. SwiftUI reads it to position popup previews and accent strips.
+    @StateObject private var touchState = KeyboardTouchState()
+
+    /// Whether shift is active (shifted or caps locked).
+    private var isShifted: Bool {
+        shiftState == .shifted || shiftState == .capsLocked
+    }
+
     /// Default keyboard layer read from App Group on each appearance.
     /// Controls which layer (letters or numbers) the keyboard opens on.
     ///
     /// WHY initialized from UserDefaults (not just .letters):
     /// In SwiftUI, child .onAppear fires BEFORE parent .onAppear. If we default
     /// to .letters here and only read UserDefaults in .onAppear, KeyboardView
-    /// would always see .letters on first render — even if the user chose 123.
+    /// would always see .letters on first render -- even if the user chose 123.
     /// Reading the stored value at @State init time ensures the correct layer
     /// is available when KeyboardView first renders.
     @State private var defaultLayer: KeyboardLayerType = {
@@ -52,15 +84,24 @@ struct KeyboardRootView: View {
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
+    // MARK: - Layout dimensions
+
     /// Height of just the 4-row keyboard area (without toolbar).
     private var keyboardHeight: CGFloat {
         let rows: CGFloat = 4
-        return (rows * KeyMetrics.keyHeight)
-            + ((rows - 1) * KeyMetrics.rowSpacing)
-            + 8  // vertical padding
+        // With zero-spacing layout, each key's frame includes rowSpacing.
+        // Total = rows * (keyHeight + rowSpacing).
+        let standardHeight = rows * (KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+
+        if currentLayer == .emoji {
+            // Emoji picker takes full height: toolbar (48pt) + keyboard + bottom spacer (8pt)
+            // are hidden by the parent, so we expand to fill that space.
+            return standardHeight + 48 + 8
+        }
+        return standardHeight
     }
 
-    /// Toolbar height — must match ToolbarView's frame height (52pt: 48pt content + 4pt top padding).
+    /// Toolbar height -- must match ToolbarView's frame height (52pt: 48pt content + 4pt top padding).
     private let toolbarHeight: CGFloat = 52
 
     /// Total content height (toolbar + keyboard). RecordingOverlay uses this
@@ -86,13 +127,34 @@ struct KeyboardRootView: View {
         // During cold start app transitions, iOS can rapidly create/destroy
         // keyboard controllers. viewWillAppear may not have fired on the
         // current controller, leaving activeControllerID == nil.
-        // Show overlay anyway — only one controller is visible on screen.
+        // Show overlay anyway -- only one controller is visible on screen.
         if state.activeControllerID == nil {
             return true
         }
 
         return false
     }
+
+    // MARK: - Keyboard row data (migrated from KeyboardView)
+
+    /// Returns the key definitions for the current layer, filtering out mic keys.
+    private var currentRows: [[KeyDefinition]] {
+        switch currentLayer {
+        case .letters:
+            // Use dynamic layout (AZERTY or QWERTY) based on App Group preference.
+            // Filter out .mic keys from every row -- the mic button now lives in the
+            // toolbar above the keyboard (Plan 03-02). Filtering all rows (not just row 4)
+            // is a safety measure in case layouts are restructured in the future.
+            return KeyboardLayout.currentLettersRows().map { row in
+                row.filter { $0.type != .mic }
+            }
+        case .numbers: return KeyboardLayout.numbersRows
+        case .symbols: return KeyboardLayout.symbolsRows
+        case .emoji: return [] // Not used -- emoji picker replaces the keyboard rows
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,7 +170,7 @@ struct KeyboardRootView: View {
                 )
                 .frame(height: totalContentHeight)
             } else {
-                // Single keyboard layout — no more mode switching.
+                // Single keyboard layout -- no more mode switching.
                 // The only variable is which layer opens first (letters vs numbers),
                 // controlled by the user's DefaultKeyboardLayer preference.
 
@@ -126,13 +188,153 @@ struct KeyboardRootView: View {
                     )
                 }
 
-                KeyboardView(
-                    controller: controller,
-                    hasFullAccess: controller.hasFullAccess,
-                    isEmojiMode: $isEmojiMode,
-                    suggestionState: suggestionState,
-                    initialLayer: defaultLayer
-                )
+                // Emoji picker or UIKit keyboard with popup overlays
+                if currentLayer == .emoji {
+                    EmojiPickerView(
+                        onEmojiInsert: { emoji in
+                            controller.textDocumentProxy.insertText(emoji)
+                        },
+                        onDelete: {
+                            controller.textDocumentProxy.deleteBackward()
+                        },
+                        onDismiss: {
+                            HapticFeedback.keyTapped()
+                            AudioServicesPlaySystemSound(KeySound.modifier)
+                            currentLayer = previousLayer ?? .letters
+                            previousLayer = nil
+                            isEmojiMode = false
+                        }
+                    )
+                } else {
+                    ZStack(alignment: .top) {
+                        // UIKit keyboard layer -- zero dead zones via point(inside:with:)
+                        KeyboardUIView(
+                            rows: currentRows,
+                            isShifted: isShifted,
+                            shiftState: shiftState,
+                            lastTypedChar: lastTypedChar,
+                            touchState: touchState,
+                            actions: KeyboardActions(
+                                onCharacter: { char in insertCharacter(char) },
+                                onDelete: {
+                                    // Autocorrect undo: if backspace pressed immediately after
+                                    // autocorrect, restore the original word instead of normal delete.
+                                    if let undo = suggestionState.lastAutocorrect {
+                                        let proxy = controller.textDocumentProxy
+                                        // Delete the corrected word + trailing space if one was inserted
+                                        let deleteCount = undo.correctedWord.count + (undo.insertedSpace ? 1 : 0)
+                                        for _ in 0..<deleteCount {
+                                            proxy.deleteBackward()
+                                        }
+                                        proxy.insertText(undo.originalWord)
+                                        suggestionState.lastAutocorrect = nil
+                                        lastTypedChar = nil
+                                        checkAutocapitalize()
+                                        // Update suggestions for the restored word
+                                        DispatchQueue.main.async {
+                                            suggestionState.update(proxy: controller.textDocumentProxy)
+                                        }
+                                        return
+                                    }
+                                    controller.textDocumentProxy.deleteBackward()
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                    // Update suggestions after deletion
+                                    DispatchQueue.main.async {
+                                        suggestionState.update(proxy: controller.textDocumentProxy)
+                                    }
+                                },
+                                onWordDelete: {
+                                    // Delete backward to the previous word boundary.
+                                    suggestionState.lastAutocorrect = nil
+                                    deleteWordBackward()
+                                    lastTypedChar = nil
+                                    checkAutocapitalize()
+                                    DispatchQueue.main.async {
+                                        suggestionState.update(proxy: controller.textDocumentProxy)
+                                    }
+                                },
+                                onSpace: {
+                                    performAutocorrectIfNeeded()
+                                    controller.textDocumentProxy.insertText(" ")
+                                    lastTypedChar = nil
+                                    suggestionState.clear()
+                                    checkAutocapitalize()
+                                },
+                                onReturn: {
+                                    suggestionState.lastAutocorrect = nil
+                                    controller.textDocumentProxy.insertText("\n")
+                                    lastTypedChar = nil
+                                    suggestionState.clear()
+                                    checkAutocapitalize()
+                                },
+                                onGlobe: {
+                                    controller.advanceToNextInputMode()
+                                },
+                                onEmoji: {
+                                    previousLayer = currentLayer
+                                    currentLayer = .emoji
+                                    isEmojiMode = true
+                                },
+                                onLayerSwitch: {
+                                    suggestionState.lastAutocorrect = nil
+                                    suggestionState.clear()
+                                    toggleLettersNumbers()
+                                },
+                                onSymbolToggle: {
+                                    suggestionState.lastAutocorrect = nil
+                                    suggestionState.clear()
+                                    toggleNumbersSymbols()
+                                },
+                                onAccentAdaptive: { char in
+                                    HapticFeedback.keyTapped()
+                                    AudioServicesPlaySystemSound(KeySound.letter)
+                                    suggestionState.lastAutocorrect = nil
+                                    // If the accent key is replacing a vowel (not inserting apostrophe),
+                                    // delete the previous vowel first, then insert the accented version.
+                                    if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
+                                        controller.textDocumentProxy.deleteBackward()
+                                    }
+                                    insertCharacter(char)
+                                },
+                                onCursorMove: { offset in
+                                    controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+                                },
+                                onShiftChanged: { newState in
+                                    shiftState = newState
+                                }
+                            )
+                        )
+                        .frame(height: keyboardHeight)
+
+                        // Key popup overlay (SwiftUI, reads from touchState)
+                        if let label = touchState.pressedKeyLabel, !touchState.showingAccents {
+                            KeyPopup(label: label)
+                                .position(x: touchState.pressedKeyFrame.midX,
+                                          y: touchState.pressedKeyFrame.minY - 36)
+                                .allowsHitTesting(false)
+                        }
+
+                        // Accent popup overlay (SwiftUI, reads from touchState)
+                        if touchState.showingAccents {
+                            AccentPopup(
+                                accents: touchState.accentOptions,
+                                selectedIndex: touchState.selectedAccentIndex
+                            )
+                            .position(x: touchState.accentKeyFrame.midX,
+                                      y: touchState.accentKeyFrame.minY - 40)
+                            .allowsHitTesting(false)
+                        }
+
+                        // Trackpad overlay (greyed-out during space trackpad mode)
+                        if touchState.isTrackpadActive {
+                            Color(.systemBackground).opacity(0.6)
+                                .cornerRadius(8)
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
+                    }
+                }
 
                 if !isEmojiMode {
                     Spacer().frame(height: 8)
@@ -181,6 +383,16 @@ struct KeyboardRootView: View {
         .onChange(of: state.isKeyboardVisible) { _, _ in
             syncWaveformDriver()
         }
+        // React to parent changing defaultLayer (e.g. keyboard reappearance
+        // after user changed the default in Settings, or after recording overlay
+        // dismisses and this view is recreated by SwiftUI's conditional rendering).
+        .onChange(of: defaultLayer) { _, newLayer in
+            currentLayer = newLayer
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dictusTextDidChange)) { _ in
+            // External text changes (paste, cursor move) may expose a sentence ending.
+            checkAutocapitalize()
+        }
         .onAppear {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardRootView",
@@ -197,6 +409,13 @@ struct KeyboardRootView: View {
 
             // Re-read default layer in case user changed settings since extension loaded.
             defaultLayer = DefaultKeyboardLayer.active.asLayerType
+
+            // Set the starting layer from the user's preference.
+            currentLayer = defaultLayer
+
+            // Set initial shift state based on text field content.
+            // Empty field = capitalize first letter (standard iOS behavior).
+            checkAutocapitalize()
 
             // Pre-allocate haptic generators so the first key tap has zero latency.
             // Without this, the Taptic Engine needs ~2-5ms to spin up on first use.
@@ -223,6 +442,8 @@ struct KeyboardRootView: View {
             syncWaveformDriver(forceHidden: true)
         }
     }
+
+    // MARK: - Waveform sync
 
     private func syncWaveformDriver(forceHidden: Bool = false) {
         waveformDriver.sync(
@@ -282,5 +503,178 @@ struct KeyboardRootView: View {
         if addSpace {
             proxy.insertText(" ")
         }
+    }
+
+    // MARK: - Character insertion (migrated from KeyboardView)
+
+    private func insertCharacter(_ char: String) {
+        // NOTE: Audio + haptic are now fired in UIKit button's touchesBegan handler,
+        // NOT here. This matches Apple's native keyboard: feedback fires on press
+        // (touchDown), not on release (touchUp/insert).
+
+        // Any character input clears the autocorrect undo state.
+        // The undo window is only valid immediately after the autocorrection.
+        suggestionState.lastAutocorrect = nil
+
+        // Track last typed character for the adaptive accent key.
+        // The accent key uses this to decide whether to show apostrophe or an accent.
+        lastTypedChar = char
+
+        controller.textDocumentProxy.insertText(char)
+
+        // Auto-unshift after one character (unless caps locked)
+        if shiftState == .shifted {
+            shiftState = .off
+        }
+
+        // Update suggestions on BACKGROUND queue with coalescing.
+        // WHY updateAsync: Moves extractLastWord + engine.suggestions() off main thread.
+        // WHY read context here: UITextDocumentProxy must be read on main thread.
+        // WHY DispatchQueue.main.async: proxy reads can be stale immediately after
+        // insertText(). Deferring by one runloop tick ensures documentContextBeforeInput
+        // reflects the newly inserted character.
+        DispatchQueue.main.async {
+            let context = controller.textDocumentProxy.documentContextBeforeInput
+            suggestionState.updateAsync(context: context)
+        }
+    }
+
+    // MARK: - Autocapitalize (migrated from KeyboardView)
+
+    /// Check whether autocapitalisation should activate shift.
+    /// Respects the host app's autocapitalizationType: .none disables autocap entirely,
+    /// .sentences (default) capitalizes after ". ", "! ", "? ", newline, or empty field.
+    ///
+    /// WHY only auto-SHIFT, never auto-unshift:
+    /// Auto-unshift is already handled by insertCharacter() (shifts off after one char).
+    /// If we auto-unshifted here, it would fight with manual shift taps.
+    /// Caps lock is never touched by autocap -- it's always a deliberate user action.
+    private func checkAutocapitalize() {
+        let proxy = controller.textDocumentProxy
+
+        // Respect autocapitalizationType from the host text field.
+        // .none = never autocap (e.g., email, password fields).
+        // .sentences = capitalize after sentence-ending punctuation (default).
+        // .words and .allCharacters are less common; we handle .sentences and .none.
+        if let autocapType = proxy.autocapitalizationType,
+           autocapType == .none {
+            return
+        }
+
+        let before = proxy.documentContextBeforeInput ?? ""
+
+        let shouldCap: Bool
+        if before.isEmpty {
+            // Empty field = capitalize first letter
+            shouldCap = true
+        } else if before.hasSuffix(". ") || before.hasSuffix("! ") || before.hasSuffix("? ") {
+            // After sentence-ending punctuation followed by space
+            shouldCap = true
+        } else if before.hasSuffix("\n") {
+            // After newline
+            shouldCap = true
+        } else {
+            shouldCap = false
+        }
+
+        // Only auto-activate shift; don't interfere with caps lock or manual shift
+        if shouldCap && shiftState == .off {
+            shiftState = .shifted
+        }
+    }
+
+    // MARK: - Word deletion (migrated from KeyboardView)
+
+    /// Delete backward to the previous word boundary.
+    /// Since UITextDocumentProxy doesn't provide deleteWordBackward(),
+    /// we read the text before the cursor, find the last word boundary
+    /// (space or start of string), and delete that many characters.
+    private func deleteWordBackward() {
+        let proxy = controller.textDocumentProxy
+        guard let before = proxy.documentContextBeforeInput, !before.isEmpty else {
+            // Nothing to delete -- fall back to single char delete
+            proxy.deleteBackward()
+            return
+        }
+
+        // Trim trailing spaces first (delete spaces before the word)
+        var trimmed = before
+        var trailingSpaces = 0
+        while trimmed.hasSuffix(" ") {
+            trimmed = String(trimmed.dropLast())
+            trailingSpaces += 1
+        }
+
+        // Find the last word boundary (space) in the remaining text
+        let charsInWord: Int
+        if let lastSpace = trimmed.lastIndex(of: " ") {
+            charsInWord = trimmed.distance(from: trimmed.index(after: lastSpace), to: trimmed.endIndex)
+        } else {
+            // No space found -- delete everything remaining
+            charsInWord = trimmed.count
+        }
+
+        let totalToDelete = trailingSpaces + charsInWord
+        for _ in 0..<totalToDelete {
+            proxy.deleteBackward()
+        }
+    }
+
+    // MARK: - Layer switching (migrated from KeyboardView)
+
+    private func toggleLettersNumbers() {
+        if currentLayer == .letters {
+            currentLayer = .numbers
+        } else {
+            currentLayer = .letters
+            shiftState = .off
+        }
+    }
+
+    private func toggleNumbersSymbols() {
+        if currentLayer == .numbers {
+            currentLayer = .symbols
+        } else {
+            currentLayer = .numbers
+        }
+    }
+
+    // MARK: - Autocorrect (migrated from KeyboardView)
+
+    /// Checks the current word for misspellings and auto-corrects if enabled.
+    ///
+    /// Called before inserting a space (or punctuation). If autocorrect is enabled
+    /// and the current word is misspelled, the word is replaced with the best
+    /// correction. The original word is stored so backspace can undo the correction.
+    ///
+    /// WHY before space (not after):
+    /// If we correct after inserting the space, the cursor would be after the space
+    /// and we'd need to move back, correct, then move forward. Correcting before
+    /// the space keeps the proxy in the right position for a simple delete+insert.
+    private func performAutocorrectIfNeeded() {
+        guard suggestionState.autocorrectEnabled else { return }
+
+        let currentWord = suggestionState.currentWord
+        guard !currentWord.isEmpty else { return }
+
+        guard let correction = suggestionState.performSpellCheck(currentWord) else { return }
+
+        // Don't autocorrect to the same word
+        guard correction.lowercased() != currentWord.lowercased() else { return }
+
+        let proxy = controller.textDocumentProxy
+
+        // Delete the current word and insert the correction
+        for _ in 0..<currentWord.count {
+            proxy.deleteBackward()
+        }
+        proxy.insertText(correction)
+
+        // Store undo state so immediate backspace can restore the original word
+        suggestionState.lastAutocorrect = AutocorrectState(
+            originalWord: currentWord,
+            correctedWord: correction,
+            insertedSpace: true
+        )
     }
 }

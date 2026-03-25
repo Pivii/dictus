@@ -70,11 +70,7 @@ struct ShiftKey: View {
     }
 }
 
-enum ShiftState {
-    case off
-    case shifted
-    case capsLocked
-}
+// ShiftState moved to KeyboardTypes.swift (Phase 15.5)
 
 /// Delete key with repeat-on-hold behavior and word-level acceleration.
 /// Uses Task + Task.sleep instead of Timer.scheduledTimer, which is

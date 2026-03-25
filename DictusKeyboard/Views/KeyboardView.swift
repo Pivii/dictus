@@ -5,20 +5,6 @@ import Combine
 import AudioToolbox
 import DictusCore
 
-/// System sound IDs matching Apple's 3-category keyboard click sounds.
-/// These are the standard iOS keyboard sounds that differentiate letter keys,
-/// delete, and modifier keys (space, return, shift, globe, layer switch).
-///
-/// WHY AudioServicesPlaySystemSound instead of UIDevice.playInputClick():
-/// playInputClick() produces a single identical click for all keys. Apple's
-/// native keyboard uses 3 distinct sounds. AudioServicesPlaySystemSound()
-/// respects the ringer/silent switch, so it behaves correctly on mute.
-enum KeySound {
-    static let letter: SystemSoundID = 1104
-    static let delete: SystemSoundID = 1155
-    static let modifier: SystemSoundID = 1156
-}
-
 /// The main keyboard view composing all rows and managing layer/shift state.
 struct KeyboardView: View {
     let controller: UIInputViewController
