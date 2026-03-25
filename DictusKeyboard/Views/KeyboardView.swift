@@ -383,7 +383,22 @@ struct KeyboardView: View {
     /// collection. This is faster and simpler.
     private func handleDeadZoneTap(at point: CGPoint, rowWidth: CGFloat) {
         let rowHeight = KeyMetrics.keyHeight + KeyMetrics.rowSpacing
-        let rowIndex = max(0, min(Int(point.y / rowHeight), currentRows.count - 1))
+
+        // Row resolution with nearest-center logic for boundary touches
+        let rawRow = point.y / rowHeight
+        let rowIndex: Int
+        if rawRow < 0 {
+            rowIndex = 0
+        } else if Int(rawRow) >= currentRows.count {
+            rowIndex = currentRows.count - 1
+        } else {
+            // At row boundaries, pick the row whose center is closer
+            let lower = Int(rawRow)
+            let upper = min(lower + 1, currentRows.count - 1)
+            let lowerCenter = (CGFloat(lower) + 0.5) * rowHeight
+            let upperCenter = (CGFloat(upper) + 0.5) * rowHeight
+            rowIndex = abs(point.y - lowerCenter) <= abs(point.y - upperCenter) ? lower : upper
+        }
         let row = currentRows[rowIndex]
 
         // Compute unitKeyWidth for this row (same formula as KeyRow)
@@ -391,16 +406,26 @@ struct KeyboardView: View {
         let availableWidth = rowWidth - (KeyMetrics.rowSidePadding * 2)
         let unitKeyWidth = availableWidth / totalMultiplier
 
-        // Find which key the x position falls into (offset by side padding)
-        var x: CGFloat = KeyMetrics.rowSidePadding
-        var targetKey: KeyDefinition = row.last!
-        for key in row {
-            let keyWidth = unitKeyWidth * key.widthMultiplier
-            if point.x < x + keyWidth {
-                targetKey = key
-                break
+        // Explicit margin handling: touches outside key area resolve to edge keys
+        var targetKey: KeyDefinition
+        if point.x <= KeyMetrics.rowSidePadding {
+            // Left margin -> first key
+            targetKey = row.first!
+        } else if point.x >= rowWidth - KeyMetrics.rowSidePadding {
+            // Right margin -> last key
+            targetKey = row.last!
+        } else {
+            // Walk keys to find which one contains this x position
+            var x: CGFloat = KeyMetrics.rowSidePadding
+            targetKey = row.last! // fallback
+            for key in row {
+                let keyWidth = unitKeyWidth * key.widthMultiplier
+                if point.x < x + keyWidth {
+                    targetKey = key
+                    break
+                }
+                x += keyWidth
             }
-            x += keyWidth
         }
 
         // TEMPORARY: Touch logging for dead zone validation (remove after Phase 15.4 UAT)
@@ -408,7 +433,7 @@ struct KeyboardView: View {
             component: "DeadZone",
             instanceID: "touch",
             action: "gap-tap",
-            details: "x=\(Int(point.x)) y=\(Int(point.y)) row=\(rowIndex) key='\(targetKey.label)' type=\(targetKey.type) rowWidth=\(Int(rowWidth))"
+            details: "x=\(Int(point.x)) y=\(Int(point.y)) row=\(rowIndex)/\(currentRows.count) key='\(targetKey.label)' type=\(targetKey.type) margin=\(point.x <= KeyMetrics.rowSidePadding ? "L" : point.x >= rowWidth - KeyMetrics.rowSidePadding ? "R" : "-")"
         ))
 
         // Play audio + haptic
