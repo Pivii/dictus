@@ -21,7 +21,7 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "viewDidLoad",
-            details: "controllerClass=\(String(describing: type(of: self)))"
+            details: "version=\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") build=\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?") controllerClass=\(String(describing: type(of: self)))"
         ))
 
         #if DEBUG
