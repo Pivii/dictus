@@ -84,6 +84,11 @@
 		BB000002 /* DictusLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100002 /* DictusLiveActivity.swift */; };
 		AA0000F6 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
 		BB000003 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
+		AA0000U1 /* KeyboardTouchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U1 /* KeyboardTouchState.swift */; };
+		AA0000U2 /* LetterKeyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U2 /* LetterKeyButton.swift */; };
+		AA0000U3 /* SpecialKeyButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U3 /* SpecialKeyButtons.swift */; };
+		AA0000U4 /* KeyboardContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U4 /* KeyboardContainerView.swift */; };
+		AA0000U5 /* KeyboardUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U5 /* KeyboardUIView.swift */; };
 
 /* End PBXBuildFile section */
 
@@ -167,6 +172,11 @@
 
 		BB100003 /* DictusWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DictusWidgets.entitlements; sourceTree = "<group>"; };
 		BB100004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA1000U1 /* KeyboardTouchState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardTouchState.swift; sourceTree = "<group>"; };
+		AA1000U2 /* LetterKeyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LetterKeyButton.swift; sourceTree = "<group>"; };
+		AA1000U3 /* SpecialKeyButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecialKeyButtons.swift; sourceTree = "<group>"; };
+		AA1000U4 /* KeyboardContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardContainerView.swift; sourceTree = "<group>"; };
+		AA1000U5 /* KeyboardUIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardUIView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -419,8 +429,21 @@
 				AA1000B2 /* EmojiPickerView.swift */,
 				AA1000B3 /* EmojiCategoryBar.swift */,
 				AA1000D4 /* SuggestionBarView.swift */,
+				AA4000U0 /* UIKit */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		AA4000U0 /* UIKit */ = {
+			isa = PBXGroup;
+			children = (
+				AA1000U1 /* KeyboardTouchState.swift */,
+				AA1000U2 /* LetterKeyButton.swift */,
+				AA1000U3 /* SpecialKeyButtons.swift */,
+				AA1000U4 /* KeyboardContainerView.swift */,
+				AA1000U5 /* KeyboardUIView.swift */,
+			);
+			path = UIKit;
 			sourceTree = "<group>";
 		};
 		AA400006 /* Models */ = {
@@ -666,6 +689,11 @@
 				AA0000D1 /* SuggestionState.swift in Sources */,
 				AA0000D4 /* SuggestionBarView.swift in Sources */,
 				AA0000G0 /* KeyTapSignposter.swift in Sources */,
+				AA0000U1 /* KeyboardTouchState.swift in Sources */,
+				AA0000U2 /* LetterKeyButton.swift in Sources */,
+				AA0000U3 /* SpecialKeyButtons.swift in Sources */,
+				AA0000U4 /* KeyboardContainerView.swift in Sources */,
+				AA0000U5 /* KeyboardUIView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
