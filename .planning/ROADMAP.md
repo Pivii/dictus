@@ -161,7 +161,7 @@ Plans:
   8. Layer switching rebuilds correct keys (letters/numbers/symbols)
   9. Dark/light mode colors adapt automatically
   10. All text insertion works correctly (type a sentence, verify in text field)
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 15.5-01-PLAN.md — UIKit key buttons (LetterKeyButton, SpecialKeyButtons, KeyboardTouchState, KeyboardContainerView, KeyboardUIView)
@@ -276,7 +276,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 1
 | 15.2. Cleaning & Fix Issues | 4/4 | Complete   | 2026-03-17 | - |
 | 15.3. Keyboard Optimization | 4/4 | Complete    | 2026-03-24 | - |
 | 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
-| 15.5. UIKit Keyboard Rebuild | 1/3 | In Progress|  | - |
+| 15.5. UIKit Keyboard Rebuild | 2/3 | In Progress|  | - |
 | 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---

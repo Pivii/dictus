@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Beta Ready
 status: completed
-stopped_at: Completed 15.5-01-PLAN.md
+stopped_at: Completed 15.5-02-PLAN.md
 last_updated: "2026-03-25T17:46:48.701Z"
-last_activity: 2026-03-25 -- Plan 15.5-01 execution (commits 1bd78c7, a99922c, 27b01ff)
+last_activity: 2026-03-25 -- Plan 15.5-02 execution (commits e57bd65, 7a7441e)
 progress:
   total_phases: 11
   completed_phases: 8
   total_plans: 40
-  completed_plans: 35
-  percent: 88
+  completed_plans: 36
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 ## Current Position
 
 Phase: 15.5 (UIKit Keyboard Rebuild)
-Plan: 2 of 3 in current phase
-Status: Plan 15.5-01 complete. UIKit keyboard building blocks (5 files, zero dead zones via point(inside:with:)).
-Last activity: 2026-03-25 -- Plan 15.5-01 execution (commits 1bd78c7, a99922c, 27b01ff)
+Plan: 3 of 3 in current phase
+Status: Plan 15.5-02 complete. UIKit keyboard wired into KeyboardRootView, 4 old SwiftUI key files deleted.
+Last activity: 2026-03-25 -- Plan 15.5-02 execution (commits e57bd65, 7a7441e)
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -105,6 +105,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 15.5]: KeyboardActions struct consolidates 12 callbacks for clean UIViewRepresentable boundary crossing
 - [Phase 15.5]: Coordinator tracks row counts (not full array equality) since KeyDefinition UUIDs prevent meaningful comparison
 - [Phase 15.5]: Touch insets computed in layoutSubviews after Auto Layout resolves button positions
+- [Phase 15.5]: Keyboard logic consolidated in KeyboardRootView (not separate view) -- eliminates unnecessary intermediate SwiftUI view now that UIKit handles rendering
+- [Phase 15.5]: KeyboardTypes.swift created for shared types (KeySound, ShiftState, DeviceClass, KeyMetrics, KeyPopup) used by both UIKit and SwiftUI
+- [Phase 15.5]: Old SwiftUI key files fully deleted (not deprecated) -- single code path through UIKit layer
 
 ### Pending Todos
 
@@ -127,8 +130,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-25T17:46:48.698Z
-Stopped at: Completed 15.5-01-PLAN.md
+Last session: 2026-03-25T17:56:07Z
+Stopped at: Completed 15.5-02-PLAN.md
 Resume file: None
 
 ---
