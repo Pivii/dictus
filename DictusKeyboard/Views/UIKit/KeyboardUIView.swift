@@ -19,6 +19,7 @@ import DictusCore
 struct KeyboardUIView: UIViewRepresentable {
 
     let rows: [[KeyDefinition]]
+    let currentLayer: KeyboardLayerType
     let isShifted: Bool
     let shiftState: ShiftState
     let lastTypedChar: String?
@@ -35,8 +36,7 @@ struct KeyboardUIView: UIViewRepresentable {
         container.buildKeys(rows: rows, actions: actions)
 
         // Store initial state in coordinator
-        context.coordinator.previousRowCount = rows.count
-        context.coordinator.previousFirstRowCount = rows.first?.count ?? 0
+        context.coordinator.previousLayer = currentLayer
         context.coordinator.previousShiftState = shiftState
         context.coordinator.previousLastTypedChar = lastTypedChar
 
@@ -46,15 +46,14 @@ struct KeyboardUIView: UIViewRepresentable {
     func updateUIView(_ container: KeyboardContainerView, context: Context) {
         let coordinator = context.coordinator
 
-        // Detect if rows changed (different count or different first-row count means layer switch)
-        let rowCountChanged = rows.count != coordinator.previousRowCount
-        let firstRowCountChanged = (rows.first?.count ?? 0) != coordinator.previousFirstRowCount
-
-        if rowCountChanged || firstRowCountChanged {
+        // Detect layer switch by comparing the actual layer type.
+        // WHY not row counts: All 4 layouts (AZERTY, QWERTY, numbers, symbols) have
+        // identical dimensions (4 rows, 10 first-row keys), so row count comparison
+        // never triggers a rebuild. Direct layer comparison catches every switch.
+        if currentLayer != coordinator.previousLayer {
             // Full rebuild for layer switch (letters <-> numbers <-> symbols)
             container.buildKeys(rows: rows, actions: actions)
-            coordinator.previousRowCount = rows.count
-            coordinator.previousFirstRowCount = rows.first?.count ?? 0
+            coordinator.previousLayer = currentLayer
         }
 
         // Shift change: lightweight update (no rebuild)
@@ -69,16 +68,18 @@ struct KeyboardUIView: UIViewRepresentable {
             container.updateAccentState(lastTypedChar: lastTypedChar, isShifted: isShifted)
             coordinator.previousLastTypedChar = lastTypedChar
         }
+
+        // Update return key label from text field context (cheap -- just reads proxy value)
+        container.updateReturnKeyType()
     }
 
     /// Coordinator stores previous state to avoid unnecessary rebuilds.
     ///
-    /// WHY not Equatable on rows:
-    /// KeyDefinition uses UUID identifiers, so array equality checks would always fail.
-    /// Comparing counts is sufficient: same row count + same first-row count means same layer.
+    /// WHY previousLayer instead of row counts:
+    /// All keyboard layouts have identical row dimensions (4 rows, 10 first-row keys),
+    /// so comparing counts never detects a layer switch. Direct layer comparison is reliable.
     class Coordinator {
-        var previousRowCount: Int = 0
-        var previousFirstRowCount: Int = 0
+        var previousLayer: KeyboardLayerType = .letters
         var previousShiftState: ShiftState = .off
         var previousLastTypedChar: String?
     }

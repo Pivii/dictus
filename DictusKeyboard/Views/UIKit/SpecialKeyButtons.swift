@@ -40,15 +40,47 @@ class BaseSpecialKeyButton: UIButton {
         commonInit()
     }
 
+    /// Inner view for visual appearance. Inset from button bounds so visual keys
+    /// have gaps while the touch area fills 100% (zero dead zones).
+    let backgroundView = UIView()
+
     private func commonInit() {
-        backgroundColor = Self.normalBackground
-        layer.cornerRadius = KeyMetrics.keyCornerRadius
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.15
-        layer.shadowOffset = CGSize(width: 0, height: 1)
-        layer.shadowRadius = 0
-        clipsToBounds = false
+        // Button itself is transparent — touch area fills entire frame
+        backgroundColor = .clear
         tintColor = .label
+
+        // Visual appearance on inner backgroundView
+        backgroundView.backgroundColor = Self.normalBackground
+        backgroundView.layer.cornerRadius = KeyMetrics.keyCornerRadius
+        backgroundView.layer.shadowColor = UIColor.black.cgColor
+        backgroundView.layer.shadowOpacity = 0.15
+        backgroundView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        backgroundView.layer.shadowRadius = 0
+        backgroundView.clipsToBounds = false
+        backgroundView.isUserInteractionEnabled = false
+        addSubview(backgroundView)
+        sendSubviewToBack(backgroundView)
+
+        clipsToBounds = false
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let hInset = KeyMetrics.keySpacing / 2
+        let vInset = KeyMetrics.rowSpacing / 2
+        backgroundView.frame = bounds.insetBy(dx: hInset, dy: vInset)
+        ensureImageOnTop()
+    }
+
+    /// Ensure the SF Symbol imageView is always above the backgroundView.
+    ///
+    /// WHY layoutSubviews and not just after setupIcon:
+    /// UIButton may recreate or reorder its internal subviews during layout passes.
+    /// Calling bringSubviewToFront in layoutSubviews guarantees correct z-order at render time.
+    func ensureImageOnTop() {
+        if let iv = imageView {
+            bringSubviewToFront(iv)
+        }
     }
 
     /// Expand the touchable area using negative insets -- eliminates dead zones.
@@ -58,12 +90,12 @@ class BaseSpecialKeyButton: UIButton {
 
     /// Show pressed visual state.
     func showPressedState() {
-        backgroundColor = Self.pressedBackground
+        backgroundView.backgroundColor = Self.pressedBackground
     }
 
     /// Restore normal visual state.
     func showNormalState() {
-        backgroundColor = Self.normalBackground
+        backgroundView.backgroundColor = Self.normalBackground
     }
 }
 
@@ -168,7 +200,10 @@ class ShiftKeyButton: BaseSpecialKeyButton {
 /// Swift concurrency Task works correctly in all execution contexts.
 class DeleteKeyButton: BaseSpecialKeyButton {
 
-    var onDelete: (() -> Void)?
+    /// Returns true if text was actually deleted, false if text field was empty.
+    /// WHY Bool: The repeat loop uses this to stop haptic/audio feedback when the
+    /// text field is empty, preventing the annoying buzzing on an empty field.
+    var onDelete: (() -> Bool)?
     var onWordDelete: (() -> Void)?
 
     private var repeatTask: Task<Void, Never>?
@@ -197,9 +232,11 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         showPressedState()
 
         // Immediate first delete
-        onDelete?()
-        HapticFeedback.keyTapped()
-        AudioServicesPlaySystemSound(KeySound.delete)
+        let deleted = onDelete?() ?? false
+        if deleted {
+            HapticFeedback.keyTapped()
+            AudioServicesPlaySystemSound(KeySound.delete)
+        }
         deleteCount = 1
 
         // Start repeat with acceleration
@@ -215,7 +252,11 @@ class DeleteKeyButton: BaseSpecialKeyButton {
                     AudioServicesPlaySystemSound(KeySound.delete)
                     try? await Task.sleep(nanoseconds: 120_000_000)
                 } else {
-                    self.onDelete?()
+                    let deleted = self.onDelete?() ?? false
+                    if !deleted {
+                        // Text field is empty -- stop repeating
+                        break
+                    }
                     HapticFeedback.keyTapped()
                     AudioServicesPlaySystemSound(KeySound.delete)
                     try? await Task.sleep(nanoseconds: 100_000_000)
@@ -454,6 +495,51 @@ class ReturnKeyButton: BaseSpecialKeyButton {
     private func setupIcon() {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         setImage(UIImage(systemName: "return.left", withConfiguration: config), for: .normal)
+        titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        setTitleColor(.label, for: .normal)
+    }
+
+    /// Update the return key label/icon based on the host text field's returnKeyType.
+    ///
+    /// WHY this mapping:
+    /// iOS text fields declare a returnKeyType (Search, Send, Go, etc.) that tells keyboards
+    /// what label to show on the return key. The native keyboard adapts automatically, but
+    /// custom keyboards must read the proxy's returnKeyType and update manually.
+    func updateReturnKeyType(_ type: UIReturnKeyType) {
+        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+
+        switch type {
+        case .go:
+            setImage(nil, for: .normal)
+            setTitle("Go", for: .normal)
+        case .search:
+            setTitle(nil, for: .normal)
+            setImage(UIImage(systemName: "magnifyingglass", withConfiguration: config), for: .normal)
+            ensureImageOnTop()
+        case .send:
+            setImage(nil, for: .normal)
+            setTitle("Send", for: .normal)
+        case .done:
+            setImage(nil, for: .normal)
+            setTitle("OK", for: .normal)
+        case .join:
+            setImage(nil, for: .normal)
+            setTitle("Join", for: .normal)
+        case .route:
+            setImage(nil, for: .normal)
+            setTitle("Route", for: .normal)
+        case .continue:
+            setImage(nil, for: .normal)
+            setTitle("Suite", for: .normal)
+        case .emergencyCall:
+            setImage(nil, for: .normal)
+            setTitle("SOS", for: .normal)
+        default:
+            // .default, .next, and any unknown types use the return icon
+            setTitle(nil, for: .normal)
+            setImage(UIImage(systemName: "return.left", withConfiguration: config), for: .normal)
+            ensureImageOnTop()
+        }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

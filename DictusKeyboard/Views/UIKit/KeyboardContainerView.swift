@@ -10,7 +10,8 @@ import DictusCore
 /// the UIViewRepresentable boundary and ensures all actions are wired consistently.
 struct KeyboardActions {
     var onCharacter: (String) -> Void = { _ in }
-    var onDelete: () -> Void = {}
+    /// Returns true if text was deleted, false if text field was empty.
+    var onDelete: () -> Bool = { false }
     var onWordDelete: () -> Void = {}
     var onSpace: () -> Void = {}
     var onReturn: () -> Void = {}
@@ -21,6 +22,8 @@ struct KeyboardActions {
     var onAccentAdaptive: (String) -> Void = { _ in }
     var onCursorMove: (Int) -> Void = { _ in }
     var onShiftChanged: (ShiftState) -> Void = { _ in }
+    /// Returns the current returnKeyType from the text document proxy.
+    var onReturnKeyType: (() -> UIReturnKeyType)? = { .default }
 }
 
 /// UIView that arranges keyboard key buttons in rows using UIStackView.
@@ -44,7 +47,11 @@ class KeyboardContainerView: UIView {
     private var shiftButton: ShiftKeyButton?
     private var deleteButton: DeleteKeyButton?
     private var spaceButton: SpaceKeyButton?
+    private var returnButton: ReturnKeyButton?
     private var accentButton: AdaptiveAccentKeyButton?
+
+    /// Stored actions for deferred queries (e.g., returnKeyType).
+    private var actions: KeyboardActions?
 
     /// Bridge to SwiftUI for popup/accent/trackpad state.
     weak var touchState: KeyboardTouchState?
@@ -73,8 +80,8 @@ class KeyboardContainerView: UIView {
         addSubview(mainStack)
         NSLayoutConstraint.activate([
             mainStack.topAnchor.constraint(equalTo: topAnchor),
-            mainStack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            mainStack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            mainStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: KeyMetrics.rowSidePadding),
+            mainStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -KeyMetrics.rowSidePadding),
             mainStack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
@@ -88,6 +95,9 @@ class KeyboardContainerView: UIView {
     /// completely. Rebuilding is simpler and more reliable than trying to update in-place.
     /// For shift-only changes, use updateShift() instead (no rebuild needed).
     func buildKeys(rows: [[KeyDefinition]], actions: KeyboardActions) {
+        // Store actions for deferred queries (e.g., returnKeyType)
+        self.actions = actions
+
         // Clear existing
         for view in mainStack.arrangedSubviews {
             mainStack.removeArrangedSubview(view)
@@ -98,6 +108,7 @@ class KeyboardContainerView: UIView {
         shiftButton = nil
         deleteButton = nil
         spaceButton = nil
+        returnButton = nil
         accentButton = nil
 
         for row in rows {
@@ -107,18 +118,29 @@ class KeyboardContainerView: UIView {
             rowStack.distribution = .fill
             rowStack.alignment = .fill
 
-            let totalMultiplier = row.reduce(CGFloat(0)) { $0 + $1.widthMultiplier }
-
+            // Collect created buttons first (some keys like .mic return nil)
+            var createdButtons: [(UIView, KeyDefinition)] = []
             for key in row {
-                let button = createButton(for: key, actions: actions)
-                if let button = button {
-                    // Width proportional to widthMultiplier / total row multiplier
-                    button.widthAnchor.constraint(
-                        equalTo: rowStack.widthAnchor,
-                        multiplier: key.widthMultiplier / totalMultiplier
-                    ).isActive = true
-
+                if let button = createButton(for: key, actions: actions) {
                     rowStack.addArrangedSubview(button)
+                    createdButtons.append((button, key))
+                }
+            }
+
+            // Constrain all but the LAST button's width proportionally.
+            // WHY skip last: UIStackView with .fill distribution sizes the last
+            // arranged subview to fill remaining space. If we also constrain it,
+            // the system is over-determined and crashes with mutually exclusive
+            // constraints (NSInternalInconsistencyException).
+            let actualTotal = createdButtons.reduce(CGFloat(0)) { $0 + $1.1.widthMultiplier }
+            if actualTotal > 0 {
+                for (index, (button, key)) in createdButtons.enumerated() {
+                    if index < createdButtons.count - 1 {
+                        button.widthAnchor.constraint(
+                            equalTo: rowStack.widthAnchor,
+                            multiplier: key.widthMultiplier / actualTotal
+                        ).isActive = true
+                    }
                 }
             }
 
@@ -166,6 +188,7 @@ class KeyboardContainerView: UIView {
         case .returnKey:
             let button = ReturnKeyButton()
             button.onTap = actions.onReturn
+            returnButton = button
             return button
 
         case .globe:
@@ -300,5 +323,12 @@ class KeyboardContainerView: UIView {
     /// Update the adaptive accent key's display state.
     func updateAccentState(lastTypedChar: String?, isShifted: Bool) {
         accentButton?.updateState(lastTypedChar: lastTypedChar, isShifted: isShifted)
+    }
+
+    /// Update the return key label based on the host text field's returnKeyType.
+    /// Called on every updateUIView -- cheap operation, just reads the proxy value.
+    func updateReturnKeyType() {
+        let type = actions?.onReturnKeyType?() ?? .default
+        returnButton?.updateReturnKeyType(type)
     }
 }
