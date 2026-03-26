@@ -42,6 +42,7 @@ class KeyboardContainerView: UIView {
     // MARK: - Properties
 
     private let mainStack = UIStackView()
+    private let forwardingView = KeyboardTouchForwardingView()
     private var rowStacks: [UIStackView] = []
     private var letterButtons: [LetterKeyButton] = []
     private var shiftButton: ShiftKeyButton?
@@ -81,12 +82,24 @@ class KeyboardContainerView: UIView {
         mainStack.alignment = .fill
         mainStack.translatesAutoresizingMaskIntoConstraints = false
 
+        mainStack.isUserInteractionEnabled = false
+
         addSubview(mainStack)
         NSLayoutConstraint.activate([
             mainStack.topAnchor.constraint(equalTo: topAnchor),
             mainStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: KeyMetrics.rowSidePadding),
             mainStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -KeyMetrics.rowSidePadding),
             mainStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
+        // ForwardingView sits on top of all stacks, intercepts all touches
+        forwardingView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(forwardingView)
+        NSLayoutConstraint.activate([
+            forwardingView.topAnchor.constraint(equalTo: topAnchor),
+            forwardingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            forwardingView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            forwardingView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -122,11 +135,13 @@ class KeyboardContainerView: UIView {
             rowStack.spacing = 0
             rowStack.distribution = .fill
             rowStack.alignment = .fill
+            rowStack.isUserInteractionEnabled = false
 
             // Collect created buttons first (some keys like .mic return nil)
             var createdButtons: [(UIView, KeyDefinition)] = []
             for key in row {
                 if let button = createButton(for: key, actions: actions) {
+                    button.isUserInteractionEnabled = false
                     rowStack.addArrangedSubview(button)
                     createdButtons.append((button, key))
                     allButtons.append(button)
@@ -153,6 +168,9 @@ class KeyboardContainerView: UIView {
             mainStack.addArrangedSubview(rowStack)
             rowStacks.append(rowStack)
         }
+
+        // Populate forwarding view with all buttons for nearest-button routing
+        forwardingView.allButtons = allButtons
 
         setNeedsLayout()
     }
@@ -232,127 +250,22 @@ class KeyboardContainerView: UIView {
         }
     }
 
-    // MARK: - Layout and touch insets
+    // MARK: - Layout
 
-    /// Compute touch insets for every button after Auto Layout positions them.
-    ///
-    /// WHY in layoutSubviews:
-    /// Auto Layout needs to compute the exact pixel position of every key before we can
-    /// measure the gaps between them. layoutSubviews() is called after constraints are
-    /// resolved, so button frames are final and accurate.
-    ///
-    /// HOW touch insets work:
-    /// Each button gets negative UIEdgeInsets that expand its touchable area to cover
-    /// the gap between it and its neighbors. Edge buttons extend to the keyboard edge.
-    /// Vertical insets cover half the row spacing above and below.
     override func layoutSubviews() {
         super.layoutSubviews()
-
         // Publish keyboard width for accent strip edge clamping in SwiftUI overlay
         touchState?.keyboardWidth = bounds.width
-
-        let rowCount = rowStacks.count
-
-        for (rowIndex, rowStack) in rowStacks.enumerated() {
-            let buttons = rowStack.arrangedSubviews
-
-            // Vertical extension: half the row spacing above and below
-            // Top row gets extra top extension, bottom row gets extra bottom extension
-            let topExt: CGFloat
-            let bottomExt: CGFloat
-
-            if rowIndex == 0 {
-                // Top row: extend to top edge of container
-                topExt = KeyMetrics.rowSpacing / 2 + 4  // Extra padding at top
-            } else {
-                topExt = KeyMetrics.rowSpacing / 2
-            }
-
-            if rowIndex == rowCount - 1 {
-                // Bottom row: extend to bottom edge of container
-                bottomExt = KeyMetrics.rowSpacing / 2 + 4  // Extra padding at bottom
-            } else {
-                bottomExt = KeyMetrics.rowSpacing / 2
-            }
-
-            for (i, view) in buttons.enumerated() {
-                // Horizontal extensions
-                let leftExt: CGFloat
-                let rightExt: CGFloat
-
-                if i == 0 {
-                    // Leftmost key: extend to left edge of row
-                    leftExt = view.frame.minX
-                } else {
-                    let prevButton = buttons[i - 1]
-                    leftExt = (view.frame.minX - prevButton.frame.maxX) / 2
-                }
-
-                if i == buttons.count - 1 {
-                    // Rightmost key: extend to right edge of row
-                    rightExt = rowStack.bounds.width - view.frame.maxX
-                } else {
-                    let nextButton = buttons[i + 1]
-                    rightExt = (nextButton.frame.minX - view.frame.maxX) / 2
-                }
-
-                // Apply negative insets to expand touch area
-                let insets = UIEdgeInsets(
-                    top: -topExt,
-                    left: -leftExt,
-                    bottom: -bottomExt,
-                    right: -rightExt
-                )
-
-                // Set touchInsets on the button (all our button types have this property)
-                if let letterButton = view as? LetterKeyButton {
-                    letterButton.touchInsets = insets
-                } else if let specialButton = view as? BaseSpecialKeyButton {
-                    specialButton.touchInsets = insets
-                }
-            }
-        }
     }
 
-    // MARK: - Hit test fallback
+    // MARK: - Hit test
 
-    /// Route touches that miss the UIStackView chain to the nearest button.
-    ///
-    /// WHY this override:
-    /// The mainStack is inset by KeyMetrics.rowSidePadding (3-5pt) from the container edges.
-    /// Touches in that padding zone hit no button because the UIStackView chain never forwards
-    /// them. This override catches those missed touches and routes to the nearest button by
-    /// center distance, eliminating dead zones at keyboard edges and sub-pixel gaps.
+    /// All touches route through the ForwardingView (topmost subview).
+    /// This override ensures touches in the side padding still reach it.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        // First, try the normal hit-test chain (UIStackView routing)
-        let superHit = super.hitTest(point, with: event)
-
-        // IMPORTANT: only return if superHit is an actual button.
-        // UIStackView.hitTest returns itself when the point is between button frames
-        // (inside rowStack bounds but no button.frame.contains(point) matches).
-        // That rowStack "swallows" the touch silently. By checking the type,
-        // any non-button hit (rowStack, mainStack, self) falls through to the
-        // nearest-button fallback, eliminating dead zones.
-        if let hit = superHit, hit is LetterKeyButton || hit is BaseSpecialKeyButton {
-            return hit
-        }
-
-        // Fallback: find the nearest button by distance to its center
+        guard !isHidden, alpha > 0.01 else { return nil }
         guard bounds.contains(point) else { return nil }
-        var bestButton: UIView?
-        var bestDistance: CGFloat = .greatestFiniteMagnitude
-        for button in allButtons {
-            guard let parent = button.superview else { continue }
-            let center = parent.convert(button.center, to: self)
-            let dx = point.x - center.x
-            let dy = point.y - center.y
-            let dist = dx * dx + dy * dy  // squared distance (skip sqrt for perf)
-            if dist < bestDistance {
-                bestDistance = dist
-                bestButton = button
-            }
-        }
-        return bestButton
+        return forwardingView.hitTest(convert(point, to: forwardingView), with: event)
     }
 
     // MARK: - Update methods (avoid full rebuild)
@@ -385,33 +298,6 @@ class KeyboardContainerView: UIView {
 
 // MARK: - KeyboardRowStackView
 
-/// UIStackView subclass that overrides hitTest to support expanded touch regions.
-///
-/// WHY: UIStackView.hitTest uses subview.frame.contains(point) internally.
-/// It never calls point(inside:with:) — so our negative touchInsets on buttons
-/// are ignored for touches between button frames (dead zones). This subclass
-/// iterates subviews back-to-front and calls point(inside:with:) on each,
-/// which triggers LetterKeyButton/BaseSpecialKeyButton's expanded hit regions.
-///
-/// Returns nil (not self) when no subview claims the touch, so the container's
-/// nearest-button fallback can fire for edge/padding touches.
-class KeyboardRowStackView: UIStackView {
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard !isHidden, isUserInteractionEnabled, alpha > 0.01 else { return nil }
-        guard self.point(inside: point, with: event) else { return nil }
-
-        // Iterate subviews back-to-front (UIKit convention: last subview is frontmost)
-        for subview in subviews.reversed() {
-            let converted = subview.convert(point, from: self)
-            // This calls LetterKeyButton/BaseSpecialKeyButton.point(inside:with:)
-            // which uses bounds.inset(by: touchInsets) — expanded hit regions
-            if subview.point(inside: converted, with: event) {
-                if let hit = subview.hitTest(converted, with: event) {
-                    return hit
-                }
-                return subview
-            }
-        }
-        return nil
-    }
-}
+/// UIStackView subclass used for keyboard rows. Touch handling is now done by
+/// KeyboardTouchForwardingView — this class only exists for layout purposes.
+class KeyboardRowStackView: UIStackView {}
