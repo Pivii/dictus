@@ -275,6 +275,12 @@ struct KeyboardRootView: View {
                 action: "showsOverlayChanged",
                 details: "isShowing=\(isShowing) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID)"
             ))
+            // Hide UIKit keyboard container when recording overlay is active.
+            // The container is a direct subview of kbInputView, independent of SwiftUI —
+            // SwiftUI's conditional rendering doesn't affect it.
+            if let vc = controller as? KeyboardViewController {
+                vc.keyboardContainer?.isHidden = isShowing
+            }
             syncWaveformDriver()
         }
         .onChange(of: state.dictationStatus) { _, newStatus in
@@ -372,6 +378,11 @@ struct KeyboardRootView: View {
 
             // Build initial keyboard keys in the UIKit container
             rebuildKeys()
+
+            // Sync container visibility with overlay state
+            if let vc = controller as? KeyboardViewController {
+                vc.keyboardContainer?.isHidden = showsOverlay
+            }
 
             syncWaveformDriver()
         }

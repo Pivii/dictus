@@ -117,7 +117,7 @@ class KeyboardContainerView: UIView {
         accentButton = nil
 
         for row in rows {
-            let rowStack = UIStackView()
+            let rowStack = KeyboardRowStackView()
             rowStack.axis = .horizontal
             rowStack.spacing = 0
             rowStack.distribution = .fill
@@ -380,5 +380,38 @@ class KeyboardContainerView: UIView {
     func updateReturnKeyType() {
         let type = actions?.onReturnKeyType?() ?? .default
         returnButton?.updateReturnKeyType(type)
+    }
+}
+
+// MARK: - KeyboardRowStackView
+
+/// UIStackView subclass that overrides hitTest to support expanded touch regions.
+///
+/// WHY: UIStackView.hitTest uses subview.frame.contains(point) internally.
+/// It never calls point(inside:with:) — so our negative touchInsets on buttons
+/// are ignored for touches between button frames (dead zones). This subclass
+/// iterates subviews back-to-front and calls point(inside:with:) on each,
+/// which triggers LetterKeyButton/BaseSpecialKeyButton's expanded hit regions.
+///
+/// Returns nil (not self) when no subview claims the touch, so the container's
+/// nearest-button fallback can fire for edge/padding touches.
+class KeyboardRowStackView: UIStackView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard !isHidden, isUserInteractionEnabled, alpha > 0.01 else { return nil }
+        guard self.point(inside: point, with: event) else { return nil }
+
+        // Iterate subviews back-to-front (UIKit convention: last subview is frontmost)
+        for subview in subviews.reversed() {
+            let converted = subview.convert(point, from: self)
+            // This calls LetterKeyButton/BaseSpecialKeyButton.point(inside:with:)
+            // which uses bounds.inset(by: touchInsets) — expanded hit regions
+            if subview.point(inside: converted, with: event) {
+                if let hit = subview.hitTest(converted, with: event) {
+                    return hit
+                }
+                return subview
+            }
+        }
+        return nil
     }
 }
