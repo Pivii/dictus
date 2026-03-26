@@ -8,6 +8,22 @@ class KeyboardViewController: UIInputViewController {
 
     private var hostingController: UIHostingController<KeyboardRootView>?
 
+    /// The UIKit keyboard container, added directly to kbInputView (NOT via SwiftUI).
+    ///
+    /// WHY direct UIKit subview instead of UIViewRepresentable:
+    /// SwiftUI's _UIHostingView intercepts and filters touches before they reach our
+    /// UIKit layer. Touches between button frames (dead zones) are swallowed because
+    /// SwiftUI sees "no view here" and returns nil. By adding the container directly
+    /// to kbInputView BEHIND the SwiftUI hosting view, UIKit's hitTest chain reaches
+    /// our buttons without SwiftUI interference. The SwiftUI layer has a transparent
+    /// Color.clear spacer with allowsHitTesting(false) in the keyboard area, so
+    /// touches fall through to the UIKit container behind it.
+    var keyboardContainer: KeyboardContainerView?
+
+    /// Shared touch state bridge between UIKit buttons and SwiftUI popup overlays.
+    /// Created here (not in SwiftUI) because the UIKit container needs it at init time.
+    let touchState = KeyboardTouchState()
+
     /// Explicit height constraint on inputView to prevent layout issues after app switch.
     /// WHY: Without this, iOS may not recalculate the keyboard height correctly when the
     /// extension is brought back to foreground after a URL scheme app switch. The system
@@ -43,7 +59,15 @@ class KeyboardViewController: UIInputViewController {
         // iOS manages the inputView's frame via autoresizing masks — disabling them
         // causes the view to collapse to zero width.
 
-        let rootView = KeyboardRootView(controller: self, controllerID: controllerID)
+        // ── UIKit keyboard container (added FIRST = behind SwiftUI) ──
+        let container = KeyboardContainerView()
+        container.touchState = touchState
+        container.translatesAutoresizingMaskIntoConstraints = false
+        kbInputView.addSubview(container)
+        self.keyboardContainer = container
+
+        // ── SwiftUI hosting view (added SECOND = in front) ──
+        let rootView = KeyboardRootView(controller: self, controllerID: controllerID, touchState: touchState)
         let hosting = UIHostingController(rootView: rootView)
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
@@ -56,7 +80,7 @@ class KeyboardViewController: UIInputViewController {
         self.hostingController = hosting
 
         addChild(hosting)
-        // Add hosting view as subview of kbInputView (NOT self.view)
+        // Add hosting view as subview of kbInputView — ON TOP of container
         kbInputView.addSubview(hosting.view)
         hosting.didMove(toParent: self)
 
@@ -69,6 +93,16 @@ class KeyboardViewController: UIInputViewController {
             hosting.view.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor),
             hosting.view.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor)
+        ])
+
+        // Constrain keyboard container to match the keyboard area (below toolbar, above bottom spacer).
+        // The keyboard height must match KeyboardRootView's keyboardHeight for correct alignment.
+        let kbHeight = CGFloat(4) * (KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor, constant: -8),
+            container.heightAnchor.constraint(equalToConstant: kbHeight),
         ])
 
         // Set explicit height constraint on inputView.

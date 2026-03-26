@@ -85,18 +85,7 @@ class BaseSpecialKeyButton: UIButton {
 
     /// Expand the touchable area using negative insets -- eliminates dead zones.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        let expanded = bounds.inset(by: touchInsets)
-        let result = expanded.contains(point)
-        // Diagnostic log (temporary) — verify extended hit regions are active
-        if !bounds.contains(point) && result {
-            PersistentLog.log(.diagnosticProbe(
-                component: "HitTest",
-                instanceID: "special",
-                action: "extended",
-                details: "key='\(String(describing: type(of: self)))' px=\(Int(point.x)) py=\(Int(point.y)) bw=\(Int(bounds.width)) bh=\(Int(bounds.height))"
-            ))
-        }
-        return result
+        bounds.inset(by: touchInsets).contains(point)
     }
 
     /// Show pressed visual state.

@@ -85,7 +85,6 @@
 		AA0000U2 /* LetterKeyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U2 /* LetterKeyButton.swift */; };
 		AA0000U3 /* SpecialKeyButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U3 /* SpecialKeyButtons.swift */; };
 		AA0000U4 /* KeyboardContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U4 /* KeyboardContainerView.swift */; };
-		AA0000U5 /* KeyboardUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000U5 /* KeyboardUIView.swift */; };
 
 /* End PBXBuildFile section */
 
@@ -170,7 +169,6 @@
 		AA1000U2 /* LetterKeyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LetterKeyButton.swift; sourceTree = "<group>"; };
 		AA1000U3 /* SpecialKeyButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecialKeyButtons.swift; sourceTree = "<group>"; };
 		AA1000U4 /* KeyboardContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardContainerView.swift; sourceTree = "<group>"; };
-		AA1000U5 /* KeyboardUIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardUIView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -432,7 +430,6 @@
 				AA1000U2 /* LetterKeyButton.swift */,
 				AA1000U3 /* SpecialKeyButtons.swift */,
 				AA1000U4 /* KeyboardContainerView.swift */,
-				AA1000U5 /* KeyboardUIView.swift */,
 			);
 			path = UIKit;
 			sourceTree = "<group>";
@@ -681,7 +678,6 @@
 				AA0000U2 /* LetterKeyButton.swift in Sources */,
 				AA0000U3 /* SpecialKeyButtons.swift in Sources */,
 				AA0000U4 /* KeyboardContainerView.swift in Sources */,
-				AA0000U5 /* KeyboardUIView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -3,7 +3,7 @@
 import UIKit
 import DictusCore
 
-/// Action callbacks from key presses, passed through from SwiftUI via KeyboardUIView.
+/// Action callbacks from key presses, wired from KeyboardRootView via the controller.
 ///
 /// WHY a struct instead of individual closures on each button:
 /// Consolidating all callbacks into a single struct makes it easy to pass through
@@ -352,20 +352,6 @@ class KeyboardContainerView: UIView {
                 bestButton = button
             }
         }
-
-        // Diagnostic log (temporary) — verify fallback fires for dead zone touches
-        let usedFallback = !(superHit is LetterKeyButton || superHit is BaseSpecialKeyButton)
-        let buttonLabel: String
-        if let lb = bestButton as? LetterKeyButton { buttonLabel = lb.keyLabel }
-        else if let sb = bestButton as? BaseSpecialKeyButton { buttonLabel = String(describing: type(of: sb)) }
-        else { buttonLabel = "none" }
-        PersistentLog.log(.diagnosticProbe(
-            component: "HitTest",
-            instanceID: "container",
-            action: "route",
-            details: "x=\(Int(point.x)) y=\(Int(point.y)) superHit=\(superHit.map { String(describing: type(of: $0)) } ?? "nil") fallback=\(usedFallback) key=\(buttonLabel)"
-        ))
-
         return bestButton
     }
 

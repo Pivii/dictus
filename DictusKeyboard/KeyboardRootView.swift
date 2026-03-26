@@ -32,6 +32,11 @@ extension DefaultKeyboardLayer {
 struct KeyboardRootView: View {
     let controller: UIInputViewController
     let controllerID: String
+    /// Bridge from UIKit touch events to SwiftUI popup overlays.
+    /// Created in KeyboardViewController and shared with the UIKit KeyboardContainerView.
+    /// WHY @ObservedObject (not @StateObject): The instance is owned by KeyboardViewController,
+    /// not by this SwiftUI view. @ObservedObject observes without taking ownership.
+    @ObservedObject var touchState: KeyboardTouchState
     @ObservedObject private var state = KeyboardState.shared
     @ObservedObject private var waveformDriver = KeyboardWaveformDriver.shared
     @State private var instanceID = String(UUID().uuidString.prefix(8))
@@ -53,11 +58,6 @@ struct KeyboardRootView: View {
     @State private var lastTypedChar: String? = nil
     /// Remembers which layer to return to when dismissing the emoji picker.
     @State private var previousLayer: KeyboardLayerType? = nil
-
-    /// Bridge from UIKit touch events to SwiftUI popup overlays.
-    /// WHY @StateObject: KeyboardTouchState is an ObservableObject published by UIKit
-    /// button subclasses. SwiftUI reads it to position popup previews and accent strips.
-    @StateObject private var touchState = KeyboardTouchState()
 
     /// Whether shift is active (shifted or caps locked).
     private var isShifted: Bool {
@@ -207,115 +207,13 @@ struct KeyboardRootView: View {
                     )
                 } else {
                     ZStack(alignment: .top) {
-                        // UIKit keyboard layer -- zero dead zones via point(inside:with:)
-                        KeyboardUIView(
-                            rows: currentRows,
-                            currentLayer: currentLayer,
-                            isShifted: isShifted,
-                            shiftState: shiftState,
-                            lastTypedChar: lastTypedChar,
-                            touchState: touchState,
-                            actions: KeyboardActions(
-                                onCharacter: { char in insertCharacter(char) },
-                                onDelete: {
-                                    // Autocorrect undo: if backspace pressed immediately after
-                                    // autocorrect, restore the original word instead of normal delete.
-                                    if let undo = suggestionState.lastAutocorrect {
-                                        let proxy = controller.textDocumentProxy
-                                        // Delete the corrected word + trailing space if one was inserted
-                                        let deleteCount = undo.correctedWord.count + (undo.insertedSpace ? 1 : 0)
-                                        for _ in 0..<deleteCount {
-                                            proxy.deleteBackward()
-                                        }
-                                        proxy.insertText(undo.originalWord)
-                                        suggestionState.lastAutocorrect = nil
-                                        lastTypedChar = nil
-                                        checkAutocapitalize()
-                                        // Update suggestions for the restored word
-                                        DispatchQueue.main.async {
-                                            suggestionState.update(proxy: controller.textDocumentProxy)
-                                        }
-                                        return true // Autocorrect undo always deletes text
-                                    }
-                                    // Check if there's text to delete before calling deleteBackward
-                                    let before = controller.textDocumentProxy.documentContextBeforeInput
-                                    guard before != nil && !before!.isEmpty else {
-                                        return false // Nothing to delete
-                                    }
-                                    controller.textDocumentProxy.deleteBackward()
-                                    lastTypedChar = nil
-                                    checkAutocapitalize()
-                                    // Update suggestions after deletion
-                                    DispatchQueue.main.async {
-                                        suggestionState.update(proxy: controller.textDocumentProxy)
-                                    }
-                                    return true
-                                },
-                                onWordDelete: {
-                                    // Delete backward to the previous word boundary.
-                                    suggestionState.lastAutocorrect = nil
-                                    deleteWordBackward()
-                                    lastTypedChar = nil
-                                    checkAutocapitalize()
-                                    DispatchQueue.main.async {
-                                        suggestionState.update(proxy: controller.textDocumentProxy)
-                                    }
-                                },
-                                onSpace: {
-                                    performAutocorrectIfNeeded()
-                                    controller.textDocumentProxy.insertText(" ")
-                                    lastTypedChar = nil
-                                    suggestionState.clear()
-                                    checkAutocapitalize()
-                                },
-                                onReturn: {
-                                    suggestionState.lastAutocorrect = nil
-                                    controller.textDocumentProxy.insertText("\n")
-                                    lastTypedChar = nil
-                                    suggestionState.clear()
-                                    checkAutocapitalize()
-                                },
-                                onGlobe: {
-                                    controller.advanceToNextInputMode()
-                                },
-                                onEmoji: {
-                                    previousLayer = currentLayer
-                                    currentLayer = .emoji
-                                    isEmojiMode = true
-                                },
-                                onLayerSwitch: {
-                                    suggestionState.lastAutocorrect = nil
-                                    suggestionState.clear()
-                                    toggleLettersNumbers()
-                                },
-                                onSymbolToggle: {
-                                    suggestionState.lastAutocorrect = nil
-                                    suggestionState.clear()
-                                    toggleNumbersSymbols()
-                                },
-                                onAccentAdaptive: { char in
-                                    HapticFeedback.keyTapped()
-                                    AudioServicesPlaySystemSound(KeySound.letter)
-                                    suggestionState.lastAutocorrect = nil
-                                    // If the accent key is replacing a vowel (not inserting apostrophe),
-                                    // delete the previous vowel first, then insert the accented version.
-                                    if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
-                                        controller.textDocumentProxy.deleteBackward()
-                                    }
-                                    insertCharacter(char)
-                                },
-                                onCursorMove: { offset in
-                                    controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
-                                },
-                                onShiftChanged: { newState in
-                                    shiftState = newState
-                                },
-                                onReturnKeyType: {
-                                    controller.textDocumentProxy.returnKeyType ?? .default
-                                }
-                            )
-                        )
-                        .frame(height: keyboardHeight)
+                        // Transparent spacer — the UIKit KeyboardContainerView sits
+                        // BEHIND the hosting view in the kbInputView hierarchy.
+                        // allowsHitTesting(false) makes SwiftUI return nil for this area,
+                        // so UIKit's hitTest chain falls through to the container behind.
+                        Color.clear
+                            .frame(height: keyboardHeight)
+                            .allowsHitTesting(false)
 
                         // Trackpad overlay stays inside ZStack (fills keyboard area)
                         if touchState.isTrackpadActive {
@@ -416,6 +314,25 @@ struct KeyboardRootView: View {
             // External text changes (paste, cursor move) may expose a sentence ending.
             checkAutocapitalize()
         }
+        // ── UIKit container wiring via onChange ──
+        // These replace the UIViewRepresentable Coordinator that previously
+        // handled state changes. The container lives in UIKit (KeyboardViewController),
+        // so we access it via the controller reference.
+        .onChange(of: currentLayer) { _, _ in
+            rebuildKeys()
+        }
+        .onChange(of: shiftState) { _, newState in
+            guard let vc = controller as? KeyboardViewController,
+                  let container = vc.keyboardContainer else { return }
+            container.updateShift(newState == .shifted || newState == .capsLocked)
+            container.updateShiftIcon(newState)
+        }
+        .onChange(of: lastTypedChar) { _, _ in
+            guard let vc = controller as? KeyboardViewController,
+                  let container = vc.keyboardContainer else { return }
+            container.updateAccentState(lastTypedChar: lastTypedChar, isShifted: isShifted)
+            container.updateReturnKeyType()
+        }
         .onAppear {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardRootView",
@@ -453,6 +370,9 @@ struct KeyboardRootView: View {
             let lang = AppGroup.defaults.string(forKey: SharedKeys.language) ?? "fr"
             suggestionState.setLanguage(lang)
 
+            // Build initial keyboard keys in the UIKit container
+            rebuildKeys()
+
             syncWaveformDriver()
         }
         .onDisappear {
@@ -474,6 +394,118 @@ struct KeyboardRootView: View {
             status: state.dictationStatus,
             energyLevels: state.waveformEnergy,
             isVisible: !forceHidden && showsOverlay
+        )
+    }
+
+    // MARK: - UIKit Container Wiring
+
+    /// Build (or rebuild) the keyboard keys in the UIKit container.
+    /// Called on initial appearance and on every layer change.
+    private func rebuildKeys() {
+        guard let vc = controller as? KeyboardViewController,
+              let container = vc.keyboardContainer else { return }
+        container.buildKeys(rows: currentRows, actions: makeActions())
+        // Apply current shift state after rebuild
+        container.updateShift(isShifted)
+        container.updateShiftIcon(shiftState)
+        container.updateAccentState(lastTypedChar: lastTypedChar, isShifted: isShifted)
+        container.updateReturnKeyType()
+    }
+
+    /// Create the KeyboardActions struct with all callbacks wired to the text document proxy.
+    /// Extracted from the former inline KeyboardUIView instantiation.
+    private func makeActions() -> KeyboardActions {
+        KeyboardActions(
+            onCharacter: { char in insertCharacter(char) },
+            onDelete: {
+                // Autocorrect undo: if backspace pressed immediately after
+                // autocorrect, restore the original word instead of normal delete.
+                if let undo = suggestionState.lastAutocorrect {
+                    let proxy = controller.textDocumentProxy
+                    let deleteCount = undo.correctedWord.count + (undo.insertedSpace ? 1 : 0)
+                    for _ in 0..<deleteCount {
+                        proxy.deleteBackward()
+                    }
+                    proxy.insertText(undo.originalWord)
+                    suggestionState.lastAutocorrect = nil
+                    lastTypedChar = nil
+                    checkAutocapitalize()
+                    DispatchQueue.main.async {
+                        suggestionState.update(proxy: controller.textDocumentProxy)
+                    }
+                    return true
+                }
+                let before = controller.textDocumentProxy.documentContextBeforeInput
+                guard before != nil && !before!.isEmpty else {
+                    return false
+                }
+                controller.textDocumentProxy.deleteBackward()
+                lastTypedChar = nil
+                checkAutocapitalize()
+                DispatchQueue.main.async {
+                    suggestionState.update(proxy: controller.textDocumentProxy)
+                }
+                return true
+            },
+            onWordDelete: {
+                suggestionState.lastAutocorrect = nil
+                deleteWordBackward()
+                lastTypedChar = nil
+                checkAutocapitalize()
+                DispatchQueue.main.async {
+                    suggestionState.update(proxy: controller.textDocumentProxy)
+                }
+            },
+            onSpace: {
+                performAutocorrectIfNeeded()
+                controller.textDocumentProxy.insertText(" ")
+                lastTypedChar = nil
+                suggestionState.clear()
+                checkAutocapitalize()
+            },
+            onReturn: {
+                suggestionState.lastAutocorrect = nil
+                controller.textDocumentProxy.insertText("\n")
+                lastTypedChar = nil
+                suggestionState.clear()
+                checkAutocapitalize()
+            },
+            onGlobe: {
+                controller.advanceToNextInputMode()
+            },
+            onEmoji: {
+                previousLayer = currentLayer
+                currentLayer = .emoji
+                isEmojiMode = true
+            },
+            onLayerSwitch: {
+                suggestionState.lastAutocorrect = nil
+                suggestionState.clear()
+                toggleLettersNumbers()
+            },
+            onSymbolToggle: {
+                suggestionState.lastAutocorrect = nil
+                suggestionState.clear()
+                toggleNumbersSymbols()
+            },
+            onAccentAdaptive: { char in
+                HapticFeedback.keyTapped()
+                AudioServicesPlaySystemSound(KeySound.letter)
+                suggestionState.lastAutocorrect = nil
+                if AccentedCharacters.shouldReplace(afterTyping: lastTypedChar) {
+                    controller.textDocumentProxy.deleteBackward()
+                }
+                insertCharacter(char)
+            },
+            onCursorMove: { offset in
+                controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
+            },
+            onShiftChanged: { newState in
+                shiftState = newState
+            },
+            onReturnKeyType: {
+                controller.textDocumentProxy.returnKeyType ?? .default
+            }
         )
     }
 
