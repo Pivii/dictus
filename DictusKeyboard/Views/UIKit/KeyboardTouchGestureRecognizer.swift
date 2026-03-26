@@ -66,6 +66,14 @@ class KeyboardTouchGestureRecognizer: UIGestureRecognizer {
         for touch in touches {
             let point = touch.location(in: view)
 
+            // TEMPORARY: log every touch to diagnose if recognizer fires at all
+            PersistentLog.log(.diagnosticProbe(
+                component: "TouchRecognizer",
+                instanceID: "touch",
+                action: "rawTouch",
+                details: "point=(\(Int(point.x)),\(Int(point.y))) kbRect=(\(Int(keyboardRect.origin.x)),\(Int(keyboardRect.origin.y)),\(Int(keyboardRect.width)),\(Int(keyboardRect.height))) active=\(isKeyboardActive) buttons=\(allButtons.count)"
+            ))
+
             // Non-keyboard touches: ignore → pass through to toolbar, SwiftUI, system bar
             guard keyboardRect.contains(point), isKeyboardActive else {
                 ignore(touch, for: event)
