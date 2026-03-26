@@ -9,16 +9,17 @@ class KeyboardViewController: UIInputViewController {
     private var hostingController: UIHostingController<KeyboardRootView>?
 
     /// The UIKit keyboard container, added directly to kbInputView (NOT via SwiftUI).
-    ///
-    /// WHY direct UIKit subview instead of UIViewRepresentable:
-    /// SwiftUI's _UIHostingView intercepts and filters touches before they reach our
-    /// UIKit layer. Touches between button frames (dead zones) are swallowed because
-    /// SwiftUI sees "no view here" and returns nil. By adding the container directly
-    /// to kbInputView BEHIND the SwiftUI hosting view, UIKit's hitTest chain reaches
-    /// our buttons without SwiftUI interference. The SwiftUI layer has a transparent
-    /// Color.clear spacer with allowsHitTesting(false) in the keyboard area, so
-    /// touches fall through to the UIKit container behind it.
+    /// Contains the visual key layout (UIStackViews, buttons with isUserInteractionEnabled=false).
     var keyboardContainer: KeyboardContainerView?
+
+    /// Touch forwarding view added ON TOP of the SwiftUI hosting view.
+    /// WHY on top: _UIHostingView.hitTest intercepts ALL touches within its bounds,
+    /// even when SwiftUI content has allowsHitTesting(false). The hosting view sits
+    /// between the container and any InputView.hitTest override we add. iOS's keyboard
+    /// infrastructure may bypass our hitTest override entirely. By placing the forwarding
+    /// view as the TOPMOST subview of kbInputView, UIKit's default front-to-back
+    /// hit-testing finds it naturally — no override needed.
+    var touchForwardingView: KeyboardTouchForwardingView?
 
     /// Shared touch state bridge between UIKit buttons and SwiftUI popup overlays.
     /// Created here (not in SwiftUI) because the UIKit container needs it at init time.
@@ -64,7 +65,6 @@ class KeyboardViewController: UIInputViewController {
         container.touchState = touchState
         container.translatesAutoresizingMaskIntoConstraints = false
         kbInputView.addSubview(container)
-        kbInputView.keyboardContainer = container
         self.keyboardContainer = container
 
         // ── SwiftUI hosting view (added SECOND = in front) ──
@@ -105,6 +105,23 @@ class KeyboardViewController: UIInputViewController {
             container.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor, constant: -8),
             container.heightAnchor.constraint(equalToConstant: kbHeight),
         ])
+
+        // ── Touch forwarding view (added THIRD = on top of everything) ──
+        // WHY on top of hosting view: _UIHostingView intercepts touches for ALL points
+        // within its bounds, even when SwiftUI content has allowsHitTesting(false).
+        // Placing the forwarding view as the topmost subview means UIKit finds it first
+        // in the default front-to-back hit-test traversal. No hitTest override needed.
+        let fwd = KeyboardTouchForwardingView()
+        fwd.translatesAutoresizingMaskIntoConstraints = false
+        kbInputView.addSubview(fwd)
+        NSLayoutConstraint.activate([
+            fwd.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
+            fwd.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
+            fwd.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor, constant: -8),
+            fwd.heightAnchor.constraint(equalToConstant: kbHeight),
+        ])
+        self.touchForwardingView = fwd
+        container.forwardingView = fwd
 
         // Set explicit height constraint on inputView.
         // This tells iOS exactly how tall our keyboard should be, preventing

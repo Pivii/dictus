@@ -280,6 +280,7 @@ struct KeyboardRootView: View {
             // SwiftUI's conditional rendering doesn't affect it.
             if let vc = controller as? KeyboardViewController {
                 vc.keyboardContainer?.isHidden = isShowing
+                vc.touchForwardingView?.isHidden = isShowing
             }
             syncWaveformDriver()
         }
@@ -379,9 +380,10 @@ struct KeyboardRootView: View {
             // Build initial keyboard keys in the UIKit container
             rebuildKeys()
 
-            // Sync container visibility with overlay state
+            // Sync container + forwarding view visibility with overlay state
             if let vc = controller as? KeyboardViewController {
                 vc.keyboardContainer?.isHidden = showsOverlay
+                vc.touchForwardingView?.isHidden = showsOverlay
             }
 
             syncWaveformDriver()

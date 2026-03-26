@@ -296,7 +296,7 @@ class DeleteKeyButton: BaseSpecialKeyButton {
     override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
         showPressedState()
 
-        // Immediate first delete
+        // Immediate first delete with haptic/audio feedback
         let deleted = onDelete?() ?? false
         if deleted {
             HapticFeedback.keyTapped()
@@ -304,7 +304,9 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         }
         deleteCount = 1
 
-        // Start repeat with acceleration
+        // Start repeat with acceleration — NO haptic/audio during repeat
+        // WHY silent repeat: Apple's native keyboard gives feedback only on the
+        // initial press. Continuous buzzing during hold-delete is distracting.
         repeatTask = Task { @MainActor [weak self] in
             // 400ms initial delay before repeat begins
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -312,22 +314,11 @@ class DeleteKeyButton: BaseSpecialKeyButton {
             while !Task.isCancelled {
                 guard let self = self else { return }
                 if self.deleteCount >= self.wordModeThreshold {
-                    // Probe with single char delete to check if text exists
-                    let hasText = self.onDelete?() ?? false
-                    guard hasText else { break }
-                    // Text exists: do full word delete
                     self.onWordDelete?()
-                    HapticFeedback.keyTapped()
-                    AudioServicesPlaySystemSound(KeySound.delete)
                     try? await Task.sleep(nanoseconds: 120_000_000)
                 } else {
                     let deleted = self.onDelete?() ?? false
-                    if !deleted {
-                        // Text field is empty -- stop repeating
-                        break
-                    }
-                    HapticFeedback.keyTapped()
-                    AudioServicesPlaySystemSound(KeySound.delete)
+                    if !deleted { break }
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 self.deleteCount += 1
@@ -349,7 +340,7 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         super.touchesBegan(touches, with: event)
         showPressedState()
 
-        // Immediate first delete
+        // Immediate first delete with haptic/audio
         let deleted = onDelete?() ?? false
         if deleted {
             HapticFeedback.keyTapped()
@@ -357,28 +348,17 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         }
         deleteCount = 1
 
-        // Start repeat with acceleration
+        // Start silent repeat with acceleration
         repeatTask = Task { @MainActor [weak self] in
-            // 400ms initial delay before repeat begins
             try? await Task.sleep(nanoseconds: 400_000_000)
-
             while !Task.isCancelled {
                 guard let self = self else { return }
                 if self.deleteCount >= self.wordModeThreshold {
-                    let hasText = self.onDelete?() ?? false
-                    guard hasText else { break }
                     self.onWordDelete?()
-                    HapticFeedback.keyTapped()
-                    AudioServicesPlaySystemSound(KeySound.delete)
                     try? await Task.sleep(nanoseconds: 120_000_000)
                 } else {
                     let deleted = self.onDelete?() ?? false
-                    if !deleted {
-                        // Text field is empty -- stop repeating
-                        break
-                    }
-                    HapticFeedback.keyTapped()
-                    AudioServicesPlaySystemSound(KeySound.delete)
+                    if !deleted { break }
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 self.deleteCount += 1

@@ -42,7 +42,6 @@ class KeyboardContainerView: UIView {
     // MARK: - Properties
 
     private let mainStack = UIStackView()
-    private let forwardingView = KeyboardTouchForwardingView()
     private var rowStacks: [UIStackView] = []
     private var letterButtons: [LetterKeyButton] = []
     private var shiftButton: ShiftKeyButton?
@@ -51,8 +50,7 @@ class KeyboardContainerView: UIView {
     private var returnButton: ReturnKeyButton?
     private var accentButton: AdaptiveAccentKeyButton?
 
-    /// Flat array of all created buttons for hitTest fallback routing.
-    /// Populated in buildKeys() -- includes both LetterKeyButton and BaseSpecialKeyButton subclasses.
+    /// Flat array of all created buttons, used by the top-level touch forwarding view.
     private var allButtons: [UIView] = []
 
     /// Stored actions for deferred queries (e.g., returnKeyType).
@@ -60,6 +58,10 @@ class KeyboardContainerView: UIView {
 
     /// Bridge to SwiftUI for popup/accent/trackpad state.
     weak var touchState: KeyboardTouchState?
+
+    /// Reference to the top-level forwarding view (owned by KeyboardViewController).
+    /// Set by KeyboardViewController after creating both views.
+    weak var forwardingView: KeyboardTouchForwardingView?
 
     // MARK: - Init
 
@@ -90,16 +92,6 @@ class KeyboardContainerView: UIView {
             mainStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: KeyMetrics.rowSidePadding),
             mainStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -KeyMetrics.rowSidePadding),
             mainStack.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-
-        // ForwardingView sits on top of all stacks, intercepts all touches
-        forwardingView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(forwardingView)
-        NSLayoutConstraint.activate([
-            forwardingView.topAnchor.constraint(equalTo: topAnchor),
-            forwardingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            forwardingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            forwardingView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -169,8 +161,8 @@ class KeyboardContainerView: UIView {
             rowStacks.append(rowStack)
         }
 
-        // Populate forwarding view with all buttons for nearest-button routing
-        forwardingView.allButtons = allButtons
+        // Populate the top-level forwarding view with all buttons
+        forwardingView?.allButtons = allButtons
 
         setNeedsLayout()
     }
@@ -260,13 +252,9 @@ class KeyboardContainerView: UIView {
 
     // MARK: - Hit test
 
-    /// All touches route through the ForwardingView (topmost subview).
-    /// This override ensures touches in the side padding still reach it.
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard !isHidden, alpha > 0.01 else { return nil }
-        guard bounds.contains(point) else { return nil }
-        return forwardingView.hitTest(convert(point, to: forwardingView), with: event)
-    }
+    // No hitTest override needed — the top-level KeyboardTouchForwardingView
+    // (in kbInputView, above the hosting view) handles all touch routing.
+    // This container is layout-only: isUserInteractionEnabled=false on all subviews.
 
     // MARK: - Update methods (avoid full rebuild)
 
