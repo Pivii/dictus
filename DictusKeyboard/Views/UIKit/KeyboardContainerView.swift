@@ -248,10 +248,11 @@ class KeyboardContainerView: UIView {
         super.layoutSubviews()
         // Publish keyboard width for accent strip edge clamping in SwiftUI overlay
         touchState?.keyboardWidth = bounds.width
-        // Update gesture recognizer's keyboard rect in kbInputView coordinates
-        if let parent = superview {
-            touchGestureRecognizer?.keyboardRect = convert(bounds, to: parent)
-        }
+        // Update gesture recognizer's keyboard rect in kbInputView coordinates.
+        // WHY self.frame instead of convert(bounds, to:): UIInputView may have
+        // non-zero bounds.origin which corrupts coordinate conversion. self.frame
+        // is already in superview (kbInputView) coordinates.
+        touchGestureRecognizer?.keyboardRect = frame
     }
 
     // MARK: - Hit test
