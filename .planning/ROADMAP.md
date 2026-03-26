@@ -54,6 +54,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 15.4. Zero Dead Zones | 1/2 | In Progress|  | - |
 - [ ] **Phase 15.4: Zero Dead Zones** - Eliminate dead zones between keyboard keys so every pixel resolves to a key (INSERTED)
 - [ ] **Phase 15.5: UIKit Keyboard Rebuild (Issue #59)** - Rebuild keyboard key layer from SwiftUI to UIKit with UIButton point(inside:with:) for zero dead zones (INSERTED)
+- [ ] **Phase 15.6: Keyboard Polish & Zero Dead Zones (Issue #59)** - Dead zone fix (touch forwarding view) + key popup visual polish (INSERTED)
 - [ ] **Phase 16: TestFlight Deployment** - Developer account migration, Privacy Manifest, archive, and first beta distribution
 
 ## Phase Details
@@ -144,6 +145,26 @@ Plans:
 - [ ] 15-08-PLAN.md — Gap closure: keyboard detection crash resilience and diagnostic logging
 - [ ] 15-09-PLAN.md — UAT gap closure: active card blue tint + remove switch spinner + swipe delete height
 - [ ] 15-10-PLAN.md — UAT gap closure: waveform vertical stability + settings tap feedback
+
+### Phase 15.6: Keyboard Polish & Zero Dead Zones (Issue #59) (INSERTED)
+
+**Goal:** Eliminate dead zones definitively via touch forwarding view pattern (single touch surface routing all touches to nearest button by distance) and polish key popup visuals (bigger letter, wider connected stem). Ref: Issue #59.
+**Requirements**: DZ-01, DZ-02, DZ-03, DZ-04, DZ-05, DZ-06, DZ-07, DZ-08
+**Depends on:** Phase 15.5
+**Success Criteria** (what must be TRUE):
+  1. Every pixel on the keyboard surface resolves to a key tap (zero dead zones)
+  2. Edge keys get full touchDown feedback (haptic + popup + audio on touchesBegan)
+  3. Accent long-press works after touch routing change
+  4. Delete repeat acceleration works
+  5. Space trackpad works
+  6. Shift double-tap caps lock works
+  7. Key popup shows larger letter with wide connected stem
+  8. No performance regression vs Phase 15.3 keyboard feel
+**Plans:** 2 plans
+
+Plans:
+- [ ] 15.6-01-PLAN.md — Touch forwarding view + refactor button touch handlers
+- [ ] 15.6-02-PLAN.md — Key popup visual polish + full UAT verification
 
 ### Phase 15.5: UIKit Keyboard Rebuild (Issue #59) (INSERTED)
 
@@ -255,7 +276,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 15.4 -> 15.5 -> 16
+Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 15.3 -> 15.4 -> 15.5 -> 15.6 -> 16
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -279,6 +300,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 1
 | 15.3. Keyboard Optimization | 4/4 | Complete    | 2026-03-24 | - |
 | 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
 | 15.5. UIKit Keyboard Rebuild | 3/5 | In Progress|  | - |
+| 15.6. Keyboard Polish & Zero Dead Zones | 0/2 | Planned |  | - |
 | 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---
