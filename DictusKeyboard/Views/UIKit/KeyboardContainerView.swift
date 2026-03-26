@@ -59,9 +59,9 @@ class KeyboardContainerView: UIView {
     /// Bridge to SwiftUI for popup/accent/trackpad state.
     weak var touchState: KeyboardTouchState?
 
-    /// Reference to the top-level forwarding view (owned by KeyboardViewController).
+    /// Reference to the gesture recognizer (owned by KeyboardViewController).
     /// Set by KeyboardViewController after creating both views.
-    weak var forwardingView: KeyboardTouchForwardingView?
+    weak var touchGestureRecognizer: KeyboardTouchGestureRecognizer?
 
     // MARK: - Init
 
@@ -161,8 +161,8 @@ class KeyboardContainerView: UIView {
             rowStacks.append(rowStack)
         }
 
-        // Populate the top-level forwarding view with all buttons
-        forwardingView?.allButtons = allButtons
+        // Populate the gesture recognizer with all buttons
+        touchGestureRecognizer?.allButtons = allButtons
 
         setNeedsLayout()
     }
@@ -248,6 +248,10 @@ class KeyboardContainerView: UIView {
         super.layoutSubviews()
         // Publish keyboard width for accent strip edge clamping in SwiftUI overlay
         touchState?.keyboardWidth = bounds.width
+        // Update gesture recognizer's keyboard rect in kbInputView coordinates
+        if let parent = superview {
+            touchGestureRecognizer?.keyboardRect = convert(bounds, to: parent)
+        }
     }
 
     // MARK: - Hit test
