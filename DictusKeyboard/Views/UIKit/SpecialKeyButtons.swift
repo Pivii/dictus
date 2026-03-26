@@ -88,6 +88,32 @@ class BaseSpecialKeyButton: UIButton {
         bounds.inset(by: touchInsets).contains(point)
     }
 
+    // MARK: - Forwarded touch handling (called by KeyboardTouchForwardingView)
+
+    /// Handle touch down forwarded from the touch forwarding overlay.
+    /// Default: nothing. Subclasses override with their specific logic.
+    func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        // Override in subclasses
+    }
+
+    /// Handle touch moved forwarded from the touch forwarding overlay.
+    /// Default: nothing. Subclasses override if they need move tracking.
+    func handleForwardedTouchMoved(touch: UITouch, in sourceView: UIView) {
+        // Override in subclasses
+    }
+
+    /// Handle touch up forwarded from the touch forwarding overlay.
+    /// Default: nothing. Subclasses override with their specific logic.
+    func handleForwardedTouchUp() {
+        // Override in subclasses
+    }
+
+    /// Handle touch cancelled forwarded from the touch forwarding overlay.
+    /// Default: nothing. Subclasses override with their specific logic.
+    func handleForwardedTouchCancelled() {
+        // Override in subclasses
+    }
+
     /// Show pressed visual state.
     func showPressedState() {
         backgroundView.backgroundColor = Self.pressedBackground
@@ -130,6 +156,44 @@ class ShiftKeyButton: BaseSpecialKeyButton {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         setImage(UIImage(systemName: "shift", withConfiguration: config), for: .normal)
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+    }
+
+    override func handleForwardedTouchUp() {
+        showNormalState()
+
+        let now = Date()
+        let interval = now.timeIntervalSince(lastTapTime)
+        lastTapTime = now
+
+        if interval < 0.4 && shiftState == .shifted {
+            shiftState = .capsLocked
+        } else {
+            switch shiftState {
+            case .off:
+                shiftState = .shifted
+            case .shifted:
+                shiftState = .off
+            case .capsLocked:
+                shiftState = .off
+            }
+        }
+
+        updateIcon()
+        onShiftChanged?(shiftState)
+    }
+
+    override func handleForwardedTouchCancelled() {
+        showNormalState()
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -226,6 +290,56 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         setImage(UIImage(systemName: "delete.backward", withConfiguration: config), for: .normal)
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+
+        // Immediate first delete
+        let deleted = onDelete?() ?? false
+        if deleted {
+            HapticFeedback.keyTapped()
+            AudioServicesPlaySystemSound(KeySound.delete)
+        }
+        deleteCount = 1
+
+        // Start repeat with acceleration
+        repeatTask = Task { @MainActor [weak self] in
+            // 400ms initial delay before repeat begins
+            try? await Task.sleep(nanoseconds: 400_000_000)
+
+            while !Task.isCancelled {
+                guard let self = self else { return }
+                if self.deleteCount >= self.wordModeThreshold {
+                    self.onWordDelete?()
+                    HapticFeedback.keyTapped()
+                    AudioServicesPlaySystemSound(KeySound.delete)
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                } else {
+                    let deleted = self.onDelete?() ?? false
+                    if !deleted {
+                        // Text field is empty -- stop repeating
+                        break
+                    }
+                    HapticFeedback.keyTapped()
+                    AudioServicesPlaySystemSound(KeySound.delete)
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                self.deleteCount += 1
+            }
+        }
+    }
+
+    override func handleForwardedTouchUp() {
+        cleanup()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        cleanup()
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -337,6 +451,43 @@ class SpaceKeyButton: BaseSpecialKeyButton {
         titleLabel?.font = .systemFont(ofSize: 15)
         setTitleColor(.label, for: .normal)
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        lastDragLocation = touch.location(in: self)
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+
+        // Start 400ms trackpad activation timer
+        longPressTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            self?.activateTrackpad()
+        }
+    }
+
+    override func handleForwardedTouchMoved(touch: UITouch, in sourceView: UIView) {
+        let currentLocation = touch.location(in: self)
+        if isTrackpadMode {
+            handleTrackpadDrag(currentLocation: currentLocation)
+        }
+        lastDragLocation = currentLocation
+    }
+
+    override func handleForwardedTouchUp() {
+        if !isTrackpadMode {
+            onTap?() // Normal space insertion
+        }
+        deactivateTrackpad()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        deactivateTrackpad()
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -593,6 +744,25 @@ class ReturnKeyButton: BaseSpecialKeyButton {
         }
     }
 
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+    }
+
+    override func handleForwardedTouchUp() {
+        showNormalState()
+        onTap?()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        showNormalState()
+    }
+
+    // MARK: - Original touch handling (fallback)
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         showPressedState()
@@ -633,6 +803,25 @@ class GlobeKeyButton: BaseSpecialKeyButton {
         let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         setImage(UIImage(systemName: "globe", withConfiguration: config), for: .normal)
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+    }
+
+    override func handleForwardedTouchUp() {
+        showNormalState()
+        onTap?()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        showNormalState()
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -675,6 +864,25 @@ class EmojiKeyButton: BaseSpecialKeyButton {
         setImage(UIImage(systemName: "face.smiling", withConfiguration: config), for: .normal)
     }
 
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+    }
+
+    override func handleForwardedTouchUp() {
+        showNormalState()
+        onTap?()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        showNormalState()
+    }
+
+    // MARK: - Original touch handling (fallback)
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         showPressedState()
@@ -715,6 +923,25 @@ class LayerSwitchKeyButton: BaseSpecialKeyButton {
         titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
         setTitleColor(.label, for: .normal)
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.modifier)
+    }
+
+    override func handleForwardedTouchUp() {
+        showNormalState()
+        onTap?()
+    }
+
+    override func handleForwardedTouchCancelled() {
+        showNormalState()
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -780,6 +1007,82 @@ class AdaptiveAccentKeyButton: BaseSpecialKeyButton {
         setTitleColor(.label, for: .normal)
         refreshTitle()
     }
+
+    // MARK: - Forwarded touch handling
+
+    override func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        showPressedState()
+        HapticFeedback.keyTapped()
+        AudioServicesPlaySystemSound(KeySound.letter)
+
+        // Publish press state for popup preview
+        let frameInKeyboard = frameInKeyboardCoordinateSpace()
+        touchState?.showPress(label: displayChar, frame: frameInKeyboard)
+
+        // Start 400ms long-press timer for accent popup
+        longPressFired = false
+        longPressTimer?.cancel()
+        longPressTimer = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            self?.handleLongPress()
+        }
+    }
+
+    override func handleForwardedTouchMoved(touch: UITouch, in sourceView: UIView) {
+        guard longPressFired, touchState?.showingAccents == true else { return }
+
+        let location = touch.location(in: self)
+        let accentCount = touchState?.accentOptions.count ?? 0
+        guard accentCount > 0 else { return }
+
+        let totalWidth = CGFloat(accentCount) * accentCellWidth
+        let kbWidth = touchState?.keyboardWidth ?? bounds.width * 10
+        let frameInKB = frameInKeyboardCoordinateSpace()
+        let rawMidX = frameInKB.midX
+        let halfWidth = totalWidth / 2
+        let clampedMidX = max(halfWidth, min(rawMidX, kbWidth - halfWidth))
+
+        let clampedLocalMidX = bounds.midX + (clampedMidX - rawMidX)
+        let popupStartX = clampedLocalMidX - totalWidth / 2
+        let index = Int((location.x - popupStartX) / accentCellWidth)
+
+        if index >= 0 && index < accentCount {
+            touchState?.updateAccentSelection(at: index)
+        } else {
+            touchState?.updateAccentSelection(at: nil)
+        }
+    }
+
+    override func handleForwardedTouchUp() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+        showNormalState()
+
+        if let state = touchState, state.showingAccents,
+           let index = state.selectedAccentIndex,
+           index >= 0, index < state.accentOptions.count {
+            onTap?(state.accentOptions[index])
+            touchState?.hideAccents()
+        } else if !longPressFired {
+            onTap?(displayChar)
+        }
+
+        touchState?.hidePress()
+        touchState?.hideAccents()
+        longPressFired = false
+    }
+
+    override func handleForwardedTouchCancelled() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+        showNormalState()
+        touchState?.hidePress()
+        touchState?.hideAccents()
+        longPressFired = false
+    }
+
+    // MARK: - Original touch handling (fallback)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)

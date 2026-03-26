@@ -241,6 +241,111 @@ class LetterKeyButton: UIButton {
         longPressFired = false
     }
 
+    // MARK: - Forwarded touch handling (called by KeyboardTouchForwardingView)
+
+    /// Handle touch down forwarded from the touch forwarding overlay.
+    /// Contains the same logic as touchesBegan: visual highlight, audio, haptic, popup, accent timer.
+    func handleForwardedTouchDown(touch: UITouch, in sourceView: UIView) {
+        let touchDownState = KeyTapSignposter.beginTouchDown()
+
+        // 1. Visual highlight
+        backgroundView.backgroundColor = Self.pressedBackground
+        KeyTapSignposter.emitHighlight(touchDownState)
+
+        // 2. Audio on touchDown
+        AudioServicesPlaySystemSound(KeySound.letter)
+
+        // 3. Haptic on touchDown
+        HapticFeedback.keyTapped()
+        KeyTapSignposter.emitHaptic(touchDownState)
+
+        // 4. Prepare Taptic Engine for NEXT tap
+        HapticFeedback.prepareForNextTap()
+
+        KeyTapSignposter.endTouchDown(touchDownState)
+
+        // 5. Publish press state to SwiftUI for popup preview
+        let frameInKeyboard = frameInKeyboardCoordinateSpace()
+        touchState?.showPress(label: displayLabel, frame: frameInKeyboard)
+
+        // 6. Start 400ms accent long-press timer
+        longPressFired = false
+        longPressTimer?.cancel()
+        longPressTimer = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            self?.handleLongPress()
+        }
+    }
+
+    /// Handle touch moved forwarded from the touch forwarding overlay.
+    /// Tracks accent popup selection when long-press has fired.
+    func handleForwardedTouchMoved(touch: UITouch, in sourceView: UIView) {
+        // If accent popup is showing, track which accent the finger is over
+        guard longPressFired, touchState?.showingAccents == true else { return }
+
+        let location = touch.location(in: self)
+        let accentCount = touchState?.accentOptions.count ?? 0
+        guard accentCount > 0 else { return }
+
+        // Apply same edge clamping as the SwiftUI accent overlay
+        let totalWidth = CGFloat(accentCount) * accentCellWidth
+        let kbWidth = touchState?.keyboardWidth ?? bounds.width * 10  // fallback: no clamping
+        let frameInKB = frameInKeyboardCoordinateSpace()
+        let rawMidX = frameInKB.midX
+        let halfWidth = totalWidth / 2
+        let clampedMidX = max(halfWidth, min(rawMidX, kbWidth - halfWidth))
+
+        // Convert clamped position back to button-local coordinates
+        let clampedLocalMidX = bounds.midX + (clampedMidX - rawMidX)
+        let popupStartX = clampedLocalMidX - totalWidth / 2
+        let index = Int((location.x - popupStartX) / accentCellWidth)
+
+        if index >= 0 && index < accentCount {
+            touchState?.updateAccentSelection(at: index)
+        } else {
+            touchState?.updateAccentSelection(at: nil)
+        }
+    }
+
+    /// Handle touch up forwarded from the touch forwarding overlay.
+    /// Inserts accent or normal character, resets visual state.
+    func handleForwardedTouchUp() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+
+        // Reset visual state
+        backgroundView.backgroundColor = Self.normalBackground
+
+        if let state = touchState, state.showingAccents,
+           let index = state.selectedAccentIndex,
+           index >= 0, index < state.accentOptions.count {
+            // Accent selected: insert the selected accent
+            onTap?(state.accentOptions[index])
+            touchState?.hideAccents()
+        } else if !longPressFired {
+            // Normal tap: insert the character
+            onTap?(outputChar)
+        }
+
+        touchState?.hidePress()
+        touchState?.hideAccents()
+        longPressFired = false
+    }
+
+    /// Handle touch cancelled forwarded from the touch forwarding overlay.
+    /// Resets visual state without inserting any character.
+    func handleForwardedTouchCancelled() {
+        longPressTimer?.cancel()
+        longPressTimer = nil
+
+        // Reset visual state -- NO character insertion on cancel
+        backgroundView.backgroundColor = Self.normalBackground
+        touchState?.hidePress()
+        touchState?.hideAccents()
+        longPressFired = false
+    }
+
     // MARK: - Long-press
 
     /// Called after 400ms: check for accented variants and show popup if available.
