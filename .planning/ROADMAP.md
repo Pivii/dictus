@@ -160,7 +160,7 @@ Plans:
   6. Shift double-tap caps lock works
   7. Key popup shows larger letter with wide connected stem
   8. No performance regression vs Phase 15.3 keyboard feel
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 15.6-01-PLAN.md — Touch forwarding view + refactor button touch handlers
@@ -300,7 +300,7 @@ Phases execute in numeric order: 11 -> 12 -> 13 -> 14 -> 15 -> 15.1 -> 15.2 -> 1
 | 15.3. Keyboard Optimization | 4/4 | Complete    | 2026-03-24 | - |
 | 15.4. Zero Dead Zones | v1.2 | 0/2 | Planned | - |
 | 15.5. UIKit Keyboard Rebuild | 3/5 | In Progress|  | - |
-| 15.6. Keyboard Polish & Zero Dead Zones | 0/2 | Planned |  | - |
+| 15.6. Keyboard Polish & Zero Dead Zones | 1/2 | In Progress|  | - |
 | 16. TestFlight Deployment | 1/3 | In Progress|  | - |
 
 ---
