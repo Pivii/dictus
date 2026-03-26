@@ -64,6 +64,7 @@ class KeyboardViewController: UIInputViewController {
         container.touchState = touchState
         container.translatesAutoresizingMaskIntoConstraints = false
         kbInputView.addSubview(container)
+        kbInputView.keyboardContainer = container
         self.keyboardContainer = container
 
         // ── SwiftUI hosting view (added SECOND = in front) ──
