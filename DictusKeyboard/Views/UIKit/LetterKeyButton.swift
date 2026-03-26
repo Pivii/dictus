@@ -130,7 +130,18 @@ class LetterKeyButton: UIButton {
     /// Expand the touchable area using negative insets.
     /// This is the core mechanism that eliminates dead zones between keys.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.inset(by: touchInsets).contains(point)
+        let expanded = bounds.inset(by: touchInsets)
+        let result = expanded.contains(point)
+        // Diagnostic log (temporary) — verify extended hit regions are active
+        if !bounds.contains(point) && result {
+            PersistentLog.log(.diagnosticProbe(
+                component: "HitTest",
+                instanceID: "letter",
+                action: "extended",
+                details: "key='\(keyLabel)' px=\(Int(point.x)) py=\(Int(point.y)) bw=\(Int(bounds.width)) bh=\(Int(bounds.height))"
+            ))
+        }
+        return result
     }
 
     // MARK: - Touch handling

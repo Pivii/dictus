@@ -325,15 +325,19 @@ class KeyboardContainerView: UIView {
     /// center distance, eliminating dead zones at keyboard edges and sub-pixel gaps.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         // First, try the normal hit-test chain (UIStackView routing)
-        // IMPORTANT: check `hit !== self` — UIView.hitTest returns self when the point
-        // is inside bounds but no subview claims it (e.g., side padding area between
-        // container edge and mainStack). Without this check, the fallback never fires
-        // for edge touches and they become dead zones.
-        if let hit = super.hitTest(point, with: event), hit !== self {
+        let superHit = super.hitTest(point, with: event)
+
+        // IMPORTANT: only return if superHit is an actual button.
+        // UIStackView.hitTest returns itself when the point is between button frames
+        // (inside rowStack bounds but no button.frame.contains(point) matches).
+        // That rowStack "swallows" the touch silently. By checking the type,
+        // any non-button hit (rowStack, mainStack, self) falls through to the
+        // nearest-button fallback, eliminating dead zones.
+        if let hit = superHit, hit is LetterKeyButton || hit is BaseSpecialKeyButton {
             return hit
         }
-        // If normal chain missed (touch in side padding or sub-pixel gaps),
-        // find the nearest button by distance to its center
+
+        // Fallback: find the nearest button by distance to its center
         guard bounds.contains(point) else { return nil }
         var bestButton: UIView?
         var bestDistance: CGFloat = .greatestFiniteMagnitude
@@ -348,6 +352,20 @@ class KeyboardContainerView: UIView {
                 bestButton = button
             }
         }
+
+        // Diagnostic log (temporary) — verify fallback fires for dead zone touches
+        let usedFallback = !(superHit is LetterKeyButton || superHit is BaseSpecialKeyButton)
+        let buttonLabel: String
+        if let lb = bestButton as? LetterKeyButton { buttonLabel = lb.keyLabel }
+        else if let sb = bestButton as? BaseSpecialKeyButton { buttonLabel = String(describing: type(of: sb)) }
+        else { buttonLabel = "none" }
+        PersistentLog.log(.diagnosticProbe(
+            component: "HitTest",
+            instanceID: "container",
+            action: "route",
+            details: "x=\(Int(point.x)) y=\(Int(point.y)) superHit=\(superHit.map { String(describing: type(of: $0)) } ?? "nil") fallback=\(usedFallback) key=\(buttonLabel)"
+        ))
+
         return bestButton
     }
 
