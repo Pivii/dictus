@@ -106,63 +106,96 @@ enum KeyMetrics {
 /// WHY a custom shape instead of plain RoundedRectangle:
 /// Apple's native keyboard popup has a stem connecting the bubble to the pressed key.
 /// This gives the user a clear visual link between the magnified letter and the key.
-/// Popup shape with wide-base stem connecting seamlessly to the key below.
-/// The stem is an inverted trapezoid: narrow at top (bubble width), wide at bottom (key width).
+/// Popup shape: one continuous rounded shape that flows from the wider bubble
+/// down to the key width, matching Apple's native keyboard popup style.
+///
+/// The shape is drawn as a single path: rounded top corners, straight sides,
+/// then smooth quad-curve transition narrowing to the key width at the bottom.
 struct KeyPopupShape: Shape {
-    var cornerRadius: CGFloat = 6
+    /// Width of the bubble (wider than the key).
+    var bubbleWidth: CGFloat = 52
+    /// Width at the bottom where the shape meets the key.
     var stemBaseWidth: CGFloat = 38
-    var stemHeight: CGFloat = 8
+    /// Height of the transition zone between bubble and key.
+    var stemHeight: CGFloat = 10
+    /// Corner radius for the top corners of the bubble.
+    var cornerRadius: CGFloat = 8
 
     func path(in rect: CGRect) -> Path {
-        let bubbleRect = CGRect(x: rect.minX, y: rect.minY,
-                                width: rect.width, height: rect.height - stemHeight)
+        let midX = rect.midX
+        let bubbleBottom = rect.height - stemHeight
+        let bubbleHW = bubbleWidth / 2
+        let baseHW = stemBaseWidth / 2
+        let cr = cornerRadius
 
         var path = Path()
 
-        // Rounded rectangle bubble
-        path.addRoundedRect(in: bubbleRect, cornerSize: CGSize(width: cornerRadius, height: cornerRadius))
+        // Start at top-left, after the corner radius
+        path.move(to: CGPoint(x: midX - bubbleHW + cr, y: 0))
 
-        // Wide-base stem: inverted trapezoid connecting bubble to key
-        let midX = rect.midX
-        let stemTop = bubbleRect.maxY
-        let stemBottom = rect.maxY
-        let bubbleHalfWidth = min(rect.width / 2, stemBaseWidth / 2 + 4)
-        let baseHalfWidth = stemBaseWidth / 2
+        // Top edge
+        path.addLine(to: CGPoint(x: midX + bubbleHW - cr, y: 0))
 
-        path.move(to: CGPoint(x: midX - bubbleHalfWidth, y: stemTop))
-        path.addLine(to: CGPoint(x: midX - baseHalfWidth, y: stemBottom))
-        path.addLine(to: CGPoint(x: midX + baseHalfWidth, y: stemBottom))
-        path.addLine(to: CGPoint(x: midX + bubbleHalfWidth, y: stemTop))
+        // Top-right corner
+        path.addQuadCurve(
+            to: CGPoint(x: midX + bubbleHW, y: cr),
+            control: CGPoint(x: midX + bubbleHW, y: 0)
+        )
+
+        // Right edge of bubble
+        path.addLine(to: CGPoint(x: midX + bubbleHW, y: bubbleBottom))
+
+        // Right transition curve: bubble width → key width
+        path.addQuadCurve(
+            to: CGPoint(x: midX + baseHW, y: rect.height),
+            control: CGPoint(x: midX + bubbleHW, y: rect.height)
+        )
+
+        // Bottom edge
+        path.addLine(to: CGPoint(x: midX - baseHW, y: rect.height))
+
+        // Left transition curve: key width → bubble width
+        path.addQuadCurve(
+            to: CGPoint(x: midX - bubbleHW, y: bubbleBottom),
+            control: CGPoint(x: midX - bubbleHW, y: rect.height)
+        )
+
+        // Left edge of bubble
+        path.addLine(to: CGPoint(x: midX - bubbleHW, y: cr))
+
+        // Top-left corner
+        path.addQuadCurve(
+            to: CGPoint(x: midX - bubbleHW + cr, y: 0),
+            control: CGPoint(x: midX - bubbleHW, y: 0)
+        )
+
         path.closeSubpath()
-
         return path
     }
 }
 
-/// The popup preview bubble shown above a pressed key with a wide connected stem.
+/// The popup preview shown above a pressed key — wider bubble flowing into key.
 struct KeyPopup: View {
     let label: String
 
-    /// Larger font than key (34pt vs 22pt) for clear popup visibility.
-    private let popupFontSize: CGFloat = 34
-
-    /// Bubble height (text area) and stem height.
+    /// Bubble height (letter area) + stem transition height.
     private let bubbleHeight: CGFloat = 42
-    private let stemHeight: CGFloat = 8
+    private let stemHeight: CGFloat = 10
+    private let totalWidth: CGFloat = 52
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Background shape: bubble + wide-base stem
-            KeyPopupShape(stemBaseWidth: 38, stemHeight: stemHeight)
+            // One continuous shape: bubble flowing into key
+            KeyPopupShape(bubbleWidth: totalWidth, stemBaseWidth: 38, stemHeight: stemHeight)
                 .fill(KeyMetrics.letterKeyColor)
-                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 2)
+                .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
 
-            // Text sits in the bubble area only -- larger and lighter than key font
+            // Letter — larger and lighter than key font
             Text(label)
-                .font(.system(size: 34, weight: .light))
+                .font(.system(size: 32, weight: .regular))
                 .foregroundStyle(.primary)
-                .frame(width: 44, height: bubbleHeight)
+                .frame(width: totalWidth, height: bubbleHeight)
         }
-        .frame(width: 44, height: bubbleHeight + stemHeight)
+        .frame(width: totalWidth, height: bubbleHeight + stemHeight)
     }
 }

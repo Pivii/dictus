@@ -1,6 +1,7 @@
 // DictusKeyboard/Views/UIKit/KeyboardTouchForwardingView.swift
 // Transparent overlay that intercepts ALL keyboard touches and routes to nearest button.
 import UIKit
+import DictusCore
 
 /// A transparent UIView that intercepts all touches on the keyboard surface and forwards
 /// them to the nearest button by Euclidean distance.
@@ -65,8 +66,31 @@ class KeyboardTouchForwardingView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let point = touch.location(in: self)
-            guard let button = findNearestButton(to: point) else { continue }
+            guard let button = findNearestButton(to: point) else {
+                // TEMPORARY: debug dead zones — log when no button found
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ForwardingView",
+                    instanceID: "touch",
+                    action: "noButton",
+                    details: "point=(\(Int(point.x)),\(Int(point.y))) buttons=\(allButtons.count) bounds=\(Int(bounds.width))x\(Int(bounds.height))"
+                ))
+                continue
+            }
             touchToButton[touch] = button
+
+            // TEMPORARY: debug dead zones — log every touch routing
+            let buttonLabel: String
+            if let letter = button as? LetterKeyButton {
+                buttonLabel = letter.keyLabel
+            } else {
+                buttonLabel = String(describing: type(of: button)).replacingOccurrences(of: "KeyButton", with: "")
+            }
+            PersistentLog.log(.diagnosticProbe(
+                component: "ForwardingView",
+                instanceID: "touch",
+                action: "routed",
+                details: "point=(\(Int(point.x)),\(Int(point.y))) -> \(buttonLabel)"
+            ))
 
             if let letter = button as? LetterKeyButton {
                 letter.handleForwardedTouchDown(touch: touch, in: self)

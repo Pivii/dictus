@@ -1,5 +1,6 @@
 // DictusKeyboard/InputView.swift
 import UIKit
+import DictusCore
 
 /// Custom UIInputView that enables the system keyboard click sound.
 /// UIInputViewAudioFeedback protocol must be adopted by a UIView subclass,
@@ -32,6 +33,15 @@ class KeyboardInputView: UIInputView, UIInputViewAudioFeedback {
             if container.bounds.contains(converted),
                let hit = container.hitTest(converted, with: event) {
                 return hit
+            }
+            // TEMPORARY: debug dead zones — log when touch misses container
+            if !container.bounds.contains(converted) {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "InputView",
+                    instanceID: "hitTest",
+                    action: "missedContainer",
+                    details: "point=(\(Int(point.x)),\(Int(point.y))) converted=(\(Int(converted.x)),\(Int(converted.y))) containerBounds=\(Int(container.bounds.width))x\(Int(container.bounds.height)) containerFrame=(\(Int(container.frame.origin.x)),\(Int(container.frame.origin.y)),\(Int(container.frame.width)),\(Int(container.frame.height))"
+                ))
             }
         }
         return super.hitTest(point, with: event)

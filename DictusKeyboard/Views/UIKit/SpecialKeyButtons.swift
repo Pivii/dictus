@@ -312,6 +312,10 @@ class DeleteKeyButton: BaseSpecialKeyButton {
             while !Task.isCancelled {
                 guard let self = self else { return }
                 if self.deleteCount >= self.wordModeThreshold {
+                    // Probe with single char delete to check if text exists
+                    let hasText = self.onDelete?() ?? false
+                    guard hasText else { break }
+                    // Text exists: do full word delete
                     self.onWordDelete?()
                     HapticFeedback.keyTapped()
                     AudioServicesPlaySystemSound(KeySound.delete)
@@ -361,6 +365,8 @@ class DeleteKeyButton: BaseSpecialKeyButton {
             while !Task.isCancelled {
                 guard let self = self else { return }
                 if self.deleteCount >= self.wordModeThreshold {
+                    let hasText = self.onDelete?() ?? false
+                    guard hasText else { break }
                     self.onWordDelete?()
                     HapticFeedback.keyTapped()
                     AudioServicesPlaySystemSound(KeySound.delete)
