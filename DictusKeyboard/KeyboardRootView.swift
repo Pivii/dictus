@@ -448,11 +448,17 @@ struct KeyboardRootView: View {
                     }
                     return true
                 }
-                let before = controller.textDocumentProxy.documentContextBeforeInput
-                guard before != nil && !before!.isEmpty else {
+                // Check if there's text before cursor OR selected text to delete.
+                // WHY always call deleteBackward: documentContextBeforeInput is nil
+                // when text is selected (cursor at start of selection). deleteBackward()
+                // correctly deletes the selection in that case.
+                let proxy = controller.textDocumentProxy
+                let before = proxy.documentContextBeforeInput
+                let hasSelection = proxy.selectedText != nil && !proxy.selectedText!.isEmpty
+                guard (before != nil && !before!.isEmpty) || hasSelection else {
                     return false
                 }
-                controller.textDocumentProxy.deleteBackward()
+                proxy.deleteBackward()
                 lastTypedChar = nil
                 checkAutocapitalize()
                 DispatchQueue.main.async {
