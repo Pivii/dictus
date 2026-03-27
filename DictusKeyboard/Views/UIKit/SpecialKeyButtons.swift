@@ -307,8 +307,10 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         // Start repeat with acceleration — NO haptic/audio during repeat
         // WHY silent repeat: Apple's native keyboard gives feedback only on the
         // initial press. Continuous buzzing during hold-delete is distracting.
+        // WHY no empty-field break: onDelete checks documentContextBeforeInput,
+        // which is nil when text is SELECTED (cursor at start). Stopping would
+        // prevent deleting selected text. The repeat just no-ops on empty fields.
         repeatTask = Task { @MainActor [weak self] in
-            // 400ms initial delay before repeat begins
             try? await Task.sleep(nanoseconds: 400_000_000)
 
             while !Task.isCancelled {
@@ -317,8 +319,7 @@ class DeleteKeyButton: BaseSpecialKeyButton {
                     self.onWordDelete?()
                     try? await Task.sleep(nanoseconds: 120_000_000)
                 } else {
-                    let deleted = self.onDelete?() ?? false
-                    if !deleted { break }
+                    _ = self.onDelete?()
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 self.deleteCount += 1
@@ -348,7 +349,7 @@ class DeleteKeyButton: BaseSpecialKeyButton {
         }
         deleteCount = 1
 
-        // Start silent repeat with acceleration
+        // Start silent repeat with acceleration (no empty-field break)
         repeatTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             while !Task.isCancelled {
@@ -357,8 +358,7 @@ class DeleteKeyButton: BaseSpecialKeyButton {
                     self.onWordDelete?()
                     try? await Task.sleep(nanoseconds: 120_000_000)
                 } else {
-                    let deleted = self.onDelete?() ?? false
-                    if !deleted { break }
+                    _ = self.onDelete?()
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 self.deleteCount += 1
