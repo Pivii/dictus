@@ -12,12 +12,10 @@ class KeyboardViewController: UIInputViewController {
     /// Contains the visual key layout (UIStackViews, buttons with isUserInteractionEnabled=false).
     var keyboardContainer: KeyboardContainerView?
 
-    /// Gesture recognizer that intercepts ALL touches in the keyboard area.
-    /// WHY gesture recognizer: iOS keyboard infrastructure intercepts the hitTest chain —
-    /// touches between keys never reach any UIView. UIGestureRecognizer operates on a
-    /// different path: the window delivers touches to gesture recognizers BEFORE the
-    /// hit-test view, bypassing iOS's keyboard touch filtering entirely.
-    var touchGestureRecognizer: KeyboardTouchGestureRecognizer?
+    /// Touch forwarding view added as topmost subview of kbInputView.
+    /// Routes on-key touches to nearest button. Dead zones between keys remain
+    /// a known iOS limitation (see .planning/debug/dead-zones-uikit-keyboard.md).
+    var touchForwardingView: KeyboardTouchForwardingView?
 
     /// Shared touch state bridge between UIKit buttons and SwiftUI popup overlays.
     /// Created here (not in SwiftUI) because the UIKit container needs it at init time.
@@ -104,16 +102,20 @@ class KeyboardViewController: UIInputViewController {
             container.heightAnchor.constraint(equalToConstant: kbHeight),
         ])
 
-        // ── Touch gesture recognizer (bypasses iOS hitTest chain) ──
-        // UIGestureRecognizer receives touches BEFORE hitTest delivery, bypassing
-        // iOS's keyboard infrastructure that blocks dead zone touches from reaching views.
-        let recognizer = KeyboardTouchGestureRecognizer(target: nil, action: nil)
-        recognizer.cancelsTouchesInView = true
-        recognizer.delaysTouchesBegan = false
-        recognizer.delaysTouchesEnded = false
-        kbInputView.addGestureRecognizer(recognizer)
-        self.touchGestureRecognizer = recognizer
-        container.touchGestureRecognizer = recognizer
+        // ── Touch forwarding view (topmost subview) ──
+        // Routes on-key touches to nearest button via handleForwardedTouch* methods.
+        // Dead zones between keys are a known iOS limitation — see debug docs.
+        let fwd = KeyboardTouchForwardingView()
+        fwd.translatesAutoresizingMaskIntoConstraints = false
+        kbInputView.addSubview(fwd)
+        NSLayoutConstraint.activate([
+            fwd.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
+            fwd.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
+            fwd.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor, constant: -8),
+            fwd.heightAnchor.constraint(equalToConstant: kbHeight),
+        ])
+        self.touchForwardingView = fwd
+        container.forwardingView = fwd
 
         // Set explicit height constraint on inputView.
         // This tells iOS exactly how tall our keyboard should be, preventing
