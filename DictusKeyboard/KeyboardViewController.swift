@@ -8,14 +8,12 @@ class KeyboardViewController: UIInputViewController {
 
     private var hostingController: UIHostingController<KeyboardRootView>?
 
-    /// The UIKit keyboard container, added directly to kbInputView (NOT via SwiftUI).
-    /// Contains the visual key layout (UIStackViews, buttons with isUserInteractionEnabled=false).
-    var keyboardContainer: KeyboardContainerView?
+    /// The UIKit keyboard container. Added ON TOP of the SwiftUI hosting view so it
+    /// receives touches directly without any hitTest workaround.
+    var keyboardContainer: KeyboardCollectionView?
 
-    /// Touch forwarding view added as topmost subview of kbInputView.
-    /// Routes on-key touches to nearest button. Dead zones between keys remain
-    /// a known iOS limitation (see .planning/debug/dead-zones-uikit-keyboard.md).
-    var touchForwardingView: KeyboardTouchForwardingView?
+    /// UIKit popup layer for key preview and accent strip. Sits above the collection view.
+    var popupLayer: KeyPopupLayer?
 
     /// Shared touch state bridge between UIKit buttons and SwiftUI popup overlays.
     /// Created here (not in SwiftUI) because the UIKit container needs it at init time.
@@ -56,14 +54,11 @@ class KeyboardViewController: UIInputViewController {
         // iOS manages the inputView's frame via autoresizing masks — disabling them
         // causes the view to collapse to zero width.
 
-        // ── UIKit keyboard container (added FIRST = behind SwiftUI) ──
-        let container = KeyboardContainerView()
-        container.touchState = touchState
-        container.translatesAutoresizingMaskIntoConstraints = false
-        kbInputView.addSubview(container)
-        self.keyboardContainer = container
-
-        // ── SwiftUI hosting view (added SECOND = in front) ──
+        // ── 1. SwiftUI hosting view (added FIRST = BEHIND) ──
+        // Contains toolbar, recording overlay, emoji picker.
+        // The keyboard area in SwiftUI is a transparent spacer.
+        // Dead zones are NOT caused by the hosting view — they were caused by
+        // floating-point rounding in cell sizing (fixed with - 1 correction).
         let rootView = KeyboardRootView(controller: self, controllerID: controllerID, touchState: touchState)
         let hosting = UIHostingController(rootView: rootView)
         PersistentLog.log(.diagnosticProbe(
@@ -73,15 +68,10 @@ class KeyboardViewController: UIInputViewController {
             details: "hosting=\(ObjectIdentifier(hosting).debugDescription)"
         ))
 
-        // Critical: retain the hosting controller or it gets deallocated
         self.hostingController = hosting
-
         addChild(hosting)
-        // Add hosting view as subview of kbInputView — ON TOP of container
         kbInputView.addSubview(hosting.view)
         hosting.didMove(toParent: self)
-
-        // Remove default background so the keyboard blends with host app
         hosting.view.backgroundColor = .clear
 
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
@@ -92,9 +82,16 @@ class KeyboardViewController: UIInputViewController {
             hosting.view.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor)
         ])
 
-        // Constrain keyboard container to match the keyboard area (below toolbar, above bottom spacer).
-        // The keyboard height must match KeyboardRootView's keyboardHeight for correct alignment.
+        // ── 2. UIKit keyboard container — the ONLY visible keyboard content ──
+        // 100% UIKit, same architecture as giellakbd-ios: UICollectionView with
+        // zero-gap cells, touch handling on the parent view, no SwiftUI in the way.
         let kbHeight = CGFloat(4) * (KeyMetrics.keyHeight + KeyMetrics.rowSpacing)
+        let container = KeyboardCollectionView()
+        container.touchState = touchState
+        container.translatesAutoresizingMaskIntoConstraints = false
+        kbInputView.addSubview(container)
+        self.keyboardContainer = container
+
         NSLayoutConstraint.activate([
             container.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
@@ -102,20 +99,22 @@ class KeyboardViewController: UIInputViewController {
             container.heightAnchor.constraint(equalToConstant: kbHeight),
         ])
 
-        // ── Touch forwarding view (topmost subview) ──
-        // Routes on-key touches to nearest button via handleForwardedTouch* methods.
-        // Dead zones between keys are a known iOS limitation — see debug docs.
-        let fwd = KeyboardTouchForwardingView()
-        fwd.translatesAutoresizingMaskIntoConstraints = false
-        kbInputView.addSubview(fwd)
+        // ── 3. UIKit popup layer — above the collection view ──
+        // Renders key preview and accent strip. isUserInteractionEnabled = false
+        // so touches pass through to keys below.
+        let popup = KeyPopupLayer()
+        popup.translatesAutoresizingMaskIntoConstraints = false
+        popup.isUserInteractionEnabled = false
+        kbInputView.addSubview(popup)
+        popup.configure(touchState: touchState)
+        self.popupLayer = popup
+
         NSLayoutConstraint.activate([
-            fwd.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
-            fwd.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
-            fwd.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor, constant: -8),
-            fwd.heightAnchor.constraint(equalToConstant: kbHeight),
+            popup.topAnchor.constraint(equalTo: kbInputView.topAnchor),
+            popup.bottomAnchor.constraint(equalTo: kbInputView.bottomAnchor),
+            popup.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
+            popup.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
         ])
-        self.touchForwardingView = fwd
-        container.forwardingView = fwd
 
         // Set explicit height constraint on inputView.
         // This tells iOS exactly how tall our keyboard should be, preventing
@@ -151,6 +150,11 @@ class KeyboardViewController: UIInputViewController {
         // Without this, the inputView may retain a stale height from before the switch.
         heightConstraint?.constant = computeKeyboardHeight()
         inputView?.setNeedsLayout()
+
+        // Disable gesture recognizer delays for instant key response.
+        // WHY: iOS adds ~100-150ms delay to touches to check for system gestures (swipe from edges).
+        // Pattern from giellakbd-ios: disabling delaysTouchesBegan makes keyboard response feel native.
+        view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
 
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",

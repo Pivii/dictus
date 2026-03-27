@@ -10,11 +10,9 @@ import UIKit
 /// is typed as UIInputView?. Using .keyboard style tells iOS this view behaves
 /// like a keyboard, which is necessary for playInputClick() to work.
 ///
-/// NO hitTest override needed: the KeyboardTouchForwardingView is added as the
-/// TOPMOST subview by KeyboardViewController. UIKit's default front-to-back
-/// hit-testing finds it naturally. Previous attempts to override hitTest here
-/// were bypassed by iOS's keyboard infrastructure (touches never reached it
-/// for dead zone areas).
+/// No hitTest override needed: the KeyboardCollectionView is added as the topmost
+/// subview in the keyboard area, so UIKit's default front-to-back hit-testing finds
+/// it naturally. The SwiftUI hosting view sits behind it for toolbar and overlays.
 class KeyboardInputView: UIInputView, UIInputViewAudioFeedback {
     /// Return true to enable keyboard click sounds via playInputClick().
     var enableInputClicksWhenVisible: Bool { true }

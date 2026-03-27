@@ -203,58 +203,20 @@ struct KeyboardRootView: View {
                             currentLayer = previousLayer ?? .letters
                             previousLayer = nil
                             isEmojiMode = false
+                            // Restore UIKit keyboard + popups
+                            if let vc = controller as? KeyboardViewController {
+                                vc.keyboardContainer?.isHidden = false
+                                vc.popupLayer?.isHidden = false
+                            }
                         }
                     )
                 } else {
-                    ZStack(alignment: .top) {
-                        // Transparent spacer — the UIKit KeyboardContainerView sits
-                        // BEHIND the hosting view in the kbInputView hierarchy.
-                        // allowsHitTesting(false) makes SwiftUI return nil for this area,
-                        // so UIKit's hitTest chain falls through to the container behind.
-                        Color.clear
-                            .frame(height: keyboardHeight)
-                            .allowsHitTesting(false)
-
-                        // Trackpad overlay stays inside ZStack (fills keyboard area)
-                        if touchState.isTrackpadActive {
-                            Color(.systemBackground).opacity(0.6)
-                                .cornerRadius(8)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-                        }
-                    }
-                    // Popup overlays outside ZStack frame via .overlay -- won't clip on first row
-                    .overlay(alignment: .topLeading) {
-                        ZStack(alignment: .topLeading) {
-                            // Key popup overlay (SwiftUI, reads from touchState)
-                            if let label = touchState.pressedKeyLabel, !touchState.showingAccents {
-                                KeyPopup(label: label)
-                                    .position(x: touchState.pressedKeyFrame.midX,
-                                              y: touchState.pressedKeyFrame.minY - 25)
-                                    .allowsHitTesting(false)
-                            }
-
-                            // Accent popup overlay with edge clamping
-                            if touchState.showingAccents {
-                                let accentCount = CGFloat(touchState.accentOptions.count)
-                                let totalWidth = accentCount * 36
-                                let halfWidth = totalWidth / 2
-                                let kbWidth = touchState.keyboardWidth
-                                let rawX = touchState.accentKeyFrame.midX
-                                let clampedX = max(halfWidth, min(rawX, kbWidth - halfWidth))
-
-                                AccentPopup(
-                                    accents: touchState.accentOptions,
-                                    selectedIndex: touchState.selectedAccentIndex
-                                )
-                                .position(x: clampedX,
-                                          y: touchState.accentKeyFrame.minY - 25)
-                                .allowsHitTesting(false)
-                            }
-                        }
-                        .frame(width: touchState.keyboardWidth > 0 ? touchState.keyboardWidth : nil,
-                               height: keyboardHeight)
-                    }
+                    // Transparent spacer — the UIKit KeyboardCollectionView sits
+                    // ON TOP of the hosting view in the kbInputView hierarchy.
+                    // Popups and trackpad overlay are UIKit views in the popup layer.
+                    Color.clear
+                        .frame(height: keyboardHeight)
+                        .allowsHitTesting(false)
                 }
 
                 if !isEmojiMode {
@@ -280,7 +242,7 @@ struct KeyboardRootView: View {
             // SwiftUI's conditional rendering doesn't affect it.
             if let vc = controller as? KeyboardViewController {
                 vc.keyboardContainer?.isHidden = isShowing
-                vc.touchForwardingView?.isHidden = isShowing
+                vc.popupLayer?.isHidden = isShowing
             }
             syncWaveformDriver()
         }
@@ -380,10 +342,10 @@ struct KeyboardRootView: View {
             // Build initial keyboard keys in the UIKit container
             rebuildKeys()
 
-            // Sync container + forwarding view visibility with overlay state
+            // Sync container + popup layer visibility with overlay state
             if let vc = controller as? KeyboardViewController {
                 vc.keyboardContainer?.isHidden = showsOverlay
-                vc.touchForwardingView?.isHidden = showsOverlay
+                vc.popupLayer?.isHidden = showsOverlay
             }
 
             syncWaveformDriver()
@@ -496,6 +458,11 @@ struct KeyboardRootView: View {
                 previousLayer = currentLayer
                 currentLayer = .emoji
                 isEmojiMode = true
+                // Hide UIKit keyboard + popups when emoji picker is showing
+                if let vc = controller as? KeyboardViewController {
+                    vc.keyboardContainer?.isHidden = true
+                    vc.popupLayer?.isHidden = true
+                }
             },
             onLayerSwitch: {
                 suggestionState.lastAutocorrect = nil

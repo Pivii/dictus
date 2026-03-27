@@ -438,7 +438,16 @@ private struct MiniKeyButtonStyle: ButtonStyle {
             .overlay(
                 Group {
                     if configuration.isPressed {
-                        KeyPopup(label: label)
+                        // Inline key preview (KeyPopup moved to UIKit)
+                        Text(label)
+                            .font(.system(size: 32, weight: .regular))
+                            .foregroundStyle(.primary)
+                            .frame(width: 52, height: 42)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(KeyMetrics.letterKeyColor)
+                                    .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
+                            )
                             .offset(y: -(height + 8))
                     }
                 },
