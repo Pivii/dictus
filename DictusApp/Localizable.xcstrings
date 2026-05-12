@@ -323,6 +323,17 @@
         }
       }
     },
+    "Polish transcription" : {
+      "comment" : "Settings toggle that enables the post-STT polish layer (issue #141).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Polir la transcription"
+          }
+        }
+      }
+    },
     "Polishing the final pass…" : {
       "comment" : "Cycling phrase shown during model compilation (issue #144).",
       "localizations" : {

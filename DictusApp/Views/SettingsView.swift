@@ -38,6 +38,10 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.liveActivityEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var liveActivityEnabled = true
 
+    /// Post-STT polish toggle (issue #141). Off by default — opt-in measurement at round 1.
+    @AppStorage(SharedKeys.polishEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var polishEnabled = false
+
     #if DEBUG
     /// Debug-only: logs autocorrect decisions with user text to the debug log.
     /// This toggle only exists in DEBUG builds — the Release binary doesn't contain
@@ -80,6 +84,9 @@ struct SettingsView: View {
                     Text("Parakeet automatically detects the spoken language. This setting only applies to Whisper models.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if PolishAvailability.isToggleVisible {
+                    Toggle("Polish transcription", isOn: $polishEnabled)
                 }
             } header: {
                 Text("Transcription")
