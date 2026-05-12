@@ -60,6 +60,9 @@ struct SettingsView: View {
     @State private var isExporting = false
     @State private var exportURL: URL?
 
+    /// Hidden polish debug screen (#141). Reached via long-press 3s on the Version row.
+    @State private var showPolishDebug = false
+
     // MARK: - Body
 
     var body: some View {
@@ -145,6 +148,10 @@ struct SettingsView: View {
             // Section 3: A propos
             Section("About") {
                 LabeledContent("Version", value: appVersion)
+                    .contentShape(Rectangle())
+                    .onLongPressGesture(minimumDuration: 3.0) {
+                        showPolishDebug = true
+                    }
 
                 // WHY Button instead of Link:
                 // Link doesn't respond to ButtonStyle and gets no press highlight
@@ -195,6 +202,9 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Color.dictusBackground.ignoresSafeArea())
         .navigationTitle("Settings")
+        .navigationDestination(isPresented: $showPolishDebug) {
+            PolishDebugView()
+        }
         .sheet(isPresented: Binding(
             get: { exportURL != nil },
             set: { isPresented in

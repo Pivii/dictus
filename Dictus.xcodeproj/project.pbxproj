@@ -83,6 +83,8 @@
 		AA00P201 /* PolishAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P201 /* PolishAvailability.swift */; };
 		AA00P202 /* PassthroughPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P202 /* PassthroughPolishEngine.swift */; };
 		AA00P203 /* PolishCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P203 /* PolishCoordinator.swift */; };
+		AA00P204 /* PolishMetricsRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P204 /* PolishMetricsRing.swift */; };
+		AA00P205 /* PolishDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P205 /* PolishDebugView.swift */; };
 		AA0000F6 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
 		AA0000G0 /* KeyTapSignposter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000G0 /* KeyTapSignposter.swift */; };
 		AA000P10 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA100P10 /* PrivacyInfo.xcprivacy */; };
@@ -235,6 +237,8 @@
 		AA10P201 /* PolishAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishAvailability.swift; sourceTree = "<group>"; };
 		AA10P202 /* PassthroughPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassthroughPolishEngine.swift; sourceTree = "<group>"; };
 		AA10P203 /* PolishCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishCoordinator.swift; sourceTree = "<group>"; };
+		AA10P204 /* PolishMetricsRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishMetricsRing.swift; sourceTree = "<group>"; };
+		AA10P205 /* PolishDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugView.swift; sourceTree = "<group>"; };
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
 		AA100P10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA100P20 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -447,6 +451,8 @@
 				AA10P201 /* PolishAvailability.swift */,
 				AA10P202 /* PassthroughPolishEngine.swift */,
 				AA10P203 /* PolishCoordinator.swift */,
+				AA10P204 /* PolishMetricsRing.swift */,
+				AA10P205 /* PolishDebugView.swift */,
 			);
 			path = Polish;
 			sourceTree = "<group>";
@@ -887,6 +893,8 @@
 				AA00P201 /* PolishAvailability.swift in Sources */,
 				AA00P202 /* PassthroughPolishEngine.swift in Sources */,
 				AA00P203 /* PolishCoordinator.swift in Sources */,
+				AA00P204 /* PolishMetricsRing.swift in Sources */,
+				AA00P205 /* PolishDebugView.swift in Sources */,
 				AA000045 /* UnifiedAudioEngine.swift in Sources */,
 				AA000200 /* ObjCExceptionCatcher.m in Sources */,
 				AA000041 /* TranscriptionService.swift in Sources */,

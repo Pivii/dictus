@@ -22,6 +22,7 @@ public final class PolishCoordinator {
 
     private let engine: PolishEngineProtocol
     private let defaults: UserDefaults
+    private let metricsRing = PolishMetricsRing(capacity: 50)
     private var inflight: Task<PolishOutcomeBundle, Never>?
 
     private init() {
@@ -42,6 +43,16 @@ public final class PolishCoordinator {
     /// Reserved for future Apple FM session warm-up at app launch. No-op at round 1
     /// since `PassthroughPolishEngine` has nothing to warm.
     public func prewarm() {}
+
+    /// Snapshot of the last `capacity` polish events for the debug screen.
+    public func metricsSnapshot() async -> [PolishDebugEntry] {
+        await metricsRing.snapshot()
+    }
+
+    /// Empties the debug ring. Triggered from the debug screen's Clear button.
+    public func clearMetricsRing() async {
+        await metricsRing.clear()
+    }
 
     /// Polish raw STT output. Returns `raw` unchanged when the toggle is off, when
     /// language detection skips, when the engine throws/cancels, or when the
@@ -67,6 +78,7 @@ public final class PolishCoordinator {
                 outcome: .skipped
             )
             PolishMetrics.log(m)
+            await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
             return raw
         }
 
@@ -82,24 +94,24 @@ public final class PolishCoordinator {
                 )
                 let latency = Int(Date().timeIntervalSince(start) * 1000)
                 if Task.isCancelled {
-                    return PolishOutcomeBundle(text: raw, outcome: .cancelled, latencyMs: latency)
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, latencyMs: latency)
                 }
                 guard PolishGuardrail.accepts(raw: raw, polished: polished, mode: mode) else {
-                    return PolishOutcomeBundle(text: raw, outcome: .rejectedGuardrail, latencyMs: latency)
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
                 }
-                return PolishOutcomeBundle(text: polished, outcome: .success, latencyMs: latency)
+                return PolishOutcomeBundle(engineOutput: polished, outcome: .success, latencyMs: latency)
             } catch is CancellationError {
                 let latency = Int(Date().timeIntervalSince(start) * 1000)
-                return PolishOutcomeBundle(text: raw, outcome: .cancelled, latencyMs: latency)
+                return PolishOutcomeBundle(engineOutput: nil, outcome: .cancelled, latencyMs: latency)
             } catch {
                 let latency = Int(Date().timeIntervalSince(start) * 1000)
-                return PolishOutcomeBundle(text: raw, outcome: .engineFailed, latencyMs: latency)
+                return PolishOutcomeBundle(engineOutput: nil, outcome: .engineFailed, latencyMs: latency)
             }
         }
         inflight = task
 
         let bundle = await task.value
-        let returned = (bundle.outcome == .success) ? bundle.text : raw
+        let returned: String = (bundle.outcome == .success) ? (bundle.engineOutput ?? raw) : raw
 
         let m = PolishMetrics(
             engine: engine.identifier,
@@ -112,6 +124,7 @@ public final class PolishCoordinator {
             outcome: bundle.outcome
         )
         PolishMetrics.log(m)
+        await metricsRing.append(PolishDebugEntry(raw: raw, polished: bundle.engineOutput, metrics: m))
 
         return returned
     }
@@ -149,7 +162,10 @@ public final class PolishCoordinator {
 }
 
 private struct PolishOutcomeBundle: Sendable {
-    let text: String
+    /// The engine's actual output, or `nil` when the engine never ran successfully
+    /// (cancelled before completion, threw an error). Kept around even when the
+    /// guardrail rejected it so the debug screen can show *what* was rejected.
+    let engineOutput: String?
     let outcome: PolishMetrics.Outcome
     let latencyMs: Int
 }
