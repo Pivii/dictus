@@ -282,6 +282,8 @@ class DictationCoordinator: ObservableObject {
         lastResult = nil
         bufferEnergy = []
         bufferSeconds = 0
+        // Cancel any polish still running from the previous dictation (#141).
+        PolishCoordinator.shared.cancelInflight()
         PersistentLog.log(.statusChanged(from: status.rawValue, to: "clearing-for-new", source: "startDictation-reset"))
 
         // Guard against duplicate calls while actively recording or transcribing.
@@ -463,7 +465,13 @@ class DictationCoordinator: ObservableObject {
                 SoundFeedbackService.playRecordStop()
 
                 try await ensureEngineReady()
-                let text = try await transcriptionService.transcribe(audioSamples: samples)
+                let rawText = try await transcriptionService.transcribe(audioSamples: samples)
+
+                // Polish layer (#141) — passes raw through when toggle off, when language
+                // detection skips, when the engine throws/cancels, or when the guardrail rejects.
+                let activeModelID = defaults.string(forKey: SharedKeys.activeModel) ?? ""
+                let sttEngine = ModelInfo.forIdentifier(activeModelID)?.engine ?? .whisperKit
+                let text = await PolishCoordinator.shared.polish(raw: rawText, sttEngine: sttEngine)
 
                 // Append trailing separator so chained dictations don't stick together
                 let finalText: String

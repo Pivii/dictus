@@ -81,6 +81,8 @@
 		AA0000F4 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AA1000F4 /* Sounds */; };
 		AA0000F5 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F5 /* LiveActivityManager.swift */; };
 		AA00P201 /* PolishAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P201 /* PolishAvailability.swift */; };
+		AA00P202 /* PassthroughPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P202 /* PassthroughPolishEngine.swift */; };
+		AA00P203 /* PolishCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P203 /* PolishCoordinator.swift */; };
 		AA0000F6 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
 		AA0000G0 /* KeyTapSignposter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000G0 /* KeyTapSignposter.swift */; };
 		AA000P10 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA100P10 /* PrivacyInfo.xcprivacy */; };
@@ -231,6 +233,8 @@
 		AA1000F4 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Dictus/Sounds; sourceTree = SOURCE_ROOT; };
 		AA1000F5 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		AA10P201 /* PolishAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishAvailability.swift; sourceTree = "<group>"; };
+		AA10P202 /* PassthroughPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassthroughPolishEngine.swift; sourceTree = "<group>"; };
+		AA10P203 /* PolishCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishCoordinator.swift; sourceTree = "<group>"; };
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
 		AA100P10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA100P20 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -441,6 +445,8 @@
 			isa = PBXGroup;
 			children = (
 				AA10P201 /* PolishAvailability.swift */,
+				AA10P202 /* PassthroughPolishEngine.swift */,
+				AA10P203 /* PolishCoordinator.swift */,
 			);
 			path = Polish;
 			sourceTree = "<group>";
@@ -879,6 +885,8 @@
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
 				AA00P201 /* PolishAvailability.swift in Sources */,
+				AA00P202 /* PassthroughPolishEngine.swift in Sources */,
+				AA00P203 /* PolishCoordinator.swift in Sources */,
 				AA000045 /* UnifiedAudioEngine.swift in Sources */,
 				AA000200 /* ObjCExceptionCatcher.m in Sources */,
 				AA000041 /* TranscriptionService.swift in Sources */,
