@@ -41,10 +41,9 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
     // MARK: - Instruction routing
 
-    /// Returns the system prompt for `(mode, language)`. Steps 6 and 7 fill in
-    /// Repair FR/EN and Light/Repair ES/DE — for now, unsupported combinations
-    /// fall back to the closest available English prompt so the engine still
-    /// produces *some* output during incremental rollout.
+    /// Returns the system prompt for `(mode, language)`. Step 7 wires
+    /// Light/Repair ES + DE; until then ES/DE fall back to the closest English
+    /// prompt so the engine still produces a bounded output.
     static func instructions(for mode: PolishMode,
                              language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
@@ -54,11 +53,15 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
         case (.light, .english):
             return PolishLightPromptEN.instructions(glossary: glossary)
         case (.light, .spanish), (.light, .german):
-            // Step 7 — falling back to English Light keeps the wiring valid.
+            // Step 7 — falling back to English Light keeps behavior bounded.
             return PolishLightPromptEN.instructions(glossary: glossary)
-        case (.repair, _):
-            // Step 6 / 7 — fall back to English Light to keep behavior bounded.
-            return PolishLightPromptEN.instructions(glossary: glossary)
+        case (.repair, .french):
+            return PolishRepairPromptFR.instructions(glossary: glossary)
+        case (.repair, .english):
+            return PolishRepairPromptEN.instructions(glossary: glossary)
+        case (.repair, .spanish), (.repair, .german):
+            // Step 7 — fall back to English Repair.
+            return PolishRepairPromptEN.instructions(glossary: glossary)
         }
     }
 }
