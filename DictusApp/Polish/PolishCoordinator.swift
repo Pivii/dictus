@@ -111,6 +111,9 @@ public final class PolishCoordinator {
                 guard PolishGuardrail.accepts(raw: raw, polished: polished, mode: mode) else {
                     return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
                 }
+                guard PolishGuardrail.detectedLanguageMatches(polished: polished, target: target) else {
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
+                }
                 return PolishOutcomeBundle(engineOutput: polished, outcome: .success, latencyMs: latency)
             } catch is CancellationError {
                 let latency = Int(Date().timeIntervalSince(start) * 1000)

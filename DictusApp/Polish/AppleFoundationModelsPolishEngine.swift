@@ -25,7 +25,20 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
             for: SessionKey(mode: mode, language: targetLanguage),
             instructions: Self.instructions(for: mode, language: targetLanguage)
         )
-        let response = try await session.respond(to: raw)
+        // Wrap the input with explicit Input/Output framing. Without this Apple
+        // FM treats the raw as a conversational turn and emits chat-reply
+        // acknowledgements ("I'll polish it for you") instead of the polished
+        // text. The trailing "Polished output:" marker biases the model toward
+        // continuing the transform rather than starting a chat reply.
+        let prompt = """
+        Polish this text. Output only the polished version, nothing else.
+
+        Input:
+        \(raw)
+
+        Polished output:
+        """
+        let response = try await session.respond(to: prompt)
         return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
