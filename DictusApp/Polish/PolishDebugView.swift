@@ -1,5 +1,6 @@
 // DictusApp/Polish/PolishDebugView.swift
 import SwiftUI
+import UIKit
 import DictusCore
 
 /// Hidden screen surfacing the last 50 polish invocations. Reached by long-pressing
@@ -9,6 +10,8 @@ struct PolishDebugView: View {
 
     @State private var entries: [PolishDebugEntry] = []
     @State private var selectedEntry: PolishDebugEntry?
+    @State private var exportURL: URL?
+    @State private var exportError: String?
 
     var body: some View {
         List {
@@ -34,13 +37,25 @@ struct PolishDebugView: View {
         .navigationTitle("Polish debug")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Clear") {
-                    Task {
-                        await PolishCoordinator.shared.clearMetricsRing()
-                        await refresh()
+                Menu {
+                    Button {
+                        handleExport()
+                    } label: {
+                        Label("Export JSON…", systemImage: "square.and.arrow.up")
                     }
+                    .disabled(entries.isEmpty)
+                    Button(role: .destructive) {
+                        Task {
+                            await PolishCoordinator.shared.clearMetricsRing()
+                            await refresh()
+                        }
+                    } label: {
+                        Label("Clear", systemImage: "trash")
+                    }
+                    .disabled(entries.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .disabled(entries.isEmpty)
             }
         }
         .sheet(item: $selectedEntry) { entry in
@@ -48,8 +63,31 @@ struct PolishDebugView: View {
                 EntryDetailView(entry: entry)
             }
         }
+        .sheet(isPresented: Binding(
+            get: { exportURL != nil },
+            set: { if !$0 { exportURL = nil } }
+        )) {
+            if let exportURL {
+                PolishExportShareSheet(items: [exportURL])
+            }
+        }
+        .alert("Export failed",
+               isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+               ),
+               actions: { Button("OK", role: .cancel) { exportError = nil } },
+               message: { Text(exportError ?? "") })
         .task { await refresh() }
         .refreshable { await refresh() }
+    }
+
+    private func handleExport() {
+        do {
+            exportURL = try PolishDebugExporter.writeToTempFile(entries: entries)
+        } catch {
+            exportError = error.localizedDescription
+        }
     }
 
     private func refresh() async {
@@ -198,6 +236,16 @@ private struct LabeledValue: View {
             Text(value).font(.caption.monospaced())
         }
     }
+}
+
+// MARK: - Share sheet wrapper
+
+private struct PolishExportShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Outcome display helpers
