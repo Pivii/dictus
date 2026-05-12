@@ -36,6 +36,29 @@ The language hint passed to the active STT engine. Read from App Group via `Shar
 ### STT engine
 A speech-to-text backend conforming to `SpeechModelProtocol`. Two exist today: `WhisperKitEngine` (local Whisper variants) and `ParakeetEngine` (FluidAudio Parakeet v3, auto-detects language). New engines plug in via the protocol; language registration is engine-agnostic.
 
+## Post-transcription polish
+
+### Polish
+The post-STT enhancement layer (issue #141). Runs synchronously in DictusApp after the STT engine emits final text and before the text is written to the App Group for keyboard injection. Off by default, toggled by the user in DictusApp Settings. **Distinct from Smart Mode (#79)**, which is user-triggered and reformulates clean text for tone/structure. Polish is automatic and corrective only.
+
+### Faithful contract
+The defining boundary between polish and Smart Mode (#79). Polish must preserve the user's **intent**, not necessarily their exact STT-output words. In Light mode the words are preserved; in Repair mode words may be substituted to recover intent when STT failed. Polish is forbidden from reformulating, reordering, changing tone, removing fillers/hesitations, or adding clarifying content. The contract enumerates ~20 operations as allowed or forbidden; see ADR 0002.
+
+### Light mode
+The polish prompt variant applied when the language detected on raw STT output matches the target language. Conservative: adds punctuation, capitalization (including German common-noun rule), accents, digit conversion for spoken numbers and dates, verbal-punctuation commands, and obvious typo fixes. Content words preserved. Active for Whisper always; active for Parakeet when `NLLanguageRecognizer` confirms the target language. Also called **Mode A**.
+
+### Repair mode
+The polish prompt variant applied when raw STT output is in a different language than the target (typically Parakeet hallucinating in the wrong language) or when language detection is uncertain. Allowed to substitute words to reconstruct the user's intent in the target language, while preserving loanwords and proper nouns. Triggered only on Parakeet, never on Whisper. Skipped entirely (raw passes through) when raw output is gibberish — measured by `NLLanguageRecognizer` returning all candidate languages with low confidence. Also called **Mode B**.
+
+### PolishGlossary
+Static, maintainer-curated list of ~20-30 domain terms (`Dictus`, `WhisperKit`, `Parakeet v3`, `GitHub`, `TestFlight`, `iOS`, …) injected into every polish prompt as context. Biases the LLM toward correct spellings of terms STT commonly massacres. Language-agnostic. Lives in `DictusCore/Polish/PolishGlossary.swift`. **Distinct from `LanguageProfile.overrides`** (keyboard autocorrect, offline trie) and from custom vocabulary (#80, premium, user-managed). Evolves by PR as failures appear in test logs.
+
+### Polish guardrail
+Runtime sanity check applied to every polish output. Rejects the polished string and writes the raw text instead when the polished/raw character-length ratio falls outside `[0.5, 2.0]` in Light mode or `[0.3, 3.0]` in Repair mode. Logged as `outcome = rejected_guardrail`. Minimal by design — catches catastrophic divergence (empty output, runaway generation) but does not attempt content-word fidelity validation. Lives in `DictusCore/Polish/PolishGuardrail.swift`.
+
+### Polish engine
+A polish backend conforming to `PolishEngineProtocol` (in DictusCore). One implementation at round 1: `AppleFoundationModelsPolishEngine` (in DictusApp, requires iOS 26+ with Apple Intelligence enabled and A17 Pro / M-series hardware). Round 2 will evaluate an OSS fallback backend (llama.cpp via LocalLLMClient, MLX, or Core ML) for devices without Apple Foundation Models; the decision is data-driven based on round 1 measurements.
+
 ## Keyboard
 
 ### Layout type
