@@ -26,9 +26,16 @@ public final class PolishCoordinator {
     private var inflight: Task<PolishOutcomeBundle, Never>?
 
     private init() {
-        // Round 1 wiring: passthrough until step 5 swaps it for Apple Foundation Models.
-        self.engine = PassthroughPolishEngine()
         self.defaults = AppGroup.defaults
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), PolishAvailability.isAppleFMAvailable {
+            self.engine = AppleFoundationModelsPolishEngine()
+        } else {
+            self.engine = PassthroughPolishEngine()
+        }
+        #else
+        self.engine = PassthroughPolishEngine()
+        #endif
     }
 
     // MARK: - Public API
@@ -40,9 +47,14 @@ public final class PolishCoordinator {
         inflight = nil
     }
 
-    /// Reserved for future Apple FM session warm-up at app launch. No-op at round 1
-    /// since `PassthroughPolishEngine` has nothing to warm.
-    public func prewarm() {}
+    /// Warm up the active engine for the user's current target language.
+    /// Called from `DictusApp.init()` so the first dictation pays no
+    /// session-creation cost.
+    public func prewarm() {
+        let target = SupportedLanguage.active
+        let currentEngine = engine
+        Task { await currentEngine.prewarm(targetLanguage: target) }
+    }
 
     /// Snapshot of the last `capacity` polish events for the debug screen.
     public func metricsSnapshot() async -> [PolishDebugEntry] {

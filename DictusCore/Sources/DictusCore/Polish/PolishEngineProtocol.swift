@@ -16,4 +16,13 @@ public protocol PolishEngineProtocol: Sendable {
     func polish(raw: String,
                 targetLanguage: SupportedLanguage,
                 mode: PolishMode) async throws -> String
+
+    /// Warm up backend state for `targetLanguage` (e.g. preload weights, prime
+    /// the Light-mode session). Called at app launch by `PolishCoordinator`.
+    /// Default implementation is a no-op for engines that have nothing to warm.
+    func prewarm(targetLanguage: SupportedLanguage) async
+}
+
+public extension PolishEngineProtocol {
+    func prewarm(targetLanguage: SupportedLanguage) async {}
 }

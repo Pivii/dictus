@@ -74,6 +74,10 @@ struct DictusApp: App {
         if defaults?.object(forKey: SharedKeys.liveActivityEnabled) == nil {
             defaults?.set(true, forKey: SharedKeys.liveActivityEnabled)
         }
+
+        // Warm up the polish engine for the current target language (#141).
+        // No-op when the toggle is off or when the engine has nothing to warm.
+        PolishCoordinator.shared.prewarm()
     }
 
     @Environment(\.scenePhase) private var scenePhase
