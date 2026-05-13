@@ -22,7 +22,7 @@ public final class PolishCoordinator {
 
     private let engine: PolishEngineProtocol
     private let defaults: UserDefaults
-    private let metricsRing = PolishMetricsRing(capacity: 50)
+    private let metricsRing = PolishMetricsRing()
     private var inflight: Task<PolishOutcomeBundle, Never>?
 
     private init() {
@@ -56,9 +56,19 @@ public final class PolishCoordinator {
         Task { await currentEngine.prewarm(targetLanguage: target) }
     }
 
-    /// Snapshot of the last `capacity` polish events for the debug screen.
+    /// Recent polish events (memory-cached) for the debug screen.
     public func metricsSnapshot() async -> [PolishDebugEntry] {
         await metricsRing.snapshot()
+    }
+
+    /// All polish events within the 7-day retention window — used by the JSON export.
+    public func metricsAllEntries() async -> [PolishDebugEntry] {
+        await metricsRing.allEntries()
+    }
+
+    /// Count of persisted events within the 7-day retention window.
+    public func metricsStoredCount() async -> Int {
+        await metricsRing.storedCount()
     }
 
     /// Empties the debug ring. Triggered from the debug screen's Clear button.

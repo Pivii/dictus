@@ -93,4 +93,54 @@ final class PolishGuardrailTests: XCTestCase {
         XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: "Ok.", target: .english))
         XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: "", target: .french))
     }
+
+    // MARK: - Codable roundtrip
+
+    /// Round-trip every Outcome through JSON. Required because the persistent
+    /// `PolishMetricsRing` encodes events as JSON Lines on disk; a regression
+    /// in Codable conformance would silently lose data on the next app launch.
+    func testPolishMetricsRoundTripJSON() throws {
+        let original = PolishMetrics(
+            engine: "apple-fm",
+            mode: .repair,
+            targetLanguage: .french,
+            detectedLanguage: "en",
+            rawCharCount: 42,
+            polishedCharCount: 48,
+            latencyMs: 1234,
+            outcome: .success
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(original)
+        let decoded = try JSONDecoder().decode(PolishMetrics.self, from: data)
+
+        XCTAssertEqual(decoded.engine, original.engine)
+        XCTAssertEqual(decoded.mode, original.mode)
+        XCTAssertEqual(decoded.targetLanguage, original.targetLanguage)
+        XCTAssertEqual(decoded.detectedLanguage, original.detectedLanguage)
+        XCTAssertEqual(decoded.rawCharCount, original.rawCharCount)
+        XCTAssertEqual(decoded.polishedCharCount, original.polishedCharCount)
+        XCTAssertEqual(decoded.latencyMs, original.latencyMs)
+        XCTAssertEqual(decoded.outcome, original.outcome)
+    }
+
+    /// nil mode (skipped events) and nil detectedLanguage (gibberish) must survive.
+    func testPolishMetricsRoundTripJSONWithNilFields() throws {
+        let original = PolishMetrics(
+            engine: "passthrough",
+            mode: nil,
+            targetLanguage: .english,
+            detectedLanguage: nil,
+            rawCharCount: 0,
+            polishedCharCount: 0,
+            latencyMs: 0,
+            outcome: .skipped
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(PolishMetrics.self, from: data)
+        XCTAssertNil(decoded.mode)
+        XCTAssertNil(decoded.detectedLanguage)
+        XCTAssertEqual(decoded.outcome, .skipped)
+    }
 }

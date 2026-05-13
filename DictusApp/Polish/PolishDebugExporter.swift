@@ -118,7 +118,8 @@ enum PolishDebugExporter {
     }
 
     /// Encode the export and drop it into a temp file. Returns the URL for
-    /// passing to `UIActivityViewController`.
+    /// passing to `UIActivityViewController`. Pass the full 7-day window from
+    /// `PolishCoordinator.metricsAllEntries()` to ship every event Pierre needs.
     static func writeToTempFile(entries: [PolishDebugEntry]) throws -> URL {
         let export = makeExport(entries: entries)
         let encoder = JSONEncoder()

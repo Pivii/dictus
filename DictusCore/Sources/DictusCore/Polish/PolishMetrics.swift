@@ -4,8 +4,8 @@ import os.log
 
 /// One polish invocation, emitted to `os_log` and consumed by the in-memory
 /// debug ring buffer in DictusApp. No disk persistence at round 1.
-public struct PolishMetrics: Sendable {
-    public enum Outcome: String, Sendable {
+public struct PolishMetrics: Sendable, Codable {
+    public enum Outcome: String, Sendable, Codable {
         case success
         case rejectedGuardrail
         case skipped

@@ -3,21 +3,36 @@ import SwiftUI
 import UIKit
 import DictusCore
 
-/// Hidden screen surfacing the last 50 polish invocations. Reached by long-pressing
-/// the Version row in Settings for 3 seconds. Round-1 debugging tool — no disk
-/// persistence, no analytics, no shipping in product UX.
+/// Hidden screen surfacing recent polish invocations. Reached by long-pressing
+/// the Version row in Settings for 3 seconds. Round-1 debugging tool — no
+/// analytics, no shipping in product UX. Events persist in the App Group
+/// container for 7 days so cold-start tests survive an app kill.
 struct PolishDebugView: View {
 
     @State private var entries: [PolishDebugEntry] = []
+    @State private var storedCount: Int = 0
     @State private var selectedEntry: PolishDebugEntry?
     @State private var exportURL: URL?
     @State private var exportError: String?
+    @State private var isExporting = false
 
     var body: some View {
         List {
             if !entries.isEmpty {
-                Section("Outcomes (\(entries.count))") {
+                Section {
                     BreakdownRow(entries: entries)
+                } header: {
+                    Text("Outcomes (\(entries.count) shown)")
+                } footer: {
+                    if storedCount > entries.count {
+                        Text("\(storedCount) total events persisted (last 7 days). Export ships the full window.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Persisted in App Group for 7 days. Export ships the full window.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("Recent events") {
@@ -39,11 +54,11 @@ struct PolishDebugView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        handleExport()
+                        Task { await handleExport() }
                     } label: {
                         Label("Export JSON…", systemImage: "square.and.arrow.up")
                     }
-                    .disabled(entries.isEmpty)
+                    .disabled(storedCount == 0 || isExporting)
                     Button(role: .destructive) {
                         Task {
                             await PolishCoordinator.shared.clearMetricsRing()
@@ -52,9 +67,13 @@ struct PolishDebugView: View {
                     } label: {
                         Label("Clear", systemImage: "trash")
                     }
-                    .disabled(entries.isEmpty)
+                    .disabled(storedCount == 0)
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    if isExporting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
             }
         }
@@ -82,16 +101,22 @@ struct PolishDebugView: View {
         .refreshable { await refresh() }
     }
 
-    private func handleExport() {
+    private func handleExport() async {
+        guard !isExporting else { return }
+        isExporting = true
+        // Pull the full 7-day window from disk, not just the in-memory cache.
+        let allEntries = await PolishCoordinator.shared.metricsAllEntries()
         do {
-            exportURL = try PolishDebugExporter.writeToTempFile(entries: entries)
+            exportURL = try PolishDebugExporter.writeToTempFile(entries: allEntries)
         } catch {
             exportError = error.localizedDescription
         }
+        isExporting = false
     }
 
     private func refresh() async {
         entries = await PolishCoordinator.shared.metricsSnapshot()
+        storedCount = await PolishCoordinator.shared.metricsStoredCount()
     }
 }
 
