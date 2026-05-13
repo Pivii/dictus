@@ -471,7 +471,11 @@ class DictationCoordinator: ObservableObject {
                 // detection skips, when the engine throws/cancels, or when the guardrail rejects.
                 let activeModelID = defaults.string(forKey: SharedKeys.activeModel) ?? ""
                 let sttEngine = ModelInfo.forIdentifier(activeModelID)?.engine ?? .whisperKit
-                let text = await PolishCoordinator.shared.polish(raw: rawText, sttEngine: sttEngine)
+                let text = await PolishCoordinator.shared.polish(
+                    raw: rawText,
+                    sttEngine: sttEngine,
+                    sttModelID: activeModelID
+                )
 
                 // Append trailing separator so chained dictations don't stick together
                 let finalText: String

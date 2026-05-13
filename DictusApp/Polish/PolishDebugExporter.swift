@@ -53,6 +53,8 @@ struct PolishDebugExport: Codable {
         let polishedCharCount: Int
         let raw: String
         let polished: String?
+        let sttEngine: String?
+        let sttModelID: String?
     }
 }
 
@@ -104,7 +106,9 @@ enum PolishDebugExporter {
                 rawCharCount: entry.metrics.rawCharCount,
                 polishedCharCount: entry.metrics.polishedCharCount,
                 raw: entry.raw,
-                polished: entry.polished
+                polished: entry.polished,
+                sttEngine: entry.metrics.sttEngine,
+                sttModelID: entry.metrics.sttModelID
             )
         }
 

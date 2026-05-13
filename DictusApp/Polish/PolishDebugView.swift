@@ -171,12 +171,17 @@ private struct EntryRow: View {
                 .lineLimit(2)
             HStack(spacing: 10) {
                 Text(entry.metrics.engine)
+                if let stt = entry.metrics.sttModelID {
+                    Text("stt=\(stt)")
+                }
                 Text("det=\(entry.metrics.detectedLanguage ?? "-")")
                 Text("\(entry.metrics.latencyMs)ms")
                 Text("\(entry.metrics.rawCharCount)→\(entry.metrics.polishedCharCount)")
             }
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
         .padding(.vertical, 2)
     }
@@ -226,6 +231,10 @@ private struct EntryDetailView: View {
                 LabeledValue("mode", entry.metrics.mode?.rawValue ?? "-")
                 LabeledValue("target", entry.metrics.targetLanguage.rawValue)
                 LabeledValue("detected", entry.metrics.detectedLanguage ?? "-")
+            }
+            HStack(spacing: 12) {
+                LabeledValue("stt engine", entry.metrics.sttEngine ?? "-")
+                LabeledValue("stt model", entry.metrics.sttModelID ?? "-")
             }
             HStack(spacing: 12) {
                 LabeledValue("latency", "\(entry.metrics.latencyMs) ms")

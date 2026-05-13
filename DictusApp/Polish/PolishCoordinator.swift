@@ -79,7 +79,12 @@ public final class PolishCoordinator {
     /// Polish raw STT output. Returns `raw` unchanged when the toggle is off, when
     /// language detection skips, when the engine throws/cancels, or when the
     /// guardrail rejects the output.
-    public func polish(raw: String, sttEngine: SpeechEngine) async -> String {
+    ///
+    /// `sttModelID` is the active model identifier (e.g. "openai_whisper-small",
+    /// "parakeet-tdt-0.6b-v3"). It's carried through to metrics so the JSON
+    /// export is self-describing — analysis doesn't need to cross-reference the
+    /// app log to know which STT model produced each event.
+    public func polish(raw: String, sttEngine: SpeechEngine, sttModelID: String) async -> String {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
             return raw
         }
@@ -97,7 +102,9 @@ public final class PolishCoordinator {
                 rawCharCount: raw.count,
                 polishedCharCount: raw.count,
                 latencyMs: 0,
-                outcome: .skipped
+                outcome: .skipped,
+                sttEngine: sttEngine.rawValue,
+                sttModelID: sttModelID
             )
             PolishMetrics.log(m)
             await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
@@ -146,7 +153,9 @@ public final class PolishCoordinator {
             rawCharCount: raw.count,
             polishedCharCount: returned.count,
             latencyMs: bundle.latencyMs,
-            outcome: bundle.outcome
+            outcome: bundle.outcome,
+            sttEngine: sttEngine.rawValue,
+            sttModelID: sttModelID
         )
         PolishMetrics.log(m)
         await metricsRing.append(PolishDebugEntry(raw: raw, polished: bundle.engineOutput, metrics: m))
