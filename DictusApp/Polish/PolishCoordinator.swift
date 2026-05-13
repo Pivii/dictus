@@ -90,7 +90,13 @@ public final class PolishCoordinator {
         }
 
         let target = SupportedLanguage.active
-        let detected = Self.detectLanguage(in: raw)
+
+        // Pre-pass: deterministic regex substitution of verbal punctuation
+        // commands. Round 3 testing showed Apple FM cannot be coaxed into
+        // doing this reliably in French — handling it in code bypasses the
+        // model entirely for this concern.
+        let preprocessed = VerbalPunctuationPrepass.apply(raw, language: target)
+        let detected = Self.detectLanguage(in: preprocessed)
 
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
         guard let detected else {
@@ -119,13 +125,16 @@ public final class PolishCoordinator {
         let task = Task { () -> PolishOutcomeBundle in
             do {
                 let polished = try await currentEngine.polish(
-                    raw: raw, targetLanguage: target, mode: mode
+                    raw: preprocessed, targetLanguage: target, mode: mode
                 )
                 let latency = Int(Date().timeIntervalSince(start) * 1000)
                 if Task.isCancelled {
                     return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, latencyMs: latency)
                 }
-                guard PolishGuardrail.accepts(raw: raw, polished: polished, mode: mode) else {
+                // Guardrail baseline is the preprocessed text — that's what the
+                // engine actually saw. Using the original raw would bias the
+                // char-ratio when the pre-pass made a substantial substitution.
+                guard PolishGuardrail.accepts(raw: preprocessed, polished: polished, mode: mode) else {
                     return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
                 }
                 guard PolishGuardrail.detectedLanguageMatches(polished: polished, target: target) else {
