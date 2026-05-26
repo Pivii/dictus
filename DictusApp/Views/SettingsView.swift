@@ -90,6 +90,7 @@ struct SettingsView: View {
                 }
                 if PolishAvailability.isToggleVisible {
                     Toggle("Polish transcription", isOn: $polishEnabled)
+                    polishStateFooter
                 }
             } header: {
                 Text("Transcription")
@@ -246,6 +247,53 @@ struct SettingsView: View {
                 isExporting = false
                 exportURL = tempURL
             }
+        }
+    }
+
+    /// Footer row under the polish toggle — surfaces the specific reason
+    /// Apple Foundation Models is or isn't usable. When the state is `.available`
+    /// no footer is shown (the toggle alone is enough).
+    @ViewBuilder
+    private var polishStateFooter: some View {
+        let state = PolishAvailability.state
+        if state != .available {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(polishStateMessage(for: state))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if PolishAvailability.canOpenSystemSettings(for: state) {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Text("Open iPhone Settings")
+                            .font(.caption.bold())
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// User-facing explanation per availability state. Strings live in this
+    /// view so Localizable.xcstrings can auto-detect them.
+    private func polishStateMessage(for state: PolishAvailabilityState) -> String {
+        switch state {
+        case .available:
+            return ""
+        case .appleIntelligenceNotEnabled:
+            return "Apple Intelligence is required for polish. Enable it in iPhone Settings → Apple Intelligence & Siri. Apple requires Siri and your iPhone to use the same language — if Siri is in English and your iPhone is in French (or vice versa), Apple Intelligence stays off."
+        case .modelNotReady:
+            return "The Apple Intelligence model is downloading on your device. Try again in a few minutes."
+        case .deviceNotEligible:
+            return "Apple Intelligence isn't supported on this device. Polish requires an iPhone 15 Pro / 15 Pro Max or newer."
+        case .osTooOld:
+            return "Polish requires iOS 26 or later."
+        case .sdkMissing:
+            return "Polish isn't available in this build of Dictus."
+        case .other(let reason):
+            return "Apple Intelligence is unavailable (\(reason))."
         }
     }
 

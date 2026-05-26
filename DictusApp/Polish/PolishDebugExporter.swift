@@ -38,6 +38,10 @@ struct PolishDebugExport: Codable {
         let activeModelID: String?
         let activeModelEngine: String?
         let appleFMAvailable: Bool
+        /// Specific reason the model is or isn't available — useful for
+        /// triage when `appleFMAvailable` is false (e.g. user has Siri in
+        /// English but iPhone in French → "appleIntelligenceNotEnabled").
+        let appleFMState: String
     }
 
     struct Event: Codable {
@@ -82,7 +86,8 @@ enum PolishDebugExporter {
             targetLanguage: SupportedLanguage.active.rawValue,
             activeModelID: activeModelID,
             activeModelEngine: activeEngine,
-            appleFMAvailable: PolishAvailability.isAppleFMAvailable
+            appleFMAvailable: PolishAvailability.isAppleFMAvailable,
+            appleFMState: String(describing: PolishAvailability.state)
         )
 
         var outcomes: [String: Int] = [
