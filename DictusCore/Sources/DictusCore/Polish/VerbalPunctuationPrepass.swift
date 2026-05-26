@@ -77,14 +77,39 @@ public enum VerbalPunctuationPrepass {
 
     // MARK: - Normalization
 
-    /// Collapse horizontal whitespace, strip spaces around inserted newlines,
-    /// and tighten spacing around `,` and `.`. `;` `:` `!` `?` are left alone —
-    /// French typography wants a non-breaking space before them and the Light
-    /// polish pass is responsible for that.
+    /// Post-substitution cleanup.
+    ///
+    /// Parakeet routinely surrounds the verbal-punctuation keyword it transcribes
+    /// with its own punctuation (`", virgule,"` instead of `"virgule"`, `"? Point
+    /// d'interrogation."` instead of `"Point d'interrogation"`). Naive substitution
+    /// leaves runs like `,,,` or `?.` or `\n.` in the output. With Apple FM active,
+    /// the Light pass smooths these — but in Passthrough mode (and to give the LLM
+    /// less work either way) we clean them here.
+    ///
+    /// Strategy: stronger punctuation absorbs adjacent weaker punctuation.
+    /// Priority high-to-low: `\n` > `?` `!` `;` `:` > `.` `,`.
     private static func normalize(_ s: String) -> String {
         var out = s
+        // All horizontal-whitespace classes use [ \t]* explicitly so newline
+        // characters introduced by the verbal-punctuation substitution don't
+        // accidentally get swallowed by greedy `\s*` matches that span them.
+
+        // 1. Collapse runs of the same strong mark ("? ?" → "?", "!!" → "!").
+        out = out.replacingOccurrences(of: #"([?!;:])[ \t]*\1+"#, with: "$1", options: [.regularExpression])
+        // 2. Collapse runs of the same weak mark (",,," → ",", ".." → ".").
+        out = out.replacingOccurrences(of: #"([,.])[ \t]*\1+"#, with: "$1", options: [.regularExpression])
+        // 3. Strong absorbs leading weak ("., ?" → " ?").
+        out = out.replacingOccurrences(of: #"[.,]+([ \t]*[?!;:])"#, with: "$1", options: [.regularExpression])
+        // 4. Strong absorbs trailing weak ("?., " → "? ").
+        out = out.replacingOccurrences(of: #"([?!;:])[ \t]*[.,]+"#, with: "$1", options: [.regularExpression])
+        // 5. Newline absorbs only TRAILING weak punctuation ("\n.," → "\n").
+        //    A period BEFORE a newline is usually Parakeet's legitimate sentence
+        //    terminator that we want to preserve (`"bien.\nA bientôt"`), so we
+        //    do not absorb it.
+        out = out.replacingOccurrences(of: #"\n[ \t]*[.,]+"#, with: "\n", options: [.regularExpression])
+        // 6. Standard whitespace + spacing normalization.
         out = out.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: [.regularExpression])
-        out = out.replacingOccurrences(of: #" *\n *"#, with: "\n", options: [.regularExpression])
+        out = out.replacingOccurrences(of: #"[ \t]*\n[ \t]*"#, with: "\n", options: [.regularExpression])
         out = out.replacingOccurrences(of: #" +([,.])"#, with: "$1", options: [.regularExpression])
         out = out.trimmingCharacters(in: .whitespacesAndNewlines)
         return out

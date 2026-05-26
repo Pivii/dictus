@@ -202,4 +202,62 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
             "la question est ? pas."
         )
     }
+
+    // MARK: - Parakeet-in-the-wild artifacts
+
+    /// Real observation from on-device test: Parakeet writes `"rapport, virgule,
+    /// et"` (its own commas around the verbal command). Naive substitution would
+    /// produce `"rapport,,, et"`. Cleanup must collapse to a single comma.
+    func testFrenchVirguleSurroundedByParakeetCommas() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("J'ai bien lu ton rapport, virgule, et je pense", language: .french),
+            "J'ai bien lu ton rapport, et je pense"
+        )
+    }
+
+    /// Real observation: Parakeet writes `"vas ? Point d'interrogation."` —
+    /// already inserts its own `?` plus the verbal keyword plus a period.
+    /// Cleanup must keep a single `?`.
+    func testFrenchPointDInterrogationAfterExistingQuestionMark() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("comment tu vas ? Point d'interrogation. J'ai bien lu", language: .french),
+            "comment tu vas ? J'ai bien lu"
+        )
+    }
+
+    /// Real observation: Parakeet writes `"bien. Nouvelle ligne. A bientôt."` —
+    /// a period before AND after the newline verbal command. Newline must
+    /// absorb both.
+    func testFrenchNewlineAbsorbsAdjacentPeriods() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("J'espère que tu vas bien. Nouvelle ligne. A bientôt", language: .french),
+            "J'espère que tu vas bien.\nA bientôt"
+        )
+    }
+
+    /// Real observation: chained `"point virgule"` and `"point d'exclamation"`
+    /// each surrounded by parakeet commas/periods. Result must be clean
+    /// `";"` and `"!"`.
+    func testFrenchChainedPointVirguleAndExclamation() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("Première partie, point virgule, deuxième partie, point d'exclamation.", language: .french),
+            "Première partie ; deuxième partie !"
+        )
+    }
+
+    /// EN equivalent: Parakeet often adds commas/periods around its English
+    /// verbal commands too.
+    func testEnglishCommaSurroundedByParakeetCommas() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("I read your report, comma, and I think it's great", language: .english),
+            "I read your report, and I think it's great"
+        )
+    }
+
+    func testEnglishQuestionMarkAfterExistingQuestionMark() {
+        XCTAssertEqual(
+            VerbalPunctuationPrepass.apply("how are you? Question mark. Hello", language: .english),
+            "how are you? Hello"
+        )
+    }
 }
