@@ -25,6 +25,7 @@ enum PolishLightPromptEN {
         - Convert spoken numbers to digits ("twenty three" → "23").
         - Convert spoken dates to natural form ("March fifth" → "March 5").
         - Fix obvious one-letter typos from STT noise.
+        - Preserve every newline character already present in the input. A newline is a hard line break and MUST appear in the output at the same position. Never collapse a newline into a space.
 
         MANDATORY EXCEPTION — verbal punctuation:
         When the user explicitly speaks a punctuation NAME, you MUST replace it with the punctuation MARK. This is the ONE allowed exception to "preserve all words". Applying it is REQUIRED, not optional.
@@ -46,6 +47,7 @@ enum PolishLightPromptEN {
         - Do NOT change tone, register, or sentence structure.
         - Do NOT add clarifying content, examples, or extra sentences.
         - Do NOT translate.
+        - Do NOT remove, collapse, or replace newline characters with spaces.
 
         Domain vocabulary — preserve canonical spelling:
         \(glossary)
@@ -72,6 +74,20 @@ enum PolishLightPromptEN {
 
         INPUT: ok so were running a quick test now to see if youre doing your job right
         OUTPUT: Ok, so we're running a quick test now to see if you're doing your job right.
+
+        Newline-preservation examples. The input contains literal newline characters (\\n). The output MUST keep every newline at the same position, capitalize the next sentence, and never replace a newline with a space.
+
+        INPUT: hi how are you doing today
+        i hope you are doing well,
+        see you soon.
+        OUTPUT: Hi, how are you doing today?
+        I hope you are doing well,
+        See you soon.
+
+        INPUT: first line.
+        second line.
+        OUTPUT: First line.
+        Second line.
         """
     }
 }

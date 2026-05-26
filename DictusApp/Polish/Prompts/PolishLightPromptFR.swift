@@ -9,6 +9,14 @@ import Foundation
 /// list, even when the STT correctly transcribed the spoken command. Promoting
 /// the exception with explicit "MUST replace" language and a multi-substitution
 /// example forces the model to actually apply the conversion.
+///
+/// NOTE — invisible characters in OUTPUT examples: the spaces appearing before
+/// `?`, `!`, `;`, `:` in the examples below are literal U+00A0 (NO-BREAK
+/// SPACE), not regular ASCII spaces. Round 4 round-1 testing showed Apple FM
+/// mimics the literal byte pattern of the examples — ASCII-space examples
+/// produced ASCII-space output even when the rule line spelled out
+/// "non-breaking space". The model fits the demonstrations, not the rule
+/// text. Do not "fix" these to regular spaces.
 enum PolishLightPromptFR {
     static func instructions(glossary: String) -> String {
         """
@@ -32,6 +40,7 @@ enum PolishLightPromptFR {
         - Apply French typographic spacing: non-breaking space before ? ! ; :
         - Use the French apostrophe ’ instead of '.
         - Fix obvious one-letter typos from STT noise.
+        - Preserve every newline character already present in the input. A newline is a hard line break and MUST appear in the output at the same position. Never collapse a newline into a space.
 
         MANDATORY EXCEPTION — verbal punctuation:
         When the user explicitly speaks a punctuation NAME, you MUST replace it with the punctuation MARK. This is the ONE allowed exception to "preserve all words". Applying it is REQUIRED, not optional.
@@ -53,6 +62,7 @@ enum PolishLightPromptFR {
         - Do NOT change tone, register, or sentence structure.
         - Do NOT add clarifying content, examples, or extra sentences.
         - Do NOT translate.
+        - Do NOT remove, collapse, or replace newline characters with spaces.
 
         Domain vocabulary — preserve canonical spelling:
         \(glossary)
@@ -60,7 +70,7 @@ enum PolishLightPromptFR {
         Examples:
 
         INPUT: bonjour ca va comment vas tu
-        OUTPUT: Bonjour, ça va, comment vas-tu ?
+        OUTPUT: Bonjour, ça va, comment vas-tu ?
 
         INPUT: cest le cinq mars deux mille vingt six on se retrouve a quatorze heures
         OUTPUT: C’est le 5 mars 2026, on se retrouve à 14 heures.
@@ -72,13 +82,30 @@ enum PolishLightPromptFR {
         OUTPUT: J’utilise WhisperKit pour la transcription et GitHub pour le code.
 
         INPUT: salut comment tu vas point d'interrogation j'ai bien lu ton rapport virgule et je pense que c'est bien
-        OUTPUT: Salut, comment tu vas ? J’ai bien lu ton rapport, et je pense que c’est bien.
+        OUTPUT: Salut, comment tu vas ? J’ai bien lu ton rapport, et je pense que c’est bien.
 
         INPUT: bonjour point d'exclamation tu peux m'envoyer le fichier virgule s'il te plaît point d'interrogation
-        OUTPUT: Bonjour ! Tu peux m’envoyer le fichier, s’il te plaît ?
+        OUTPUT: Bonjour ! Tu peux m’envoyer le fichier, s’il te plaît ?
+
+        INPUT: première partie point virgule deuxième partie point d'exclamation
+        OUTPUT: Première partie ; deuxième partie !
 
         INPUT: ok donc la on va faire un petit test pour voir si tu fais bien ton travail
         OUTPUT: Ok, donc là on va faire un petit test pour voir si tu fais bien ton travail.
+
+        Newline-preservation examples. The input contains literal newline characters (\\n). The output MUST keep every newline at the same position, capitalize the next sentence, and never replace a newline with a space.
+
+        INPUT: bonjour, comment ça va ?
+        j'espère que tu vas bien,
+        à bientôt.
+        OUTPUT: Bonjour, comment ça va ?
+        J’espère que tu vas bien,
+        À bientôt.
+
+        INPUT: première ligne.
+        deuxième ligne.
+        OUTPUT: Première ligne.
+        Deuxième ligne.
         """
     }
 }
