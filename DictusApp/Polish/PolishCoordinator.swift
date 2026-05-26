@@ -20,7 +20,15 @@ public final class PolishCoordinator {
 
     // MARK: - Private state
 
-    private let engine: PolishEngineProtocol
+    /// Apple Foundation Models engine. Created once on iOS 26+ when the SDK is
+    /// available, regardless of `SystemLanguageModel.default.availability` at
+    /// that exact moment — that flag is *runtime* (Apple Intelligence may finish
+    /// downloading or be toggled on by the user after `init()`). The engine
+    /// itself is cheap to instantiate; gating is done dynamically in `polish()`
+    /// by `PolishAvailability.isAppleFMAvailable` so a single launch can recover
+    /// once iOS flips the state to `.available`.
+    private let appleFMEngine: PolishEngineProtocol?
+    private let passthroughEngine: PolishEngineProtocol = PassthroughPolishEngine()
     private let defaults: UserDefaults
     private let metricsRing = PolishMetricsRing()
     private var inflight: Task<PolishOutcomeBundle, Never>?
@@ -28,14 +36,24 @@ public final class PolishCoordinator {
     private init() {
         self.defaults = AppGroup.defaults
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *), PolishAvailability.isAppleFMAvailable {
-            self.engine = AppleFoundationModelsPolishEngine()
+        if #available(iOS 26.0, *) {
+            self.appleFMEngine = AppleFoundationModelsPolishEngine()
         } else {
-            self.engine = PassthroughPolishEngine()
+            self.appleFMEngine = nil
         }
         #else
-        self.engine = PassthroughPolishEngine()
+        self.appleFMEngine = nil
         #endif
+    }
+
+    /// Resolve the engine for this call. Re-checked on every `polish()` so a
+    /// late availability flip (model finishes downloading, user toggles Apple
+    /// Intelligence on) takes effect without an app relaunch.
+    private var activeEngine: PolishEngineProtocol {
+        if let appleFMEngine, PolishAvailability.isAppleFMAvailable {
+            return appleFMEngine
+        }
+        return passthroughEngine
     }
 
     // MARK: - Public API
@@ -47,13 +65,13 @@ public final class PolishCoordinator {
         inflight = nil
     }
 
-    /// Warm up the active engine for the user's current target language.
-    /// Called from `DictusApp.init()` so the first dictation pays no
-    /// session-creation cost.
+    /// Warm up the Apple FM engine (if present) for the user's current target
+    /// language. Called from `DictusApp.init()` so the first dictation pays no
+    /// session-creation cost. The passthrough engine has nothing to warm.
     public func prewarm() {
+        guard let engineToWarm = appleFMEngine else { return }
         let target = SupportedLanguage.active
-        let currentEngine = engine
-        Task { await currentEngine.prewarm(targetLanguage: target) }
+        Task { await engineToWarm.prewarm(targetLanguage: target) }
     }
 
     /// Recent polish events (memory-cached) for the debug screen.
@@ -98,10 +116,14 @@ public final class PolishCoordinator {
         let preprocessed = VerbalPunctuationPrepass.apply(raw, language: target)
         let detected = Self.detectLanguage(in: preprocessed)
 
+        // Resolve the engine for this call — see `activeEngine` doc-comment.
+        let currentEngine = activeEngine
+        let engineID = currentEngine.identifier
+
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
         guard let detected else {
             let m = PolishMetrics(
-                engine: engine.identifier,
+                engine: engineID,
                 mode: nil,
                 targetLanguage: target,
                 detectedLanguage: nil,
@@ -120,7 +142,6 @@ public final class PolishCoordinator {
         let mode = Self.modeFor(sttEngine: sttEngine, detected: detected, target: target)
 
         inflight?.cancel()
-        let currentEngine = engine
         let start = Date()
         let task = Task { () -> PolishOutcomeBundle in
             do {
@@ -155,7 +176,7 @@ public final class PolishCoordinator {
         let returned: String = (bundle.outcome == .success) ? (bundle.engineOutput ?? raw) : raw
 
         let m = PolishMetrics(
-            engine: engine.identifier,
+            engine: engineID,
             mode: mode,
             targetLanguage: target,
             detectedLanguage: detected.rawValue,
