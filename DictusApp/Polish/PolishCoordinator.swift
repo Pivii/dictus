@@ -142,19 +142,28 @@ public final class PolishCoordinator {
         let mode = Self.modeFor(sttEngine: sttEngine, detected: detected, target: target)
 
         inflight?.cancel()
+        // Encode newlines as a marker so Apple FM can't "naturalise" them
+        // into ", " + capital — see `PolishPostpass` doc-comment.
+        let engineInput = PolishPostpass.encodeForEngine(preprocessed)
         let start = Date()
         let task = Task { () -> PolishOutcomeBundle in
             do {
-                let polished = try await currentEngine.polish(
-                    raw: preprocessed, targetLanguage: target, mode: mode
+                let polishedRaw = try await currentEngine.polish(
+                    raw: engineInput, targetLanguage: target, mode: mode
                 )
+                // Restore newlines from markers + apply FR typographic spacing.
+                // Run BEFORE the guardrail so char-ratio compares apples to
+                // apples (both sides use `\n`, not the multi-char marker).
+                let polished = PolishPostpass.decodeFromEngine(polishedRaw, language: target)
                 let latency = Int(Date().timeIntervalSince(start) * 1000)
                 if Task.isCancelled {
                     return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, latencyMs: latency)
                 }
                 // Guardrail baseline is the preprocessed text — that's what the
-                // engine actually saw. Using the original raw would bias the
-                // char-ratio when the pre-pass made a substantial substitution.
+                // engine actually saw (modulo the newline marker, which the
+                // post-pass already undid). Using the original raw would bias
+                // the char-ratio when the pre-pass made a substantial
+                // substitution.
                 guard PolishGuardrail.accepts(raw: preprocessed, polished: polished, mode: mode) else {
                     return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
                 }

@@ -40,7 +40,7 @@ enum PolishLightPromptFR {
         - Apply French typographic spacing: non-breaking space before ? ! ; :
         - Use the French apostrophe ’ instead of '.
         - Fix obvious one-letter typos from STT noise.
-        - Preserve every newline character already present in the input. A newline is a hard line break and MUST appear in the output at the same position. Never collapse a newline into a space.
+        - Preserve every `<<NL>>` marker exactly as written. `<<NL>>` represents a hard line break; output it character-for-character at the same position. The marker stays inline — do not surround it with spaces, do not break it across lines, do not paraphrase it.
 
         MANDATORY EXCEPTION — verbal punctuation:
         When the user explicitly speaks a punctuation NAME, you MUST replace it with the punctuation MARK. This is the ONE allowed exception to "preserve all words". Applying it is REQUIRED, not optional.
@@ -62,7 +62,7 @@ enum PolishLightPromptFR {
         - Do NOT change tone, register, or sentence structure.
         - Do NOT add clarifying content, examples, or extra sentences.
         - Do NOT translate.
-        - Do NOT remove, collapse, or replace newline characters with spaces.
+        - Do NOT remove, alter, or paraphrase `<<NL>>` markers. Do NOT add `<<NL>>` markers where none existed.
 
         Domain vocabulary — preserve canonical spelling:
         \(glossary)
@@ -93,19 +93,13 @@ enum PolishLightPromptFR {
         INPUT: ok donc la on va faire un petit test pour voir si tu fais bien ton travail
         OUTPUT: Ok, donc là on va faire un petit test pour voir si tu fais bien ton travail.
 
-        Newline-preservation examples. The input contains literal newline characters (\\n). The output MUST keep every newline at the same position, capitalize the next sentence, and never replace a newline with a space.
+        Line-break marker examples. The marker `<<NL>>` represents a hard line break. It MUST appear in the output at the same position, with no surrounding whitespace altered and no extra characters inserted. Capitalize the first letter of the sentence that follows it.
 
-        INPUT: bonjour, comment ça va ?
-        j'espère que tu vas bien,
-        à bientôt.
-        OUTPUT: Bonjour, comment ça va ?
-        J’espère que tu vas bien,
-        À bientôt.
+        INPUT: bonjour, comment ça va ?<<NL>>j'espère que tu vas bien,<<NL>>à bientôt.
+        OUTPUT: Bonjour, comment ça va ?<<NL>>J’espère que tu vas bien,<<NL>>À bientôt.
 
-        INPUT: première ligne.
-        deuxième ligne.
-        OUTPUT: Première ligne.
-        Deuxième ligne.
+        INPUT: première ligne.<<NL>>deuxième ligne.
+        OUTPUT: Première ligne.<<NL>>Deuxième ligne.
         """
     }
 }
