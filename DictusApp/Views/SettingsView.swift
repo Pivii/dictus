@@ -150,7 +150,11 @@ struct SettingsView: View {
             Section("About") {
                 LabeledContent("Version", value: appVersion)
                     .contentShape(Rectangle())
-                    .onLongPressGesture(minimumDuration: 3.0) {
+                    // Five quick taps reveals the polish debug ring. Replaces
+                    // the previous 3-second long-press — taps are easier to
+                    // perform on the device than holding still on a List row,
+                    // and the secret-gesture posture stays the same.
+                    .onTapGesture(count: 5) {
                         showPolishDebug = true
                     }
 
