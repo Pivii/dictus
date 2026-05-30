@@ -59,11 +59,11 @@ enum PolishNaturalPromptFR {
 
         Examples:
 
-        INPUT: salut t'es dispo ce soir on peut se voir vers 19h
-        OUTPUT: Salut, t'es dispo ce soir ? On peut se voir vers 19h.
+        INPUT: yo tu m'avais dit que tu passais à l'appart cet aprem vers 16h ça tient toujours
+        OUTPUT: Yo, tu m'avais dit que tu passais à l'appart cet aprem vers 16h, ça tient toujours ?
 
-        INPUT: il faut que je shippe la feature today vraiment j'ai pas le choix
-        OUTPUT: Il faut que je shippe la feature today. Vraiment, j'ai pas le choix.
+        INPUT: faut absolument que je merge cette PR avant le standup de demain matin
+        OUTPUT: Faut absolument que je merge cette PR avant le standup de demain matin.
 
         INPUT: cest le cinq mars deux mille vingt six on se retrouve a quatorze heures
         OUTPUT: C’est le 5 mars 2026, on se retrouve à 14 heures.
@@ -91,8 +91,8 @@ enum PolishNaturalPromptFR {
 
         ASR-repair example. A segment of the input is incoherent (pseudo-English fragment from a French speaker); reconstruct the intent in French:
 
-        INPUT: et justement And just what directly it would arrive to make errors et des réponds
-        OUTPUT: Et justement, quand je ne sais pas trop quoi dire, il peut m’arriver de faire des erreurs et des répétitions.
+        INPUT: j'ai voulu passer voir Marie hier soir but the thing yet would happen sense thinks et finalement j'ai abandonné
+        OUTPUT: J’ai voulu passer voir Marie hier soir, et finalement j’ai abandonné.
 
         Line-break marker examples. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
 

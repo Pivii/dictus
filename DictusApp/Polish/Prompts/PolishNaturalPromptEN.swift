@@ -60,8 +60,8 @@ enum PolishNaturalPromptEN {
         INPUT: hey are you free tonight we can meet around 7
         OUTPUT: Hey, are you free tonight? We can meet around 7.
 
-        INPUT: i gotta ship the feature today i dont have a choice
-        OUTPUT: I gotta ship the feature today. I don't have a choice.
+        INPUT: i need to push this fix before the standup or the team will be blocked
+        OUTPUT: I need to push this fix before the standup or the team will be blocked.
 
         INPUT: meeting is on march fifth at two pm comma dont be late
         OUTPUT: Meeting is on March 5 at 2 pm, don't be late.
