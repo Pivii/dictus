@@ -88,6 +88,8 @@
 		AA00P206 /* AppleFoundationModelsPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P206 /* AppleFoundationModelsPolishEngine.swift */; };
 		AA00P210 /* PolishNaturalPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P210 /* PolishNaturalPromptFR.swift */; };
 		AA00P211 /* PolishNaturalPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P211 /* PolishNaturalPromptEN.swift */; };
+		AA00P214 /* PolishNaturalPromptES.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P214 /* PolishNaturalPromptES.swift */; };
+		AA00P215 /* PolishNaturalPromptDE.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P215 /* PolishNaturalPromptDE.swift */; };
 		AA00P212 /* PolishRepairPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P212 /* PolishRepairPromptFR.swift */; };
 		AA00P213 /* PolishRepairPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P213 /* PolishRepairPromptEN.swift */; };
 		AA00P207 /* PolishDebugExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P207 /* PolishDebugExporter.swift */; };
@@ -248,6 +250,8 @@
 		AA10P206 /* AppleFoundationModelsPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelsPolishEngine.swift; sourceTree = "<group>"; };
 		AA10P210 /* PolishNaturalPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptFR.swift; sourceTree = "<group>"; };
 		AA10P211 /* PolishNaturalPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptEN.swift; sourceTree = "<group>"; };
+		AA10P214 /* PolishNaturalPromptES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptES.swift; sourceTree = "<group>"; };
+		AA10P215 /* PolishNaturalPromptDE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptDE.swift; sourceTree = "<group>"; };
 		AA10P212 /* PolishRepairPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptFR.swift; sourceTree = "<group>"; };
 		AA10P213 /* PolishRepairPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptEN.swift; sourceTree = "<group>"; };
 		AA10P207 /* PolishDebugExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugExporter.swift; sourceTree = "<group>"; };
@@ -477,6 +481,8 @@
 			children = (
 				AA10P210 /* PolishNaturalPromptFR.swift */,
 				AA10P211 /* PolishNaturalPromptEN.swift */,
+				AA10P214 /* PolishNaturalPromptES.swift */,
+				AA10P215 /* PolishNaturalPromptDE.swift */,
 				AA10P212 /* PolishRepairPromptFR.swift */,
 				AA10P213 /* PolishRepairPromptEN.swift */,
 			);
@@ -925,6 +931,8 @@
 				AA00P207 /* PolishDebugExporter.swift in Sources */,
 				AA00P210 /* PolishNaturalPromptFR.swift in Sources */,
 				AA00P211 /* PolishNaturalPromptEN.swift in Sources */,
+				AA00P214 /* PolishNaturalPromptES.swift in Sources */,
+				AA00P215 /* PolishNaturalPromptDE.swift in Sources */,
 				AA00P212 /* PolishRepairPromptFR.swift in Sources */,
 				AA00P213 /* PolishRepairPromptEN.swift in Sources */,
 				AA000045 /* UnifiedAudioEngine.swift in Sources */,
