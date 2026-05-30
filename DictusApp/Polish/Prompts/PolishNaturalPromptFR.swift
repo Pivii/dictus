@@ -1,4 +1,4 @@
-// DictusApp/Polish/Prompts/PolishLightPromptFR.swift
+// DictusApp/Polish/Prompts/PolishNaturalPromptFR.swift
 import Foundation
 
 /// French Light-mode prompt. Operations bounded by ADR 0002 §"Light mode".
@@ -17,7 +17,7 @@ import Foundation
 /// produced ASCII-space output even when the rule line spelled out
 /// "non-breaking space". The model fits the demonstrations, not the rule
 /// text. Do not "fix" these to regular spaces.
-enum PolishLightPromptFR {
+enum PolishNaturalPromptFR {
     static func instructions(glossary: String) -> String {
         """
         You are a TEXT TRANSFORMATION FUNCTION. You polish French speech-to-text output.

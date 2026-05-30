@@ -1,11 +1,11 @@
-// DictusApp/Polish/Prompts/PolishLightPromptEN.swift
+// DictusApp/Polish/Prompts/PolishNaturalPromptEN.swift
 import Foundation
 
 /// English Light-mode prompt. Same framing as the French variant. Verbal
 /// punctuation is promoted to a "MANDATORY EXCEPTION" with a multi-
 /// substitution example so the model actually applies the conversion instead
 /// of preserving the spoken command literally.
-enum PolishLightPromptEN {
+enum PolishNaturalPromptEN {
     static func instructions(glossary: String) -> String {
         """
         You are a TEXT TRANSFORMATION FUNCTION. You polish English speech-to-text output.

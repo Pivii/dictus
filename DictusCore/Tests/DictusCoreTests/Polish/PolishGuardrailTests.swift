@@ -5,31 +5,31 @@ import XCTest
 final class PolishGuardrailTests: XCTestCase {
 
     func testLightAcceptsIdenticalLength() {
-        XCTAssertTrue(PolishGuardrail.accepts(raw: "hello world", polished: "hello world", mode: .light))
+        XCTAssertTrue(PolishGuardrail.accepts(raw: "hello world", polished: "hello world", mode: .natural))
     }
 
     func testLightAcceptsLowerBound() {
         let raw = String(repeating: "a", count: 100)
         let polished = String(repeating: "a", count: 50)
-        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .light))
+        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .natural))
     }
 
     func testLightAcceptsUpperBound() {
         let raw = String(repeating: "a", count: 100)
         let polished = String(repeating: "a", count: 200)
-        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .light))
+        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .natural))
     }
 
     func testLightRejectsBelowLowerBound() {
         let raw = String(repeating: "a", count: 100)
         let polished = String(repeating: "a", count: 49)
-        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .light))
+        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .natural))
     }
 
     func testLightRejectsAboveUpperBound() {
         let raw = String(repeating: "a", count: 100)
         let polished = String(repeating: "a", count: 201)
-        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .light))
+        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: polished, mode: .natural))
     }
 
     func testRepairAcceptsLowerBound() {
@@ -57,9 +57,9 @@ final class PolishGuardrailTests: XCTestCase {
     }
 
     func testEmptyRawAcceptsOnlyEmptyPolished() {
-        XCTAssertTrue(PolishGuardrail.accepts(raw: "", polished: "", mode: .light))
+        XCTAssertTrue(PolishGuardrail.accepts(raw: "", polished: "", mode: .natural))
         XCTAssertTrue(PolishGuardrail.accepts(raw: "", polished: "", mode: .repair))
-        XCTAssertFalse(PolishGuardrail.accepts(raw: "", polished: "x", mode: .light))
+        XCTAssertFalse(PolishGuardrail.accepts(raw: "", polished: "x", mode: .natural))
         XCTAssertFalse(PolishGuardrail.accepts(raw: "", polished: "x", mode: .repair))
     }
 

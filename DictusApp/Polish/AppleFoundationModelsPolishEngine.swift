@@ -42,38 +42,40 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
         return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Create (if needed) and prewarm the Light session for `targetLanguage`.
+    /// Create (if needed) and prewarm the Natural session for `targetLanguage`.
     /// Called from `PolishCoordinator.prewarm()` at app launch.
     func prewarm(targetLanguage: SupportedLanguage) async {
         let session = await cache.session(
-            for: SessionKey(mode: .light, language: targetLanguage),
-            instructions: Self.instructions(for: .light, language: targetLanguage)
+            for: SessionKey(mode: .natural, language: targetLanguage),
+            instructions: Self.instructions(for: .natural, language: targetLanguage)
         )
         session.prewarm()
     }
 
     // MARK: - Instruction routing
 
-    /// Returns the system prompt for `(mode, language)`. Step 7 wires
-    /// Light/Repair ES + DE; until then ES/DE fall back to the closest English
-    /// prompt so the engine still produces a bounded output.
+    /// Returns the system prompt for `(mode, language)`. Spanish and German
+    /// fall back to the closest English prompt until per-language prompts
+    /// are authored — see `docs/agents/language-onboarding.md` §"Polish
+    /// prompt" for the procedure.
     static func instructions(for mode: PolishMode,
                              language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
         switch (mode, language) {
-        case (.light, .french):
-            return PolishLightPromptFR.instructions(glossary: glossary)
-        case (.light, .english):
-            return PolishLightPromptEN.instructions(glossary: glossary)
-        case (.light, .spanish), (.light, .german):
-            // Step 7 — falling back to English Light keeps behavior bounded.
-            return PolishLightPromptEN.instructions(glossary: glossary)
+        case (.natural, .french):
+            return PolishNaturalPromptFR.instructions(glossary: glossary)
+        case (.natural, .english):
+            return PolishNaturalPromptEN.instructions(glossary: glossary)
+        case (.natural, .spanish), (.natural, .german):
+            // English Natural is the documented fallback for languages
+            // without a dedicated prompt. ADR 0003 §"Fallback".
+            return PolishNaturalPromptEN.instructions(glossary: glossary)
         case (.repair, .french):
             return PolishRepairPromptFR.instructions(glossary: glossary)
         case (.repair, .english):
             return PolishRepairPromptEN.instructions(glossary: glossary)
         case (.repair, .spanish), (.repair, .german):
-            // Step 7 — fall back to English Repair.
+            // English Repair fallback for languages without a dedicated prompt.
             return PolishRepairPromptEN.instructions(glossary: glossary)
         }
     }

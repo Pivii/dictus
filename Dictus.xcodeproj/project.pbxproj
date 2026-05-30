@@ -86,8 +86,8 @@
 		AA00P204 /* PolishMetricsRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P204 /* PolishMetricsRing.swift */; };
 		AA00P205 /* PolishDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P205 /* PolishDebugView.swift */; };
 		AA00P206 /* AppleFoundationModelsPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P206 /* AppleFoundationModelsPolishEngine.swift */; };
-		AA00P210 /* PolishLightPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P210 /* PolishLightPromptFR.swift */; };
-		AA00P211 /* PolishLightPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P211 /* PolishLightPromptEN.swift */; };
+		AA00P210 /* PolishNaturalPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P210 /* PolishNaturalPromptFR.swift */; };
+		AA00P211 /* PolishNaturalPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P211 /* PolishNaturalPromptEN.swift */; };
 		AA00P212 /* PolishRepairPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P212 /* PolishRepairPromptFR.swift */; };
 		AA00P213 /* PolishRepairPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P213 /* PolishRepairPromptEN.swift */; };
 		AA00P207 /* PolishDebugExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P207 /* PolishDebugExporter.swift */; };
@@ -246,8 +246,8 @@
 		AA10P204 /* PolishMetricsRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishMetricsRing.swift; sourceTree = "<group>"; };
 		AA10P205 /* PolishDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugView.swift; sourceTree = "<group>"; };
 		AA10P206 /* AppleFoundationModelsPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelsPolishEngine.swift; sourceTree = "<group>"; };
-		AA10P210 /* PolishLightPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishLightPromptFR.swift; sourceTree = "<group>"; };
-		AA10P211 /* PolishLightPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishLightPromptEN.swift; sourceTree = "<group>"; };
+		AA10P210 /* PolishNaturalPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptFR.swift; sourceTree = "<group>"; };
+		AA10P211 /* PolishNaturalPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptEN.swift; sourceTree = "<group>"; };
 		AA10P212 /* PolishRepairPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptFR.swift; sourceTree = "<group>"; };
 		AA10P213 /* PolishRepairPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptEN.swift; sourceTree = "<group>"; };
 		AA10P207 /* PolishDebugExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugExporter.swift; sourceTree = "<group>"; };
@@ -475,8 +475,8 @@
 		AA40P210 /* Prompts */ = {
 			isa = PBXGroup;
 			children = (
-				AA10P210 /* PolishLightPromptFR.swift */,
-				AA10P211 /* PolishLightPromptEN.swift */,
+				AA10P210 /* PolishNaturalPromptFR.swift */,
+				AA10P211 /* PolishNaturalPromptEN.swift */,
 				AA10P212 /* PolishRepairPromptFR.swift */,
 				AA10P213 /* PolishRepairPromptEN.swift */,
 			);
@@ -923,8 +923,8 @@
 				AA00P205 /* PolishDebugView.swift in Sources */,
 				AA00P206 /* AppleFoundationModelsPolishEngine.swift in Sources */,
 				AA00P207 /* PolishDebugExporter.swift in Sources */,
-				AA00P210 /* PolishLightPromptFR.swift in Sources */,
-				AA00P211 /* PolishLightPromptEN.swift in Sources */,
+				AA00P210 /* PolishNaturalPromptFR.swift in Sources */,
+				AA00P211 /* PolishNaturalPromptEN.swift in Sources */,
 				AA00P212 /* PolishRepairPromptFR.swift in Sources */,
 				AA00P213 /* PolishRepairPromptEN.swift in Sources */,
 				AA000045 /* UnifiedAudioEngine.swift in Sources */,

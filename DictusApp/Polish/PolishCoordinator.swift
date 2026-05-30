@@ -7,12 +7,12 @@ import DictusCore
 /// 1. Honour the global toggle (`SharedKeys.polishEnabled`).
 /// 2. Detect the language of the raw STT output via `NLLanguageRecognizer`.
 /// 3. Skip on gibberish (top hypothesis below `confidenceThreshold`).
-/// 4. Choose mode: `.light` for Whisper or `.light`/`.repair` for Parakeet
+/// 4. Choose mode: `.natural` for Whisper or `.natural`/`.repair` for Parakeet
 ///    depending on detected-vs-target match.
 /// 5. Run the engine with cancellation support, apply the guardrail, emit metrics.
 ///
 /// Hooked into the dictation pipeline in `DictationCoordinator` between the STT
-/// final result and the App Group write. See ADR 0002.
+/// final result and the App Group write. See ADR 0003.
 @MainActor
 public final class PolishCoordinator {
 
@@ -225,11 +225,11 @@ public final class PolishCoordinator {
                                 target: SupportedLanguage) -> PolishMode {
         switch sttEngine {
         case .whisperKit:
-            // Whisper respects the language picker upstream — always Light.
-            return .light
+            // Whisper respects the language picker upstream — always Natural.
+            return .natural
         case .parakeet:
             // Parakeet auto-detects; rebuild intent when detected ≠ target.
-            return detected == target ? .light : .repair
+            return detected == target ? .natural : .repair
         }
     }
 }
