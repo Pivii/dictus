@@ -96,6 +96,24 @@ enum PolishNaturalPromptEN {
 
         INPUT: first line.<<NL>>second line.
         OUTPUT: First line.<<NL>>Second line.
+
+        COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
+
+        INPUT: hey im gonna grab lunch around noon you wanna come
+        WRONG: Hey, I am going to grab lunch around noon. Do you want to come?
+        RIGHT: Hey, I'm gonna grab lunch around noon. You wanna come?
+
+        INPUT: i gotta finish this before 9am cuz the client is waiting
+        WRONG: I have to finish this before 9 AM because the client is waiting.
+        RIGHT: I gotta finish this before 9am cuz the client is waiting.
+
+        INPUT: that dude is kinda weird but hes a good guy
+        WRONG: That person is somewhat strange, but he is a good man.
+        RIGHT: That dude is kinda weird, but he's a good guy.
+
+        INPUT: lemme push this fix and ill let you know
+        WRONG: Let me push this fix and I will let you know.
+        RIGHT: Lemme push this fix and I'll let you know.
         """
     }
 }

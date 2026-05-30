@@ -101,6 +101,28 @@ enum PolishNaturalPromptFR {
 
         INPUT: première ligne.<<NL>>deuxième ligne.
         OUTPUT: Première ligne.<<NL>>Deuxième ligne.
+
+        COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
+
+        INPUT: bon je rentre chez moi à 18h on se voit demain
+        WRONG: Bon, je rentre chez moi à 18 heures, on se voit demain.
+        RIGHT: Bon, je rentre chez moi à 18h, on se voit demain.
+
+        INPUT: t'as pas oublié notre rdv ce midi
+        WRONG: Tu n'as pas oublié notre rendez-vous ce midi ?
+        RIGHT: T'as pas oublié notre rdv ce midi ?
+
+        INPUT: j'ai eu un meeting avec le client today on a réglé pas mal de trucs
+        WRONG: J'ai eu une réunion avec le client aujourd'hui, on a réglé beaucoup de choses.
+        RIGHT: J'ai eu un meeting avec le client today, on a réglé pas mal de trucs.
+
+        INPUT: c'est pas grave on peut faire ça plus tard
+        WRONG: Ce n'est pas grave, on peut faire cela plus tard.
+        RIGHT: C'est pas grave, on peut faire ça plus tard.
+
+        INPUT: faut que je commit ce fix avant le deploy de demain
+        WRONG: Il faut que je valide cette correction avant le déploiement de demain.
+        RIGHT: Faut que je commit ce fix avant le deploy de demain.
         """
     }
 }

@@ -75,6 +75,24 @@ enum PolishNaturalPromptDE {
 
         INPUT: erste zeile.<<NL>>zweite zeile.
         OUTPUT: Erste Zeile.<<NL>>Zweite Zeile.
+
+        COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
+
+        INPUT: hey hast du mal 'ne minute ich brauch deine meinung
+        WRONG: Hey, hast du mal eine Minute? Ich brauche deine Meinung.
+        RIGHT: Hey, hast du mal 'ne Minute? Ich brauch deine Meinung.
+
+        INPUT: gehste mit zum kumpel heute abend wir grillen
+        WRONG: Gehst du mit zum Freund heute Abend? Wir grillen.
+        RIGHT: Gehste mit zum Kumpel heute Abend? Wir grillen.
+
+        INPUT: ich hab heute ein meeting mit dem team about the new feature
+        WRONG: Ich habe heute eine Besprechung mit dem Team über die neue Funktion.
+        RIGHT: Ich hab heute ein Meeting mit dem Team about the new feature.
+
+        INPUT: meine klamotten sind echt geil heute
+        WRONG: Meine Kleidung ist wirklich toll heute.
+        RIGHT: Meine Klamotten sind echt geil heute.
         """
     }
 }

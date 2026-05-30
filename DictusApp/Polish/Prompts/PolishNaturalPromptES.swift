@@ -78,6 +78,24 @@ enum PolishNaturalPromptES {
 
         INPUT: primera línea.<<NL>>segunda línea.
         OUTPUT: Primera línea.<<NL>>Segunda línea.
+
+        COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
+
+        INPUT: oye vamos pa la playa este finde con los tíos del trabajo
+        WRONG: Oye, vamos para la playa este fin de semana con los hombres del trabajo.
+        RIGHT: Oye, vamos pa la playa este finde con los tíos del trabajo.
+
+        INPUT: tengo que currar hasta las ocho hoy estoy hasta el moño
+        WRONG: Tengo que trabajar hasta las 8 hoy, estoy harto.
+        RIGHT: Tengo que currar hasta las 8 hoy, estoy hasta el moño.
+
+        INPUT: tio el meeting de mañana es a las nueve no llegues tarde
+        WRONG: Hombre, la reunión de mañana es a las 9. No llegues tarde.
+        RIGHT: Tío, el meeting de mañana es a las 9. No llegues tarde.
+
+        INPUT: ese plan suena guay hagamoslo este weekend
+        WRONG: Ese plan suena genial, hagámoslo este fin de semana.
+        RIGHT: Ese plan suena guay, hagámoslo este weekend.
         """
     }
 }
