@@ -53,6 +53,11 @@ struct PolishDebugExport: Codable {
         let detectedLanguage: String?
         let outcome: String
         let latencyMs: Int
+        /// Latency breakdown — `latencyMs` ≈ preprocess + engine + postprocess.
+        /// `engineMs` is the pure LLM cost; the other two are our regex passes.
+        let preprocessMs: Int?
+        let engineMs: Int?
+        let postprocessMs: Int?
         let rawCharCount: Int
         let polishedCharCount: Int
         let raw: String
@@ -108,6 +113,9 @@ enum PolishDebugExporter {
                 detectedLanguage: entry.metrics.detectedLanguage,
                 outcome: entry.metrics.outcome.rawValue,
                 latencyMs: entry.metrics.latencyMs,
+                preprocessMs: entry.metrics.timings?.preprocessMs,
+                engineMs: entry.metrics.timings?.engineMs,
+                postprocessMs: entry.metrics.timings?.postprocessMs,
                 rawCharCount: entry.metrics.rawCharCount,
                 polishedCharCount: entry.metrics.polishedCharCount,
                 raw: entry.raw,

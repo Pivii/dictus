@@ -109,6 +109,11 @@ public final class PolishCoordinator {
 
         let target = SupportedLanguage.active
 
+        // `methodStart` anchors the full wall-clock the user actually waits for,
+        // INCLUDING the deterministic passes (which the old timer excluded).
+        // The timing breakdown below proves where the time goes.
+        let methodStart = Date()
+
         // Pre-pass: deterministic regex substitution of verbal punctuation
         // commands. Round 3 testing showed Apple FM cannot be coaxed into
         // doing this reliably in French — handling it in code bypasses the
@@ -122,6 +127,7 @@ public final class PolishCoordinator {
 
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
         guard let detected else {
+            let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = PolishMetrics(
                 engine: engineID,
                 mode: nil,
@@ -129,10 +135,11 @@ public final class PolishCoordinator {
                 detectedLanguage: nil,
                 rawCharCount: raw.count,
                 polishedCharCount: raw.count,
-                latencyMs: 0,
+                latencyMs: preprocessMs,
                 outcome: .skipped,
                 sttEngine: sttEngine.rawValue,
-                sttModelID: sttModelID
+                sttModelID: sttModelID,
+                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: 0)
             )
             PolishMetrics.log(m)
             await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
@@ -145,19 +152,26 @@ public final class PolishCoordinator {
         // Encode newlines as a marker so Apple FM can't "naturalise" them
         // into ", " + capital — see `PolishPostpass` doc-comment.
         let engineInput = PolishPostpass.encodeForEngine(preprocessed)
-        let start = Date()
+        // Everything above (pre-pass + detection + encode) is the preprocess cost.
+        let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+
         let task = Task { () -> PolishOutcomeBundle in
+            let engineStart = Date()
             do {
                 let polishedRaw = try await currentEngine.polish(
                     raw: engineInput, targetLanguage: target, mode: mode
                 )
+                // `engineMs` isolates the pure LLM call — the number that
+                // answers "is the latency the model or our code?".
+                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
+                let postStart = Date()
                 // Restore newlines from markers + apply FR typographic spacing.
                 // Run BEFORE the guardrail so char-ratio compares apples to
                 // apples (both sides use `\n`, not the multi-char marker).
                 let polished = PolishPostpass.decodeFromEngine(polishedRaw, language: target)
-                let latency = Int(Date().timeIntervalSince(start) * 1000)
                 if Task.isCancelled {
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, latencyMs: latency)
+                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, engineMs: engineMs, postprocessMs: postMs)
                 }
                 // Guardrail baseline is the preprocessed text — that's what the
                 // engine actually saw (modulo the newline marker, which the
@@ -165,23 +179,29 @@ public final class PolishCoordinator {
                 // the char-ratio when the pre-pass made a substantial
                 // substitution.
                 guard PolishGuardrail.accepts(raw: preprocessed, polished: polished, mode: mode) else {
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
+                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
                 }
                 guard PolishGuardrail.detectedLanguageMatches(polished: polished, target: target) else {
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, latencyMs: latency)
+                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
                 }
-                return PolishOutcomeBundle(engineOutput: polished, outcome: .success, latencyMs: latency)
+                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                return PolishOutcomeBundle(engineOutput: polished, outcome: .success, engineMs: engineMs, postprocessMs: postMs)
             } catch is CancellationError {
-                let latency = Int(Date().timeIntervalSince(start) * 1000)
-                return PolishOutcomeBundle(engineOutput: nil, outcome: .cancelled, latencyMs: latency)
+                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
+                return PolishOutcomeBundle(engineOutput: nil, outcome: .cancelled, engineMs: engineMs, postprocessMs: 0)
             } catch {
-                let latency = Int(Date().timeIntervalSince(start) * 1000)
-                return PolishOutcomeBundle(engineOutput: nil, outcome: .engineFailed, latencyMs: latency)
+                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
+                return PolishOutcomeBundle(engineOutput: nil, outcome: .engineFailed, engineMs: engineMs, postprocessMs: 0)
             }
         }
         inflight = task
 
         let bundle = await task.value
+        // True total, methodStart → here. Any gap vs (pre+engine+post) is
+        // Swift Task scheduling / actor-hop overhead — itself worth seeing.
+        let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let returned: String = (bundle.outcome == .success) ? (bundle.engineOutput ?? raw) : raw
 
         let m = PolishMetrics(
@@ -191,10 +211,15 @@ public final class PolishCoordinator {
             detectedLanguage: detected.rawValue,
             rawCharCount: raw.count,
             polishedCharCount: returned.count,
-            latencyMs: bundle.latencyMs,
+            latencyMs: totalMs,
             outcome: bundle.outcome,
             sttEngine: sttEngine.rawValue,
-            sttModelID: sttModelID
+            sttModelID: sttModelID,
+            timings: PolishTimings(
+                preprocessMs: preprocessMs,
+                engineMs: bundle.engineMs,
+                postprocessMs: bundle.postprocessMs
+            )
         )
         PolishMetrics.log(m)
         await metricsRing.append(PolishDebugEntry(raw: raw, polished: bundle.engineOutput, metrics: m))
@@ -240,5 +265,8 @@ private struct PolishOutcomeBundle: Sendable {
     /// guardrail rejected it so the debug screen can show *what* was rejected.
     let engineOutput: String?
     let outcome: PolishMetrics.Outcome
-    let latencyMs: Int
+    /// Pure LLM call duration (the `session.respond`).
+    let engineMs: Int
+    /// Marker decode + NBSP + guardrail, measured after the engine returned.
+    let postprocessMs: Int
 }
