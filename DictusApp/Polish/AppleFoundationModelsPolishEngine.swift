@@ -21,10 +21,23 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
     func polish(raw: String,
                 targetLanguage: SupportedLanguage,
                 mode: PolishMode) async throws -> String {
+        let key = SessionKey(mode: mode, language: targetLanguage)
+        // A session lives exactly one polish call. `prewarm()` (fired at
+        // recording start) leaves a fresh, warmed session in the cache; we use
+        // it here on a cache hit, or create one if no prewarm ran. The `defer`
+        // drops it afterward so the NEXT call never inherits this turn.
+        //
+        // WHY this matters: `LanguageModelSession` is stateful — every
+        // `respond()` is appended to a transcript the session re-prefills on
+        // each subsequent call. Reusing one session across dictations made
+        // latency grow turn-after-turn and would eventually throw
+        // `exceededContextWindowSize` (4096-token ceiling). Polish is a
+        // stateless transform, so we keep at most `instructions + 1 input`.
         let session = await cache.session(
-            for: SessionKey(mode: mode, language: targetLanguage),
+            for: key,
             instructions: Self.instructions(for: mode, language: targetLanguage)
         )
+        defer { Task { await cache.drop(key) } }
         // Wrap the input with explicit Input/Output framing. Without this Apple
         // FM treats the raw as a conversational turn and emits chat-reply
         // acknowledgements ("I'll polish it for you") instead of the polished
@@ -42,11 +55,16 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
         return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Create (if needed) and prewarm the Natural session for `targetLanguage`.
-    /// Called from `PolishCoordinator.prewarm()` at app launch.
+    /// Create a FRESH Natural session for `targetLanguage` and prewarm it.
+    /// Called from `PolishCoordinator.prewarm()` at app launch and at the start
+    /// of every recording (#141). Dropping any existing session first guarantees
+    /// we warm a virgin session (instructions only, zero accumulated transcript)
+    /// — the prerequisite for the stateless invariant in `polish()`.
     func prewarm(targetLanguage: SupportedLanguage) async {
+        let key = SessionKey(mode: .natural, language: targetLanguage)
+        await cache.drop(key)
         let session = await cache.session(
-            for: SessionKey(mode: .natural, language: targetLanguage),
+            for: key,
             instructions: Self.instructions(for: .natural, language: targetLanguage)
         )
         session.prewarm()
@@ -115,6 +133,16 @@ private actor SessionCache {
         lru.append(key)
         evictIfNeeded()
         return session
+    }
+
+    /// Remove the session for `key` (if any). Used to enforce the one-session-
+    /// per-call lifecycle: `polish()` drops after `respond()`, `prewarm()` drops
+    /// before recreating. Freeing a session releases only its small instruction
+    /// KV-cache — the model weights stay resident in memory, shared across
+    /// sessions, so re-creating a session when the model is already warm is cheap.
+    func drop(_ key: SessionKey) {
+        sessions.removeValue(forKey: key)
+        lru.removeAll { $0 == key }
     }
 
     private func touch(_ key: SessionKey) {
