@@ -8,10 +8,10 @@ import Foundation
 /// spacing rule), no accent insertion, French-specific contraction
 /// preservation replaced with English equivalents.
 ///
-/// Also serves as the fallback prompt for languages without a dedicated
-/// Natural prompt (currently Spanish and German fall through to this on
-/// `(.natural, .spanish/.german)` — see
-/// `AppleFoundationModelsPolishEngine.instructions(for:language:)`).
+/// Spanish and German have their own dedicated Natural prompts; this EN
+/// prompt only serves as the fallback for any FUTURE language added without
+/// a dedicated prompt — see
+/// `AppleFoundationModelsPolishEngine.instructions(for:language:)`.
 enum PolishNaturalPromptEN {
     static func instructions(glossary: String) -> String {
         """
