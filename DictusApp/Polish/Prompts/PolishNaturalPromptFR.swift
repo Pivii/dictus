@@ -59,54 +59,23 @@ enum PolishNaturalPromptFR {
 
         Examples:
 
-        INPUT: yo tu m'avais dit que tu passais à l'appart cet aprem vers 16h ça tient toujours
-        OUTPUT: Yo, tu m'avais dit que tu passais à l'appart cet aprem vers 16h, ça tient toujours ?
-
-        INPUT: faut absolument que je merge cette PR avant le standup de demain matin
-        OUTPUT: Faut absolument que je merge cette PR avant le standup de demain matin.
-
-        INPUT: cest le cinq mars deux mille vingt six on se retrouve a quatorze heures
-        OUTPUT: C’est le 5 mars 2026, on se retrouve à 14 heures.
-
         INPUT: euh je je sais pas trop si on doit y aller maintenant tu vois
         OUTPUT: Je sais pas trop si on doit y aller maintenant.
 
-        INPUT: jutilise whisperkit pour la transcription et github pour le code
-        OUTPUT: J’utilise WhisperKit pour la transcription et GitHub pour le code.
-
         INPUT: salut comment tu vas point d'interrogation j'ai bien lu ton rapport virgule et je pense que c'est bien
         OUTPUT: Salut, comment tu vas ? J’ai bien lu ton rapport, et je pense que c’est bien.
-
-        INPUT: bonjour point d'exclamation tu peux m'envoyer le fichier virgule s'il te plaît point d'interrogation
-        OUTPUT: Bonjour ! Tu peux m’envoyer le fichier, s’il te plaît ?
-
-        INPUT: première partie point virgule deuxième partie point d'exclamation
-        OUTPUT: Première partie ; deuxième partie !
-
-        INPUT: ah ouais je je trouve que comme comme on disait c'est pas mal
-        OUTPUT: Ah ouais, je trouve que comme on disait, c’est pas mal.
-
-        INPUT: ok donc la on va faire un petit test pour voir si tu fais bien ton travail tu vois
-        OUTPUT: Ok, donc là on va faire un petit test pour voir si tu fais bien ton travail.
 
         ASR-repair example. A segment of the input is incoherent (pseudo-English fragment from a French speaker); reconstruct the intent in French:
 
         INPUT: j'ai voulu passer voir Marie hier soir but the thing yet would happen sense thinks et finalement j'ai abandonné
         OUTPUT: J’ai voulu passer voir Marie hier soir, et finalement j’ai abandonné.
 
-        Line-break marker examples. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
+        Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
 
         INPUT: bonjour, comment ça va ?<<NL>>j'espère que tu vas bien,<<NL>>à bientôt.
         OUTPUT: Bonjour, comment ça va ?<<NL>>J’espère que tu vas bien,<<NL>>À bientôt.
 
-        INPUT: première ligne.<<NL>>deuxième ligne.
-        OUTPUT: Première ligne.<<NL>>Deuxième ligne.
-
         COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
-
-        INPUT: bon je rentre chez moi à 18h on se voit demain
-        WRONG: Bon, je rentre chez moi à 18 heures, on se voit demain.
-        RIGHT: Bon, je rentre chez moi à 18h, on se voit demain.
 
         INPUT: t'as pas oublié notre rdv ce midi
         WRONG: Tu n'as pas oublié notre rendez-vous ce midi ?
@@ -115,14 +84,6 @@ enum PolishNaturalPromptFR {
         INPUT: j'ai eu un meeting avec le client today on a réglé pas mal de trucs
         WRONG: J'ai eu une réunion avec le client aujourd'hui, on a réglé beaucoup de choses.
         RIGHT: J'ai eu un meeting avec le client today, on a réglé pas mal de trucs.
-
-        INPUT: c'est pas grave on peut faire ça plus tard
-        WRONG: Ce n'est pas grave, on peut faire cela plus tard.
-        RIGHT: C'est pas grave, on peut faire ça plus tard.
-
-        INPUT: faut que je commit ce fix avant le deploy de demain
-        WRONG: Il faut que je valide cette correction avant le déploiement de demain.
-        RIGHT: Faut que je commit ce fix avant le deploy de demain.
         """
     }
 }

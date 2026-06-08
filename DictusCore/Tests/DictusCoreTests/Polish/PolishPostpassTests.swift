@@ -105,6 +105,85 @@ final class PolishPostpassTests: XCTestCase {
         )
     }
 
+    // MARK: - Decode: stray-newline collapse (fix A)
+
+    func testDecodeCollapsesStackedNewlines() {
+        // Marker decodes to one `\n`; the model added 3 more around it.
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("a.<<NL>>\n\n\nb", language: .french),
+            "a.\nb"
+        )
+    }
+
+    func testDecodeCollapsesNewlinesWithSurroundingSpaces() {
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("réunion. \n\n\n\n Premièrement", language: .french),
+            "réunion.\nPremièrement"
+        )
+    }
+
+    func testDecodeLeavesSingleNewlineUntouched() {
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("a<<NL>>b", language: .french),
+            "a\nb"
+        )
+    }
+
+    func testDecodeTrickyMeetingRecapHasSingleBreaks() {
+        // Test 4 from the 08/06 Wispr comparison: 3 line breaks, each previously
+        // ballooned to `\n\n\n\n`. Expect exactly one `\n` per section.
+        let engineOutput = "Voici le compte rendu.<<NL>>\n\n\nPremièrement, on a validé le budget\u{00A0}!<<NL>>\n\n\nDeuxièmement, d'accord\u{00A0}?<<NL>>\n\n\nA très vite."
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine(engineOutput, language: .french),
+            "Voici le compte rendu.\nPremièrement, on a validé le budget\u{00A0}!\nDeuxièmement, d'accord\u{00A0}?\nÀ très vite."
+        )
+    }
+
+    // MARK: - Decode: capital À accent (fix C)
+
+    func testDecodeRestoresSentenceInitialAAfterNewline() {
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("Budget validé\u{00A0}!<<NL>>A très vite.", language: .french),
+            "Budget validé\u{00A0}!\nÀ très vite."
+        )
+    }
+
+    func testDecodeRestoresAAtStringStart() {
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("A demain, on en reparle.", language: .french),
+            "À demain, on en reparle."
+        )
+    }
+
+    func testDecodeRestoresAAfterPeriod() {
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("C'est noté. A plus tard.", language: .french),
+            "C'est noté. À plus tard."
+        )
+    }
+
+    func testDecodeDoesNotTouchAFollowedByUppercase() {
+        // "A" before an acronym / proper noun is left alone.
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("A WhisperKit on doit ça.", language: .french),
+            "A WhisperKit on doit ça."
+        )
+    }
+
+    func testDecodeDoesNotTouchAbbreviationA() {
+        // "A." (abbreviation, no following space+lowercase) is left alone.
+        XCTAssertEqual(
+            PolishPostpass.decodeFromEngine("A. Dupont est là.", language: .french),
+            "A. Dupont est là."
+        )
+    }
+
+    func testDecodeAAccentIsFrenchOnly() {
+        let input = "A demain."
+        XCTAssertEqual(PolishPostpass.decodeFromEngine(input, language: .english), input)
+        XCTAssertEqual(PolishPostpass.decodeFromEngine(input, language: .german), input)
+    }
+
     // MARK: - Combined behaviour
 
     func testFullPipelineFrench() {
