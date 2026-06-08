@@ -38,6 +38,10 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.liveActivityEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var liveActivityEnabled = true
 
+    /// Post-STT polish toggle (issue #141). Off by default — opt-in measurement at round 1.
+    @AppStorage(SharedKeys.polishEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var polishEnabled = false
+
     #if DEBUG
     /// Debug-only: logs autocorrect decisions with user text to the debug log.
     /// This toggle only exists in DEBUG builds — the Release binary doesn't contain
@@ -55,6 +59,9 @@ struct SettingsView: View {
     /// Tracks log export async operation for spinner display.
     @State private var isExporting = false
     @State private var exportURL: URL?
+
+    /// Hidden polish debug screen (#141). Reached via long-press 3s on the Version row.
+    @State private var showPolishDebug = false
 
     // MARK: - Body
 
@@ -80,6 +87,10 @@ struct SettingsView: View {
                     Text("Parakeet automatically detects the spoken language. This setting only applies to Whisper models.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if PolishAvailability.isToggleVisible {
+                    Toggle("Polish transcription", isOn: $polishEnabled)
+                    polishStateFooter
                 }
             } header: {
                 Text("Transcription")
@@ -138,6 +149,14 @@ struct SettingsView: View {
             // Section 3: A propos
             Section("About") {
                 LabeledContent("Version", value: appVersion)
+                    .contentShape(Rectangle())
+                    // Five quick taps reveals the polish debug ring. Replaces
+                    // the previous 3-second long-press — taps are easier to
+                    // perform on the device than holding still on a List row,
+                    // and the secret-gesture posture stays the same.
+                    .onTapGesture(count: 5) {
+                        showPolishDebug = true
+                    }
 
                 // WHY Button instead of Link:
                 // Link doesn't respond to ButtonStyle and gets no press highlight
@@ -188,6 +207,9 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Color.dictusBackground.ignoresSafeArea())
         .navigationTitle("Settings")
+        .navigationDestination(isPresented: $showPolishDebug) {
+            PolishDebugView()
+        }
         .sheet(isPresented: Binding(
             get: { exportURL != nil },
             set: { isPresented in
@@ -229,6 +251,53 @@ struct SettingsView: View {
                 isExporting = false
                 exportURL = tempURL
             }
+        }
+    }
+
+    /// Footer row under the polish toggle — surfaces the specific reason
+    /// Apple Foundation Models is or isn't usable. When the state is `.available`
+    /// no footer is shown (the toggle alone is enough).
+    @ViewBuilder
+    private var polishStateFooter: some View {
+        let state = PolishAvailability.state
+        if state != .available {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(polishStateMessage(for: state))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if PolishAvailability.canOpenSystemSettings(for: state) {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Text("Open iPhone Settings")
+                            .font(.caption.bold())
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// User-facing explanation per availability state. Strings live in this
+    /// view so Localizable.xcstrings can auto-detect them.
+    private func polishStateMessage(for state: PolishAvailabilityState) -> String {
+        switch state {
+        case .available:
+            return ""
+        case .appleIntelligenceNotEnabled:
+            return "Apple Intelligence is required for polish. Enable it in iPhone Settings → Apple Intelligence & Siri. Apple requires Siri and your iPhone to use the same language — if Siri is in English and your iPhone is in French (or vice versa), Apple Intelligence stays off."
+        case .modelNotReady:
+            return "The Apple Intelligence model is downloading on your device. Try again in a few minutes."
+        case .deviceNotEligible:
+            return "Apple Intelligence isn't supported on this device. Polish requires an iPhone 15 Pro / 15 Pro Max or newer."
+        case .osTooOld:
+            return "Polish requires iOS 26 or later."
+        case .sdkMissing:
+            return "Polish isn't available in this build of Dictus."
+        case .other(let reason):
+            return "Apple Intelligence is unavailable (\(reason))."
         }
     }
 

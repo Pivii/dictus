@@ -9,7 +9,7 @@ import Foundation
 /// SettingsView, KeyboardViewController, TextPredictionEngine, and TranscriptionService.
 /// A single enum prevents typos, centralizes display names and layout defaults,
 /// and makes adding new languages a one-place change.
-public enum SupportedLanguage: String, CaseIterable, Codable {
+public enum SupportedLanguage: String, CaseIterable, Codable, Sendable {
     case french = "fr"
     case english = "en"
     case spanish = "es"

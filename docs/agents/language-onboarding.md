@@ -107,6 +107,72 @@ Pick one of those three patterns. **Don't** layer in SMS abbreviations or proper
 - Localizing UI strings (`Localizable.xcstrings`). Tracked separately in issue #52.
 - Translating the user-facing onboarding flow (`GlobeKeyTutorialPage` etc.). Tracked separately.
 
+## Polish prompt (Apple Foundation Models)
+
+The polish layer (issue #141, ADR 0003) runs a per-language system prompt against Apple FM. **Adding a new language without a dedicated prompt is supported** — the dispatch falls back to English Natural — but ships a polish that uses English contractions and English fillers, which is clearly worse than language-specific rules even before native-speaker validation. Author a dedicated prompt as part of the launch unless the language genuinely has no business adding one (e.g., a language Apple FM does not support).
+
+### Where to add the prompt
+
+`DictusApp/Polish/Prompts/PolishNaturalPrompt<XX>.swift` where `<XX>` is the uppercase two-letter ISO 639-1 code (`FR`, `EN`, `ES`, `DE`, …). One file per language, one `enum` per file, single static `instructions(glossary:)` method returning the prompt string.
+
+### What to copy from
+
+`PolishNaturalPromptFR.swift` is the reference. It was authored against real dictation tests and carries the structure all per-language prompts share:
+
+1. TEXT TRANSFORMATION FUNCTION framing (anti-chat-reply guard).
+2. OUTPUT LANGUAGE lock.
+3. RESPONSE-IS-POLISHED-TEXT block.
+4. GOAL statement.
+5. RULES section (1-9) — the operations the model MUST perform.
+6. PRESERVE section — what stays untouched.
+7. FORBIDDEN section — what must never happen.
+8. Domain glossary slot (`\(glossary)`).
+9. INPUT/OUTPUT examples covering each rule.
+10. ASR-repair example (rule 8).
+11. `<<NL>>` marker examples (rule 5).
+
+### What to adapt per language
+
+| Aspect | French | English | Spanish | German |
+|---|---|---|---|---|
+| Typographic spacing | NBSP before `? ! ; :` | none | none | none |
+| Question/exclamation | `?`, `!` | `?`, `!` | inverted: `¿…?`, `¡…!` | `?`, `!` |
+| Apostrophe | typographic `’` | typographic `’` | not standard | not standard |
+| Diacritics rule | French accents | n/a | Spanish accents (`tú`/`tu`, `sí`/`si`) | umlauts + `ß` |
+| Capitalization | sentence + proper nouns | sentence + proper nouns + standalone "I" | sentence + proper nouns | sentence + ALL nouns |
+| Familiar register list | `t'es`, `dispo`, `19h`, `appart`, … | `gonna`, `wanna`, `dunno`, `cuz`, … | `pa'`, `na'`, `to'`, … | `'ne`, `'nen`, `gehste`, … |
+| Negation form | oral negation (no `ne`) | contractions (`don't` not `do not`) | n/a | n/a |
+| Filler list | `euh`, `hum`, `tu vois`, `en fait` | `uh`, `um`, `like`, `you know` | `eh`, `pues`, `o sea`, `tipo` | `äh`, `ähm`, `halt`, `naja` |
+| Transition keep-list | `voilà`, `bon`, `bref`, `donc` | `so`, `well`, `anyway` | `bueno`, `pues`, `entonces` | `also`, `naja`, `tja`, `nun` |
+| Tech anglicism list | identical across languages | identical | identical | identical |
+
+The tech anglicism list (`today`, `ship`, `commit`, `push`, `merge`, `PR`, `deploy`, `feature`, `bug`, `release`, …) is **the same in every prompt** — devs working in any of these languages still use the English terms.
+
+### How to wire it
+
+Add a `case` arm in `AppleFoundationModelsPolishEngine.instructions(for:language:)`:
+
+```swift
+case (.natural, .<yourLanguage>):
+    return PolishNaturalPrompt<XX>.instructions(glossary: glossary)
+```
+
+The compiler enforces exhaustiveness — adding a new `SupportedLanguage` case without an arm here is a build error, which is what we want.
+
+For Xcode project membership: add the new file to `DictusApp/Polish/Prompts/` in the `Prompts` group. Use a fresh UUID pair (`AA00P2NN` build file + `AA10P2NN` file reference) — see the existing entries in `Dictus.xcodeproj/project.pbxproj` for the pattern. The `P21x` range is taken by FR/EN Natural and FR/EN Repair; `P214`/`P215` are ES/DE Natural; pick `P216` and above for new prompts.
+
+### Validation
+
+A new prompt **needs native-speaker validation before being trusted in production**. The ES/DE prompts shipped in the round-1 Natural rollout are flagged in their file doc-comment as "authored on-paper without a native-speaker test set". Validation = read a written test script in the target language, dictate it through Dictus, export the polish ring JSON, compare to what a native speaker would have typed. File quality gaps against the language's GitHub issue or the post-launch playbook (#152).
+
+### When to skip the prompt
+
+Skip the dedicated prompt **only** when:
+- Apple FM does not support the language at all (`SystemLanguageModel.default.supportedLanguages` doesn't include it). The English fallback is then a no-op since the user won't see meaningful output anyway.
+- The language ships as a keyboard-only launch with the polish toggle hidden in Settings for that locale. (This is not currently a supported launch shape — file an issue first.)
+
+In every other case, write the prompt.
+
 ## Smoke testing on the simulator
 
 After `verify` passes, install the build on the iPhone 17 Pro simulator. The runbook for German (PR2) was:
@@ -122,6 +188,7 @@ If a smoke test surfaces a quality gap (missing override, missing seed bigram), 
 ## Reference
 
 - ADR 0001 — empty overrides and seed bigrams for non-native language launches: `docs/adr/0001-empty-overrides-and-seeds-for-non-native-language-launches.md`
+- ADR 0003 — Natural polish contract (per-language polish prompts): `docs/adr/0003-natural-polish-contract.md`
 - Domain glossary: `CONTEXT.md` (sections "Language onboarding", "Language profile", "Override map", "Accent map", "Seed bigrams")
 - The German launch (issue #109): the worked example. PR2 commits show every file touched.
 - Follow-ups: #151 (QWERTZ layout for German), #152 (post-launch quality playbook).

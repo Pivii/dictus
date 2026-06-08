@@ -66,6 +66,11 @@ public enum SharedKeys {
     /// Whether Live Activity (Dynamic Island + Lock Screen) is enabled, default true
     public static let liveActivityEnabled = "dictus.liveActivityEnabled"
 
+    // Post-STT polish (issue #141)
+    /// Whether the polish layer runs between STT final output and App Group write, default false.
+    /// Off by default — round 1 is opt-in measurement. See ADR 0002.
+    public static let polishEnabled = "dictus.polishEnabled"
+
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
     /// during active recording. The keyboard watchdog reads this as a fallback

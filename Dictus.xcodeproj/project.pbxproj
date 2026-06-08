@@ -80,6 +80,19 @@
 		AA0000F3 /* SoundSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F3 /* SoundSettingsView.swift */; };
 		AA0000F4 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AA1000F4 /* Sounds */; };
 		AA0000F5 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F5 /* LiveActivityManager.swift */; };
+		AA00P201 /* PolishAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P201 /* PolishAvailability.swift */; };
+		AA00P202 /* PassthroughPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P202 /* PassthroughPolishEngine.swift */; };
+		AA00P203 /* PolishCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P203 /* PolishCoordinator.swift */; };
+		AA00P204 /* PolishMetricsRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P204 /* PolishMetricsRing.swift */; };
+		AA00P205 /* PolishDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P205 /* PolishDebugView.swift */; };
+		AA00P206 /* AppleFoundationModelsPolishEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P206 /* AppleFoundationModelsPolishEngine.swift */; };
+		AA00P210 /* PolishNaturalPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P210 /* PolishNaturalPromptFR.swift */; };
+		AA00P211 /* PolishNaturalPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P211 /* PolishNaturalPromptEN.swift */; };
+		AA00P214 /* PolishNaturalPromptES.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P214 /* PolishNaturalPromptES.swift */; };
+		AA00P215 /* PolishNaturalPromptDE.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P215 /* PolishNaturalPromptDE.swift */; };
+		AA00P212 /* PolishRepairPromptFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P212 /* PolishRepairPromptFR.swift */; };
+		AA00P213 /* PolishRepairPromptEN.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P213 /* PolishRepairPromptEN.swift */; };
+		AA00P207 /* PolishDebugExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P207 /* PolishDebugExporter.swift */; };
 		AA0000F6 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
 		AA0000G0 /* KeyTapSignposter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000G0 /* KeyTapSignposter.swift */; };
 		AA000P10 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA100P10 /* PrivacyInfo.xcprivacy */; };
@@ -229,6 +242,19 @@
 		AA1000F3 /* SoundSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSettingsView.swift; sourceTree = "<group>"; };
 		AA1000F4 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Dictus/Sounds; sourceTree = SOURCE_ROOT; };
 		AA1000F5 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
+		AA10P201 /* PolishAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishAvailability.swift; sourceTree = "<group>"; };
+		AA10P202 /* PassthroughPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassthroughPolishEngine.swift; sourceTree = "<group>"; };
+		AA10P203 /* PolishCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishCoordinator.swift; sourceTree = "<group>"; };
+		AA10P204 /* PolishMetricsRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishMetricsRing.swift; sourceTree = "<group>"; };
+		AA10P205 /* PolishDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugView.swift; sourceTree = "<group>"; };
+		AA10P206 /* AppleFoundationModelsPolishEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFoundationModelsPolishEngine.swift; sourceTree = "<group>"; };
+		AA10P210 /* PolishNaturalPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptFR.swift; sourceTree = "<group>"; };
+		AA10P211 /* PolishNaturalPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptEN.swift; sourceTree = "<group>"; };
+		AA10P214 /* PolishNaturalPromptES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptES.swift; sourceTree = "<group>"; };
+		AA10P215 /* PolishNaturalPromptDE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishNaturalPromptDE.swift; sourceTree = "<group>"; };
+		AA10P212 /* PolishRepairPromptFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptFR.swift; sourceTree = "<group>"; };
+		AA10P213 /* PolishRepairPromptEN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishRepairPromptEN.swift; sourceTree = "<group>"; };
+		AA10P207 /* PolishDebugExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugExporter.swift; sourceTree = "<group>"; };
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
 		AA100P10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA100P20 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -334,6 +360,7 @@
 				AA1000F5 /* LiveActivityManager.swift */,
 				AA400007 /* Audio */,
 				AA40000B /* Onboarding */,
+				AA40P200 /* Polish */,
 				AA400008 /* Views */,
 				AA400009 /* Models */,
 				AA40000F /* Services */,
@@ -432,6 +459,34 @@
 				AA100200 /* ObjCExceptionCatcher.m */,
 			);
 			path = Audio;
+			sourceTree = "<group>";
+		};
+		AA40P200 /* Polish */ = {
+			isa = PBXGroup;
+			children = (
+				AA10P201 /* PolishAvailability.swift */,
+				AA10P202 /* PassthroughPolishEngine.swift */,
+				AA10P203 /* PolishCoordinator.swift */,
+				AA10P204 /* PolishMetricsRing.swift */,
+				AA10P205 /* PolishDebugView.swift */,
+				AA10P206 /* AppleFoundationModelsPolishEngine.swift */,
+				AA10P207 /* PolishDebugExporter.swift */,
+				AA40P210 /* Prompts */,
+			);
+			path = Polish;
+			sourceTree = "<group>";
+		};
+		AA40P210 /* Prompts */ = {
+			isa = PBXGroup;
+			children = (
+				AA10P210 /* PolishNaturalPromptFR.swift */,
+				AA10P211 /* PolishNaturalPromptEN.swift */,
+				AA10P214 /* PolishNaturalPromptES.swift */,
+				AA10P215 /* PolishNaturalPromptDE.swift */,
+				AA10P212 /* PolishRepairPromptFR.swift */,
+				AA10P213 /* PolishRepairPromptEN.swift */,
+			);
+			path = Prompts;
 			sourceTree = "<group>";
 		};
 		AA400008 /* Views */ = {
@@ -867,6 +922,19 @@
 				AA000005 /* DictationCoordinator.swift in Sources */,
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
+				AA00P201 /* PolishAvailability.swift in Sources */,
+				AA00P202 /* PassthroughPolishEngine.swift in Sources */,
+				AA00P203 /* PolishCoordinator.swift in Sources */,
+				AA00P204 /* PolishMetricsRing.swift in Sources */,
+				AA00P205 /* PolishDebugView.swift in Sources */,
+				AA00P206 /* AppleFoundationModelsPolishEngine.swift in Sources */,
+				AA00P207 /* PolishDebugExporter.swift in Sources */,
+				AA00P210 /* PolishNaturalPromptFR.swift in Sources */,
+				AA00P211 /* PolishNaturalPromptEN.swift in Sources */,
+				AA00P214 /* PolishNaturalPromptES.swift in Sources */,
+				AA00P215 /* PolishNaturalPromptDE.swift in Sources */,
+				AA00P212 /* PolishRepairPromptFR.swift in Sources */,
+				AA00P213 /* PolishRepairPromptEN.swift in Sources */,
 				AA000045 /* UnifiedAudioEngine.swift in Sources */,
 				AA000200 /* ObjCExceptionCatcher.m in Sources */,
 				AA000041 /* TranscriptionService.swift in Sources */,
@@ -1034,7 +1102,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG DICTUS_POLISH_DEBUG_VISIBLE";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;

@@ -50,6 +50,11 @@ class DictationCoordinator: ObservableObject {
     private var currentModelName: String?
     private var dictationTask: Task<Void, Never>?
 
+    /// Fires ~1.5s into a recording to prewarm the Apple FM polish model (#141).
+    /// Held so it can be cancelled if the user stops before it fires. See
+    /// `schedulePolishPrewarm()`.
+    private var polishPrewarmTask: Task<Void, Never>?
+
     /// Set when cold start dictation is deferred because the app is .inactive.
     /// Cleared in didBecomeActive when the retry happens.
     private var pendingColdStartDictation = false
@@ -263,6 +268,29 @@ class DictationCoordinator: ObservableObject {
         }
     }
 
+    /// Schedule a prewarm of the Apple FM polish model partway into a recording (#141).
+    ///
+    /// Apple recommends calling `prewarm()` at least one second before
+    /// `respond()`, "when interaction is imminent". The start of a recording is
+    /// exactly that signal: we know polish will run in a few seconds, and the
+    /// recording itself provides the lead time. Firing at ~1.5s also aligns with
+    /// the polish engine's <2s skip gate — if we're still recording at 1.5s the
+    /// clip will almost certainly cross 2s and actually be polished, so warming
+    /// is not wasted on flash dictations.
+    ///
+    /// The `status == .recording` guard drops the prewarm if the user already
+    /// stopped. `PolishCoordinator.prewarm()` is itself a no-op when the toggle
+    /// is off, so we don't load the model into memory for nothing.
+    private func schedulePolishPrewarm() {
+        polishPrewarmTask?.cancel()
+        polishPrewarmTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            guard self.status == .recording else { return }
+            PolishCoordinator.shared.prewarm()
+        }
+    }
+
     // MARK: - Public API
 
     /// Start the recording pipeline.
@@ -282,6 +310,9 @@ class DictationCoordinator: ObservableObject {
         lastResult = nil
         bufferEnergy = []
         bufferSeconds = 0
+        // Cancel any polish still running from the previous dictation (#141).
+        PolishCoordinator.shared.cancelInflight()
+        polishPrewarmTask?.cancel()
         PersistentLog.log(.statusChanged(from: status.rawValue, to: "clearing-for-new", source: "startDictation-reset"))
 
         // Guard against duplicate calls while actively recording or transcribing.
@@ -358,6 +389,7 @@ class DictationCoordinator: ObservableObject {
                     LiveActivityManager.shared.transitionToRecording()
                     try audioEngine.startRecording()
                     PersistentLog.log(.audioEngineStarted)
+                    schedulePolishPrewarm()
                     await verifyAudioFlow()
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
@@ -389,6 +421,7 @@ class DictationCoordinator: ObservableObject {
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
                     PersistentLog.log(.audioEngineStarted)
+                    schedulePolishPrewarm()
                     await verifyAudioFlow()
 
                     // Load the transcription model in parallel while recording
@@ -432,6 +465,8 @@ class DictationCoordinator: ObservableObject {
         isTranscribingInFlight = true
 
         dictationTask?.cancel()
+        // The recording is ending; the prewarm (if it hasn't fired) is moot.
+        polishPrewarmTask?.cancel()
 
         dictationTask = Task {
             defer { self.isTranscribingInFlight = false }
@@ -463,7 +498,18 @@ class DictationCoordinator: ObservableObject {
                 SoundFeedbackService.playRecordStop()
 
                 try await ensureEngineReady()
-                let text = try await transcriptionService.transcribe(audioSamples: samples)
+                let rawText = try await transcriptionService.transcribe(audioSamples: samples)
+
+                // Polish layer (#141) — passes raw through when toggle off, when language
+                // detection skips, when the engine throws/cancels, or when the guardrail rejects.
+                let activeModelID = defaults.string(forKey: SharedKeys.activeModel) ?? ""
+                let sttEngine = ModelInfo.forIdentifier(activeModelID)?.engine ?? .whisperKit
+                let text = await PolishCoordinator.shared.polish(
+                    raw: rawText,
+                    sttEngine: sttEngine,
+                    sttModelID: activeModelID,
+                    recordingDuration: audioDuration
+                )
 
                 // Append trailing separator so chained dictations don't stick together
                 let finalText: String
