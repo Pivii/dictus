@@ -32,6 +32,11 @@ public struct PolishMetrics: Sendable, Codable {
         case success
         case rejectedGuardrail
         case skipped
+        /// LLM intentionally skipped because the recording was shorter than the
+        /// engine-duration gate (#141). Deterministic passes still ran; the
+        /// model never loaded. Distinct from `skipped` (gibberish / low language
+        /// confidence) so the debug JSON shows *why* the engine was bypassed.
+        case skippedShort
         case cancelled
         case engineFailed
     }

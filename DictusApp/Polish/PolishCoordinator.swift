@@ -66,9 +66,16 @@ public final class PolishCoordinator {
     }
 
     /// Warm up the Apple FM engine (if present) for the user's current target
-    /// language. Called from `DictusApp.init()` so the first dictation pays no
-    /// session-creation cost. The passthrough engine has nothing to warm.
+    /// language. Called from `DictusApp.init()` at launch AND from
+    /// `DictationCoordinator` ~1.5s into each recording (#141) — Apple recommends
+    /// calling `prewarm()` ≥1s before `respond()`, and the recording duration is
+    /// exactly that window. Each call recreates a fresh session, so the engine's
+    /// stateless invariant holds (see `AppleFoundationModelsPolishEngine`).
+    ///
+    /// No-op when the toggle is off (don't pay to load the model into memory if
+    /// no polish will run) or when the engine has nothing to warm.
     public func prewarm() {
+        guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
         let target = SupportedLanguage.active
         Task { await engineToWarm.prewarm(targetLanguage: target) }
@@ -102,7 +109,10 @@ public final class PolishCoordinator {
     /// "parakeet-tdt-0.6b-v3"). It's carried through to metrics so the JSON
     /// export is self-describing — analysis doesn't need to cross-reference the
     /// app log to know which STT model produced each event.
-    public func polish(raw: String, sttEngine: SpeechEngine, sttModelID: String) async -> String {
+    public func polish(raw: String,
+                       sttEngine: SpeechEngine,
+                       sttModelID: String,
+                       recordingDuration: TimeInterval) async -> String {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
             return raw
         }
@@ -119,6 +129,38 @@ public final class PolishCoordinator {
         // doing this reliably in French — handling it in code bypasses the
         // model entirely for this concern.
         let preprocessed = VerbalPunctuationPrepass.apply(raw, language: target)
+
+        // Duration gate (#141): on a flash dictation (< engineMinDuration) the
+        // user wants instant text and the LLM rarely adds value — so we skip the
+        // model entirely. We KEEP the free deterministic passes though (verbal
+        // punctuation above + NBSP below, both ~0ms) so typography stays
+        // consistent with longer clips. No language detection / guardrail here
+        // since the engine never runs.
+        if recordingDuration < Self.engineMinDuration {
+            let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+            let postStart = Date()
+            // No engine ran → no newline markers to decode; this only applies
+            // the language typography (French NBSP).
+            let finalShort = PolishPostpass.decodeFromEngine(preprocessed, language: target)
+            let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+            let m = PolishMetrics(
+                engine: activeEngine.identifier,
+                mode: nil,
+                targetLanguage: target,
+                detectedLanguage: nil,
+                rawCharCount: raw.count,
+                polishedCharCount: finalShort.count,
+                latencyMs: preprocessMs + postMs,
+                outcome: .skippedShort,
+                sttEngine: sttEngine.rawValue,
+                sttModelID: sttModelID,
+                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
+            )
+            PolishMetrics.log(m)
+            await metricsRing.append(PolishDebugEntry(raw: raw, polished: finalShort, metrics: m))
+            return finalShort
+        }
+
         let detected = Self.detectLanguage(in: preprocessed)
 
         // Resolve the engine for this call — see `activeEngine` doc-comment.
@@ -232,6 +274,11 @@ public final class PolishCoordinator {
     /// Top-language confidence below which raw is treated as gibberish and polish is skipped.
     /// ADR 0002 leaves the exact threshold open; 0.5 is a starting point tuned from logs.
     private static let confidenceThreshold: Double = 0.5
+
+    /// Recording duration (seconds) below which the LLM polish is skipped (#141).
+    /// On flash dictations the user wants instant text and the model rarely adds
+    /// value for ~3-6s of latency. Deterministic passes still run. Tunable.
+    private static let engineMinDuration: TimeInterval = 2.0
 
     private static func detectLanguage(in text: String) -> SupportedLanguage? {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }

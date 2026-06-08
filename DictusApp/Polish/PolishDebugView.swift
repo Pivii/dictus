@@ -286,7 +286,7 @@ private struct PolishExportShareSheet: UIViewControllerRepresentable {
 
 private extension PolishMetrics.Outcome {
     static var allDisplayCases: [PolishMetrics.Outcome] {
-        [.success, .rejectedGuardrail, .skipped, .cancelled, .engineFailed]
+        [.success, .rejectedGuardrail, .skipped, .skippedShort, .cancelled, .engineFailed]
     }
 
     var shortLabel: String {
@@ -294,6 +294,7 @@ private extension PolishMetrics.Outcome {
         case .success: return "success"
         case .rejectedGuardrail: return "rejected"
         case .skipped: return "skipped"
+        case .skippedShort: return "short"
         case .cancelled: return "cancelled"
         case .engineFailed: return "failed"
         }
@@ -302,7 +303,7 @@ private extension PolishMetrics.Outcome {
     var tintColor: Color {
         switch self {
         case .success: return .green
-        case .rejectedGuardrail, .skipped: return .orange
+        case .rejectedGuardrail, .skipped, .skippedShort: return .orange
         case .cancelled, .engineFailed: return .red
         }
     }
