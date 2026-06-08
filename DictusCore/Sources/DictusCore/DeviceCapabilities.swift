@@ -101,8 +101,14 @@ public struct DeviceCapabilities: Sendable, Equatable {
     private static func readAvailableMemoryMB() -> Int {
         // `os_proc_available_memory()` is iOS 13+. Returns jetsam headroom in bytes.
         // Returns 0 if the process has no jetsam limit (rare, mostly simulator).
+        // macOS has no jetsam equivalent and this path only matters on-device;
+        // the macOS build exists solely for the polish eval harness.
+        #if os(iOS)
         let bytes = os_proc_available_memory()
         return Int(bytes / 1_048_576)
+        #else
+        return 0
+        #endif
     }
 
     private static func readDeviceModelIdentifier() -> String {

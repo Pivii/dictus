@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/DictusLogo.swift
 // Static 3-bar logo matching brand kit proportions.
 import SwiftUI
@@ -57,3 +58,4 @@ public struct DictusLogo: View {
         .frame(height: height)
     }
 }
+#endif

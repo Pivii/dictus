@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/AnimatedMicButton.swift
 // Animated microphone button with visual states for idle, recording, transcribing, and success.
 import SwiftUI
@@ -267,3 +268,4 @@ public struct AnimatedMicButton: View {
     .padding()
     .background(Color(hex: 0x0A1628))
 }
+#endif

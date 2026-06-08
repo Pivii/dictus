@@ -1,8 +1,7 @@
-// DictusApp/Polish/AppleFoundationModelsPolishEngine.swift
+// DictusCore/Sources/DictusCore/Polish/AppleFoundationModelsPolishEngine.swift
 #if canImport(FoundationModels)
 import Foundation
 import FoundationModels
-import DictusCore
 
 /// The round-1 polish engine. Wraps Apple's on-device Foundation Model with a
 /// per `(mode, language)` `LanguageModelSession` cache so the system prompt is
@@ -12,15 +11,17 @@ import DictusCore
 /// `PolishCoordinator` instantiates this engine only when Apple Intelligence is
 /// usable. The cache has a small bound (8) because round 1 supports at most
 /// 4 languages × 2 modes = 8 combinations.
-@available(iOS 26.0, *)
-final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
+@available(iOS 26.0, macOS 26.0, *)
+public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
-    let identifier = "apple-fm"
+    public let identifier = "apple-fm"
     private let cache = SessionCache(capacity: 8)
 
-    func polish(raw: String,
-                targetLanguage: SupportedLanguage,
-                mode: PolishMode) async throws -> String {
+    public init() {}
+
+    public func polish(raw: String,
+                       targetLanguage: SupportedLanguage,
+                       mode: PolishMode) async throws -> String {
         let key = SessionKey(mode: mode, language: targetLanguage)
         // A session lives exactly one polish call. `prewarm()` (fired at
         // recording start) leaves a fresh, warmed session in the cache; we use
@@ -60,7 +61,7 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
     /// of every recording (#141). Dropping any existing session first guarantees
     /// we warm a virgin session (instructions only, zero accumulated transcript)
     /// — the prerequisite for the stateless invariant in `polish()`.
-    func prewarm(targetLanguage: SupportedLanguage) async {
+    public func prewarm(targetLanguage: SupportedLanguage) async {
         let key = SessionKey(mode: .natural, language: targetLanguage)
         await cache.drop(key)
         let session = await cache.session(
@@ -103,7 +104,7 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
 // MARK: - Session cache
 
-@available(iOS 26.0, *)
+@available(iOS 26.0, macOS 26.0, *)
 private struct SessionKey: Hashable, Sendable {
     let mode: PolishMode
     let language: SupportedLanguage
@@ -112,7 +113,7 @@ private struct SessionKey: Hashable, Sendable {
 /// Per-`(mode, language)` `LanguageModelSession` cache with naive LRU eviction.
 /// Sessions hold compiled instruction state — keeping them around avoids the
 /// per-call cost of rebuilding the system prompt.
-@available(iOS 26.0, *)
+@available(iOS 26.0, macOS 26.0, *)
 private actor SessionCache {
 
     private var sessions: [SessionKey: LanguageModelSession] = [:]

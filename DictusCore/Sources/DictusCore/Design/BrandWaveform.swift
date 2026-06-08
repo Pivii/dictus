@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/BrandWaveform.swift
 // Multi-bar waveform with brand-inspired colors (blue gradient center, white opacity sides).
 import SwiftUI
@@ -343,3 +344,4 @@ public struct BrandWaveform: View {
             .padding(.horizontal)
     }
 }
+#endif

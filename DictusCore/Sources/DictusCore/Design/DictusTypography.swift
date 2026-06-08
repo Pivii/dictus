@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/DictusTypography.swift
 // Typography system using SF Pro Rounded for headings and SF Pro Text for body.
 import SwiftUI
@@ -27,3 +28,4 @@ public extension Font {
     /// Caption text -- SF Pro Text small
     static let dictusCaption: Font = .system(.caption)
 }
+#endif
