@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/DictusLiveActivityAttributes.swift
 // Data model for Dictus Live Activity (Dynamic Island + Lock Screen).
 import ActivityKit
@@ -63,3 +64,4 @@ public struct DictusLiveActivityAttributes: ActivityAttributes {
 
     public init() {}
 }
+#endif

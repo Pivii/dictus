@@ -1,0 +1,62 @@
+[
+  {
+    "id": "1-normal",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "raw": "Salut ça va ? J'espère que tu es passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.",
+    "expect": [
+      { "contains": "week-end" },
+      { "contains": "bossé" },
+      { "regexAbsent": "<<NL>>" },
+      { "lengthRatioMax": 1.25 }
+    ]
+  },
+  {
+    "id": "2-bilingue",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "raw": "Alors écoute, faut que je push le commit sur GitHub avant la deadline de today et ensuite je te laisse review la pull request. Normalement le merge va clôturer le slice et on pourra fermer l'issue.",
+    "expect": [
+      { "contains": "commit" },
+      { "contains": "push" },
+      { "contains": "GitHub" },
+      { "contains": "merge" },
+      { "notContains": "validation" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  },
+  {
+    "id": "3-long",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "raw": "Ce que j'aimerais bien tester aussi, c'est un texte un petit peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait tout simplement des fois il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral et j'ai envie de voir exactement comment ça se comporte avec dictus mais aussi avec whisperflow",
+    "expect": [
+      { "lengthRatioMin": 0.85 },
+      { "lengthRatioMax": 1.15 },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "4-tricky-ponctuation",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "raw": "Alors bonjour à tous, retour à la ligne. Voici le compte rendu de la réunion, retour à la ligne. Premièrement, on a validé le budget. Point d'exclamation. Retour à la ligne. Deuxièmement, est-ce que tout le monde est d'accord ? Point d'interrogation. Retour à la ligne. A très vite.",
+    "expect": [
+      { "regexAbsent": "\\n\\n\\n" },
+      { "regexAbsent": "<<NL>>" },
+      { "notContains": "retour à la ligne" },
+      { "notContains": "Point d'exclamation" }
+    ]
+  },
+  {
+    "id": "5-erreur-parakeet",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "raw": "Et moi je vais faire un autre test, c'est le test on va dire special paratite where sometimes it arrive que ça traduise de l'anglais en fait et donc l'idée c'est de voir comment se comporte le modèle where the language is switching in English but par error.",
+    "expect": [
+      { "notContains": "where sometimes" },
+      { "notContains": "the language is switching" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  }
+]

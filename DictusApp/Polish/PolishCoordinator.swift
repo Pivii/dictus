@@ -31,7 +31,7 @@ public final class PolishCoordinator {
     private let passthroughEngine: PolishEngineProtocol = PassthroughPolishEngine()
     private let defaults: UserDefaults
     private let metricsRing = PolishMetricsRing()
-    private var inflight: Task<PolishOutcomeBundle, Never>?
+    private var inflight: Task<PolishPipeline.Result, Never>?
 
     private init() {
         self.defaults = AppGroup.defaults
@@ -161,7 +161,7 @@ public final class PolishCoordinator {
             return finalShort
         }
 
-        let detected = Self.detectLanguage(in: preprocessed)
+        let detected = PolishPipeline.detectLanguage(in: preprocessed)
 
         // Resolve the engine for this call — see `activeEngine` doc-comment.
         let currentEngine = activeEngine
@@ -188,55 +188,18 @@ public final class PolishCoordinator {
             return raw
         }
 
-        let mode = Self.modeFor(sttEngine: sttEngine, detected: detected, target: target)
+        let mode = PolishPipeline.mode(sttEngine: sttEngine, detected: detected, target: target)
 
         inflight?.cancel()
-        // Encode newlines as a marker so Apple FM can't "naturalise" them
-        // into ", " + capital — see `PolishPostpass` doc-comment.
-        let engineInput = PolishPostpass.encodeForEngine(preprocessed)
-        // Everything above (pre-pass + detection + encode) is the preprocess cost.
+        // Everything above (pre-pass + detection + mode) is the preprocess cost;
+        // the engine-facing transform (encode → engine → decode → guardrail) is
+        // delegated to `PolishPipeline` so the eval harness runs identical code.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
 
-        let task = Task { () -> PolishOutcomeBundle in
-            let engineStart = Date()
-            do {
-                let polishedRaw = try await currentEngine.polish(
-                    raw: engineInput, targetLanguage: target, mode: mode
-                )
-                // `engineMs` isolates the pure LLM call — the number that
-                // answers "is the latency the model or our code?".
-                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
-                let postStart = Date()
-                // Restore newlines from markers + apply FR typographic spacing.
-                // Run BEFORE the guardrail so char-ratio compares apples to
-                // apples (both sides use `\n`, not the multi-char marker).
-                let polished = PolishPostpass.decodeFromEngine(polishedRaw, language: target)
-                if Task.isCancelled {
-                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .cancelled, engineMs: engineMs, postprocessMs: postMs)
-                }
-                // Guardrail baseline is the preprocessed text — that's what the
-                // engine actually saw (modulo the newline marker, which the
-                // post-pass already undid). Using the original raw would bias
-                // the char-ratio when the pre-pass made a substantial
-                // substitution.
-                guard PolishGuardrail.accepts(raw: preprocessed, polished: polished, mode: mode) else {
-                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
-                }
-                guard PolishGuardrail.detectedLanguageMatches(polished: polished, target: target) else {
-                    let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                    return PolishOutcomeBundle(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
-                }
-                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                return PolishOutcomeBundle(engineOutput: polished, outcome: .success, engineMs: engineMs, postprocessMs: postMs)
-            } catch is CancellationError {
-                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
-                return PolishOutcomeBundle(engineOutput: nil, outcome: .cancelled, engineMs: engineMs, postprocessMs: 0)
-            } catch {
-                let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
-                return PolishOutcomeBundle(engineOutput: nil, outcome: .engineFailed, engineMs: engineMs, postprocessMs: 0)
-            }
+        let task = Task {
+            await PolishPipeline.transform(
+                preprocessed: preprocessed, engine: currentEngine, target: target, mode: mode
+            )
         }
         inflight = task
 
@@ -271,49 +234,8 @@ public final class PolishCoordinator {
 
     // MARK: - Helpers
 
-    /// Top-language confidence below which raw is treated as gibberish and polish is skipped.
-    /// ADR 0002 leaves the exact threshold open; 0.5 is a starting point tuned from logs.
-    private static let confidenceThreshold: Double = 0.5
-
     /// Recording duration (seconds) below which the LLM polish is skipped (#141).
     /// On flash dictations the user wants instant text and the model rarely adds
     /// value for ~3-6s of latency. Deterministic passes still run. Tunable.
     private static let engineMinDuration: TimeInterval = 2.0
-
-    private static func detectLanguage(in text: String) -> SupportedLanguage? {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
-        let hypotheses = recognizer.languageHypotheses(withMaximum: 1)
-        guard let top = hypotheses.max(by: { $0.value < $1.value }),
-              top.value >= confidenceThreshold else {
-            return nil
-        }
-        return SupportedLanguage(rawValue: top.key.rawValue)
-    }
-
-    private static func modeFor(sttEngine: SpeechEngine,
-                                detected: SupportedLanguage,
-                                target: SupportedLanguage) -> PolishMode {
-        switch sttEngine {
-        case .whisperKit:
-            // Whisper respects the language picker upstream — always Natural.
-            return .natural
-        case .parakeet:
-            // Parakeet auto-detects; rebuild intent when detected ≠ target.
-            return detected == target ? .natural : .repair
-        }
-    }
-}
-
-private struct PolishOutcomeBundle: Sendable {
-    /// The engine's actual output, or `nil` when the engine never ran successfully
-    /// (cancelled before completion, threw an error). Kept around even when the
-    /// guardrail rejected it so the debug screen can show *what* was rejected.
-    let engineOutput: String?
-    let outcome: PolishMetrics.Outcome
-    /// Pure LLM call duration (the `session.respond`).
-    let engineMs: Int
-    /// Marker decode + NBSP + guardrail, measured after the engine returned.
-    let postprocessMs: Int
 }

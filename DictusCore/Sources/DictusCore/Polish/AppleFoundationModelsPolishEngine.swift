@@ -1,8 +1,7 @@
-// DictusApp/Polish/AppleFoundationModelsPolishEngine.swift
+// DictusCore/Sources/DictusCore/Polish/AppleFoundationModelsPolishEngine.swift
 #if canImport(FoundationModels)
 import Foundation
 import FoundationModels
-import DictusCore
 
 /// The round-1 polish engine. Wraps Apple's on-device Foundation Model with a
 /// per `(mode, language)` `LanguageModelSession` cache so the system prompt is
@@ -12,15 +11,34 @@ import DictusCore
 /// `PolishCoordinator` instantiates this engine only when Apple Intelligence is
 /// usable. The cache has a small bound (8) because round 1 supports at most
 /// 4 languages × 2 modes = 8 combinations.
-@available(iOS 26.0, *)
-final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
+@available(iOS 26.0, macOS 26.0, *)
+public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
-    let identifier = "apple-fm"
+    public let identifier = "apple-fm"
     private let cache = SessionCache(capacity: 8)
 
-    func polish(raw: String,
-                targetLanguage: SupportedLanguage,
-                mode: PolishMode) async throws -> String {
+    /// Optional instructions override. `nil` in the app (uses the shipping
+    /// prompts via `Self.instructions`); the eval harness injects a candidate
+    /// prompt here to A/B against the baseline without recompiling — the session
+    /// wrapper and stateless lifecycle stay identical, only the system prompt
+    /// changes.
+    private let instructionsOverride: (@Sendable (PolishMode, SupportedLanguage) -> String)?
+
+    public init() {
+        self.instructionsOverride = nil
+    }
+
+    public init(instructionsOverride: @escaping @Sendable (PolishMode, SupportedLanguage) -> String) {
+        self.instructionsOverride = instructionsOverride
+    }
+
+    private func resolvedInstructions(mode: PolishMode, language: SupportedLanguage) -> String {
+        instructionsOverride?(mode, language) ?? Self.instructions(for: mode, language: language)
+    }
+
+    public func polish(raw: String,
+                       targetLanguage: SupportedLanguage,
+                       mode: PolishMode) async throws -> String {
         let key = SessionKey(mode: mode, language: targetLanguage)
         // A session lives exactly one polish call. `prewarm()` (fired at
         // recording start) leaves a fresh, warmed session in the cache; we use
@@ -35,7 +53,7 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
         // stateless transform, so we keep at most `instructions + 1 input`.
         let session = await cache.session(
             for: key,
-            instructions: Self.instructions(for: mode, language: targetLanguage)
+            instructions: resolvedInstructions(mode: mode, language: targetLanguage)
         )
         defer { Task { await cache.drop(key) } }
         // Wrap the input with explicit Input/Output framing. Without this Apple
@@ -60,12 +78,12 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
     /// of every recording (#141). Dropping any existing session first guarantees
     /// we warm a virgin session (instructions only, zero accumulated transcript)
     /// — the prerequisite for the stateless invariant in `polish()`.
-    func prewarm(targetLanguage: SupportedLanguage) async {
+    public func prewarm(targetLanguage: SupportedLanguage) async {
         let key = SessionKey(mode: .natural, language: targetLanguage)
         await cache.drop(key)
         let session = await cache.session(
             for: key,
-            instructions: Self.instructions(for: .natural, language: targetLanguage)
+            instructions: resolvedInstructions(mode: .natural, language: targetLanguage)
         )
         session.prewarm()
     }
@@ -78,8 +96,8 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
     /// validation per ADR 0003). Repair mode still falls back to English
     /// for ES + DE — see `docs/agents/language-onboarding.md` §"Polish
     /// prompt" for the procedure to add Repair prompts.
-    static func instructions(for mode: PolishMode,
-                             language: SupportedLanguage) -> String {
+    public static func instructions(for mode: PolishMode,
+                                    language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
         switch (mode, language) {
         case (.natural, .french):
@@ -103,7 +121,7 @@ final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
 // MARK: - Session cache
 
-@available(iOS 26.0, *)
+@available(iOS 26.0, macOS 26.0, *)
 private struct SessionKey: Hashable, Sendable {
     let mode: PolishMode
     let language: SupportedLanguage
@@ -112,7 +130,7 @@ private struct SessionKey: Hashable, Sendable {
 /// Per-`(mode, language)` `LanguageModelSession` cache with naive LRU eviction.
 /// Sessions hold compiled instruction state — keeping them around avoids the
 /// per-call cost of rebuilding the system prompt.
-@available(iOS 26.0, *)
+@available(iOS 26.0, macOS 26.0, *)
 private actor SessionCache {
 
     private var sessions: [SessionKey: LanguageModelSession] = [:]

@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/DictusColors.swift
 // Brand color system with hex initializer and light/dark mode support.
 import SwiftUI
@@ -84,3 +85,4 @@ public extension Color {
         #endif
     }
 }
+#endif
