@@ -42,6 +42,20 @@ public enum PolishPostpass {
         var out = polished
         out = out.replacingOccurrences(of: newlineMarker, with: "\n")
 
+        // Collapse stray newlines (language-agnostic). Each "retour à la ligne"
+        // encodes to exactly one marker, but the model adds its OWN paragraph
+        // breaks around the marker when the text looks structured (a meeting
+        // recap, an enumeration). After decode those stack into `\n\n\n\n`.
+        // Reduce any run of whitespace-separated newlines to a single `\n`, and
+        // trim the spaces hugging each break. We deliberately drop the
+        // single-vs-blank-line distinction — the verbal command does not carry
+        // it, and the model mangles blank lines unreliably anyway.
+        out = out.replacingOccurrences(
+            of: #"[ \t]*\n(?:[ \t]*\n)*[ \t]*"#,
+            with: "\n",
+            options: [.regularExpression]
+        )
+
         switch language {
         case .french:
             // NBSP before ? ! ; :. Pattern matches ONE ASCII space (U+0020)
@@ -51,6 +65,18 @@ public enum PolishPostpass {
             out = out.replacingOccurrences(
                 of: #"[ ]([?!;:])"#,
                 with: "\u{00A0}$1",
+                options: [.regularExpression]
+            )
+            // Restore the accent on a sentence-initial capital `A` — Apple FM
+            // drops accents on capitals just like it drops the NBSP. Narrow on
+            // purpose: a standalone `A` at a sentence start (string start, after
+            // a newline, or after `. ! ? :`) followed by a lowercase word is
+            // almost always the preposition `À` (À très vite / bientôt / plus
+            // tard). If the next word is uppercase (acronym, proper noun) or it
+            // is `A.` (abbreviation), the pattern does not match and we leave it.
+            out = out.replacingOccurrences(
+                of: #"(^|\n|[.!?:]\s+)A(\s+\p{Ll})"#,
+                with: "$1À$2",
                 options: [.regularExpression]
             )
         case .english, .spanish, .german:
