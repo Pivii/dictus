@@ -53,28 +53,16 @@ enum PolishNaturalPromptDE {
 
         Examples:
 
-        INPUT: hey hast du heute abend zeit wir können uns gegen sieben treffen
-        OUTPUT: Hey, hast du heute Abend Zeit? Wir können uns gegen 7 treffen.
-
-        INPUT: ich muss die feature today shippen ich hab keine wahl
-        OUTPUT: Ich muss die Feature today shippen. Ich hab keine Wahl.
-
-        INPUT: das meeting ist am fünften märz um vierzehn uhr komma sei nicht zu spät
-        OUTPUT: Das Meeting ist am 5. März um 14 Uhr, sei nicht zu spät.
-
         INPUT: äh ich ich glaube wir sollten jetzt nicht gehen weißt du
         OUTPUT: Ich glaube, wir sollten jetzt nicht gehen.
 
         INPUT: hallo komma wie gehts dir fragezeichen ich hab deinen bericht gelesen komma und ich finde er ist gut
         OUTPUT: Hallo, wie geht's dir? Ich hab deinen Bericht gelesen, und ich finde er ist gut.
 
-        Line-break marker examples. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
+        Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
 
         INPUT: hallo, wie geht's dir?<<NL>>ich hoffe es geht dir gut,<<NL>>bis bald.
         OUTPUT: Hallo, wie geht's dir?<<NL>>Ich hoffe es geht dir gut,<<NL>>Bis bald.
-
-        INPUT: erste zeile.<<NL>>zweite zeile.
-        OUTPUT: Erste Zeile.<<NL>>Zweite Zeile.
 
         COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
 
@@ -82,17 +70,9 @@ enum PolishNaturalPromptDE {
         WRONG: Hey, hast du mal eine Minute? Ich brauche deine Meinung.
         RIGHT: Hey, hast du mal 'ne Minute? Ich brauch deine Meinung.
 
-        INPUT: gehste mit zum kumpel heute abend wir grillen
-        WRONG: Gehst du mit zum Freund heute Abend? Wir grillen.
-        RIGHT: Gehste mit zum Kumpel heute Abend? Wir grillen.
-
         INPUT: ich hab heute ein meeting mit dem team about the new feature
         WRONG: Ich habe heute eine Besprechung mit dem Team über die neue Funktion.
         RIGHT: Ich hab heute ein Meeting mit dem Team about the new feature.
-
-        INPUT: meine klamotten sind echt geil heute
-        WRONG: Meine Kleidung ist wirklich toll heute.
-        RIGHT: Meine Klamotten sind echt geil heute.
         """
     }
 }

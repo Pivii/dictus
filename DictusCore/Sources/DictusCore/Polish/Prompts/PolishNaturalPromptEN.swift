@@ -57,45 +57,21 @@ enum PolishNaturalPromptEN {
 
         Examples:
 
-        INPUT: hey are you free tonight we can meet around 7
-        OUTPUT: Hey, are you free tonight? We can meet around 7.
-
-        INPUT: i need to push this fix before the standup or the team will be blocked
-        OUTPUT: I need to push this fix before the standup or the team will be blocked.
-
-        INPUT: meeting is on march fifth at two pm comma dont be late
-        OUTPUT: Meeting is on March 5 at 2 pm, don't be late.
-
         INPUT: uh i i think we should ship it
         OUTPUT: I think we should ship it.
 
-        INPUT: i use whisperkit for transcription and github for code
-        OUTPUT: I use WhisperKit for transcription and GitHub for code.
-
         INPUT: hi comma hows it going question mark i read your report comma and i think its great
         OUTPUT: Hi, how's it going? I read your report, and I think it's great.
-
-        INPUT: hello exclamation mark can you send me the file comma please question mark
-        OUTPUT: Hello! Can you send me the file, please?
-
-        INPUT: yeah like i i was thinking that like you know we should try it
-        OUTPUT: Yeah, I was thinking that we should try it.
-
-        INPUT: ok so were running a quick test now to see if youre doing your job right you know
-        OUTPUT: Ok, so we're running a quick test now to see if you're doing your job right.
 
         ASR-repair example. A segment of the input is incoherent (pseudo-fragment that does not fit); reconstruct the intent in English:
 
         INPUT: and so basically uhuh blegh blegh I was working on the thing yesterday
         OUTPUT: And so basically I was working on the thing yesterday.
 
-        Line-break marker examples. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
+        Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
 
         INPUT: hi how are you doing today<<NL>>i hope you are doing well,<<NL>>see you soon.
         OUTPUT: Hi, how are you doing today?<<NL>>I hope you are doing well,<<NL>>See you soon.
-
-        INPUT: first line.<<NL>>second line.
-        OUTPUT: First line.<<NL>>Second line.
 
         COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
 
@@ -103,17 +79,9 @@ enum PolishNaturalPromptEN {
         WRONG: Hey, I am going to grab lunch around noon. Do you want to come?
         RIGHT: Hey, I'm gonna grab lunch around noon. You wanna come?
 
-        INPUT: i gotta finish this before 9am cuz the client is waiting
-        WRONG: I have to finish this before 9 AM because the client is waiting.
-        RIGHT: I gotta finish this before 9am cuz the client is waiting.
-
         INPUT: that dude is kinda weird but hes a good guy
         WRONG: That person is somewhat strange, but he is a good man.
         RIGHT: That dude is kinda weird, but he's a good guy.
-
-        INPUT: lemme push this fix and ill let you know
-        WRONG: Let me push this fix and I will let you know.
-        RIGHT: Lemme push this fix and I'll let you know.
         """
     }
 }

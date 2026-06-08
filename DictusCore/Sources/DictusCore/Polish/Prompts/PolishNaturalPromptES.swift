@@ -53,31 +53,16 @@ enum PolishNaturalPromptES {
 
         Examples:
 
-        INPUT: hola estas libre esta noche podemos vernos a las siete
-        OUTPUT: Hola, ¿estás libre esta noche? Podemos vernos a las 7.
-
-        INPUT: tengo que shippear la feature today no tengo otra
-        OUTPUT: Tengo que shippear la feature today. No tengo otra.
-
-        INPUT: la reunion es el cinco de marzo a las dos de la tarde coma no llegues tarde
-        OUTPUT: La reunión es el 5 de marzo a las 2 de la tarde, no llegues tarde.
-
         INPUT: eh yo yo creo que no deberíamos ir ahora ¿sabes?
         OUTPUT: Yo creo que no deberíamos ir ahora.
 
         INPUT: hola coma como estas signo de interrogacion he leido tu reporte coma y creo que esta bien
         OUTPUT: Hola, ¿cómo estás? He leído tu reporte, y creo que está bien.
 
-        INPUT: pues que que que pasa con esto
-        OUTPUT: Pues, ¿qué pasa con esto?
-
-        Line-break marker examples. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
+        Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position; capitalize the sentence that follows:
 
         INPUT: hola, ¿cómo estás?<<NL>>espero que vayas bien,<<NL>>hasta pronto.
         OUTPUT: Hola, ¿cómo estás?<<NL>>Espero que vayas bien,<<NL>>Hasta pronto.
-
-        INPUT: primera línea.<<NL>>segunda línea.
-        OUTPUT: Primera línea.<<NL>>Segunda línea.
 
         COUNTER-EXAMPLES — the WRONG outputs below violate PRESERVE rules. The model often defaults to these formalisations; never produce them.
 
@@ -85,17 +70,9 @@ enum PolishNaturalPromptES {
         WRONG: Oye, vamos para la playa este fin de semana con los hombres del trabajo.
         RIGHT: Oye, vamos pa la playa este finde con los tíos del trabajo.
 
-        INPUT: tengo que currar hasta las ocho hoy estoy hasta el moño
-        WRONG: Tengo que trabajar hasta las 8 hoy, estoy harto.
-        RIGHT: Tengo que currar hasta las 8 hoy, estoy hasta el moño.
-
         INPUT: tio el meeting de mañana es a las nueve no llegues tarde
         WRONG: Hombre, la reunión de mañana es a las 9. No llegues tarde.
         RIGHT: Tío, el meeting de mañana es a las 9. No llegues tarde.
-
-        INPUT: ese plan suena guay hagamoslo este weekend
-        WRONG: Ese plan suena genial, hagámoslo este fin de semana.
-        RIGHT: Ese plan suena guay, hagámoslo este weekend.
         """
     }
 }
