@@ -127,6 +127,11 @@ func runHarness() async {
                 let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected?.rawValue ?? "-")→\(o.mode?.rawValue ?? "-")"
                 print("  polished\(tag): \(o.final)")
                 print("            (\(route))")
+                // When the guardrail rejects, `final` is the raw fallback — surface
+                // what the engine actually produced so repair/guardrail issues are visible.
+                if o.outcome != .success, let engineOutput = o.engineOutput {
+                    print("  engineOut\(tag): \(engineOutput)")
+                }
             }
         }
 

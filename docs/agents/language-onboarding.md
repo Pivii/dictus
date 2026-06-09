@@ -113,7 +113,7 @@ The polish layer (issue #141, ADR 0003) runs a per-language system prompt agains
 
 ### Where to add the prompt
 
-`DictusApp/Polish/Prompts/PolishNaturalPrompt<XX>.swift` where `<XX>` is the uppercase two-letter ISO 639-1 code (`FR`, `EN`, `ES`, `DE`, …). One file per language, one `enum` per file, single static `instructions(glossary:)` method returning the prompt string.
+`DictusCore/Sources/DictusCore/Polish/Prompts/PolishNaturalPrompt<XX>.swift` where `<XX>` is the uppercase two-letter ISO 639-1 code (`FR`, `EN`, `ES`, `DE`, …). One file per language, one `enum` per file, single static `instructions(glossary:)` method returning the prompt string.
 
 ### What to copy from
 
@@ -159,7 +159,20 @@ case (.natural, .<yourLanguage>):
 
 The compiler enforces exhaustiveness — adding a new `SupportedLanguage` case without an arm here is a build error, which is what we want.
 
-For Xcode project membership: add the new file to `DictusApp/Polish/Prompts/` in the `Prompts` group. Use a fresh UUID pair (`AA00P2NN` build file + `AA10P2NN` file reference) — see the existing entries in `Dictus.xcodeproj/project.pbxproj` for the pattern. The `P21x` range is taken by FR/EN Natural and FR/EN Repair; `P214`/`P215` are ES/DE Natural; pick `P216` and above for new prompts.
+No Xcode project edits are needed: the prompts live in the `DictusCore` SwiftPM target (`path: "Sources/DictusCore"`), which auto-discovers every `.swift` file under it. Just create the file in the `Prompts/` directory and it compiles.
+
+### Repair prompts
+
+Each language also needs a `PolishRepairPrompt<XX>.swift` (Repair mode, ADR 0002). Repair fires on Parakeet when the language detected on the raw STT output differs from the target — Parakeet ignores the language picker, so a speaker who code-switches can get a transcript in the wrong language, and Repair reconstructs the intent in the target language.
+
+Without a dedicated Repair prompt, the dispatch falls back to `PolishRepairPromptEN`, which forces **English** output — the language guardrail (`PolishGuardrail.detectedLanguageMatches`) then rejects it and writes raw instead, so the user gets no polish at all. Copy `PolishRepairPromptFR.swift` (template) and wire the arm:
+
+```swift
+case (.repair, .<yourLanguage>):
+    return PolishRepairPrompt<XX>.instructions(glossary: glossary)
+```
+
+Caveat (Apple FM, 26.x): cross-lingual reconstruction is not uniformly reliable. ES Repair works; **DE Repair reproducibly leaks Polish** when reconstructing from a Romance-language input, and the prior is not promptable away. The guardrail catches it (raw fallback), but until a third-party local LLM lands, Repair quality is language-dependent and must be checked per language with `polish-harness show`.
 
 ### Validation
 

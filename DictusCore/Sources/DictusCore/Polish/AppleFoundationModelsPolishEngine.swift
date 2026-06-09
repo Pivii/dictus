@@ -91,11 +91,12 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     // MARK: - Instruction routing
 
     /// Returns the system prompt for `(mode, language)`. All four supported
-    /// languages have a dedicated Natural prompt (FR + EN tested against
-    /// real dictation; ES + DE authored on-paper, pending native-speaker
-    /// validation per ADR 0003). Repair mode still falls back to English
-    /// for ES + DE — see `docs/agents/language-onboarding.md` §"Polish
-    /// prompt" for the procedure to add Repair prompts.
+    /// languages have a dedicated prompt in BOTH Natural and Repair modes
+    /// (FR + EN tested against real dictation; ES + DE authored on-paper,
+    /// pending native-speaker validation per ADR 0003). The English fallback
+    /// survives in the dispatch only as the documented behaviour for any
+    /// future language added without a dedicated prompt — see
+    /// `docs/agents/language-onboarding.md` §"Polish prompt".
     public static func instructions(for mode: PolishMode,
                                     language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
@@ -112,9 +113,10 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
             return PolishRepairPromptFR.instructions(glossary: glossary)
         case (.repair, .english):
             return PolishRepairPromptEN.instructions(glossary: glossary)
-        case (.repair, .spanish), (.repair, .german):
-            // English Repair fallback for languages without a dedicated prompt.
-            return PolishRepairPromptEN.instructions(glossary: glossary)
+        case (.repair, .spanish):
+            return PolishRepairPromptES.instructions(glossary: glossary)
+        case (.repair, .german):
+            return PolishRepairPromptDE.instructions(glossary: glossary)
         }
     }
 }

@@ -91,3 +91,11 @@ The whole layer is reversible: a single feature flag in App Group preferences tu
 - Cancellation: `PolishCoordinator` holds a reference to the in-flight `Task`; a new dictation starting in DictusApp calls `task.cancel()` on the previous polish before the new one begins. Apple FM session `respond(to:)` is cancellable via Swift task cancellation.
 - Glossary content evolves by PR; initial seed list to be determined at first-implementation time, sourced from terms observed mistranscribed during development.
 - Round 2 trigger: after enough on-device A/B usage to characterize p50/p95 latency, Mode B trigger rate, and rejection rate by guardrail. Threshold for "enough" is not pre-defined; reviewer judgement based on log volume.
+
+## Update — 2026-06-08: ES/DE Repair prompts added
+
+Round 1 shipped Repair prompts for FR/EN only; ES and DE fell back to the English Repair prompt, which forced English output and was then correctly rejected by the language guardrail (raw written instead). Dedicated `PolishRepairPromptES` / `PolishRepairPromptDE` now exist and are wired in `AppleFoundationModelsPolishEngine.instructions(for:language:)`. The English fallback survives only for a future language added without a dedicated prompt.
+
+- **ES Repair works** (verified via `polish-harness` on Apple FM: clean French → faithful Spanish, `success`).
+- **DE Repair has a known Apple FM limitation**: cross-lingual reconstruction INTO German from a Romance-language input reproducibly leaks Polish, regardless of the OUTPUT LANGUAGE lock (not promptable away — confirmed across multiple runs and an explicit "never Polish" reinforcement). The guardrail catches it → raw fallback, so the user never sees the leak. German→German (Natural mode) is unaffected. Net for DE Repair: same user-visible behaviour as before (raw fallback), now correctly routed; the real fix is the round-2 third-party local LLM.
+- These ES/DE prompts are on-paper, pending native-speaker validation (same status as the Natural ES/DE prompts).
