@@ -31,6 +31,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>17</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>whatsapp</string>
