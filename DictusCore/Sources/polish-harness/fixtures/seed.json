@@ -80,5 +80,85 @@
       { "notContains": "how are you" },
       { "lengthRatioMax": 1.4 }
     ]
+  },
+
+  {
+    "id": "8-verbal-clean",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 1. Clean verbal punctuation, succeeds on device.",
+    "raw": "Ok, virgule, petit test, virgule, deuxième test, point.",
+    "expect": [
+      { "notContains": "virgule" },
+      { "contains": "test" }
+    ]
+  },
+  {
+    "id": "9-verbal-questions",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 2. Spoken ? and ! commands.",
+    "raw": "Salut, comment ça va ? Point d'interrogation. Génial. Point d'exclamation.",
+    "expect": [
+      { "notContains": "Point d'interrogation" },
+      { "notContains": "Point d'exclamation" },
+      { "contains": "?" }
+    ]
+  },
+  {
+    "id": "10-verbal-list-parakeet-error",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 3. Parakeet mis-heard 'deux points'->'de point', 'lait'->'les', 'oeufs'->'oeuf'. Out-of-scope STT errors; kept to watch the verbal pre-pass behaviour.",
+    "raw": "Liste de point, pain, point virgule, les point virgule, oeuf, point.",
+    "expect": [
+      { "notContains": "point virgule" }
+    ]
+  },
+  {
+    "id": "11-verbal-newlines",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 4. 'retour a la ligne' -> newline. Works on device (simulator-only failure was an Apple FM proxy artefact).",
+    "raw": "Première ligne, retour à la ligne. Deuxième ligne, retour à la ligne, troisième ligne.",
+    "expect": [
+      { "notContains": "retour à la ligne" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "12-point-final-KNOWN-BUG-B",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, events 5/8/9/10. KNOWN STRUCTURAL BUG B (#185): the pre-pass regex converts the literal noun 'point' in 'un point final' -> 'un. final.'. Engine then engineFailed 4/4 on device. EXPECTED TO FAIL until the LLM owns punctuation (regex cannot tell the noun from the command). Do not paper over with brittle heuristics.",
+    "raw": "Je mets un point final point.",
+    "expect": [
+      { "contains": "point final" }
+    ]
+  },
+  {
+    "id": "13-verbal-mixed",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 6. Succeeds on device.",
+    "raw": "Bonjour Pierre, tu vas bien. Point d'interrogation. A très vite. Point.",
+    "expect": [
+      { "notContains": "Point d'interrogation" },
+      { "contains": "Pierre" },
+      { "contains": "?" }
+    ]
+  },
+  {
+    "id": "14-verbal-long-mixed",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Device export 2026-06-09, event 7. Long mixed clip, succeeds on device.",
+    "raw": "Donc là je fais un petit test de transcription, retour à la ligne. Je vais faire des tests avec de la ponctuation. Point. Ça marche. Point d'exclamation. Est-ce que c'est normal ? Point d'interrogation.",
+    "expect": [
+      { "notContains": "retour à la ligne" },
+      { "notContains": "Point d'exclamation" },
+      { "notContains": "Point d'interrogation" },
+      { "regexAbsent": "<<NL>>" }
+    ]
   }
 ]

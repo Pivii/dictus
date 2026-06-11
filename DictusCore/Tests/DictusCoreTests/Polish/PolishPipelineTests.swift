@@ -36,6 +36,51 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertTrue(result.engineOutput?.contains("\n") == true)
     }
 
+    // MARK: - resolvedOutput()  (#185)
+
+    /// On success the user gets the engine output verbatim.
+    func testResolvedOutputReturnsEngineOutputOnSuccess() {
+        let result = PolishPipeline.Result(
+            engineOutput: "Ok, petit test.", outcome: .success, engineMs: 5, postprocessMs: 0
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ignored", target: .french)
+        XCTAssertEqual(out, "Ok, petit test.")
+    }
+
+    /// On a non-success outcome the user gets the deterministic floor (decoded
+    /// pre-pass), NOT the literal raw — the verbal-punctuation work survives an
+    /// engine failure. Here the pre-pass already turned "virgule" into ",".
+    func testResolvedOutputFallsBackToPreprocessedOnEngineFailed() {
+        let preprocessed = "Ok, petit test."
+        let result = PolishPipeline.Result(
+            engineOutput: nil, outcome: .engineFailed, engineMs: 600, postprocessMs: 0
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french)
+        XCTAssertEqual(out, preprocessed)
+        XCTAssertFalse(out.contains("virgule"))
+    }
+
+    /// A guardrail rejection discards the engine output and also falls back to
+    /// the deterministic floor rather than the raw.
+    func testResolvedOutputFallsBackToPreprocessedOnGuardrailReject() {
+        let preprocessed = "Bonjour Pierre."
+        let result = PolishPipeline.Result(
+            engineOutput: "something the guardrail rejected", outcome: .rejectedGuardrail, engineMs: 700, postprocessMs: 1
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french)
+        XCTAssertEqual(out, preprocessed)
+    }
+
+    /// The floor still applies French typography (NBSP before `?`) on fallback,
+    /// proving it routes through `decodeFromEngine`, not a bare passthrough.
+    func testResolvedOutputAppliesTypographyOnFallback() {
+        let result = PolishPipeline.Result(
+            engineOutput: nil, outcome: .cancelled, engineMs: 0, postprocessMs: 0
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ça va ?", target: .french)
+        XCTAssertEqual(out, "ça va\u{00A0}?")
+    }
+
     // MARK: - detectLanguage()
 
     func testDetectLanguageReturnsNilForEmpty() {

@@ -104,12 +104,15 @@ struct RunOutcome {
 func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
     let target = fx.language
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
+    // Mirror the coordinator's fallback: non-success returns the deterministic
+    // floor (decoded pre-pass), never the literal raw. (#185)
     guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
-        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
+        let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
+        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
     }
     let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: target, mode: mode)
-    let final = (r.outcome == .success) ? (r.engineOutput ?? fx.raw) : fx.raw
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: target)
     return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected, mode: mode)
 }
 
