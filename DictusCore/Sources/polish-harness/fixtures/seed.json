@@ -127,10 +127,10 @@
     ]
   },
   {
-    "id": "12-point-final-KNOWN-BUG-B",
+    "id": "12-point-noun-preserved",
     "lang": "fr",
     "sttEngine": "PK",
-    "_note": "Device export 2026-06-09, events 5/8/9/10. KNOWN STRUCTURAL BUG B (#185): the pre-pass regex converts the literal noun 'point' in 'un point final' -> 'un. final.'. Engine then engineFailed 4/4 on device. EXPECTED TO FAIL until the LLM owns punctuation (regex cannot tell the noun from the command). Do not paper over with brittle heuristics.",
+    "_note": "Device export 2026-06-09, events 5/8/9/10. Was Bug B: the pre-pass converted the noun 'point' in 'un point final' -> 'un. final'. Fixed (#185) by dropping the bare 'point' rule. The noun must now survive the pre-pass intact. The trailing spoken 'point' command stays a word too (accepted trade-off until the LLM owns punctuation).",
     "raw": "Je mets un point final point.",
     "expect": [
       { "contains": "point final" }

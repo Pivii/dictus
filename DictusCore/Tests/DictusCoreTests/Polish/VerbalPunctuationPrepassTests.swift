@@ -41,11 +41,18 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
         )
     }
 
-    func testFrenchPointSingleWord() {
-        XCTAssertEqual(
-            VerbalPunctuationPrepass.apply("la phrase est finie point", language: .french),
-            "la phrase est finie."
-        )
+    /// The bare "point" word is intentionally NOT converted (#185): it collides
+    /// with the common French noun. The LLM supplies the terminal period.
+    func testFrenchBarePointNotConverted() {
+        let raw = "la phrase est finie point"
+        XCTAssertEqual(VerbalPunctuationPrepass.apply(raw, language: .french), raw)
+    }
+
+    /// The noun "point" inside a sentence must survive untouched (#185) — this
+    /// is the whole reason the bare rule was dropped.
+    func testFrenchPointNounPreserved() {
+        let raw = "je partage un point de vue sur ce point final"
+        XCTAssertEqual(VerbalPunctuationPrepass.apply(raw, language: .french), raw)
     }
 
     func testFrenchMultipleSubstitutionsInOneSentence() {
@@ -93,8 +100,9 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
         )
     }
 
-    /// "trois points" (plural) must NOT match the singular "point" rule.
-    func testFrenchWordBoundaryProtectsPlural() {
+    /// "trois points" (plural) is untouched — and since the bare "point" rule
+    /// was dropped (#185), so is the singular form.
+    func testFrenchPointsPluralUntouched() {
         let raw = "j'ai mis trois points sur ma carte"
         let result = VerbalPunctuationPrepass.apply(raw, language: .french)
         XCTAssertEqual(result, raw)
@@ -137,11 +145,18 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
         )
     }
 
-    func testEnglishPeriodAndComma() {
+    /// "full stop" converts but the bare "period" word does not (#185) — it
+    /// collides with the common English noun ("a period of time").
+    func testEnglishBarePeriodNotConverted() {
         XCTAssertEqual(
             VerbalPunctuationPrepass.apply("hello comma world period", language: .english),
-            "hello, world."
+            "hello, world period"
         )
+    }
+
+    func testEnglishPeriodNounPreserved() {
+        let raw = "we had a long period of calm"
+        XCTAssertEqual(VerbalPunctuationPrepass.apply(raw, language: .english), raw)
     }
 
     func testEnglishSemicolonAndColon() {
@@ -166,7 +181,8 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
     }
 
     func testEnglishMultipleSubstitutions() {
-        let raw = "Hi how are you question mark I read your report comma and I think it's great period"
+        // "period" stays a word (#185); "full stop" gives the terminal mark.
+        let raw = "Hi how are you question mark I read your report comma and I think it's great full stop"
         let expected = "Hi how are you ? I read your report, and I think it's great."
         XCTAssertEqual(VerbalPunctuationPrepass.apply(raw, language: .english), expected)
     }
@@ -194,12 +210,12 @@ final class VerbalPunctuationPrepassTests: XCTestCase {
         XCTAssertEqual(VerbalPunctuationPrepass.apply(raw, language: .french), raw)
     }
 
-    /// Multiple-word punctuation must win over single-word: don't let \bpoint\b
-    /// match the "point" inside "point d'interrogation".
-    func testFrenchOrderingMultiWordWins() {
+    /// Multi-word "point d'interrogation" still converts; the trailing bare
+    /// "point" now stays a word (#185).
+    func testFrenchMultiWordConvertsBarePointStays() {
         XCTAssertEqual(
             VerbalPunctuationPrepass.apply("la question est point d'interrogation pas point", language: .french),
-            "la question est ? pas."
+            "la question est ? pas point"
         )
     }
 
