@@ -17,8 +17,21 @@ import Foundation
 /// Scope at round 1: French and English. Spanish/German added in step 7.
 ///
 /// Known false positives: literal references to punctuation ("ma virgule est
-/// cassée", "I had a period of doubt") become substitutions. Accepted — the
-/// dictation use case is dominant in practice.
+/// cassée") become substitutions. Accepted — the dictation use case is
+/// dominant in practice.
+///
+/// EXCLUDED ON PURPOSE — the bare sentence-period word (#185): French "point"
+/// and English "period" are NOT in the rules. Unlike every other command they
+/// are extremely common ordinary words ("un point de vue", "faire le point", "à
+/// quel point" / "a period of time", "period drama"), and being single short
+/// tokens they offer no multi-word context to disambiguate. Converting them
+/// silently corrupts the sentence ("un point final" → "un. final"). We accept
+/// the cost of dropping them because the LLM already supplies the terminal
+/// period at natural sentence boundaries on its own (observed on device). The
+/// unambiguous multi-word marks that merely CONTAIN "point" ("point
+/// d'interrogation", "point d'exclamation", "point virgule") stay. The same
+/// principle pre-emptively bars Spanish "punto" and German "Punkt" when those
+/// languages get rules. Revisit once the LLM owns punctuation contextually.
 public enum VerbalPunctuationPrepass {
 
     /// Apply the language's verbal-punctuation rules to `raw`. Returns the
@@ -43,14 +56,16 @@ public enum VerbalPunctuationPrepass {
         switch language {
         case .french:  return frenchRules
         case .english: return englishRules
+        // Not yet implemented. When adding rules, do NOT include the bare
+        // period word ("punto" / "Punkt") — see the type doc-comment (#185).
         case .spanish, .german: return []
         }
     }
 
     /// Order matters: multi-word phrases before shorter substrings that would
-    /// otherwise match a piece of them. `\b` enforces word boundaries so
-    /// "trois points" (plural) does NOT trigger the singular "point" rule.
-    /// `['’]` matches both ASCII and typographic apostrophe.
+    /// otherwise match a piece of them. `\b` enforces word boundaries.
+    /// `['’]` matches both ASCII and typographic apostrophe. The bare "point"
+    /// rule is intentionally absent — see the type doc-comment (#185).
     private static let frenchRules: [(pattern: String, replacement: String)] = [
         (#"\bretour à la ligne\b"#, "\n"),
         (#"\bnouvelle ligne\b"#, "\n"),
@@ -60,9 +75,10 @@ public enum VerbalPunctuationPrepass {
         (#"\bpoint virgule\b"#, ";"),
         (#"\bdeux points\b"#, ":"),
         (#"\bvirgule\b"#, ","),
-        (#"\bpoint\b"#, "."),
     ]
 
+    /// The bare "period" rule is intentionally absent — see the type
+    /// doc-comment (#185). "full stop" stays: it is unambiguous.
     private static let englishRules: [(pattern: String, replacement: String)] = [
         (#"\bnew line\b"#, "\n"),
         (#"\bnewline\b"#, "\n"),
@@ -71,7 +87,6 @@ public enum VerbalPunctuationPrepass {
         (#"\bfull stop\b"#, "."),
         (#"\bsemicolon\b"#, ";"),
         (#"\bcolon\b"#, ":"),
-        (#"\bperiod\b"#, "."),
         (#"\bcomma\b"#, ","),
     ]
 

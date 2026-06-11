@@ -169,23 +169,30 @@ public final class PolishCoordinator {
 
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
         guard let detected else {
+            // Return the deterministic floor, NOT the literal raw: the verbal-
+            // punctuation pre-pass already ran (~0ms) and the user expects their
+            // spoken "virgule"/"point" turned into marks even when the LLM is
+            // skipped. Same value the < engineMinDuration gate returns. (#185)
             let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+            let postStart = Date()
+            let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
+            let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
             let m = PolishMetrics(
                 engine: engineID,
                 mode: nil,
                 targetLanguage: target,
                 detectedLanguage: nil,
                 rawCharCount: raw.count,
-                polishedCharCount: raw.count,
-                latencyMs: preprocessMs,
+                polishedCharCount: fallback.count,
+                latencyMs: preprocessMs + postMs,
                 outcome: .skipped,
                 sttEngine: sttEngine.rawValue,
                 sttModelID: sttModelID,
-                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: 0)
+                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
             )
             PolishMetrics.log(m)
             await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
-            return raw
+            return fallback
         }
 
         let mode = PolishPipeline.mode(sttEngine: sttEngine, detected: detected, target: target)
@@ -207,7 +214,10 @@ public final class PolishCoordinator {
         // True total, methodStart → here. Any gap vs (pre+engine+post) is
         // Swift Task scheduling / actor-hop overhead — itself worth seeing.
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
-        let returned: String = (bundle.outcome == .success) ? (bundle.engineOutput ?? raw) : raw
+        // On any non-success (engine failed, guardrail rejected, cancelled) fall
+        // back to the deterministic floor, never the literal raw — see
+        // `PolishPipeline.resolvedOutput`. (#185)
+        let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, target: target)
 
         let m = PolishMetrics(
             engine: engineID,

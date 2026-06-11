@@ -76,6 +76,26 @@ public enum PolishPipeline {
         }
     }
 
+    /// The string the user actually receives, given a transform `Result` and the
+    /// deterministic pre-pass output. On `.success` it's the accepted engine
+    /// output; on EVERY other outcome (gibberish-skip, engine failure, guardrail
+    /// rejection, cancellation) it's the deterministic floor — the pre-pass text
+    /// with newline markers decoded and target-language typography applied.
+    ///
+    /// Crucially it is NEVER the literal `raw`: a non-success must not throw away
+    /// the free, deterministic verbal-punctuation work (otherwise the user sees
+    /// the spoken command words "virgule" / "point" left in the text). This
+    /// matches what the coordinator's `< engineMinDuration` gate already returns.
+    /// (#185)
+    public static func resolvedOutput(_ result: Result,
+                                      preprocessed: String,
+                                      target: SupportedLanguage) -> String {
+        if result.outcome == .success, let output = result.engineOutput {
+            return output
+        }
+        return PolishPostpass.decodeFromEngine(preprocessed, language: target)
+    }
+
     // MARK: - Language detection + mode selection
 
     /// Default top-language confidence below which text is treated as gibberish
