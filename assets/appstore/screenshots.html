@@ -122,6 +122,26 @@
     filter: drop-shadow(0 18px 40px rgba(10, 22, 40, 0.28));
   }
 
+  /* ── In-screen transcription result pill (slide 4) ──
+     Replicates the app's real result card: white rounded pill,
+     SF system font, centered inside the phone screen. */
+  .screen-pill {
+    position: absolute;
+    top: 1480px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 780px;
+    padding: 36px 30px;
+    text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 31px;
+    font-weight: 400;
+    color: #1d1d1f;
+    background: #FBFBFD;
+    border-radius: 40px;
+    box-shadow: 0 12px 34px rgba(10, 22, 40, 0.10);
+  }
+
   /* ── Preview mode (?preview) ──────────────────── */
   body.preview { padding: 24px; }
   .hint { display: none; }
@@ -168,9 +188,9 @@ const CONFIG = [
   },
   {
     id: "03-private",
-    eyebrow: "Private by design",
+    eyebrow: "Open source",
     headline: "Your voice stays yours",
-    subtext: "Nothing ever leaves your iPhone. No account, no tracking.",
+    subtext: "Nothing ever leaves your iPhone. No account, no tracking — and the code is public, so you can verify it.",
     image: "source/screen3-home.png",
     layout: "device",
   },
@@ -181,6 +201,10 @@ const CONFIG = [
     subtext: "Speak naturally in French, English, German or Spanish.",
     image: "source/screen4-dictation.png",
     layout: "device",
+    /* Replica of the app's real transcription-result card (same pill
+       the app shows once dictation ends) overlaid on the recording
+       state — the slide demonstrates its own headline. */
+    screenPill: "Fast and accurate dictation.",
   },
   {
     id: "05-keyboard",
@@ -271,7 +295,8 @@ CONFIG.forEach((c) => {
       <div class="headline">${c.headline}</div>
       <div class="subtext">${c.subtext}</div>
     </div>
-    ${c.brandIcon ? `<img class="appicon" src="${c.brandIcon}" alt="">` : ""}`;
+    ${c.brandIcon ? `<img class="appicon" src="${c.brandIcon}" alt="">` : ""}
+    ${c.screenPill ? `<div class="screen-pill">${c.screenPill}</div>` : ""}`;
   strip.appendChild(panel);
 });
 
