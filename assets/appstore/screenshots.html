@@ -4,28 +4,31 @@
 <meta charset="UTF-8">
 <title>Dictus — App Store Screenshots (1320×2868 × 5)</title>
 <!--
-  Dictus App Store screenshot template — issue #189
-  ──────────────────────────────────────────────────
+  Dictus App Store screenshot template V2 — issue #189
+  ─────────────────────────────────────────────────────
   • 5 panels of exactly 1320×2868 px, side by side (6600×2868 strip).
-  • One continuous brand waveform + one continuous light→navy gradient
-    across the whole strip (panorama effect when slides sit side by side).
+  • Single light background + one continuous brand waveform across the
+    whole strip (panorama effect: blue pulses meet at the slide seams).
+  • Mixed framing: full device (panels 2-3) and zoomed bottom-bleed crops
+    (panels 1, 4, 5) so dense UI areas fill the slide instead of empty
+    screens. DM Mono "spec sheet" callout pills annotate each slide.
   • Waveform is a deterministic port of dictus-website Waveform.tsx
-    (itself a port of iOS BrandWaveform.swift): rounded bars, blue
-    gradient #6BA3FF→#2563EB on each panel's center, fading edge bars.
-  • Edit texts / image mapping in the CONFIG array at the bottom.
+    (itself a port of iOS BrandWaveform.swift).
+  • Edit texts / images / layout / callouts in the CONFIG array below.
   • Export: capture each .panel element at 1320×2868 (Playwright element
     screenshot, or DevTools "Capture node screenshot").
   • Open with ?preview to scale the strip to fit the window.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
 <style>
   :root {
     --panel-w: 1320px;
     --panel-h: 2868px;
     --navy: #0A1628;
     --accent: #3D7EFF;
+    --accent-deep: #2563EB;
     --highlight: #6BA3FF;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -38,11 +41,7 @@
     display: flex;
     transform-origin: top left;
   }
-  #bg {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-  }
+  #bg { position: absolute; inset: 0; z-index: 0; }
 
   .panel {
     position: relative;
@@ -50,18 +49,15 @@
     height: var(--panel-h);
     flex: none;
     z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     overflow: hidden;
   }
 
   /* ── Text block ───────────────────────────────── */
   .copy {
-    /* Fixed height so the device tops align across all 5 panels
-       (headline/subtext line counts vary) — panorama continuity */
+    position: absolute;
+    top: 0; left: 0; right: 0;
     height: 690px;
-    padding: 150px 110px 0;
+    padding: 150px 100px 0;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -74,60 +70,115 @@
     font-size: 38px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
+    color: var(--accent-deep);
   }
-  /* Eyebrow: brand blue, but darker shade on light bg for contrast */
-  .panel.light .eyebrow { color: #2563EB; }
-  .panel.dark  .eyebrow { color: var(--highlight); }
   .headline {
     font-family: "DM Sans", sans-serif;
     font-weight: 350;
     font-size: 104px;
     line-height: 1.08;
     letter-spacing: -0.03em;
+    color: var(--navy);
   }
   .subtext {
     font-family: "DM Sans", sans-serif;
     font-weight: 400;
     font-size: 42px;
     line-height: 1.45;
-    max-width: 1010px;
+    max-width: 1030px;
+    color: rgba(10, 22, 40, 0.62);
   }
-  /* Per-panel text colors — light panels get navy text, dark panels white */
-  .panel.light .headline { color: var(--navy); }
-  .panel.light .subtext  { color: rgba(10, 22, 40, 0.62); }
-  .panel.dark  .headline { color: #FFFFFF; }
-  .panel.dark  .subtext  { color: rgba(255, 255, 255, 0.66); }
 
-  /* ── Device mockup ────────────────────────────── */
+  /* ── Full device mockup (panels 2-3) ──────────── */
   .device {
-    margin-top: 0;
+    position: absolute;
+    top: 770px;
+    left: 50%;
+    transform: translateX(-50%);
     width: 960px;
     border-radius: 152px;
     padding: 22px;
     background: #1C1F26;
     box-shadow:
-      0 0 0 3px rgba(255, 255, 255, 0.10),
-      0 60px 140px rgba(4, 10, 22, 0.45);
-    flex: none;
+      0 0 0 3px rgba(255, 255, 255, 0.55),
+      0 80px 160px rgba(10, 22, 40, 0.28),
+      0 24px 48px rgba(10, 22, 40, 0.14);
   }
-  .panel.dark .device {
+  .device img { display: block; width: 100%; border-radius: 130px; }
+
+  /* ── Zoomed bottom-bleed crop (panels 1, 4, 5) ── */
+  .crop {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1120px;
+    overflow: hidden;
+    border-radius: 110px 110px 0 0;
+    border: 6px solid #1C1F26;
+    border-bottom: none;
+    background: #1C1F26;
     box-shadow:
-      0 0 0 3px rgba(255, 255, 255, 0.14),
-      0 60px 140px rgba(0, 0, 0, 0.6);
+      0 0 0 3px rgba(255, 255, 255, 0.55),
+      0 -40px 140px rgba(10, 22, 40, 0.22);
   }
-  .device img {
+  .crop img {
     display: block;
     width: 100%;
-    border-radius: 130px;
+    /* anchored so the BOTTOM of the screenshot is visible */
+    margin-top: var(--img-shift, 0);
+  }
+
+  /* ── Callout pills & quote card ───────────────── */
+  .pill {
+    position: absolute;
+    font-family: "DM Mono", monospace;
+    font-weight: 500;
+    font-size: 31px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--accent-deep);
+    background: rgba(255, 255, 255, 0.82);
+    border: 2.5px solid rgba(37, 99, 235, 0.38);
+    border-radius: 999px;
+    padding: 22px 40px;
+    box-shadow: 0 14px 36px rgba(10, 22, 40, 0.10);
+  }
+  .quote {
+    position: absolute;
+    font-family: "DM Sans", sans-serif;
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1.35;
+    color: var(--navy);
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 48px;
+    padding: 40px 56px;
+    white-space: nowrap;
+    box-shadow: 0 24px 70px rgba(10, 22, 40, 0.16);
+  }
+  .quote .bars {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-right: 18px;
+    vertical-align: -6px;
+  }
+  .quote .bars i {
+    display: inline-block;
+    width: 9px;
+    border-radius: 5px;
+    background: linear-gradient(180deg, var(--highlight), var(--accent-deep));
   }
 
   /* ── Preview mode (?preview) ──────────────────── */
   body.preview { padding: 24px; }
+  .hint { display: none; }
   body.preview .hint {
+    display: block;
     color: #8b97ad; font: 14px/1.5 "DM Sans", sans-serif; margin-bottom: 16px;
   }
-  .hint { display: none; }
-  body.preview .hint { display: block; }
 </style>
 </head>
 <body>
@@ -139,7 +190,12 @@
 
 <script>
 /* ════════════════════════════════════════════════════════════
-   CONFIG — edit texts and image mapping here
+   CONFIG — texts, images, layout and callouts per panel
+   ─ layout "device": full phone mockup
+   ─ layout "crop":   zoomed UI detail, bleeding off the bottom edge.
+       cropHeight = visible card height in px
+       imgWidth   = rendered screenshot width in px (zoom level)
+   ─ callouts: absolutely-positioned annotations (px within panel)
    ════════════════════════════════════════════════════════════ */
 const CONFIG = [
   {
@@ -148,6 +204,13 @@ const CONFIG = [
     headline: "Dictate in any app",
     subtext: "Tap the mic on the keyboard, speak, and your words appear — anywhere you type.",
     image: "source/screen1-keyboard-dictating.png",
+    layout: "crop",
+    cropHeight: 1750,
+    imgWidth: 1108,
+    callouts: [
+      { type: "quote", html: `<span class="bars"><i style="height:22px"></i><i style="height:44px"></i><i style="height:30px"></i></span>“Running late — be there in ten.”`,
+        style: "top: 830px; left: 50%; transform: translateX(-50%) rotate(-1.5deg);" },
+    ],
   },
   {
     id: "02-offline",
@@ -155,6 +218,8 @@ const CONFIG = [
     headline: "Works completely offline",
     subtext: "On-device models (Whisper & Parakeet). No internet, no servers.",
     image: "source/screen2-models.png",
+    layout: "device",
+    callouts: [],
   },
   {
     id: "03-private",
@@ -162,6 +227,12 @@ const CONFIG = [
     headline: "Your voice stays yours",
     subtext: "Nothing ever leaves your iPhone. No account, no tracking.",
     image: "source/screen3-home.png",
+    layout: "device",
+    callouts: [
+      { type: "pill", text: "No account",  style: "top: 1210px; left: 50px; transform: rotate(-4deg);" },
+      { type: "pill", text: "No tracking", style: "top: 1690px; right: 36px; transform: rotate(3deg);" },
+      { type: "pill", text: "0 bytes sent", style: "top: 2280px; left: 70px; transform: rotate(2.5deg);" },
+    ],
   },
   {
     id: "04-fast",
@@ -169,6 +240,15 @@ const CONFIG = [
     headline: "Fast, accurate dictation",
     subtext: "Speak naturally in French, English, German or Spanish.",
     image: "source/screen4-dictation.png",
+    layout: "crop",
+    cropHeight: 1330,
+    imgWidth: 1108,
+    callouts: [
+      { type: "pill", text: "Français", style: "top: 900px;  left: 96px;  transform: rotate(-4deg);" },
+      { type: "pill", text: "English",  style: "top: 1080px; right: 120px; transform: rotate(3deg);" },
+      { type: "pill", text: "Deutsch",  style: "top: 1290px; left: 170px; transform: rotate(2deg);" },
+      { type: "pill", text: "Español",  style: "top: 1440px; right: 88px; transform: rotate(-2.5deg);" },
+    ],
   },
   {
     id: "05-keyboard",
@@ -176,19 +256,22 @@ const CONFIG = [
     headline: "A keyboard with a mic",
     subtext: "Type when you want, talk when you don't — in every app.",
     image: "source/screen5-keyboard-qwerty.png",
+    layout: "crop",
+    cropHeight: 1560,
+    imgWidth: 1108,
+    callouts: [
+      { type: "pill", text: "Tap to dictate ↓", style: "top: 1170px; right: 96px; transform: rotate(2deg);" },
+    ],
   },
 ];
 
-/* Background gradient: light app tone → brand navy.
-   `darkness(u)` (u = 0..1 across the strip) drives both the bg color and
-   the waveform edge-bar color. Transition concentrated over panels 3→4 so
-   panels 1-3 read as "light" and 4-5 as "dark". */
-const LIGHT_RGB = [245, 246, 250];   // #F5F6FA — app light background
-const NAVY_RGB  = [10, 22, 40];      // #0A1628 — brand navy
-const DARK_FROM = 0.50;              // transition start (fraction of strip)
-const DARK_TO   = 0.70;              // transition end
-/* Panels using white text (index ≥ DARK_PANEL_FROM are .dark) */
-const DARK_PANEL_FROM = 3;           // panels 4 and 5
+/* Background: single light tone (vertical gradient only, so the strip
+   stays perfectly continuous horizontally) + subtle dot grid texture */
+const BG_TOP = [245, 247, 251];      // #F5F7FB
+const BG_BOTTOM = [231, 236, 245];   // #E7ECF5
+const DOT_COLOR = "rgba(10, 22, 40, 0.05)";
+const DOT_SPACING = 64;
+const DOT_RADIUS = 2;
 
 /* ════════════════════════════════════════════════════════════
    Waveform constants — port of Waveform.tsx / BrandWaveform.swift
@@ -196,45 +279,53 @@ const DARK_PANEL_FROM = 3;           // panels 4 and 5
 const PANEL_W = 1320, PANEL_H = 2868, PANELS = 5;
 const STRIP_W = PANEL_W * PANELS;
 
-const BAR_WIDTH = 30;            // chunky bars, app-like proportions
+const BAR_WIDTH = 30;
 const BAR_SPACING = 16;
 const MIN_BAR_HEIGHT = 14;
 const MAX_BAR_HEIGHT = 640;
-const WAVE_CENTER_Y = 1620;      // vertical center of the waveform band
+const WAVE_CENTER_Y = 1180;      // band sits between copy and crop cards
 const PHASE_T = 2200;            // frozen animation time (deterministic)
+const BAR_ALPHA = 0.6;
 
 const GRADIENT_START = "#6BA3FF";
 const GRADIENT_END = "#2563EB";
-const EDGE_LIGHT = [110, 122, 145];  // grey edge bars on light bg
-const EDGE_DARK = [255, 255, 255];   // white edge bars on navy bg
+const EDGE_RGB = [110, 122, 145];    // grey edge bars on light bg
 
 function smoothstep(t) { return t * t * (3 - 2 * t); }
-function clamp01(t) { return Math.min(Math.max(t, 0), 1); }
-function lerp(a, b, t) { return a + (b - a) * t; }
-function mixRgb(a, b, t) {
-  return [
-    Math.round(lerp(a[0], b[0], t)),
-    Math.round(lerp(a[1], b[1], t)),
-    Math.round(lerp(a[2], b[2], t)),
-  ];
-}
-function darkness(u) {
-  return smoothstep(clamp01((u - DARK_FROM) / (DARK_TO - DARK_FROM)));
-}
 
 /* ── Build panels from CONFIG ─────────────────────────────── */
 const strip = document.getElementById("strip");
-CONFIG.forEach((c, i) => {
+CONFIG.forEach((c) => {
   const panel = document.createElement("div");
-  panel.className = "panel " + (i >= DARK_PANEL_FROM ? "dark" : "light");
+  panel.className = "panel";
   panel.id = c.id;
+
+  let media;
+  if (c.layout === "device") {
+    media = `<div class="device"><img src="${c.image}" alt=""></div>`;
+  } else {
+    // bottom-anchored crop: image is bottom-aligned inside the card
+    const imgH = Math.round(c.imgWidth * 2796 / 1290); // source aspect
+    const shift = c.cropHeight - imgH;                 // negative → show bottom
+    media = `<div class="crop" style="height:${c.cropHeight}px">
+               <img src="${c.image}" style="width:${c.imgWidth}px; margin-top:${shift}px" alt="">
+             </div>`;
+  }
+
+  const callouts = (c.callouts || []).map((k) =>
+    k.type === "quote"
+      ? `<div class="quote" style="${k.style}">${k.html}</div>`
+      : `<div class="pill" style="${k.style}">${k.text}</div>`
+  ).join("");
+
   panel.innerHTML = `
     <div class="copy">
       <div class="eyebrow">${c.eyebrow}</div>
       <div class="headline">${c.headline}</div>
       <div class="subtext">${c.subtext}</div>
     </div>
-    <div class="device"><img src="${c.image}" alt=""></div>`;
+    ${media}
+    ${callouts}`;
   strip.appendChild(panel);
 });
 
@@ -244,21 +335,27 @@ canvas.width = STRIP_W;
 canvas.height = PANEL_H;
 const ctx = canvas.getContext("2d");
 
-// Background: horizontal gradient driven by darkness()
-const STEPS = 240;
-const bgGrad = ctx.createLinearGradient(0, 0, STRIP_W, 0);
-for (let s = 0; s <= STEPS; s++) {
-  const u = s / STEPS;
-  const [r, g, b] = mixRgb(LIGHT_RGB, NAVY_RGB, darkness(u));
-  bgGrad.addColorStop(u, `rgb(${r},${g},${b})`);
-}
+// Vertical gradient — identical on every panel → seamless strip
+const bgGrad = ctx.createLinearGradient(0, 0, 0, PANEL_H);
+bgGrad.addColorStop(0, `rgb(${BG_TOP.join(",")})`);
+bgGrad.addColorStop(1, `rgb(${BG_BOTTOM.join(",")})`);
 ctx.fillStyle = bgGrad;
 ctx.fillRect(0, 0, STRIP_W, PANEL_H);
 
-// Waveform bars — continuous across the strip, one blue pulse per panel.
-// Bars are softened (globalAlpha) so devices/text stay dominant; the
-// background itself must stay fully opaque.
-ctx.globalAlpha = 0.6;
+// Subtle dot grid (uniform spacing → seamless across panels)
+ctx.fillStyle = DOT_COLOR;
+for (let gy = DOT_SPACING / 2; gy < PANEL_H; gy += DOT_SPACING) {
+  for (let gx = DOT_SPACING / 2; gx < STRIP_W; gx += DOT_SPACING) {
+    ctx.beginPath();
+    ctx.arc(gx, gy, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Waveform bars — continuous across the strip; the visible/branded part
+// lives at the panel seams: blue pulses meet edge-to-edge when the 5
+// slides sit side by side (panorama cue)
+ctx.globalAlpha = BAR_ALPHA;
 const period = BAR_WIDTH + BAR_SPACING;
 const barCount = Math.floor((STRIP_W - BAR_SPACING) / period);
 const offsetX = (STRIP_W - (barCount * period - BAR_SPACING)) / 2;
@@ -266,17 +363,13 @@ const offsetX = (STRIP_W - (barCount * period - BAR_SPACING)) / 2;
 for (let i = 0; i < barCount; i++) {
   const x = offsetX + i * period;
   const cx = x + BAR_WIDTH / 2;
-  const u = cx / STRIP_W;
 
-  // Distance from the nearest panel seam (0, 1320, …, 6600) normalized 0..1.
-  // Panel centers are covered by the device mockup, so the visible/branded
-  // part of the waveform lives at the seams: blue pulses meet edge-to-edge
-  // when the 5 slides sit side by side (panorama cue).
+  // Distance from the nearest panel seam (0, 1320, …, 6600), normalized
   const nearestSeam = Math.round(cx / PANEL_W) * PANEL_W;
   const dSeam = Math.abs(cx - nearestSeam) / (PANEL_W / 2);
 
-  // Energy: "processing" phase formula from Waveform.tsx, frozen at PHASE_T,
-  // continuous traveling sine (global index) + seam weighting
+  // Energy: "processing" phase formula from Waveform.tsx, frozen at
+  // PHASE_T — continuous traveling sine + seam weighting
   const wave = Math.sin(PHASE_T / 400 + i * 0.35) * 0.5 + 0.5;
   const seamWeight = 1 - dSeam * 0.5;
   const energy = 0.15 + wave * 0.45 * seamWeight;
@@ -288,8 +381,7 @@ for (let i = 0; i < barCount; i++) {
   const y = WAVE_CENTER_Y - barHeight / 2;
   const radius = BAR_WIDTH / 2;
 
-  // Color: 40% closest to each seam = blue gradient, rest = fading edge
-  // bars (mostly hidden behind the device anyway)
+  // Color: 40% closest to each seam = blue gradient, rest = fading grey
   let fill;
   if (dSeam < 0.4) {
     const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
@@ -297,9 +389,8 @@ for (let i = 0; i < barCount; i++) {
     grad.addColorStop(1, GRADIENT_END);
     fill = grad;
   } else {
-    const edge = mixRgb(EDGE_LIGHT, EDGE_DARK, darkness(u));
     const opacity = (1 - dSeam) * 0.9 + 0.15;
-    fill = `rgba(${edge[0]},${edge[1]},${edge[2]},${opacity.toFixed(3)})`;
+    fill = `rgba(${EDGE_RGB.join(",")},${opacity.toFixed(3)})`;
   }
 
   ctx.beginPath();
@@ -307,7 +398,6 @@ for (let i = 0; i < barCount; i++) {
   ctx.fillStyle = fill;
   ctx.fill();
 }
-
 ctx.globalAlpha = 1;
 
 /* ── Preview mode ─────────────────────────────────────────── */
