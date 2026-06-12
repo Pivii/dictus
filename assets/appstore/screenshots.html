@@ -67,7 +67,7 @@
     gap: 34px;
   }
   .copy.top    { top: 150px; }
-  .copy.bottom { top: 1860px; }
+  .copy.bottom { top: 1580px; }
   .eyebrow {
     font-family: "DM Mono", monospace;
     font-weight: 500;
@@ -111,6 +111,17 @@
   .device.full { top: 770px; width: 960px; }
   /* Ceiling device: bleeds off the top edge — width & top set inline */
 
+  /* ── Dictus app icon (slide 1 closer) ─────────── */
+  .appicon {
+    position: absolute;
+    bottom: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 140px;
+    filter: drop-shadow(0 18px 40px rgba(10, 22, 40, 0.28));
+  }
+
   /* ── Preview mode (?preview) ──────────────────── */
   body.preview { padding: 24px; }
   .hint { display: none; }
@@ -146,6 +157,7 @@ const CONFIG = [
     layout: "ceiling",
     deviceWidth: 1140,
     visibleHeight: 1520,
+    brandIcon: "../brand/appicon-light.svg",
   },
   {
     id: "02-offline",
@@ -204,8 +216,19 @@ const STRIP_W = PANEL_W * PANELS;
 const BAR_WIDTH = 30;
 const BAR_SPACING = 16;
 const MIN_BAR_HEIGHT = 14;
-const MAX_BAR_HEIGHT = 640;
-const WAVE_CENTER_Y = 1180;
+const MAX_BAR_HEIGHT = 460;
+/* Lower third of the panel — measured to match the height of the
+   in-app waveform inside slide 4's mockup: the background wave
+   visually "enters" the phone, becomes the real transcription
+   waveform, and comes out the other side. On the ceiling slides the
+   whole sinusoid is visible between the copy and the bottom edge. */
+const WAVE_CENTER_Y = 2140;
+/* Phase shift (px): crest at x=330 inside each panel instead of on the
+   seam — the wave is asymmetric vs the centered phones, so the grey
+   crest/trough are visible and the full sinusoid can be read across
+   the gallery. Continuity across slides is unaffected (period = panel
+   width, every slide keeps an identical pattern). */
+const PHASE_SHIFT = 330;
 const BAR_ALPHA = 0.6;
 
 const GRADIENT_START = "#6BA3FF";
@@ -244,7 +267,8 @@ CONFIG.forEach((c) => {
       <div class="eyebrow">${c.eyebrow}</div>
       <div class="headline">${c.headline}</div>
       <div class="subtext">${c.subtext}</div>
-    </div>`;
+    </div>
+    ${c.brandIcon ? `<img class="appicon" src="${c.brandIcon}" alt="">` : ""}`;
   strip.appendChild(panel);
 });
 
@@ -282,8 +306,9 @@ for (let i = 0; i < barCount; i++) {
   const cx = x + BAR_WIDTH / 2;
 
   // Swift: energy = 0.2 + 0.25 * (sin(2π·t) + 1) with one period per
-  // panel; cos() puts the crest exactly on each seam (x = k·1320)
-  const energy = 0.2 + 0.25 * (Math.cos(2 * Math.PI * cx / PANEL_W) + 1);
+  // panel; PHASE_SHIFT moves the crest off the seam (asymmetric layout)
+  const energy = 0.2 + 0.25 *
+    (Math.cos(2 * Math.PI * (cx - PHASE_SHIFT) / PANEL_W) + 1);
 
   const barHeight = Math.max(
     MIN_BAR_HEIGHT + energy * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT),
