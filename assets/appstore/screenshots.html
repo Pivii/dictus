@@ -229,7 +229,9 @@ const WAVE_CENTER_Y = 2140;
    through all 5 screenshots. Continuity at the seams is guaranteed
    (single continuous function across the strip). */
 const WAVE_PERIOD = STRIP_W / 3;
-const PHASE_SHIFT = 330;
+/* No phase shift: crest on the strip edges, trough exactly at the
+   center of slide 3 — the whole panorama is symmetric. */
+const PHASE_SHIFT = 0;
 const BAR_ALPHA = 0.6;
 
 const GRADIENT_START = "#6BA3FF";
@@ -318,19 +320,21 @@ for (let i = 0; i < barCount; i++) {
   const y = WAVE_CENTER_Y - barHeight / 2;
   const radius = BAR_WIDTH / 2;
 
-  // Color: 40% closest to each seam = blue gradient (the crest),
-  // the rest = grey bars fading as they approach the panel center
-  const nearestSeam = Math.round(cx / PANEL_W) * PANEL_W;
-  const dSeam = Math.abs(cx - nearestSeam) / (PANEL_W / 2);
+  // Color: iOS BrandWaveform rule — inner 40% of each PANEL is the
+  // blue gradient, outer bars are grey with opacity fading toward the
+  // panel edges (blue at the center of every screen, like in the app)
+  const panelIndex = Math.min(Math.floor(cx / PANEL_W), PANELS - 1);
+  const panelCenter = panelIndex * PANEL_W + PANEL_W / 2;
+  const dCenter = Math.abs(cx - panelCenter) / (PANEL_W / 2);
 
   let fill;
-  if (dSeam < 0.4) {
+  if (dCenter < 0.4) {
     const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
     grad.addColorStop(0, GRADIENT_START);
     grad.addColorStop(1, GRADIENT_END);
     fill = grad;
   } else {
-    const opacity = (1 - dSeam) * 0.9 + 0.15;
+    const opacity = (1 - dCenter) * 0.9 + 0.15;
     fill = `rgba(${EDGE_RGB.join(",")},${opacity.toFixed(3)})`;
   }
 
