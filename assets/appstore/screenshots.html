@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dictus — App Store Screenshots (1320×2868 × 5)</title>
+<!--
+  Dictus App Store screenshot template — issue #189
+  ──────────────────────────────────────────────────
+  • 5 panels of exactly 1320×2868 px, side by side (6600×2868 strip).
+  • One continuous brand waveform + one continuous light→navy gradient
+    across the whole strip (panorama effect when slides sit side by side).
+  • Waveform is a deterministic port of dictus-website Waveform.tsx
+    (itself a port of iOS BrandWaveform.swift): rounded bars, blue
+    gradient #6BA3FF→#2563EB on each panel's center, fading edge bars.
+  • Edit texts / image mapping in the CONFIG array at the bottom.
+  • Export: capture each .panel element at 1320×2868 (Playwright element
+    screenshot, or DevTools "Capture node screenshot").
+  • Open with ?preview to scale the strip to fit the window.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --panel-w: 1320px;
+    --panel-h: 2868px;
+    --navy: #0A1628;
+    --accent: #3D7EFF;
+    --highlight: #6BA3FF;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #06090f; }
+
+  .strip {
+    position: relative;
+    width: calc(var(--panel-w) * 5);
+    height: var(--panel-h);
+    display: flex;
+    transform-origin: top left;
+  }
+  #bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+
+  .panel {
+    position: relative;
+    width: var(--panel-w);
+    height: var(--panel-h);
+    flex: none;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* ── Text block ───────────────────────────────── */
+  .copy {
+    /* Fixed height so the device tops align across all 5 panels
+       (headline/subtext line counts vary) — panorama continuity */
+    height: 690px;
+    padding: 150px 110px 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 34px;
+  }
+  .eyebrow {
+    font-family: "DM Mono", monospace;
+    font-weight: 500;
+    font-size: 38px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  /* Eyebrow: brand blue, but darker shade on light bg for contrast */
+  .panel.light .eyebrow { color: #2563EB; }
+  .panel.dark  .eyebrow { color: var(--highlight); }
+  .headline {
+    font-family: "DM Sans", sans-serif;
+    font-weight: 350;
+    font-size: 104px;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+  }
+  .subtext {
+    font-family: "DM Sans", sans-serif;
+    font-weight: 400;
+    font-size: 42px;
+    line-height: 1.45;
+    max-width: 1010px;
+  }
+  /* Per-panel text colors — light panels get navy text, dark panels white */
+  .panel.light .headline { color: var(--navy); }
+  .panel.light .subtext  { color: rgba(10, 22, 40, 0.62); }
+  .panel.dark  .headline { color: #FFFFFF; }
+  .panel.dark  .subtext  { color: rgba(255, 255, 255, 0.66); }
+
+  /* ── Device mockup ────────────────────────────── */
+  .device {
+    margin-top: 0;
+    width: 960px;
+    border-radius: 152px;
+    padding: 22px;
+    background: #1C1F26;
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.10),
+      0 60px 140px rgba(4, 10, 22, 0.45);
+    flex: none;
+  }
+  .panel.dark .device {
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.14),
+      0 60px 140px rgba(0, 0, 0, 0.6);
+  }
+  .device img {
+    display: block;
+    width: 100%;
+    border-radius: 130px;
+  }
+
+  /* ── Preview mode (?preview) ──────────────────── */
+  body.preview { padding: 24px; }
+  body.preview .hint {
+    color: #8b97ad; font: 14px/1.5 "DM Sans", sans-serif; margin-bottom: 16px;
+  }
+  .hint { display: none; }
+  body.preview .hint { display: block; }
+</style>
+</head>
+<body>
+<p class="hint">Preview scaled to fit — capture each <code>.panel</code> at natural size (1320×2868) for export.</p>
+<div class="strip" id="strip">
+  <canvas id="bg"></canvas>
+  <!-- panels injected by script from CONFIG -->
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   CONFIG — edit texts and image mapping here
+   ════════════════════════════════════════════════════════════ */
+const CONFIG = [
+  {
+    id: "01-dictate",
+    eyebrow: "Voice keyboard",
+    headline: "Dictate in any app",
+    subtext: "Tap the mic on the keyboard, speak, and your words appear — anywhere you type.",
+    image: "source/screen1-keyboard-dictating.png",
+  },
+  {
+    id: "02-offline",
+    eyebrow: "100% on-device",
+    headline: "Works completely offline",
+    subtext: "On-device models (Whisper & Parakeet). No internet, no servers.",
+    image: "source/screen2-models.png",
+  },
+  {
+    id: "03-private",
+    eyebrow: "Private by design",
+    headline: "Your voice stays yours",
+    subtext: "Nothing ever leaves your iPhone. No account, no tracking.",
+    image: "source/screen3-home.png",
+  },
+  {
+    id: "04-fast",
+    eyebrow: "FR · EN · DE · ES",
+    headline: "Fast, accurate dictation",
+    subtext: "Speak naturally in French, English, German or Spanish.",
+    image: "source/screen4-dictation.png",
+  },
+  {
+    id: "05-keyboard",
+    eyebrow: "Type or talk",
+    headline: "A keyboard with a mic",
+    subtext: "Type when you want, talk when you don't — in every app.",
+    image: "source/screen5-keyboard-qwerty.png",
+  },
+];
+
+/* Background gradient: light app tone → brand navy.
+   `darkness(u)` (u = 0..1 across the strip) drives both the bg color and
+   the waveform edge-bar color. Transition concentrated over panels 3→4 so
+   panels 1-3 read as "light" and 4-5 as "dark". */
+const LIGHT_RGB = [245, 246, 250];   // #F5F6FA — app light background
+const NAVY_RGB  = [10, 22, 40];      // #0A1628 — brand navy
+const DARK_FROM = 0.50;              // transition start (fraction of strip)
+const DARK_TO   = 0.70;              // transition end
+/* Panels using white text (index ≥ DARK_PANEL_FROM are .dark) */
+const DARK_PANEL_FROM = 3;           // panels 4 and 5
+
+/* ════════════════════════════════════════════════════════════
+   Waveform constants — port of Waveform.tsx / BrandWaveform.swift
+   ════════════════════════════════════════════════════════════ */
+const PANEL_W = 1320, PANEL_H = 2868, PANELS = 5;
+const STRIP_W = PANEL_W * PANELS;
+
+const BAR_WIDTH = 30;            // chunky bars, app-like proportions
+const BAR_SPACING = 16;
+const MIN_BAR_HEIGHT = 14;
+const MAX_BAR_HEIGHT = 640;
+const WAVE_CENTER_Y = 1620;      // vertical center of the waveform band
+const PHASE_T = 2200;            // frozen animation time (deterministic)
+
+const GRADIENT_START = "#6BA3FF";
+const GRADIENT_END = "#2563EB";
+const EDGE_LIGHT = [110, 122, 145];  // grey edge bars on light bg
+const EDGE_DARK = [255, 255, 255];   // white edge bars on navy bg
+
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+function clamp01(t) { return Math.min(Math.max(t, 0), 1); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function mixRgb(a, b, t) {
+  return [
+    Math.round(lerp(a[0], b[0], t)),
+    Math.round(lerp(a[1], b[1], t)),
+    Math.round(lerp(a[2], b[2], t)),
+  ];
+}
+function darkness(u) {
+  return smoothstep(clamp01((u - DARK_FROM) / (DARK_TO - DARK_FROM)));
+}
+
+/* ── Build panels from CONFIG ─────────────────────────────── */
+const strip = document.getElementById("strip");
+CONFIG.forEach((c, i) => {
+  const panel = document.createElement("div");
+  panel.className = "panel " + (i >= DARK_PANEL_FROM ? "dark" : "light");
+  panel.id = c.id;
+  panel.innerHTML = `
+    <div class="copy">
+      <div class="eyebrow">${c.eyebrow}</div>
+      <div class="headline">${c.headline}</div>
+      <div class="subtext">${c.subtext}</div>
+    </div>
+    <div class="device"><img src="${c.image}" alt=""></div>`;
+  strip.appendChild(panel);
+});
+
+/* ── Draw background + continuous waveform ────────────────── */
+const canvas = document.getElementById("bg");
+canvas.width = STRIP_W;
+canvas.height = PANEL_H;
+const ctx = canvas.getContext("2d");
+
+// Background: horizontal gradient driven by darkness()
+const STEPS = 240;
+const bgGrad = ctx.createLinearGradient(0, 0, STRIP_W, 0);
+for (let s = 0; s <= STEPS; s++) {
+  const u = s / STEPS;
+  const [r, g, b] = mixRgb(LIGHT_RGB, NAVY_RGB, darkness(u));
+  bgGrad.addColorStop(u, `rgb(${r},${g},${b})`);
+}
+ctx.fillStyle = bgGrad;
+ctx.fillRect(0, 0, STRIP_W, PANEL_H);
+
+// Waveform bars — continuous across the strip, one blue pulse per panel.
+// Bars are softened (globalAlpha) so devices/text stay dominant; the
+// background itself must stay fully opaque.
+ctx.globalAlpha = 0.6;
+const period = BAR_WIDTH + BAR_SPACING;
+const barCount = Math.floor((STRIP_W - BAR_SPACING) / period);
+const offsetX = (STRIP_W - (barCount * period - BAR_SPACING)) / 2;
+
+for (let i = 0; i < barCount; i++) {
+  const x = offsetX + i * period;
+  const cx = x + BAR_WIDTH / 2;
+  const u = cx / STRIP_W;
+
+  // Distance from the nearest panel seam (0, 1320, …, 6600) normalized 0..1.
+  // Panel centers are covered by the device mockup, so the visible/branded
+  // part of the waveform lives at the seams: blue pulses meet edge-to-edge
+  // when the 5 slides sit side by side (panorama cue).
+  const nearestSeam = Math.round(cx / PANEL_W) * PANEL_W;
+  const dSeam = Math.abs(cx - nearestSeam) / (PANEL_W / 2);
+
+  // Energy: "processing" phase formula from Waveform.tsx, frozen at PHASE_T,
+  // continuous traveling sine (global index) + seam weighting
+  const wave = Math.sin(PHASE_T / 400 + i * 0.35) * 0.5 + 0.5;
+  const seamWeight = 1 - dSeam * 0.5;
+  const energy = 0.15 + wave * 0.45 * seamWeight;
+
+  const barHeight = Math.max(
+    MIN_BAR_HEIGHT + energy * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT),
+    MIN_BAR_HEIGHT
+  );
+  const y = WAVE_CENTER_Y - barHeight / 2;
+  const radius = BAR_WIDTH / 2;
+
+  // Color: 40% closest to each seam = blue gradient, rest = fading edge
+  // bars (mostly hidden behind the device anyway)
+  let fill;
+  if (dSeam < 0.4) {
+    const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
+    grad.addColorStop(0, GRADIENT_START);
+    grad.addColorStop(1, GRADIENT_END);
+    fill = grad;
+  } else {
+    const edge = mixRgb(EDGE_LIGHT, EDGE_DARK, darkness(u));
+    const opacity = (1 - dSeam) * 0.9 + 0.15;
+    fill = `rgba(${edge[0]},${edge[1]},${edge[2]},${opacity.toFixed(3)})`;
+  }
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, BAR_WIDTH, barHeight, radius);
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+ctx.globalAlpha = 1;
+
+/* ── Preview mode ─────────────────────────────────────────── */
+if (new URLSearchParams(location.search).has("preview")) {
+  document.body.classList.add("preview");
+  const fit = () => {
+    const scale = (window.innerWidth - 48) / STRIP_W;
+    strip.style.transform = `scale(${scale})`;
+    document.body.style.height = `${PANEL_H * scale + 80}px`;
+  };
+  fit();
+  window.addEventListener("resize", fit);
+}
+</script>
+</body>
+</html>
