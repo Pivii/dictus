@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dictus — App Store Screenshots (1320×2868 × 5)</title>
+<!--
+  Dictus App Store screenshot template V3 — issue #189
+  ─────────────────────────────────────────────────────
+  • 5 panels of exactly 1320×2868 px, side by side (6600×2868 strip).
+  • Single light background + one continuous brand waveform across the
+    whole strip. The wave is the EXACT BrandWaveform.swift processing
+    sinusoid: energy = 0.2 + 0.25 * (sin(2π·x) + 1), one full period per
+    panel, phase aligned so crests land on the slide seams → regular
+    wave + panorama continuity.
+  • Two layouts:
+      "device"  — full realistic phone mockup, copy on top
+      "ceiling" — same realistic mockup bleeding off the TOP edge
+                  (status bar cut), bottom of the phone (keyboard /
+                  dictation overlay) at its natural position, copy below
+  • Edit texts / images / layout in the CONFIG array below.
+  • Export: capture each .panel element at 1320×2868 (Playwright element
+    screenshot, or DevTools "Capture node screenshot").
+  • Open with ?preview to scale the strip to fit the window.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --panel-w: 1320px;
+    --panel-h: 2868px;
+    --navy: #0A1628;
+    --accent: #3D7EFF;
+    --accent-deep: #2563EB;
+    --highlight: #6BA3FF;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #06090f; }
+
+  .strip {
+    position: relative;
+    width: calc(var(--panel-w) * 5);
+    height: var(--panel-h);
+    display: flex;
+    transform-origin: top left;
+  }
+  #bg { position: absolute; inset: 0; z-index: 0; }
+
+  .panel {
+    position: relative;
+    width: var(--panel-w);
+    height: var(--panel-h);
+    flex: none;
+    z-index: 1;
+    overflow: hidden;
+  }
+
+  /* ── Text block ───────────────────────────────── */
+  .copy {
+    position: absolute;
+    left: 0; right: 0;
+    padding: 0 100px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 34px;
+  }
+  .copy.top    { top: 150px; }
+  .copy.bottom { top: 1580px; }
+  .eyebrow {
+    font-family: "DM Mono", monospace;
+    font-weight: 500;
+    font-size: 38px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-deep);
+  }
+  .headline {
+    font-family: "DM Sans", sans-serif;
+    font-weight: 350;
+    font-size: 104px;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    color: var(--navy);
+  }
+  .subtext {
+    font-family: "DM Sans", sans-serif;
+    font-weight: 400;
+    font-size: 42px;
+    line-height: 1.45;
+    max-width: 1030px;
+    color: rgba(10, 22, 40, 0.62);
+  }
+
+  /* ── Realistic device mockup (both layouts) ───── */
+  .device {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 152px;
+    padding: 22px;
+    background: #1C1F26;
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.55),
+      0 80px 160px rgba(10, 22, 40, 0.28),
+      0 24px 48px rgba(10, 22, 40, 0.14);
+  }
+  .device img { display: block; width: 100%; border-radius: 130px; }
+  /* Full device: below the top copy */
+  .device.full { top: 770px; width: 960px; }
+  /* Ceiling device: bleeds off the top edge — width & top set inline */
+
+  /* ── Dictus app icon (slide 1 closer) ─────────── */
+  .appicon {
+    position: absolute;
+    bottom: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 140px;
+    filter: drop-shadow(0 18px 40px rgba(10, 22, 40, 0.28));
+  }
+
+  /* ── In-screen transcription result pill (slide 4) ──
+     Replicates the app's real result card: white rounded pill,
+     SF system font, centered inside the phone screen. */
+  .screen-pill {
+    position: absolute;
+    top: 1480px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 780px;
+    padding: 36px 30px;
+    text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 31px;
+    font-weight: 400;
+    color: #1d1d1f;
+    background: #FBFBFD;
+    border-radius: 40px;
+    box-shadow: 0 12px 34px rgba(10, 22, 40, 0.10);
+  }
+
+  /* ── Preview mode (?preview) ──────────────────── */
+  body.preview { padding: 24px; }
+  .hint { display: none; }
+  body.preview .hint {
+    display: block;
+    color: #8b97ad; font: 14px/1.5 "DM Sans", sans-serif; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+<p class="hint">Preview scaled to fit — capture each <code>.panel</code> at natural size (1320×2868) for export.</p>
+<div class="strip" id="strip">
+  <canvas id="bg"></canvas>
+  <!-- panels injected by script from CONFIG -->
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   CONFIG — texts, images and layout per panel
+   ─ layout "device":  full phone, copy on top
+   ─ layout "ceiling": phone bleeds off the top edge, copy below.
+       deviceWidth   = mockup width in px (zoom level)
+       visibleHeight = how much of the phone remains visible from the
+                       top of the panel (bottom edge of the phone)
+   ════════════════════════════════════════════════════════════ */
+const CONFIG = [
+  {
+    id: "01-dictate",
+    eyebrow: "Voice keyboard",
+    headline: "Dictate in any app",
+    subtext: "Tap the mic on the keyboard, speak, and your words appear anywhere you type.",
+    image: "source/screen1-keyboard-dictating.png",
+    layout: "ceiling",
+    deviceWidth: 1140,
+    visibleHeight: 1520,
+  },
+  {
+    id: "02-offline",
+    eyebrow: "100% on-device",
+    headline: "Works completely offline",
+    subtext: "On-device models (Whisper & Parakeet). No internet, no servers.",
+    image: "source/screen2-models.png",
+    layout: "device",
+  },
+  {
+    id: "03-private",
+    eyebrow: "Open source",
+    headline: "Your voice stays yours",
+    subtext: "Nothing ever leaves your iPhone. No account, no tracking. The code is public, so you can verify it.",
+    image: "source/screen3-home.png",
+    layout: "device",
+  },
+  {
+    id: "04-fast",
+    eyebrow: "FR · EN · DE · ES",
+    headline: "Fast, accurate dictation",
+    subtext: "Speak naturally in French, English, German or Spanish.",
+    image: "source/screen4-dictation.png",
+    layout: "device",
+    /* Replica of the app's real transcription-result card (same pill
+       the app shows once dictation ends) overlaid on the recording
+       state — the slide demonstrates its own headline. */
+    screenPill: "Fast and accurate dictation.",
+  },
+  {
+    id: "05-keyboard",
+    eyebrow: "Type or talk",
+    headline: "A keyboard with a mic",
+    subtext: "Type when you want, talk when you don't. One keyboard for every app.",
+    image: "source/screen5-keyboard-qwerty.png",
+    layout: "ceiling",
+    deviceWidth: 1180,
+    visibleHeight: 1520,
+  },
+];
+
+/* Background: single light tone (vertical gradient only, so the strip
+   stays perfectly continuous horizontally) + subtle dot grid texture */
+const BG_TOP = [245, 247, 251];      // #F5F7FB
+const BG_BOTTOM = [231, 236, 245];   // #E7ECF5
+const DOT_COLOR = "rgba(10, 22, 40, 0.05)";
+const DOT_SPACING = 64;
+const DOT_RADIUS = 2;
+
+/* ════════════════════════════════════════════════════════════
+   Waveform — exact port of BrandWaveform.swift processingEnergy:
+     energy = 0.2 + 0.25 * (sin(2π · (normalizedIndex + phase)) + 1)
+   One full period per panel; phase aligned so crests sit on the
+   panel seams (0, 1320, 2640, …) → the blue peaks meet edge-to-edge
+   when the 5 slides are side by side.
+   ════════════════════════════════════════════════════════════ */
+const PANEL_W = 1320, PANEL_H = 2868, PANELS = 5;
+const STRIP_W = PANEL_W * PANELS;
+
+const BAR_WIDTH = 30;
+const BAR_SPACING = 16;
+const MIN_BAR_HEIGHT = 14;
+const MAX_BAR_HEIGHT = 460;
+/* Lower third of the panel — measured to match the height of the
+   in-app waveform inside slide 4's mockup: the background wave
+   visually "enters" the phone, becomes the real transcription
+   waveform, and comes out the other side. On the ceiling slides the
+   whole sinusoid is visible between the copy and the bottom edge. */
+const WAVE_CENTER_Y = 2140;
+/* Wavelength decoupled from the panel width: 3 full periods across the
+   5-panel strip (period = 2200px). Every slide therefore shows a
+   DIFFERENT fragment of the same big sinusoid — no repeated pattern on
+   the full-device slides, and the panorama reads as one wave travelling
+   through all 5 screenshots. Continuity at the seams is guaranteed
+   (single continuous function across the strip). */
+const WAVE_PERIOD = STRIP_W / 3;
+/* No phase shift: crest on the strip edges, trough exactly at the
+   center of slide 3 — the whole panorama is symmetric. */
+const PHASE_SHIFT = 0;
+const BAR_ALPHA = 0.6;
+
+const GRADIENT_START = "#6BA3FF";
+const GRADIENT_END = "#2563EB";
+const EDGE_RGB = [110, 122, 145];    // grey edge bars on light bg
+
+/* ── Build panels from CONFIG ─────────────────────────────── */
+const SRC_W = 1290, SRC_H = 2796;    // source screenshot size
+const BEZEL = 22;                    // device mockup padding
+
+const strip = document.getElementById("strip");
+CONFIG.forEach((c) => {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.id = c.id;
+
+  let media, copyPos;
+  if (c.layout === "ceiling") {
+    // Realistic mockup bleeding off the top: bottom of the phone sits at
+    // visibleHeight, the rest is hidden above the panel.
+    const imgW = c.deviceWidth - BEZEL * 2;
+    const deviceH = imgW * SRC_H / SRC_W + BEZEL * 2;
+    const top = Math.round(c.visibleHeight - deviceH);
+    media = `<div class="device" style="width:${c.deviceWidth}px; top:${top}px">
+               <img src="${c.image}" alt="">
+             </div>`;
+    copyPos = "bottom";
+  } else {
+    media = `<div class="device full"><img src="${c.image}" alt=""></div>`;
+    copyPos = "top";
+  }
+
+  panel.innerHTML = `
+    ${media}
+    <div class="copy ${copyPos}">
+      <div class="eyebrow">${c.eyebrow}</div>
+      <div class="headline">${c.headline}</div>
+      <div class="subtext">${c.subtext}</div>
+    </div>
+    ${c.brandIcon ? `<img class="appicon" src="${c.brandIcon}" alt="">` : ""}
+    ${c.screenPill ? `<div class="screen-pill">${c.screenPill}</div>` : ""}`;
+  strip.appendChild(panel);
+});
+
+/* ── Draw background + continuous waveform ────────────────── */
+const canvas = document.getElementById("bg");
+canvas.width = STRIP_W;
+canvas.height = PANEL_H;
+const ctx = canvas.getContext("2d");
+
+// Vertical gradient — identical on every panel → seamless strip
+const bgGrad = ctx.createLinearGradient(0, 0, 0, PANEL_H);
+bgGrad.addColorStop(0, `rgb(${BG_TOP.join(",")})`);
+bgGrad.addColorStop(1, `rgb(${BG_BOTTOM.join(",")})`);
+ctx.fillStyle = bgGrad;
+ctx.fillRect(0, 0, STRIP_W, PANEL_H);
+
+// Subtle dot grid (uniform spacing → seamless across panels)
+ctx.fillStyle = DOT_COLOR;
+for (let gy = DOT_SPACING / 2; gy < PANEL_H; gy += DOT_SPACING) {
+  for (let gx = DOT_SPACING / 2; gx < STRIP_W; gx += DOT_SPACING) {
+    ctx.beginPath();
+    ctx.arc(gx, gy, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Waveform bars — BrandWaveform.swift sinusoid, crests on the seams
+ctx.globalAlpha = BAR_ALPHA;
+const period = BAR_WIDTH + BAR_SPACING;
+const barCount = Math.floor((STRIP_W - BAR_SPACING) / period);
+const offsetX = (STRIP_W - (barCount * period - BAR_SPACING)) / 2;
+
+for (let i = 0; i < barCount; i++) {
+  const x = offsetX + i * period;
+  const cx = x + BAR_WIDTH / 2;
+
+  // Swift: energy = 0.2 + 0.25 * (sin(2π·t) + 1) — same regular
+  // sinusoid, wavelength WAVE_PERIOD (decoupled from the panel width)
+  const energy = 0.2 + 0.25 *
+    (Math.cos(2 * Math.PI * (cx - PHASE_SHIFT) / WAVE_PERIOD) + 1);
+
+  const barHeight = Math.max(
+    MIN_BAR_HEIGHT + energy * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT),
+    MIN_BAR_HEIGHT
+  );
+  const y = WAVE_CENTER_Y - barHeight / 2;
+  const radius = BAR_WIDTH / 2;
+
+  // Color: iOS BrandWaveform rule — inner 40% of each PANEL is the
+  // blue gradient, outer bars are grey with opacity fading toward the
+  // panel edges (blue at the center of every screen, like in the app)
+  const panelIndex = Math.min(Math.floor(cx / PANEL_W), PANELS - 1);
+  const panelCenter = panelIndex * PANEL_W + PANEL_W / 2;
+  const dCenter = Math.abs(cx - panelCenter) / (PANEL_W / 2);
+
+  let fill;
+  if (dCenter < 0.4) {
+    const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
+    grad.addColorStop(0, GRADIENT_START);
+    grad.addColorStop(1, GRADIENT_END);
+    fill = grad;
+  } else {
+    const opacity = (1 - dCenter) * 0.9 + 0.15;
+    fill = `rgba(${EDGE_RGB.join(",")},${opacity.toFixed(3)})`;
+  }
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, BAR_WIDTH, barHeight, radius);
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+/* ── Preview mode ─────────────────────────────────────────── */
+if (new URLSearchParams(location.search).has("preview")) {
+  document.body.classList.add("preview");
+  const fit = () => {
+    const scale = (window.innerWidth - 48) / STRIP_W;
+    strip.style.transform = `scale(${scale})`;
+    document.body.style.height = `${PANEL_H * scale + 80}px`;
+  };
+  fit();
+  window.addEventListener("resize", fit);
+}
+</script>
+</body>
+</html>
