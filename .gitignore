@@ -60,3 +60,6 @@ assets/reference/logs/**/*.log
 
 # Design sandbox
 designs/
+
+# Playwright MCP session artifacts
+.playwright-mcp/
