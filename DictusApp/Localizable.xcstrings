@@ -110,16 +110,6 @@
         }
       }
     },
-    "Allow microphone" : {
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autoriser le micro"
-          }
-        }
-      }
-    },
     "Almost ready…" : {
       "comment" : "Cycling phrase shown during model RAM load (issue #144).",
       "localizations" : {
