@@ -61,9 +61,13 @@ struct MicPermissionPage: View {
 
             // Action button
             if permissionGranted == nil {
-                // Request permission button
+                // Request permission button.
+                // WHY neutral wording ("Continue", not "Allow microphone"):
+                // App Review guideline 5.1.1(iv) forbids priming buttons that direct
+                // the user toward granting a system permission. The button only advances
+                // to the OS prompt — iOS owns the actual allow/deny choice.
                 Button(action: requestPermission) {
-                    Text("Allow microphone")
+                    Text("Continue")
                         .font(.dictusSubheading)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
