@@ -101,7 +101,9 @@ class KeyboardViewController: UIInputViewController {
         kbInputView.isOpaque = false
 
         // --- 1. Create the giellakbd-ios UIKit keyboard ---
-        let definition = KeyboardLayouts.current()
+        // needsInputModeSwitchKey is false on recent iPhones (system draws its own globe)
+        // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
+        let definition = KeyboardLayouts.current(needsGlobe: needsInputModeSwitchKey)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
         keyboard.translatesAutoresizingMaskIntoConstraints = false
@@ -813,7 +815,9 @@ class KeyboardViewController: UIInputViewController {
         giellaKeyboard?.removeFromSuperview()
 
         // Create new keyboard with updated definition
-        let definition = KeyboardLayouts.current()
+        // needsInputModeSwitchKey is false on recent iPhones (system draws its own globe)
+        // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
+        let definition = KeyboardLayouts.current(needsGlobe: needsInputModeSwitchKey)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
         keyboard.translatesAutoresizingMaskIntoConstraints = false
