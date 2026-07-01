@@ -149,7 +149,12 @@ enum KeyboardLayouts {
             // Row 3: #+= toggle + punctuation + delete
             [
                 KeyDefinition(type: .shiftSymbols, size: CGSize(width: 1.5, height: 1)),
+                // Spacers center the 5 punctuation keys so this row totals 10 units,
+                // matching the letter rows -- keeps #+= and delete the same width/position
+                // as shift and delete on the letter pages (Apple parity).
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 key("."), key(","), key("?"), key("!"), key("'"),
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
             // Row 4: ABC + space + return
@@ -168,7 +173,12 @@ enum KeyboardLayouts {
             // Row 3: 123 toggle + punctuation + delete
             [
                 KeyDefinition(type: .shiftSymbols, size: CGSize(width: 1.5, height: 1)),
+                // Spacers center the 5 punctuation keys so this row totals 10 units,
+                // matching the letter rows -- keeps #+= and delete the same width/position
+                // as shift and delete on the letter pages (Apple parity).
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 key("."), key(","), key("?"), key("!"), key("'"),
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
             // Row 4: ABC + space + return
@@ -189,12 +199,14 @@ enum KeyboardLayouts {
         ]
     }
 
-    /// Symbols page bottom row: [ABC 2.5w] [space 5.0w] [return 2.5w]
+    /// Symbols page bottom row: [ABC 2.0w] [space 6.0w] [return 2.0w]
+    /// ABC and return match the letters page widths; only the space bar grows to absorb
+    /// the missing emoji key, so special keys stay a constant size across pages (Apple parity).
     private static func symbolsBottomRow(lang: SupportedLanguage) -> [KeyDefinition] {
         [
-            KeyDefinition(type: .symbols, size: CGSize(width: 2.5, height: 1)),
-            KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: 5.0, height: 1)),
-            KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.5, height: 1)),
+            KeyDefinition(type: .symbols, size: CGSize(width: 2.0, height: 1)),
+            KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: 6.0, height: 1)),
+            KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1)),
         ]
     }
 
