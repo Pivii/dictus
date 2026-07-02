@@ -92,9 +92,12 @@ final internal class GiellaKeyboardView: UIView,
             }
             if let keyboardButtonExtraButton = keyboardButtonExtraButton {
                 addSubview(keyboardButtonExtraButton)
+                // Fire once per tap: .allEvents would call advanceToNextInputMode() several
+                // times for a single gesture (touchDown + touchUpInside + ...), which can skip
+                // past the intended keyboard. .touchUpInside matches standard button semantics.
                 keyboardButtonExtraButton.addTarget(delegate,
                                                     action: #selector(GiellaKeyboardViewKeyboardKeyDelegate.didTriggerKeyboardButton),
-                                                    for: UIControl.Event.allEvents)
+                                                    for: UIControl.Event.touchUpInside)
             }
         }
     }
