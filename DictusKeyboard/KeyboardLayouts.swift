@@ -81,7 +81,7 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
             // Row 4: 123 + emoji + space + return
-            lettersBottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -99,7 +99,7 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
             // Row 4: same as normal
-            lettersBottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -121,8 +121,8 @@ enum KeyboardLayouts {
                 key("z"), key("x"), key("c"), key("v"), key("b"), key("n"), key("m"),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
-            // Row 4: 123 + space + return
-            lettersBottomRow(lang: lang, needsGlobe: needsGlobe),
+            // Row 4: unified bottom row (123 + emoji + space + return)
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -139,7 +139,7 @@ enum KeyboardLayouts {
                 key("Z"), key("X"), key("C"), key("V"), key("B"), key("N"), key("M"),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
-            lettersBottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -154,16 +154,16 @@ enum KeyboardLayouts {
             // Row 3: #+= toggle + punctuation + delete
             [
                 KeyDefinition(type: .shiftSymbols, size: CGSize(width: 1.5, height: 1)),
-                // Spacers center the 5 punctuation keys so this row totals 10 units,
-                // matching the letter rows -- keeps #+= and delete the same width/position
-                // as shift and delete on the letter pages (Apple parity).
+                // #+= and delete keep width 1.5 (identical to shift/delete on the letter pages).
+                // The 5 punctuation keys are widened to 1.2 with small 0.5 end spacers so the
+                // row totals 10 units and the cluster sits tighter -- matching Apple.
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
-                key("."), key(","), key("?"), key("!"), key("'"),
+                punct("."), punct(","), punct("?"), punct("!"), punct("'"),
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
-            // Row 4: ABC + space + return
-            symbolsBottomRow(lang: lang, needsGlobe: needsGlobe),
+            // Row 4: unified bottom row (ABC + emoji + space + return)
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -178,16 +178,16 @@ enum KeyboardLayouts {
             // Row 3: 123 toggle + punctuation + delete
             [
                 KeyDefinition(type: .shiftSymbols, size: CGSize(width: 1.5, height: 1)),
-                // Spacers center the 5 punctuation keys so this row totals 10 units,
-                // matching the letter rows -- keeps #+= and delete the same width/position
-                // as shift and delete on the letter pages (Apple parity).
+                // #+= and delete keep width 1.5 (identical to shift/delete on the letter pages).
+                // The 5 punctuation keys are widened to 1.2 with small 0.5 end spacers so the
+                // row totals 10 units and the cluster sits tighter -- matching Apple.
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
-                key("."), key(","), key("?"), key("!"), key("'"),
+                punct("."), punct(","), punct("?"), punct("!"), punct("'"),
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
             ],
-            // Row 4: ABC + space + return
-            symbolsBottomRow(lang: lang, needsGlobe: needsGlobe),
+            // Row 4: unified bottom row (ABC + emoji + space + return)
+            bottomRow(lang: lang, needsGlobe: needsGlobe),
         ]
     }
 
@@ -200,30 +200,19 @@ enum KeyboardLayouts {
         KeyDefinition(type: .keyboard, size: CGSize(width: 1.0, height: 1))
     }
 
-    /// Letters page bottom row: [(🌐 1.0w) 123 2.0w] [emoji 1.5w] [space 4.5w/3.5w] [return 2.0w]
-    /// Labels adapt to the active language (e.g., "espace" / "space" / "espacio").
-    /// When `needsGlobe`, a globe is prepended and the space bar shrinks by 1.0 to keep
-    /// the row at 10 units, so all other keys keep their size.
-    private static func lettersBottomRow(lang: SupportedLanguage, needsGlobe: Bool) -> [KeyDefinition] {
+    /// Bottom row, IDENTICAL across the letters and symbols pages so nothing resizes when the
+    /// user toggles 123/ABC (Apple parity). The `.symbols` key auto-labels "123" on letter
+    /// pages and "ABC" on symbol pages, and the emoji key stays present on every page.
+    ///
+    /// [(🌐 1.0w) 123/ABC 1.5w] [emoji 1.5w] [space 5.0w/4.0w] [return 2.0w] = 10 units.
+    /// 123/ABC and emoji share the same small width; only the space bar changes width, shrinking
+    /// by 1.0 when the globe is prepended (needsInputModeSwitchKey, App Store 4.4.1).
+    private static func bottomRow(lang: SupportedLanguage, needsGlobe: Bool) -> [KeyDefinition] {
         var row: [KeyDefinition] = needsGlobe ? [globeKey()] : []
         row.append(contentsOf: [
-            KeyDefinition(type: .symbols, size: CGSize(width: 2.0, height: 1)),
+            KeyDefinition(type: .symbols, size: CGSize(width: 1.5, height: 1)),
             KeyDefinition(type: .input(key: "\u{1F600}", alternate: nil), size: CGSize(width: 1.5, height: 1)),
-            KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: needsGlobe ? 3.5 : 4.5, height: 1)),
-            KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1)),
-        ])
-        return row
-    }
-
-    /// Symbols page bottom row: [(🌐 1.0w) ABC 2.0w] [space 6.0w/5.0w] [return 2.0w]
-    /// ABC and return match the letters page widths; only the space bar grows to absorb
-    /// the missing emoji key, so special keys stay a constant size across pages (Apple parity).
-    /// When `needsGlobe`, a globe is prepended and the space bar shrinks by 1.0.
-    private static func symbolsBottomRow(lang: SupportedLanguage, needsGlobe: Bool) -> [KeyDefinition] {
-        var row: [KeyDefinition] = needsGlobe ? [globeKey()] : []
-        row.append(contentsOf: [
-            KeyDefinition(type: .symbols, size: CGSize(width: 2.0, height: 1)),
-            KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: needsGlobe ? 5.0 : 6.0, height: 1)),
+            KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: needsGlobe ? 4.0 : 5.0, height: 1)),
             KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1)),
         ])
         return row
@@ -246,6 +235,12 @@ enum KeyboardLayouts {
     /// Create a standard 1x1 input key.
     private static func key(_ char: String) -> KeyDefinition {
         KeyDefinition(type: .input(key: char, alternate: nil))
+    }
+
+    /// Create a slightly wider (1.2) punctuation input key for the symbols pages' row 3,
+    /// so the 5 keys sit tighter together like Apple's keyboard.
+    private static func punct(_ char: String) -> KeyDefinition {
+        KeyDefinition(type: .input(key: char, alternate: nil), size: CGSize(width: 1.2, height: 1))
     }
 
     /// Create a row of standard input keys from variadic strings.
