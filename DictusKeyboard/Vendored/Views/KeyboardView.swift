@@ -80,6 +80,12 @@ final internal class GiellaKeyboardView: UIView,
 
     private var keyboardButtonFrame: CGRect? {
         didSet {
+            // `willDisplay` sets this to the globe cell's frame on every display pass.
+            // Rebuilding the overlay button (removeFromSuperview + addSubview) on each
+            // identical set triggers a layout invalidation that re-runs `willDisplay`,
+            // creating a layout feedback loop that pegs the CPU and gets the keyboard
+            // extension killed and relaunched by the host watchdog. Skip when unchanged.
+            guard keyboardButtonFrame != oldValue else { return }
             if let keyboardButtonExtraButton = keyboardButtonExtraButton {
                 keyboardButtonExtraButton.removeFromSuperview()
                 self.keyboardButtonExtraButton = nil
