@@ -80,12 +80,6 @@ final internal class GiellaKeyboardView: UIView,
 
     private var keyboardButtonFrame: CGRect? {
         didSet {
-            // `willDisplay` sets this to the globe cell's frame on every display pass.
-            // Rebuilding the overlay button (removeFromSuperview + addSubview) on each
-            // identical set triggers a layout invalidation that re-runs `willDisplay`,
-            // creating a layout feedback loop that pegs the CPU and gets the keyboard
-            // extension killed and relaunched by the host watchdog. Skip when unchanged.
-            guard keyboardButtonFrame != oldValue else { return }
             if let keyboardButtonExtraButton = keyboardButtonExtraButton {
                 keyboardButtonExtraButton.removeFromSuperview()
                 self.keyboardButtonExtraButton = nil
@@ -98,12 +92,9 @@ final internal class GiellaKeyboardView: UIView,
             }
             if let keyboardButtonExtraButton = keyboardButtonExtraButton {
                 addSubview(keyboardButtonExtraButton)
-                // Fire once per tap: .allEvents would call advanceToNextInputMode() several
-                // times for a single gesture (touchDown + touchUpInside + ...), which can skip
-                // past the intended keyboard. .touchUpInside matches standard button semantics.
                 keyboardButtonExtraButton.addTarget(delegate,
                                                     action: #selector(GiellaKeyboardViewKeyboardKeyDelegate.didTriggerKeyboardButton),
-                                                    for: UIControl.Event.touchUpInside)
+                                                    for: UIControl.Event.allEvents)
             }
         }
     }
