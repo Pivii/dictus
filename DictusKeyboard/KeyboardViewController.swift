@@ -22,6 +22,14 @@ class KeyboardViewController: UIInputViewController {
     /// sibling subview of kbInputView avoids this entirely.
     private var giellaKeyboard: GiellaKeyboardView?
 
+    /// The `needsInputModeSwitchKey` value used the last time the layout was built.
+    /// viewDidLoad runs before the host connection is established, so the flag read
+    /// there is inaccurate (UIKit logs a warning). We record what we built with and,
+    /// once the connection exists (viewWillAppear), rebuild only if the accurate
+    /// value now differs — so the next-keyboard globe (4.4.1) is never wrongly
+    /// shown or hidden. nil = never built yet.
+    private var builtNeedsGlobe: Bool?
+
     /// Delegate adapter that translates giellakbd-ios key events into Dictus actions.
     private var bridge: DictusKeyboardBridge?
 
@@ -103,7 +111,11 @@ class KeyboardViewController: UIInputViewController {
         // --- 1. Create the giellakbd-ios UIKit keyboard ---
         // needsInputModeSwitchKey is false on recent iPhones (system draws its own globe)
         // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
-        let definition = KeyboardLayouts.current(needsGlobe: needsInputModeSwitchKey)
+        // NOTE: read here it is inaccurate (host connection not yet established); the value
+        // is re-checked and the layout rebuilt if needed in viewWillAppear.
+        let needsGlobe = needsInputModeSwitchKey
+        builtNeedsGlobe = needsGlobe
+        let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
         keyboard.translatesAutoresizingMaskIntoConstraints = false
@@ -302,6 +314,23 @@ class KeyboardViewController: UIInputViewController {
         // Previously set from KeyboardRootView.onAppear, which held a strong ref → #134.
         KeyboardState.shared.controller = self
         hasAppeared = true
+
+        // 4.4.1 next-keyboard globe: the host connection now exists, so
+        // needsInputModeSwitchKey is finally accurate. If viewDidLoad built the
+        // layout with the wrong value (its early read is inaccurate and UIKit warns
+        // about it), rebuild once now so the globe matches reality. Skipped in the
+        // common case where the value already matched — reloadKeyboardLayout is a
+        // full ~200ms UICollectionView rebuild we don't want on every appearance.
+        let accurateNeedsGlobe = needsInputModeSwitchKey
+        if builtNeedsGlobe != accurateNeedsGlobe {
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "globeMismatchReload",
+                details: "built=\(builtNeedsGlobe.map(String.init(describing:)) ?? "nil") accurate=\(accurateNeedsGlobe)"
+            ))
+            reloadKeyboardLayout()
+        }
 
         // (Re)subscribe to dictation status here, not in viewDidLoad.
         // WHY: iOS caches UIInputViewController instances across app-switches and
@@ -817,7 +846,9 @@ class KeyboardViewController: UIInputViewController {
         // Create new keyboard with updated definition
         // needsInputModeSwitchKey is false on recent iPhones (system draws its own globe)
         // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
-        let definition = KeyboardLayouts.current(needsGlobe: needsInputModeSwitchKey)
+        let needsGlobe = needsInputModeSwitchKey
+        builtNeedsGlobe = needsGlobe
+        let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
         keyboard.translatesAutoresizingMaskIntoConstraints = false
