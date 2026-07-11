@@ -80,23 +80,47 @@ final internal class GiellaKeyboardView: UIView,
 
     private var keyboardButtonFrame: CGRect? {
         didSet {
-            if let keyboardButtonExtraButton = keyboardButtonExtraButton {
-                keyboardButtonExtraButton.removeFromSuperview()
-                self.keyboardButtonExtraButton = nil
-            }
+            // CRITICAL — never mutate the view hierarchy here (#202). This setter runs
+            // inside the collection view's layout pass (`willDisplay`), and `bounds.didSet`
+            // resets it to nil on every Auto Layout pass. The original giellakbd code
+            // tore down and re-added the overlay button on each change; addSubview /
+            // removeFromSuperview invalidate the parent's layout, which re-runs the pass,
+            // which fires this setter again → infinite layout loop. On device the loop
+            // allocates until the ~90 MB jetsam limit kills the extension (~4 s); on the
+            // simulator it spins forever and the keyboard renders as a blank grey area.
+            // Instead: create the button once, then only move/hide it — neither
+            // `frame` assignment nor `isHidden` invalidates the parent's layout.
+            guard keyboardButtonFrame != oldValue else { return }
             if let keyboardButtonFrame = keyboardButtonFrame {
-                keyboardButtonExtraButton = UIButton(frame: keyboardButtonFrame)
-                keyboardButtonExtraButton?.backgroundColor = .clear
-                keyboardButtonExtraButton?.isAccessibilityElement = true
-                keyboardButtonExtraButton?.accessibilityLabel = NSLocalizedString("accessibility.nextKeyboard", comment: "")
-            }
-            if let keyboardButtonExtraButton = keyboardButtonExtraButton {
-                addSubview(keyboardButtonExtraButton)
-                keyboardButtonExtraButton.addTarget(delegate,
-                                                    action: #selector(GiellaKeyboardViewKeyboardKeyDelegate.didTriggerKeyboardButton),
-                                                    for: UIControl.Event.allEvents)
+                let button = keyboardButtonExtraButton ?? makeKeyboardButton()
+                button.frame = keyboardButtonFrame
+                button.isHidden = false
+            } else {
+                keyboardButtonExtraButton?.isHidden = true
             }
         }
+    }
+
+    /// One-time creation of the invisible tap surface overlaying the globe cell.
+    /// Collection view cells are reused, so a stable UIButton on top of the cell is the
+    /// reliable way to catch taps for `advanceToNextInputMode()`. Called at most once
+    /// per keyboard view; the single `addSubview` happens before the first frame is
+    /// visible, so it cannot feed the layout loop described above.
+    private func makeKeyboardButton() -> UIButton {
+        let button = UIButton()
+        button.backgroundColor = .clear
+        button.isAccessibilityElement = true
+        button.accessibilityLabel = NSLocalizedString("accessibility.nextKeyboard", comment: "")
+        // .allTouchEvents is REQUIRED: the delegate forwards to UIInputViewController.
+        // handleInputModeList(from:with:), which needs the complete touch stream to
+        // distinguish tap (advance to next keyboard) from long-press (keyboard picker
+        // menu) and to support drag-selection inside the menu.
+        button.addTarget(delegate,
+                         action: #selector(GiellaKeyboardViewKeyboardKeyDelegate.didTriggerKeyboardButton),
+                         for: UIControl.Event.allTouchEvents)
+        addSubview(button)
+        keyboardButtonExtraButton = button
+        return button
     }
 
     private var keyboardButtonExtraButton: UIButton?
@@ -198,6 +222,17 @@ final internal class GiellaKeyboardView: UIView,
 
     override var bounds: CGRect {
         didSet {
+            // CRITICAL (#202): only rebuild when the geometry actually changed.
+            // Auto Layout re-assigns bounds (same value) on every layout pass. The
+            // unconditional update() -> reloadData() was harmless while nothing in a
+            // display pass dirtied the parent's layout, but the globe key's overlay
+            // button (frame/visibility updates during `willDisplay`) re-marks this view
+            // for layout on each pass: bounds re-set -> update() -> reloadData() ->
+            // willDisplay -> layout dirty -> bounds re-set... An infinite loop that
+            // allocates cells until jetsam kills the extension (measured: ~2200
+            // reloadData cycles, 75k cells, 1.8 GB before the kill). Guarding on a real
+            // change breaks the cycle at its root.
+            guard bounds != oldValue else { return }
             update()
         }
     }
