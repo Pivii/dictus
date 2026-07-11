@@ -166,9 +166,12 @@ final class DictusKeyboardBridge: NSObject,
     // MARK: - GiellaKeyboardViewKeyboardKeyDelegate
 
     @objc func didTriggerKeyboardButton(sender: UIView, forEvent event: UIEvent) {
-        // This is the accessibility/globe button callback from GiellaKeyboardView.
-        // It creates an invisible UIButton over the keyboard/globe key for VoiceOver.
-        controller?.advanceToNextInputMode()
+        // Globe key callback from GiellaKeyboardView's invisible overlay button.
+        // handleInputModeList is Apple's dedicated API for the input-switch key: it
+        // advances to the next keyboard on tap AND shows the keyboard picker menu on
+        // long-press (advanceToNextInputMode only covers the tap). It requires the full
+        // touch stream, hence .allTouchEvents on the button.
+        controller?.handleInputModeList(from: sender, with: event)
     }
 
     // MARK: - Key Action Handlers
