@@ -141,6 +141,13 @@ struct ModelLoadingOverlay: View {
                     Text("\(Int(progress * 100)) %")
                         .font(.dictusCaption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                    // Moving byte counter — reads as alive even while the
+                    // percentage crawls through the 445 MB Encoder file (#207).
+                    if let bytes = modelManager.downloadByteInfo[modelIdentifier] {
+                        Text("\(bytes.downloadedMB) MB of \(bytes.totalMB) MB")
+                            .font(.dictusCaption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             CyclingLoadingText(phrases: phrases(for: currentPhase))
@@ -256,6 +263,14 @@ struct ModelLoadingOverlay: View {
     }
 
     private func checkForCompletion() {
+        // A failed download must dismiss the cover immediately — without this,
+        // `.error` falls into rawPhase's `.ready` mapping below and flashes the
+        // "Model ready" celebration on a failure (issue #207). The parent view
+        // surfaces the error message once the cover is gone.
+        if case .error = currentModelState {
+            isPresented = false
+            return
+        }
         // Latch the work-phase flag the first time we observe real activity.
         // We read `rawPhase` here (not the user-facing `currentPhase`) because
         // the latter masquerades the initial `.ready` state as `.downloading`

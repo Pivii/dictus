@@ -78,6 +78,8 @@ public enum LogEvent: Sendable {
     case modelPrewarmPeakMemory(modelName: String, peakMB: Int)
     case modelPrewarmTimeout(name: String, timeoutSeconds: Int)
     case modelLoadStateChanged(from: String, to: String, reason: String)
+    case modelDownloadProgress(name: String, percent: Int, mbDownloaded: Int, mbTotal: Int)
+    case modelDownloadStalled(name: String, path: String, timeoutSeconds: Int, attempt: Int)
 
     // MARK: Keyboard
     case keyboardDidAppear
@@ -167,7 +169,8 @@ public enum LogEvent: Sendable {
         case .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadFailed,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelDeleteFailed, .modelPrewarmStarted, .modelCleanupPerformed,
-             .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged:
+             .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged,
+             .modelDownloadProgress, .modelDownloadStalled:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .overlayShown, .overlayHidden, .rapidTapRejected,
@@ -214,7 +217,8 @@ public enum LogEvent: Sendable {
         case .dictationDeferred, .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .modelPrewarmTimeout,
-             .audioInterruptionBegan, .audioMediaServicesReset:
+             .audioInterruptionBegan, .audioMediaServicesReset,
+             .modelDownloadStalled:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -224,7 +228,7 @@ public enum LogEvent: Sendable {
              .dictationStarted, .dictationCompleted,
              .audioEngineStarted, .audioSessionConfigured,
              .transcriptionStarted, .transcriptionCompleted,
-             .modelDownloadStarted, .modelDownloadCompleted,
+             .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadProgress,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
@@ -342,6 +346,8 @@ public enum LogEvent: Sendable {
         case .modelPrewarmTimeout: return "modelPrewarmTimeout"
         case .deviceCapabilitySnapshot: return "deviceCapabilitySnapshot"
         case .modelLoadStateChanged: return "modelLoadStateChanged"
+        case .modelDownloadProgress: return "modelDownloadProgress"
+        case .modelDownloadStalled: return "modelDownloadStalled"
         }
     }
 
@@ -412,6 +418,10 @@ public enum LogEvent: Sendable {
             return "name=\(name) reason=\(reason)"
         case .modelLoadStateChanged(let from, let to, let reason):
             return "from=\(from) to=\(to) reason=\(reason)"
+        case .modelDownloadProgress(let name, let percent, let mbDownloaded, let mbTotal):
+            return "name=\(name) percent=\(percent) downloaded=\(mbDownloaded)MB total=\(mbTotal)MB"
+        case .modelDownloadStalled(let name, let path, let timeoutSeconds, let attempt):
+            return "name=\(name) path=\(path) timeout=\(timeoutSeconds)s attempt=\(attempt)"
 
         // Keyboard (no content parameters -- privacy)
         case .keyboardDidAppear, .keyboardDidDisappear,
