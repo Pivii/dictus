@@ -50,13 +50,6 @@ struct ModelLoadingOverlay: View {
             // (#F2F2F7 in light, #0A1628 in dark).
             Color.dictusBackground.ignoresSafeArea()
 
-            // Waveform sits behind the central column. Same height/opacity as the
-            // onboarding welcome screen so the visual identity is consistent. Full
-            // edge-to-edge width — no horizontal padding.
-            BrandWaveform(maxHeight: 100, isProcessing: true)
-                .opacity(0.55)
-                .allowsHitTesting(false)
-
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
@@ -65,9 +58,19 @@ struct ModelLoadingOverlay: View {
 
                 Spacer()
 
+                // Waveform lives in the vertical flow, ABOVE the progress area.
+                // It used to be a ZStack background centered on the screen, which
+                // collided with the (also centered) progress bar on squat aspect
+                // ratios — iPad letterboxed compatibility mode, iPhone SE. Same
+                // height/opacity as the onboarding welcome screen; edge-to-edge
+                // width, no horizontal padding.
+                BrandWaveform(maxHeight: 100, isProcessing: true)
+                    .opacity(0.55)
+                    .allowsHitTesting(false)
+
                 // Fixed-height swap area so toggling between active and completion
                 // states doesn't reflow the surrounding layout (and shift the
-                // background waveform).
+                // waveform above).
                 ZStack {
                     if showCompletion {
                         completionView
@@ -79,6 +82,7 @@ struct ModelLoadingOverlay: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 140)
+                .padding(.top, 24)
 
                 Spacer()
 
