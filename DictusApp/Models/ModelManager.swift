@@ -269,24 +269,22 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // First model downloaded becomes active automatically
-            if activeModel == nil {
-                activeModel = identifier
-            }
+            // Issue #174: a freshly downloaded model becomes the active one.
+            // The user explicitly chose it; without this they had to tap the card
+            // a second time, triggering a redundant second RAM load.
+            activeModel = identifier
 
             modelStates[identifier] = .ready
             persistState()
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
+            PersistentLog.log(.modelSelected(name: identifier))
 
-            // Issue #144: if this download just made the model active (first download
-            // or user re-downloaded the active variant), eagerly load it into the
-            // coordinator's RAM-resident WhisperKit instance. The compile above used
-            // a throwaway WhisperKit just to populate the Core ML cache.
-            if activeModel == identifier {
-                DictationCoordinator.shared.preloadActiveModel()
-            }
+            // Issue #144: eagerly load the now-active model into the coordinator's
+            // RAM-resident WhisperKit instance. The compile above used a throwaway
+            // WhisperKit just to populate the Core ML cache.
+            DictationCoordinator.shared.preloadActiveModel()
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -384,9 +382,9 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            if activeModel == nil {
-                activeModel = identifier
-            }
+            // Issue #174: a freshly downloaded model becomes the active one —
+            // see comment in the WhisperKit path.
+            activeModel = identifier
 
             modelStates[identifier] = .ready
             persistState()
@@ -394,11 +392,10 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
+            PersistentLog.log(.modelSelected(name: identifier))
 
             // Issue #144: same proactive load as the WhisperKit path — see comment there.
-            if activeModel == identifier {
-                DictationCoordinator.shared.preloadActiveModel()
-            }
+            DictationCoordinator.shared.preloadActiveModel()
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
