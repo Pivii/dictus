@@ -75,6 +75,14 @@ struct ModelDownloadPage: View {
                     Text("\(Int(progress * 100))%")
                         .font(.dictusCaption)
                         .foregroundStyle(.secondary)
+
+                    // Moving byte counter — reads as alive even while the
+                    // percentage crawls through the 445 MB Encoder file (#207).
+                    if let bytes = modelManager.downloadByteInfo[recommendedModel] {
+                        Text("\(bytes.downloadedMB) MB of \(bytes.totalMB) MB")
+                            .font(.dictusCaption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .padding(.bottom, 16)
             }

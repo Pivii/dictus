@@ -50,13 +50,6 @@ struct ModelLoadingOverlay: View {
             // (#F2F2F7 in light, #0A1628 in dark).
             Color.dictusBackground.ignoresSafeArea()
 
-            // Waveform sits behind the central column. Same height/opacity as the
-            // onboarding welcome screen so the visual identity is consistent. Full
-            // edge-to-edge width — no horizontal padding.
-            BrandWaveform(maxHeight: 100, isProcessing: true)
-                .opacity(0.55)
-                .allowsHitTesting(false)
-
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
 
@@ -65,9 +58,19 @@ struct ModelLoadingOverlay: View {
 
                 Spacer()
 
+                // Waveform lives in the vertical flow, ABOVE the progress area.
+                // It used to be a ZStack background centered on the screen, which
+                // collided with the (also centered) progress bar on squat aspect
+                // ratios — iPad letterboxed compatibility mode, iPhone SE. Same
+                // height/opacity as the onboarding welcome screen; edge-to-edge
+                // width, no horizontal padding.
+                BrandWaveform(maxHeight: 100, isProcessing: true)
+                    .opacity(0.55)
+                    .allowsHitTesting(false)
+
                 // Fixed-height swap area so toggling between active and completion
                 // states doesn't reflow the surrounding layout (and shift the
-                // background waveform).
+                // waveform above).
                 ZStack {
                     if showCompletion {
                         completionView
@@ -79,6 +82,7 @@ struct ModelLoadingOverlay: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 140)
+                .padding(.top, 24)
 
                 Spacer()
 
@@ -141,6 +145,13 @@ struct ModelLoadingOverlay: View {
                     Text("\(Int(progress * 100)) %")
                         .font(.dictusCaption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                    // Moving byte counter — reads as alive even while the
+                    // percentage crawls through the 445 MB Encoder file (#207).
+                    if let bytes = modelManager.downloadByteInfo[modelIdentifier] {
+                        Text("\(bytes.downloadedMB) MB of \(bytes.totalMB) MB")
+                            .font(.dictusCaption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             CyclingLoadingText(phrases: phrases(for: currentPhase))
@@ -256,6 +267,14 @@ struct ModelLoadingOverlay: View {
     }
 
     private func checkForCompletion() {
+        // A failed download must dismiss the cover immediately — without this,
+        // `.error` falls into rawPhase's `.ready` mapping below and flashes the
+        // "Model ready" celebration on a failure (issue #207). The parent view
+        // surfaces the error message once the cover is gone.
+        if case .error = currentModelState {
+            isPresented = false
+            return
+        }
         // Latch the work-phase flag the first time we observe real activity.
         // We read `rawPhase` here (not the user-facing `currentPhase`) because
         // the latter masquerades the initial `.ready` state as `.downloading`

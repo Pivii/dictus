@@ -20,6 +20,18 @@ enum ModelState: Equatable {
     case error(String)
 }
 
+/// Byte counters for an in-flight model download, rounded to whole megabytes
+/// for display ("22 MB of 483 MB").
+struct ModelDownloadBytes: Equatable {
+    let downloadedMB: Int
+    let totalMB: Int
+
+    init(_ progress: ParakeetModelDownloader.Progress) {
+        downloadedMB = Int(progress.bytesDownloaded / 1_000_000)
+        totalMB = Int(progress.totalBytes / 1_000_000)
+    }
+}
+
 /// Manages WhisperKit model download, selection, deletion, and App Group persistence.
 ///
 /// WHY @MainActor:
@@ -42,6 +54,11 @@ class ModelManager: ObservableObject {
 
     /// Per-model download progress (0.0 to 1.0). Only populated during active downloads.
     @Published var downloadProgress: [String: Float] = [:]
+
+    /// Per-model byte counters ("22 MB of 483 MB") shown alongside the percentage.
+    /// A moving byte counter reads as alive even while the percentage crawls
+    /// through the huge Encoder file (issue #207). Parakeet downloads only.
+    @Published var downloadByteInfo: [String: ModelDownloadBytes] = [:]
 
     /// Per-model lifecycle state. Updated as models move through download/prewarm/ready.
     @Published var modelStates: [String: ModelState] = [:]
@@ -252,24 +269,22 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // First model downloaded becomes active automatically
-            if activeModel == nil {
-                activeModel = identifier
-            }
+            // Issue #174: a freshly downloaded model becomes the active one.
+            // The user explicitly chose it; without this they had to tap the card
+            // a second time, triggering a redundant second RAM load.
+            activeModel = identifier
 
             modelStates[identifier] = .ready
             persistState()
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
+            PersistentLog.log(.modelSelected(name: identifier))
 
-            // Issue #144: if this download just made the model active (first download
-            // or user re-downloaded the active variant), eagerly load it into the
-            // coordinator's RAM-resident WhisperKit instance. The compile above used
-            // a throwaway WhisperKit just to populate the Core ML cache.
-            if activeModel == identifier {
-                DictationCoordinator.shared.preloadActiveModel()
-            }
+            // Issue #144: eagerly load the now-active model into the coordinator's
+            // RAM-resident WhisperKit instance. The compile above used a throwaway
+            // WhisperKit just to populate the Core ML cache.
+            DictationCoordinator.shared.preloadActiveModel()
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -284,36 +299,51 @@ class ModelManager: ObservableObject {
         }
     }
 
-    /// Download a Parakeet model via FluidAudio SDK (iOS 17+ only).
+    /// Download a Parakeet model via the app-side downloader, then compile via FluidAudio.
     ///
     /// WHY a separate method:
-    /// FluidAudio's download + CoreML compilation is handled by a single call
-    /// (AsrModels.downloadAndLoad). There's no separate progress callback —
-    /// the download/compile is atomic. This is simpler than WhisperKit's
-    /// two-step download + prewarm, but means no progress bar during download.
+    /// WhisperKit and Parakeet use completely different download pipelines and
+    /// cache locations. This method downloads the raw model files itself, then
+    /// hands off to FluidAudio for CoreML compilation.
     ///
     /// Since Dictus now targets iOS 17, no availability guard is needed.
     /// FluidAudio is always available.
     private func downloadParakeetModel(_ identifier: String) async throws {
         modelStates[identifier] = .downloading
         downloadProgress[identifier] = 0.0
-        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: 0))
+        let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
+        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
 
         do {
-            // Step 1: Download all raw model files with byte-weighted aggregate progress.
-            // We use DownloadUtils.downloadRepo() instead of AsrModels.download() because
-            // the latter downloads 4 models sequentially (Preprocessor, Encoder, Decoder, Joint),
-            // each resetting progress to 0 — causing the UI bar to jump erratically.
-            // downloadRepo() downloads ALL files in one pass with proper byte-weighted progress.
-            let version: AsrModelVersion = .v3
-            let cacheDir = AsrModels.defaultCacheDirectory(for: version)
-            let parentDir = cacheDir.deletingLastPathComponent()
-            let repo: Repo = version == .v3 ? .parakeet : .parakeetV2
-            try await DownloadUtils.downloadRepo(repo, to: parentDir) { [weak self] progress in
-                // downloadRepo reports 0→0.5 for download phase (byte-weighted across all files)
-                let downloadFraction = Float(min(progress.fractionCompleted / 0.5, 1.0))
+            // Step 1: Download all raw model files with REAL byte-level progress
+            // (issue #207). FluidAudio's DownloadUtils.downloadRepo uses the async
+            // URLSession API, which never delivers didWriteData — progress only
+            // moved on whole-file completion, and with Encoder's weight.bin being
+            // ~92% of the payload the bar froze at ~5% for minutes (App Review
+            // rejected 1.7.1(19) as "frozen at 4%"). ParakeetModelDownloader
+            // downloads the same files into the same cache directory using a
+            // delegate-based downloadTask that does deliver byte callbacks.
+            let cacheDir = AsrModels.defaultCacheDirectory(for: .v3)
+            let downloader = ParakeetModelDownloader()
+            // Log at 10% milestones only (~10 lines per download). Mutated on the
+            // main actor exclusively, so the captured box needs no locking.
+            var lastLoggedDecile = -1
+            try await downloader.download(to: cacheDir, modelName: identifier) { [weak self] progress in
                 Task { @MainActor in
-                    self?.downloadProgress[identifier] = downloadFraction
+                    guard let self else { return }
+                    self.downloadProgress[identifier] = Float(progress.fraction)
+                    self.downloadByteInfo[identifier] = ModelDownloadBytes(progress)
+
+                    let decile = Int(progress.fraction * 10)
+                    if decile > lastLoggedDecile {
+                        lastLoggedDecile = decile
+                        PersistentLog.log(.modelDownloadProgress(
+                            name: identifier,
+                            percent: Int(progress.fraction * 100),
+                            mbDownloaded: Int(progress.bytesDownloaded / 1_000_000),
+                            mbTotal: Int(progress.totalBytes / 1_000_000)
+                        ))
+                    }
                 }
             }
 
@@ -326,6 +356,7 @@ class ModelManager: ObservableObject {
             isPrewarming = true
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
             defer { isPrewarming = false }
 
@@ -351,9 +382,9 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            if activeModel == nil {
-                activeModel = identifier
-            }
+            // Issue #174: a freshly downloaded model becomes the active one —
+            // see comment in the WhisperKit path.
+            activeModel = identifier
 
             modelStates[identifier] = .ready
             persistState()
@@ -361,15 +392,20 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
+            PersistentLog.log(.modelSelected(name: identifier))
 
             // Issue #144: same proactive load as the WhisperKit path — see comment there.
-            if activeModel == identifier {
-                DictationCoordinator.shared.preloadActiveModel()
-            }
+            DictationCoordinator.shared.preloadActiveModel()
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
 
+            // Deliberately NO cleanupModelFiles here (unlike the WhisperKit path):
+            // the downloader moves each file into place atomically, so anything on
+            // disk is a complete file — leaving the cache intact lets a retry skip
+            // already-downloaded files and resume where it left off. The Settings
+            // "Retry" affordance still offers a full reset via cleanupFailedModel.
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }
