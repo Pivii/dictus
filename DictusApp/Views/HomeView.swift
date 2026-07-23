@@ -11,6 +11,7 @@ import DictusCore
 /// Diagnostics move to Settings (Plan 04-02), model management is its own tab.
 struct HomeView: View {
     @EnvironmentObject var coordinator: DictationCoordinator
+    @EnvironmentObject var proStatus: ProStatusManager
     @ObservedObject var modelManager: ModelManager
     @State private var showCopiedFeedback = false
 
@@ -38,6 +39,9 @@ struct HomeView: View {
             if modelManager.isModelReady {
                 testDictationLink
             }
+
+            // Pro banner (hidden when subscribed)
+            ProBannerView()
 
             Spacer()
         }
@@ -195,5 +199,6 @@ struct HomeView: View {
     NavigationStack {
         HomeView(modelManager: ModelManager())
             .environmentObject(DictationCoordinator.shared)
+            .environmentObject(ProStatusManager())
     }
 }

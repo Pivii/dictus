@@ -1,5 +1,6 @@
 // DictusApp/DictusApp.swift
 import SwiftUI
+import StoreKit
 import DictusCore
 
 // MARK: - AppDelegate (sourceApplication diagnostic)
@@ -25,6 +26,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 struct DictusApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var coordinator = DictationCoordinator.shared
+    @StateObject private var proStatus: ProStatusManager
+    @StateObject private var subscriptionManager: SubscriptionManager
 
     /// Onboarding completion flag stored in App Group for cross-process access.
     ///
@@ -75,6 +78,15 @@ struct DictusApp: App {
             defaults?.set(true, forKey: SharedKeys.liveActivityEnabled)
         }
 
+        // Initialize Pro subscription management.
+        // WHY explicit _proStatus / _subscriptionManager initialization:
+        // SubscriptionManager depends on ProStatusManager (it writes Pro status
+        // to App Group). We need to create proStatus first, pass it to
+        // SubscriptionManager, then wrap both in StateObject.
+        let proStatus = ProStatusManager()
+        _proStatus = StateObject(wrappedValue: proStatus)
+        _subscriptionManager = StateObject(wrappedValue: SubscriptionManager(proStatus: proStatus))
+
         // Warm up the polish engine for the current target language (#141).
         // No-op when the toggle is off or when the engine has nothing to warm.
         PolishCoordinator.shared.prewarm()
@@ -86,6 +98,8 @@ struct DictusApp: App {
         WindowGroup {
             MainTabView()
                 .environmentObject(coordinator)
+                .environmentObject(proStatus)
+                .environmentObject(subscriptionManager)
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
@@ -142,6 +156,8 @@ struct DictusApp: App {
                 .fullScreenCover(isPresented: .constant(!hasCompletedOnboarding)) {
                     OnboardingView(isComplete: $hasCompletedOnboarding)
                         .environmentObject(coordinator)
+                        .environmentObject(proStatus)
+                        .environmentObject(subscriptionManager)
                 }
         }
     }

@@ -153,7 +153,7 @@ struct PaywallView: View {
                         .tint(.white)
                 } else {
                     // Price from StoreKit (never hardcoded)
-                    Text("Subscribe — \(subscriptionManager.products.first?.displayPrice ?? "...")/month")
+                    Text("Subscribe for \(subscriptionManager.products.first?.displayPrice ?? "...")/month")
                         .font(.dictusSubheading)
                 }
             }
