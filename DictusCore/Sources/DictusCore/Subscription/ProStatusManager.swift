@@ -31,7 +31,7 @@ public final class ProStatusManager: ObservableObject {
         defaults.register(defaults: [
             SharedKeys.smartModeEnabled: true,
             SharedKeys.historyEnabled: true,
-            SharedKeys.vocabularyEnabled: true,
+            SharedKeys.vocabularyEnabled: true
         ])
 
         // During beta, always return true -- all features unlocked
