@@ -141,6 +141,9 @@ public enum LogEvent: Sendable {
     case coldStartRetry(keyboardStatus: String)
     case coldStartDarwinFallback(elapsedMs: Int, status: String)
 
+    // MARK: Subscription
+    case subscriptionError(action: String, error: String)
+
     // MARK: Log Management
     case logExportCompleted(durationMs: Int, sizeBytes: Int)
 
@@ -194,6 +197,8 @@ public enum LogEvent: Sendable {
             return .lifecycle
         case .logExportCompleted:
             return .lifecycle
+        case .subscriptionError:
+            return .lifecycle
         case .liveActivityStarted, .liveActivityTransition, .liveActivityFailed, .liveActivityEnded:
             return .lifecycle
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
@@ -210,7 +215,7 @@ public enum LogEvent: Sendable {
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
-             .liveActivityFailed:
+             .liveActivityFailed, .subscriptionError:
             return .error
 
         // Warnings
@@ -340,6 +345,7 @@ public enum LogEvent: Sendable {
         case .coldStartFlagSet: return "coldStartFlagSet"
         case .coldStartRetry: return "coldStartRetry"
         case .coldStartDarwinFallback: return "coldStartDarwinFallback"
+        case .subscriptionError: return "subscriptionError"
         case .logExportCompleted: return "logExportCompleted"
         case .transcriptionPerformance: return "transcriptionPerformance"
         case .modelPrewarmPeakMemory: return "modelPrewarmPeakMemory"
@@ -524,6 +530,10 @@ public enum LogEvent: Sendable {
             return "keyboardStatus=\(keyboardStatus)"
         case .coldStartDarwinFallback(let elapsedMs, let status):
             return "elapsedMs=\(elapsedMs) status=\(status)"
+
+        // Subscription
+        case .subscriptionError(let action, let error):
+            return "action=\(action) error=\(error)"
 
         // Log Management
         case .logExportCompleted(let durationMs, let sizeBytes):
