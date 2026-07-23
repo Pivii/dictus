@@ -1,0 +1,43 @@
+{
+  "identifier" : "5B6E8D9A-1234-4567-89AB-CDEF01234567",
+  "type" : "Configuration",
+  "version" : 3,
+  "subscriptionGroups" : [
+    {
+      "id" : "A1B2C3D4-5678-90AB-CDEF-012345678901",
+      "localizations" : [
+        {
+          "description" : "Unlock Smart Mode, History, and Vocabulary",
+          "displayName" : "Dictus Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Dictus Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "E5F6A7B8-9012-3456-789A-BCDEF0123456",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlock Smart Mode, History, and Vocabulary",
+              "displayName" : "Dictus Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "name" : "Dictus Pro Monthly",
+          "productID" : "solutions.pivi.dictus.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Dictus Pro Monthly",
+          "subscriptionGroupID" : "A1B2C3D4-5678-90AB-CDEF-012345678901",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        }
+      ]
+    }
+  ]
+}
