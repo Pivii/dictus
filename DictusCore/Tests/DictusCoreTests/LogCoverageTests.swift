@@ -34,6 +34,7 @@ final class LogCoverageTests: XCTestCase {
             .coldStartRetry(keyboardStatus: "requested"),
             .coldStartDarwinFallback(elapsedMs: 510, status: "requested"),
             .logExportCompleted(durationMs: 150, sizeBytes: 50000),
+            .subscriptionError(action: "purchase", error: "productNotFound"),
             .appLaunched(version: "1.2"),
             .appDidBecomeActive,
             .appWillResignActive,

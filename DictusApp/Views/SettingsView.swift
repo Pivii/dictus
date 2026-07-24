@@ -4,7 +4,7 @@ import SwiftUI
 import UIKit
 import DictusCore
 
-/// Settings screen with 3 sections: Transcription, Keyboard, About.
+/// Settings screen: Dictus Pro, Transcription, Keyboard, Pro Features, About.
 ///
 /// WHY @AppStorage with App Group store:
 /// Preferences need to be readable by both the main app AND the keyboard extension.
@@ -15,6 +15,8 @@ import DictusCore
 /// iOS standard settings pattern — users immediately recognize the familiar
 /// grouped rows with section headers and footers.
 struct SettingsView: View {
+
+    @EnvironmentObject var proStatus: ProStatusManager
 
     // MARK: - Preferences (App Group persisted)
 
@@ -67,6 +69,25 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            // Section 0: Dictus Pro — always first
+            Section {
+                NavigationLink {
+                    PaywallView()
+                } label: {
+                    HStack {
+                        Image(systemName: "crown.fill")
+                            .foregroundColor(.dictusAccent)
+                        Text("Dictus Pro")
+                        Spacer()
+                        if proStatus.isProActive {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.dictusSuccess)
+                                .accessibilityLabel("Pro active")
+                        }
+                    }
+                }
+            }
+
             // Section 1: Transcription
             Section {
                 Picker("Transcription language", selection: $language) {
@@ -128,6 +149,50 @@ struct SettingsView: View {
                 }
             }
 
+            // Section 3: Pro Features
+            Section("Pro Features") {
+                ForEach(ProFeature.allCases, id: \.self) { feature in
+                    if proStatus.isProActive {
+                        // Unlocked: show toggle
+                        Toggle(isOn: Binding(
+                            get: { AppGroup.defaults.bool(forKey: feature.settingsKey) },
+                            set: { AppGroup.defaults.set($0, forKey: feature.settingsKey) }
+                        )) {
+                            HStack(spacing: 8) {
+                                Image(systemName: feature.icon)
+                                    .foregroundColor(.dictusAccent)
+                                Text(LocalizedStringKey(feature.displayName))
+                            }
+                        }
+                    } else {
+                        // Locked: show lock + PRO pill, tap opens paywall
+                        NavigationLink {
+                            PaywallView()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: feature.icon)
+                                    .foregroundColor(.secondary)
+                                Text(LocalizedStringKey(feature.displayName))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.dictusAccent)
+                                    .accessibilityHidden(true)
+                                Text("PRO")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.vertical, 2)
+                                    .padding(.horizontal, 6)
+                                    .background(Color.dictusAccent)
+                                    .clipShape(Capsule())
+                                    .accessibilityLabel("Pro feature")
+                            }
+                        }
+                    }
+                }
+            }
+
             #if DEBUG
             // Section: Developer (visible ONLY in Debug builds — not in Release/TestFlight/App Store).
             // WHY #if DEBUG: Code inside is compile-time excluded from production builds.
@@ -146,7 +211,7 @@ struct SettingsView: View {
             }
             #endif
 
-            // Section 3: A propos
+            // Section 4: A propos
             Section("About") {
                 LabeledContent("Version", value: appVersion)
                     .contentShape(Rectangle())

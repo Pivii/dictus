@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		AA0000L0 /* ModelInfo+Localized.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000L0 /* ModelInfo+Localized.swift */; };
+		SS000001 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100001 /* SubscriptionManager.swift */; };
+		SS000002 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100002 /* PaywallView.swift */; };
+		SS000003 /* ProBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100003 /* ProBannerView.swift */; };
 		AA0000L1 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA1000L1 /* Localizable.xcstrings */; };
 		AA0000L2 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA1000L2 /* Localizable.xcstrings */; };
 		4647AD302F76AAA5003C3546 /* RecordingView.swift in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100043 /* RecordingView.swift */; };
@@ -242,6 +245,10 @@
 		AA10P205 /* PolishDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugView.swift; sourceTree = "<group>"; };
 		AA10P207 /* PolishDebugExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugExporter.swift; sourceTree = "<group>"; };
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
+		SS100001 /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		SS100002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		SS100003 /* ProBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProBannerView.swift; sourceTree = "<group>"; };
+		SS100004 /* StoreKitConfig.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = StoreKitConfig.storekit; sourceTree = "<group>"; };
 		AA100P10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA100P20 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA200001 /* DictusApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DictusApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -344,6 +351,7 @@
 				AA100009 /* DictationCoordinator.swift */,
 				AA10000A /* DictationView.swift */,
 				AA1000F5 /* LiveActivityManager.swift */,
+				SS400001 /* Subscription */,
 				AA400007 /* Audio */,
 				AA40000B /* Onboarding */,
 				AA40P200 /* Polish */,
@@ -486,8 +494,19 @@
 				AA1000F3 /* SoundSettingsView.swift */,
 				AA100300 /* CyclingLoadingText.swift */,
 				AA100301 /* ModelLoadingOverlay.swift */,
+				SS100002 /* PaywallView.swift */,
+				SS100003 /* ProBannerView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		SS400001 /* Subscription */ = {
+			isa = PBXGroup;
+			children = (
+				SS100001 /* SubscriptionManager.swift */,
+				SS100004 /* StoreKitConfig.storekit */,
+			);
+			path = Subscription;
 			sourceTree = "<group>";
 		};
 		AA400009 /* Models */ = {
@@ -940,6 +959,9 @@
 				AA0000F3 /* SoundSettingsView.swift in Sources */,
 				AA0000F6 /* StopStandbyIntent.swift in Sources */,
 				AA0000L0 /* ModelInfo+Localized.swift in Sources */,
+				SS000001 /* SubscriptionManager.swift in Sources */,
+				SS000002 /* PaywallView.swift in Sources */,
+				SS000003 /* ProBannerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
