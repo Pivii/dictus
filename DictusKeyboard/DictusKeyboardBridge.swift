@@ -403,8 +403,6 @@ final class DictusKeyboardBridge: NSObject,
                isAtSentenceStart: atSentenceStart
            ),
            result.correction.lowercased() != freshWord.lowercased() {
-            let proxy = controller?.textDocumentProxy
-
             // Boundary-safe replacement (#191): re-read the LIVE context and
             // verify it still ends with the word we plan to replace, with a
             // proper boundary before it. Under proxy desync (rapid delete/retype
@@ -412,57 +410,16 @@ final class DictusKeyboardBridge: NSObject,
             // disagree with the document — a blind count-based delete would eat
             // the preceding space ("pense quee" -> "penseque"). On failure we
             // skip the correction and fall through to a normal space.
-            let liveContext = proxy?.documentContextBeforeInput
+            let liveContext = controller?.textDocumentProxy.documentContextBeforeInput
             switch AutocorrectReplacement.check(context: liveContext, word: freshWord) {
             case .ok(let deleteCount):
-                #if DEBUG
-                AutocorrectDebugLog.applyBefore(
-                    word: freshWord,
+                applyAutocorrect(
+                    state: state,
+                    freshWord: freshWord,
                     correction: result.correction,
-                    prevWord: previousWord,
-                    contextTail: Self.contextTail(liveContext)
+                    previousWord: previousWord,
+                    deleteCount: deleteCount
                 )
-                #endif
-
-                for _ in 0..<deleteCount {
-                    proxy?.deleteBackward()
-                }
-                #if DEBUG
-                AutocorrectDebugLog.applyAfterDelete(
-                    contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
-                )
-                #endif
-
-                proxy?.insertText(result.correction)
-                proxy?.insertText(" ")
-                lastInsertedCharacter = " "
-
-                #if DEBUG
-                AutocorrectDebugLog.applyAfterInsert(
-                    contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
-                )
-                AutocorrectDebugLog.autocorrectApplied(
-                    original: freshWord,
-                    corrected: result.correction,
-                    prevWord: previousWord
-                )
-                #endif
-
-                // Store undo state — user can tap suggestion bar to revert
-                state.pendingUndo = AutocorrectState(
-                    originalWord: freshWord,
-                    correctedWord: result.correction,
-                    insertedSpace: true
-                )
-                HapticFeedback.autocorrectApplied()
-                // Trigger n-gram predictions after autocorrection too.
-                // The corrected word + space is now in the proxy — predict what comes next.
-                state.clear()
-                state.rejectedWords.removeAll()
-                let correctedContext = controller?.textDocumentProxy.documentContextBeforeInput
-                state.updatePredictions(context: correctedContext)
-                updateCapitalization()
-                updateAccentKeyDisplay()
                 return
 
             case .failed(let reason):
@@ -682,6 +639,69 @@ final class DictusKeyboardBridge: NSObject,
         default:
             break
         }
+    }
+
+    /// Applies a validated autocorrection: deletes the typed word, inserts the
+    /// correction + trailing space, stores undo state and refreshes predictions.
+    /// Only called after AutocorrectReplacement.check confirmed the live context
+    /// ends with `freshWord` (#191) — `deleteCount` comes from that check.
+    private func applyAutocorrect(
+        state: SuggestionState,
+        freshWord: String,
+        correction: String,
+        previousWord: String?,
+        deleteCount: Int
+    ) {
+        let proxy = controller?.textDocumentProxy
+
+        #if DEBUG
+        AutocorrectDebugLog.applyBefore(
+            word: freshWord,
+            correction: correction,
+            prevWord: previousWord,
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        #endif
+
+        for _ in 0..<deleteCount {
+            proxy?.deleteBackward()
+        }
+        #if DEBUG
+        AutocorrectDebugLog.applyAfterDelete(
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        #endif
+
+        proxy?.insertText(correction)
+        proxy?.insertText(" ")
+        lastInsertedCharacter = " "
+
+        #if DEBUG
+        AutocorrectDebugLog.applyAfterInsert(
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        AutocorrectDebugLog.autocorrectApplied(
+            original: freshWord,
+            corrected: correction,
+            prevWord: previousWord
+        )
+        #endif
+
+        // Store undo state — user can tap suggestion bar to revert
+        state.pendingUndo = AutocorrectState(
+            originalWord: freshWord,
+            correctedWord: correction,
+            insertedSpace: true
+        )
+        HapticFeedback.autocorrectApplied()
+        // Trigger n-gram predictions after autocorrection too.
+        // The corrected word + space is now in the proxy — predict what comes next.
+        state.clear()
+        state.rejectedWords.removeAll()
+        let correctedContext = controller?.textDocumentProxy.documentContextBeforeInput
+        state.updatePredictions(context: correctedContext)
+        updateCapitalization()
+        updateAccentKeyDisplay()
     }
 
     /// Last ~30 characters of a context string, for DEBUG replacement logs.
