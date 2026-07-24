@@ -12,17 +12,28 @@ import DictusCore
 /// cross-actor data races and explicit DispatchQueue.main.async calls.
 ///
 /// WHY a single class for all StoreKit logic:
-/// Dictus has exactly one product (monthly subscription). A single manager
-/// handles product fetch, purchase, restore, and transaction listening.
-/// No need for abstraction layers or protocol-based architecture.
+/// Dictus has one subscription group with two plans (monthly and yearly).
+/// A single manager handles product fetch, purchase, restore, and
+/// transaction listening for both. No need for abstraction layers.
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchaseState: PurchaseState = .idle
 
-    /// Product ID matching App Store Connect configuration.
-    /// WHY this specific format: Apple convention is reverse-domain + product type.
-    private let productIDs: Set<String> = ["solutions.pivi.dictus.pro.monthly"]
+    /// Product IDs matching App Store Connect configuration.
+    /// WHY static constants: PaywallView looks products up by ID (never by
+    /// array index, since StoreKit's fetch order is unspecified) to preselect
+    /// the yearly plan and label the CTA per plan.
+    static let monthlyProductID = "solutions.pivi.dictus.pro.monthly"
+    static let yearlyProductID = "solutions.pivi.dictus.pro.yearly"
+
+    private let productIDs: Set<String> = [
+        SubscriptionManager.monthlyProductID,
+        SubscriptionManager.yearlyProductID,
+    ]
+
+    var monthlyProduct: Product? { products.first { $0.id == Self.monthlyProductID } }
+    var yearlyProduct: Product? { products.first { $0.id == Self.yearlyProductID } }
 
     private var transactionListener: Task<Void, Never>?
     private let proStatus: ProStatusManager
@@ -51,7 +62,10 @@ final class SubscriptionManager: ObservableObject {
     /// fetch came back empty (e.g. store not ready during cold start).
     func loadProducts() async {
         do {
+            // Sort by ascending price so array order is deterministic —
+            // Product.products(for:) returns results in unspecified order.
             products = try await Product.products(for: productIDs)
+                .sorted { $0.price < $1.price }
             // An unknown product ID returns an empty array WITHOUT throwing —
             // the signature of a missing StoreKit configuration. Log it so the
             // dead "..." CTA is diagnosable from exported logs.
