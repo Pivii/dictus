@@ -1,5 +1,5 @@
 // DictusApp/Views/PaywallView.swift
-// Full-screen paywall pushed via NavigationStack with feature cards, CTA, and beta variant.
+// Full-screen paywall pushed via NavigationStack: hero, feature cards, plan selector, CTA.
 import SwiftUI
 import StoreKit
 import DictusCore
@@ -8,6 +8,23 @@ struct PaywallView: View {
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     @EnvironmentObject var proStatus: ProStatusManager
     @Environment(\.dismiss) private var dismiss
+
+    /// Selected plan, tracked by product ID (never by array index: StoreKit's
+    /// product order is unspecified). Yearly is preselected per the pricing
+    /// decision on #78, true from the first frame with no load-completion hook.
+    @State private var selectedProductID = SubscriptionManager.yearlyProductID
+
+    /// Whether the user can still claim the yearly intro offer (7-day trial).
+    /// The offer exists in configuration for everyone, but StoreKit grants it
+    /// once per Apple ID. Defaults to false so the CTA never over-promises.
+    @State private var isEligibleForTrial = false
+
+    /// Product matching the current selection, degrading to whatever loaded
+    /// if the selected one is unavailable. Nil disables the CTA.
+    private var selectedProduct: Product? {
+        subscriptionManager.products.first { $0.id == selectedProductID }
+            ?? subscriptionManager.products.first
+    }
 
     var body: some View {
         ScrollView {
@@ -25,7 +42,9 @@ struct PaywallView: View {
                     // Already subscribed
                     alreadyProBanner
                 } else {
-                    // Subscribe CTA with localized price
+                    // Plan selector: yearly (preselected) and monthly cards
+                    planSelector
+                    // Subscribe CTA following the selected plan
                     subscribeCTA
                     // "Cancel anytime" reassurance
                     Text("Cancel anytime")
@@ -47,6 +66,11 @@ struct PaywallView: View {
             // so a transient failure doesn't leave the CTA stuck on "...".
             if subscriptionManager.products.isEmpty {
                 await subscriptionManager.loadProducts()
+            }
+            // Configuration describes the trial for everyone; eligibility is
+            // per Apple ID. Ask StoreKit rather than assuming.
+            if let subscription = subscriptionManager.yearlyProduct?.subscription {
+                isEligibleForTrial = await subscription.isEligibleForIntroOffer
             }
         }
         .onChange(of: subscriptionManager.purchaseState) { _, newState in
@@ -146,12 +170,116 @@ struct PaywallView: View {
         .dictusGlass()
     }
 
+    // MARK: - Plan Selector
+
+    /// Yearly card first, matching its preselection. Each card renders only
+    /// if its product loaded, so a partial fetch degrades instead of crashing.
+    private var planSelector: some View {
+        VStack(spacing: 12) {
+            if let yearly = subscriptionManager.yearlyProduct {
+                planCard(
+                    product: yearly,
+                    title: "Yearly",
+                    priceText: Text("\(yearly.displayPrice)/year"),
+                    subtitle: perMonthEquivalent(for: yearly),
+                    badge: discountBadgeText
+                )
+            }
+            if let monthly = subscriptionManager.monthlyProduct {
+                planCard(
+                    product: monthly,
+                    title: "Monthly",
+                    priceText: Text("\(monthly.displayPrice)/month"),
+                    subtitle: nil,
+                    badge: nil
+                )
+            }
+        }
+    }
+
+    private func planCard(
+        product: Product,
+        title: LocalizedStringKey,
+        priceText: Text,
+        subtitle: Text?,
+        badge: String?
+    ) -> some View {
+        let isSelected = product.id == selectedProductID
+        return Button {
+            selectedProductID = product.id
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.dictusSubheading)
+                    priceText
+                        .font(.dictusBody)
+                        .foregroundColor(.secondary)
+                    if let subtitle {
+                        subtitle
+                            .font(.dictusCaption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if let badge {
+                    Text(verbatim: badge)
+                        .font(.dictusCaption.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.dictusAccent, in: Capsule())
+                        .foregroundColor(.white)
+                }
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isSelected ? .dictusAccent : .secondary)
+            }
+            .padding(16)
+            .foregroundColor(.primary)
+            .dictusGlass()
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(isSelected ? Color.dictusAccent : .clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(GlassPressStyle(pressedScale: 0.97))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
+    }
+
+    /// Per-month equivalent under the yearly price, e.g. "Soit 3,33 € par mois".
+    /// WHY priceFormatStyle: it carries the product's own currency and locale,
+    /// so the divided price is formatted exactly like displayPrice.
+    private func perMonthEquivalent(for yearly: Product) -> Text {
+        let perMonth = yearly.priceFormatStyle.format(yearly.price / Decimal(12))
+        return Text("That's \(perMonth) per month")
+    }
+
+    /// Discount badge, e.g. "-33 %". Computed from live prices so a price
+    /// change in App Store Connect can never make the badge lie. Nil (hidden)
+    /// when either product is missing or the discount is not positive.
+    private var discountBadgeText: String? {
+        guard let yearly = subscriptionManager.yearlyProduct,
+              let monthly = subscriptionManager.monthlyProduct,
+              monthly.price > 0 else { return nil }
+        let ratio = 1 - (yearly.price / (monthly.price * 12))
+        let percent = (ratio as NSDecimalNumber).doubleValue
+        guard percent > 0 else { return nil }
+        let formatted = percent.formatted(
+            .percent.precision(.fractionLength(0)).sign(strategy: .never)
+        )
+        return "-" + formatted
+    }
+
     // MARK: - Subscribe CTA
 
     private var subscribeCTA: some View {
         Button {
             Task {
-                if let product = subscriptionManager.products.first {
+                if let product = selectedProduct {
                     await subscriptionManager.purchase(product)
                 }
             }
@@ -161,8 +289,7 @@ struct PaywallView: View {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    // Price from StoreKit (never hardcoded)
-                    Text("Subscribe for \(subscriptionManager.products.first?.displayPrice ?? "...")/month")
+                    ctaLabel
                         .font(.dictusSubheading)
                 }
             }
@@ -173,9 +300,37 @@ struct PaywallView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(GlassPressStyle())
-        .disabled(subscriptionManager.products.isEmpty || subscriptionManager.purchaseState == .purchasing)
-        .opacity(subscriptionManager.products.isEmpty ? 0.5 : 1.0)
-        .accessibilityLabel("Subscribe to Dictus Pro for \(subscriptionManager.products.first?.displayPrice ?? "unknown price") per month")
+        .disabled(selectedProduct == nil || subscriptionManager.purchaseState == .purchasing)
+        .opacity(selectedProduct == nil ? 0.5 : 1.0)
+        .accessibilityLabel(ctaLabel)
+    }
+
+    /// CTA label follows the selected plan. Prices and trial duration come
+    /// from the StoreKit Product; nothing is hardcoded.
+    private var ctaLabel: Text {
+        guard let product = selectedProduct else { return Text(verbatim: "...") }
+        if product.id == SubscriptionManager.yearlyProductID {
+            if isEligibleForTrial,
+               let offer = product.subscription?.introductoryOffer,
+               offer.paymentMode == .freeTrial,
+               let days = trialDays(for: offer) {
+                return Text("\(days) days free, then \(product.displayPrice)/year")
+            }
+            return Text("Subscribe for \(product.displayPrice)/year")
+        }
+        return Text("Subscribe for \(product.displayPrice)/month")
+    }
+
+    /// Trial length in days. StoreKit expresses the 7-day trial as 1 week;
+    /// convert so the CTA reads "7 days free" as designed. Returns nil for
+    /// month/year units so the caller falls back to the plain subscribe
+    /// label rather than showing awkward copy.
+    private func trialDays(for offer: Product.SubscriptionOffer) -> Int? {
+        switch offer.period.unit {
+        case .day: return offer.period.value
+        case .week: return offer.period.value * 7
+        default: return nil
+        }
     }
 
     // MARK: - Bottom Links
