@@ -109,9 +109,4 @@ public enum SharedKeys {
     public static let historyEnabled = "dictus.historyEnabled"
     /// Bool: per-feature toggle for Vocabulary, default true (registered by ProStatusManager)
     public static let vocabularyEnabled = "dictus.vocabularyEnabled"
-
-    // MARK: - Debug
-    /// Bool: DEBUG-only toggle that forces the free tier to test the paywall flow.
-    /// Only read inside #if DEBUG blocks; has no effect in Release builds.
-    public static let debugForceFreeTier = "dictus.debug.forceFreeTier"
 }

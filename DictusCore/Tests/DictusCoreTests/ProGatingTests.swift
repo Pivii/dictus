@@ -1,10 +1,12 @@
 // DictusCore/Tests/DictusCoreTests/ProGatingTests.swift
-// Tests for Pro feature gating resolution (ProFeature, ProConfig, FeatureGate,
+// Tests for Pro feature gating resolution (ProFeature, FeatureGate,
 // ProStatusManager) -- issue #55.
 //
-// These tests mutate the real App Group UserDefaults suite, so setUp/tearDown
-// remove every Pro-related key to avoid polluting other tests or later runs.
-// swift test builds in Debug, so the #if DEBUG force-free-tier paths are active.
+// Pro status is driven entirely by the StoreKit-backed proActive flag in
+// App Group UserDefaults: no flag means free tier.
+//
+// These tests mutate the real App Group suite, so setUp/tearDown remove
+// every Pro-related key to avoid polluting other tests or later runs.
 import XCTest
 @testable import DictusCore
 
@@ -18,8 +20,7 @@ final class ProGatingTests: XCTestCase {
         SharedKeys.proActive,
         SharedKeys.smartModeEnabled,
         SharedKeys.historyEnabled,
-        SharedKeys.vocabularyEnabled,
-        SharedKeys.debugForceFreeTier,
+        SharedKeys.vocabularyEnabled
     ]
 
     override func setUp() {
@@ -53,62 +54,32 @@ final class ProGatingTests: XCTestCase {
         }
     }
 
-    // MARK: - ProConfig
-
-    /// Intentional guard: flipping isBeta to false (the App Store paywall
-    /// release) must be a conscious decision that updates this test too.
-    func testBetaPeriodIsActive() {
-        XCTAssertTrue(ProConfig.isBeta)
-    }
-
-    func testEffectiveBetaMatchesIsBetaByDefault() {
-        XCTAssertEqual(ProConfig.effectiveBeta, ProConfig.isBeta)
-    }
-
-    func testEffectiveBetaFalseWhenForceFreeTier() {
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
-        XCTAssertFalse(ProConfig.effectiveBeta)
-    }
-
     // MARK: - FeatureGate
 
-    func testAllFeaturesAvailableDuringBeta() {
-        // registerDefaults hasn't run (no ProStatusManager init) -- set the
-        // per-feature toggles explicitly; the assertion target is the
-        // resolution logic, not the default registration.
+    func testFreeTierByDefault() {
+        // No proActive flag, no purchase: everything locked.
         for feature in ProFeature.allCases {
             defaults.set(true, forKey: feature.settingsKey)
         }
-        XCTAssertTrue(FeatureGate.isProActive)
-        for feature in ProFeature.allCases {
-            XCTAssertTrue(FeatureGate.isAvailable(feature), "\(feature) should be available during beta")
-        }
-    }
-
-    func testAllFeaturesLockedWhenForcedFreeTier() {
-        for feature in ProFeature.allCases {
-            defaults.set(true, forKey: feature.settingsKey)
-        }
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
         XCTAssertFalse(FeatureGate.isProActive)
         for feature in ProFeature.allCases {
             XCTAssertFalse(FeatureGate.isAvailable(feature), "\(feature) should be locked on free tier")
         }
     }
 
-    func testFeaturesAvailableAgainWhenProPurchasedUnderForcedFreeTier() {
+    func testAllFeaturesAvailableWhenPro() {
         for feature in ProFeature.allCases {
             defaults.set(true, forKey: feature.settingsKey)
         }
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
         defaults.set(true, forKey: SharedKeys.proActive)
         XCTAssertTrue(FeatureGate.isProActive)
         for feature in ProFeature.allCases {
-            XCTAssertTrue(FeatureGate.isAvailable(feature))
+            XCTAssertTrue(FeatureGate.isAvailable(feature), "\(feature) should be available when Pro")
         }
     }
 
     func testDisabledToggleLocksOnlyThatFeature() {
+        defaults.set(true, forKey: SharedKeys.proActive)
         for feature in ProFeature.allCases {
             defaults.set(true, forKey: feature.settingsKey)
         }
@@ -119,6 +90,7 @@ final class ProGatingTests: XCTestCase {
     }
 
     func testKeyboardGateMirrorsMainGate() {
+        defaults.set(true, forKey: SharedKeys.proActive)
         for feature in ProFeature.allCases {
             defaults.set(true, forKey: feature.settingsKey)
         }
@@ -133,9 +105,14 @@ final class ProGatingTests: XCTestCase {
     // MARK: - ProStatusManager
 
     @MainActor
-    func testInitDuringBetaIsProActive() {
-        let manager = ProStatusManager()
-        XCTAssertTrue(manager.isProActive)
+    func testInitDefaultsToFreeTier() {
+        XCTAssertFalse(ProStatusManager().isProActive)
+    }
+
+    @MainActor
+    func testInitReadsProActiveKey() {
+        defaults.set(true, forKey: SharedKeys.proActive)
+        XCTAssertTrue(ProStatusManager().isProActive)
     }
 
     @MainActor
@@ -148,51 +125,19 @@ final class ProGatingTests: XCTestCase {
     }
 
     @MainActor
-    func testInitUnderForcedFreeTierReadsProActiveKey() {
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
-        XCTAssertFalse(ProStatusManager().isProActive)
-
-        defaults.set(true, forKey: SharedKeys.proActive)
-        XCTAssertTrue(ProStatusManager().isProActive)
-    }
-
-    @MainActor
     func testSetProActivePersistsToAppGroup() {
         let manager = ProStatusManager()
         manager.setProActive(true)
         XCTAssertTrue(defaults.bool(forKey: SharedKeys.proActive))
+        XCTAssertTrue(manager.isProActive)
 
         manager.setProActive(false)
         XCTAssertFalse(defaults.bool(forKey: SharedKeys.proActive))
-    }
-
-    @MainActor
-    func testSetProActiveFalseDuringBetaStaysActive() {
-        let manager = ProStatusManager()
-        manager.setProActive(false)
-        // isProActive = active || ProConfig.isBeta -- beta keeps it unlocked.
-        XCTAssertTrue(manager.isProActive)
-    }
-
-    @MainActor
-    func testSetProActiveUnderForcedFreeTierTracksExactValue() {
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
-        let manager = ProStatusManager()
-        manager.setProActive(true)
-        XCTAssertTrue(manager.isProActive)
-        manager.setProActive(false)
         XCTAssertFalse(manager.isProActive)
     }
 
-    func testStaticReadMirrorsGatingMatrix() {
-        // Beta, no keys set.
-        XCTAssertTrue(ProStatusManager.isProActiveStatic)
-
-        // Forced free tier, not purchased.
-        defaults.set(true, forKey: SharedKeys.debugForceFreeTier)
+    func testStaticReadMirrorsProActiveKey() {
         XCTAssertFalse(ProStatusManager.isProActiveStatic)
-
-        // Forced free tier, purchased.
         defaults.set(true, forKey: SharedKeys.proActive)
         XCTAssertTrue(ProStatusManager.isProActiveStatic)
     }

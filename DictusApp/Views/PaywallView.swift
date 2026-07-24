@@ -25,10 +25,7 @@ struct PaywallView: View {
                     }
                 }
 
-                if ProConfig.effectiveBeta {
-                    // Beta banner replaces purchase flow
-                    betaBanner
-                } else if proStatus.isProActive {
+                if proStatus.isProActive {
                     // Already subscribed
                     alreadyProBanner
                 } else {
@@ -107,27 +104,6 @@ struct PaywallView: View {
         }
     }
 
-    // MARK: - Beta Banner
-
-    private var betaBanner: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.title2)
-                .foregroundColor(.dictusSuccess)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("All Pro features free during beta")
-                    .font(.dictusSubheading)
-                Text("Thank you for testing Dictus!")
-                    .font(.dictusCaption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .dictusGlass()
-    }
-
     // MARK: - Already Pro Banner
 
     private var alreadyProBanner: some View {
@@ -180,13 +156,11 @@ struct PaywallView: View {
 
     private var bottomLinks: some View {
         VStack(spacing: 8) {
-            if !ProConfig.effectiveBeta {
-                Button("Restore purchases") {
-                    Task { await subscriptionManager.restorePurchases() }
-                }
-                .font(.dictusCaption)
-                .accessibilityLabel("Restore previous purchases")
+            Button("Restore purchases") {
+                Task { await subscriptionManager.restorePurchases() }
             }
+            .font(.dictusCaption)
+            .accessibilityLabel("Restore previous purchases")
 
             HStack(spacing: 16) {
                 Link("Terms of Service", destination: URL(string: "https://dictus.app/terms")!)

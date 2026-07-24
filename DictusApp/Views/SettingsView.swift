@@ -79,17 +79,7 @@ struct SettingsView: View {
                             .foregroundColor(.dictusAccent)
                         Text("Dictus Pro")
                         Spacer()
-                        if ProConfig.effectiveBeta {
-                            Text("BETA")
-                                .font(.dictusCaption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .background(Color.dictusAccent)
-                                .clipShape(Capsule())
-                                .accessibilityLabel("Beta, all features free")
-                        } else if proStatus.isProActive {
+                        if proStatus.isProActive {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.dictusSuccess)
                                 .accessibilityLabel("Pro active")
@@ -162,7 +152,7 @@ struct SettingsView: View {
             // Section 3: Pro Features
             Section("Pro Features") {
                 ForEach(ProFeature.allCases, id: \.self) { feature in
-                    if proStatus.isProActive || ProConfig.effectiveBeta {
+                    if proStatus.isProActive {
                         // Unlocked: show toggle
                         Toggle(isOn: Binding(
                             get: { AppGroup.defaults.bool(forKey: feature.settingsKey) },
@@ -209,21 +199,6 @@ struct SettingsView: View {
             // Impossible to accidentally ship a toggle that logs user text.
             Section {
                 Toggle("Autocorrect debug logs", isOn: $autocorrectDebugLogging)
-
-                Toggle(isOn: Binding(
-                    get: { AppGroup.defaults.bool(forKey: SharedKeys.debugForceFreeTier) },
-                    set: { newValue in
-                        AppGroup.defaults.set(newValue, forKey: SharedKeys.debugForceFreeTier)
-                        // Re-evaluate Pro status immediately so all UI updates
-                        proStatus.setProActive(AppGroup.defaults.bool(forKey: SharedKeys.proActive))
-                    }
-                )) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "ladybug")
-                            .foregroundColor(.orange)
-                        Text("Force Free Tier")
-                    }
-                }
             } header: {
                 Text("Developer")
             } footer: {
