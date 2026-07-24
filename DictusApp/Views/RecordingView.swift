@@ -61,8 +61,12 @@ struct RecordingView: View {
                             withAnimation(.easeOut(duration: 0.25)) {
                                 isDismissing = true
                             }
-                            // Step 2: after animation, reset status (no animation leak to HomeView)
+                            // Step 2: after animation, reset status (no animation leak to HomeView).
+                            // Generation guard (issue #60): if a new dictation started while the
+                            // dismiss animation ran, this stale reset must not tear it down.
+                            let generation = coordinator.dictationGeneration
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                guard coordinator.dictationGeneration == generation else { return }
                                 coordinator.resetStatus()
                             }
                         } label: {
@@ -286,9 +290,13 @@ struct RecordingView: View {
                 // Auto-advance to success screen in onboarding mode
                 // Shows transcription result for 1.5s then triggers onComplete
                 if mode == .onboarding {
+                    // Generation guard (issue #60): if the user started a new dictation
+                    // during the 1.5s delay, this stale auto-advance must not fire.
+                    let generation = coordinator.dictationGeneration
                     Task {
                         try? await Task.sleep(for: .milliseconds(1500))
                         await MainActor.run {
+                            guard coordinator.dictationGeneration == generation else { return }
                             coordinator.resetStatus()
                             onComplete?()
                         }
