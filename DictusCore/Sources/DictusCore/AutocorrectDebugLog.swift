@@ -128,6 +128,17 @@ public enum AutocorrectDebugLog {
         write("UNDO orig=\"\(original)\" rejected=\"\(rejected)\"")
     }
 
+    /// The host field's input traits changed the autocorrect/suggestions policy (#200).
+    /// Logged once per policy change (not per keystroke).
+    public static func hostPolicy(
+        autocorrectAllowed: Bool,
+        suggestionsAllowed: Bool,
+        reason: String
+    ) {
+        guard enabled else { return }
+        write("HOST-TRAITS autocorrect=\(autocorrectAllowed) suggestions=\(suggestionsAllowed) reason=\(reason)")
+    }
+
     /// Free-form note (use sparingly — prefer typed events above).
     public static func note(_ message: String) {
         guard enabled else { return }

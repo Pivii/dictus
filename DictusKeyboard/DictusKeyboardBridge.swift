@@ -174,6 +174,36 @@ final class DictusKeyboardBridge: NSObject,
         controller?.handleInputModeList(from: sender, with: event)
     }
 
+    // MARK: - Host Field Policy (#200)
+
+    /// Re-reads the host field's input traits and updates the cached policy on
+    /// SuggestionState. Called whenever the focused field can have changed:
+    /// keyboard appearance, textDidChange/selectionDidChange, and before
+    /// autocorrect-on-space.
+    ///
+    /// WHY cached on SuggestionState: updateAsync/updatePredictions run on a
+    /// background queue and cannot read UITextDocumentProxy (main-thread only).
+    func refreshHostPolicy() {
+        guard let proxy = controller?.textDocumentProxy else { return }
+        let policy = HostInputTraits.policy(for: proxy)
+        guard policy != suggestionState?.hostPolicy else { return }
+
+        #if DEBUG
+        AutocorrectDebugLog.hostPolicy(
+            autocorrectAllowed: policy.autocorrectAllowed,
+            suggestionsAllowed: policy.suggestionsAllowed,
+            reason: policy.reason
+        )
+        #endif
+
+        suggestionState?.hostPolicy = policy
+        if !policy.suggestionsAllowed {
+            // Empty the bar immediately — stale suggestions from the previous
+            // field must not survive into a no-suggestions field.
+            suggestionState?.clear()
+        }
+    }
+
     // MARK: - Key Action Handlers
 
     /// Handle character input (letters, numbers, punctuation).
@@ -351,7 +381,12 @@ final class DictusKeyboardBridge: NSObject,
             return words[words.count - 2]
         }()
 
+        // Refresh the host-traits policy right before the apply decision (#200):
+        // the proxy read is cheap and this is the freshest possible signal.
+        refreshHostPolicy()
+
         if let state = suggestionState, state.autocorrectEnabled,
+           state.hostPolicy.autocorrectAllowed,
            !freshWord.isEmpty,
            !state.rejectedWords.contains(freshWord.lowercased()),
            let result = state.performSpellCheck(freshWord, previousWord: previousWord),

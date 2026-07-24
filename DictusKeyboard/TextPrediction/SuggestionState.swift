@@ -64,6 +64,13 @@ class SuggestionState: ObservableObject {
     /// Cleared when the user starts typing a new word.
     var rejectedWords: Set<String> = []
 
+    /// Policy derived from the host field's input traits (#200).
+    /// Refreshed on the main thread by DictusKeyboardBridge/KeyboardViewController
+    /// whenever the field can have changed (appearance, text/selection change,
+    /// each keystroke). Cached here because updateAsync/updatePredictions run on
+    /// a background queue and cannot read UITextDocumentProxy themselves.
+    var hostPolicy: HostFieldPolicy = .allowed
+
     /// Shared engine — heavy resources (frequency dict, trie) are process-wide singletons
     /// to avoid the per-controller leak documented in #134.
     private let engine = TextPredictionEngine.shared
@@ -105,6 +112,13 @@ class SuggestionState: ObservableObject {
     /// center slot (bold) = what gets auto-applied on space. If the bar shows
     /// completions but space applies a different correction, that's confusing.
     func update(proxy: UITextDocumentProxy) {
+        // Host field traits gate (#200): search/URL/email fields get no suggestions.
+        hostPolicy = HostInputTraits.policy(for: proxy)
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = proxy.documentContextBeforeInput, !context.isEmpty else {
             clear()
             return
@@ -179,6 +193,13 @@ class SuggestionState: ObservableObject {
     /// The synchronous update() is still used by delete/undo paths where fresh proxy
     /// context is needed immediately.
     func updateAsync(context: String?) {
+        // Host field traits gate (#200): reads the cached policy — this method
+        // dispatches to a background queue and cannot touch the proxy itself.
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = context, !context.isEmpty else {
             clear()
             return
@@ -313,6 +334,12 @@ class SuggestionState: ObservableObject {
     /// word and running spell check, we extract the last 1-2 complete words and query
     /// the n-gram engine. The result is displayed in .predictions mode, not .corrections.
     func updatePredictions(context: String?) {
+        // Host field traits gate (#200): no next-word predictions in search/URL fields.
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = context, !context.isEmpty else {
             clear()
             return
