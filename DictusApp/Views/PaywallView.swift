@@ -19,6 +19,12 @@ struct PaywallView: View {
     /// once per Apple ID. Defaults to false so the CTA never over-promises.
     @State private var isEligibleForTrial = false
 
+    /// Shows the thank-you screen after a successful purchase or restore.
+    @State private var showPurchaseSuccess = false
+
+    /// Drives the staged entrance animation of the thank-you screen elements.
+    @State private var successEntrance = false
+
     /// Product matching the current selection, degrading to whatever loaded
     /// if the selected one is unavailable. Nil disables the CTA.
     private var selectedProduct: Product? {
@@ -75,13 +81,25 @@ struct PaywallView: View {
             }
         }
         .onChange(of: subscriptionManager.purchaseState) { _, newState in
-            // Auto-dismiss paywall after successful purchase
+            // Celebrate instead of silently ejecting the user who just paid:
+            // the thank-you screen takes over and Continue dismisses.
             if newState == .success {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    dismiss()
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showPurchaseSuccess = true
                 }
             }
         }
+        .overlay {
+            if showPurchaseSuccess {
+                purchaseSuccessView
+                    .transition(.opacity)
+            }
+        }
+        // Success haptic fires exactly when the thank-you screen appears.
+        .sensoryFeedback(.success, trigger: showPurchaseSuccess)
+        // The only way forward from the thank-you screen is Continue
+        // (edge swipe-back still works as an escape hatch).
+        .navigationBarBackButtonHidden(showPurchaseSuccess)
         .alert("Purchase Error", isPresented: showErrorAlert) {
             Button("OK") { subscriptionManager.resetState() }
         } message: {
@@ -379,6 +397,75 @@ struct PaywallView: View {
             }
             .font(.dictusCaption)
             .foregroundColor(.secondary)
+        }
+    }
+
+    // MARK: - Purchase Success
+
+    /// Thank-you screen shown after a successful purchase or restore.
+    /// Staged entrance: the checkmark springs in first, then the texts rise
+    /// with small delays, then the Continue button. Each element animates on
+    /// the same trigger with its own delay, which reads as one choreography.
+    private var purchaseSuccessView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(.white, Color.dictusSuccess)
+                .shadow(color: Color.dictusSuccess.opacity(0.6), radius: 12)
+                .shadow(color: Color.dictusSuccess.opacity(0.3), radius: 28)
+                .scaleEffect(successEntrance ? 1 : 0.4)
+                .opacity(successEntrance ? 1 : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.6), value: successEntrance)
+
+            Text("Welcome to Dictus Pro")
+                .font(.system(.title, design: .rounded, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.dictusGradientStart, .dictusGradientEnd],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .padding(.top, 28)
+                .opacity(successEntrance ? 1 : 0)
+                .offset(y: successEntrance ? 0 : 12)
+                .animation(.easeOut(duration: 0.35).delay(0.2), value: successEntrance)
+
+            Text("All Pro features are now unlocked. Thank you for your support.")
+                .font(.dictusBody)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 12)
+                .padding(.horizontal, 24)
+                .opacity(successEntrance ? 1 : 0)
+                .offset(y: successEntrance ? 0 : 12)
+                .animation(.easeOut(duration: 0.35).delay(0.3), value: successEntrance)
+
+            Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Continue")
+                    .font(.dictusSubheading)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.dictusAccent)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(GlassPressStyle())
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+            .opacity(successEntrance ? 1 : 0)
+            .animation(.easeOut(duration: 0.35).delay(0.45), value: successEntrance)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.dictusBackground.ignoresSafeArea())
+        .onAppear {
+            successEntrance = true
         }
     }
 
