@@ -12,11 +12,7 @@ struct PaywallView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Hero title
-                Text("Dictus Pro")
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .foregroundColor(.dictusAccent)
-                    .padding(.top, 32)
+                heroSection
 
                 // Feature cards (3 cards: Smart Mode, History, Vocabulary)
                 VStack(spacing: 16) {
@@ -66,6 +62,36 @@ struct PaywallView: View {
         } message: {
             Text(errorMessage)
         }
+    }
+
+    // MARK: - Hero
+
+    /// Brand hero: logo in a glass tile with a blue glow, gradient title, tagline.
+    /// Glow uses the double-shadow pattern (tight + wide) from SwipeBackOverlayView.
+    private var heroSection: some View {
+        VStack(spacing: 16) {
+            DictusLogo(height: 56)
+                .padding(24)
+                .dictusGlass(in: RoundedRectangle(cornerRadius: 24))
+                .shadow(color: Color.dictusAccent.opacity(0.7), radius: 10)
+                .shadow(color: Color.dictusAccent.opacity(0.4), radius: 20)
+
+            Text("Dictus Pro")
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.dictusGradientStart, .dictusGradientEnd],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Text("Your voice, unlimited")
+                .font(.dictusBody)
+                .foregroundColor(.secondary)
+        }
+        .padding(.top, 32)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Feature Card

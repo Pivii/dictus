@@ -1784,6 +1784,16 @@
           }
         }
       }
+    },
+    "Your voice, unlimited" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre voix, sans limites"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
