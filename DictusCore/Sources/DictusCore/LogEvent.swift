@@ -92,6 +92,8 @@ public enum LogEvent: Sendable {
     case overlayHidden(status: String)
     case statusChanged(from: String, to: String, source: String)
     case watchdogReset(source: String, staleState: String)
+    /// Issue #60: a path tried to enter .idle while the engine was still capturing.
+    case idleInvariantViolation(from: String, engineRunning: Bool)
     case rapidTapRejected
 
     // MARK: Engine Diagnostics (temporary — remove after debug)
@@ -179,7 +181,7 @@ public enum LogEvent: Sendable {
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
              .diagnosticProbe:
             return .keyboard
-        case .statusChanged, .watchdogReset:
+        case .statusChanged, .watchdogReset, .idleInvariantViolation:
             return .dictation
         case .engineWarmUpAttempt, .engineWarmUpSuccess, .engineWarmUpFailed,
              .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived:
@@ -210,7 +212,7 @@ public enum LogEvent: Sendable {
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
-             .liveActivityFailed:
+             .liveActivityFailed, .idleInvariantViolation:
             return .error
 
         // Warnings
@@ -323,6 +325,7 @@ public enum LogEvent: Sendable {
         case .overlayHidden: return "overlayHidden"
         case .statusChanged: return "statusChanged"
         case .watchdogReset: return "watchdogReset"
+        case .idleInvariantViolation: return "idleInvariantViolation"
         case .rapidTapRejected: return "rapidTapRejected"
         case .waveformAppeared: return "waveformAppeared"
         case .waveformDisappeared: return "waveformDisappeared"
@@ -486,6 +489,8 @@ public enum LogEvent: Sendable {
             return "from=\(from) to=\(to) source=\(source)"
         case .watchdogReset(let source, let staleState):
             return "source=\(source) staleState=\(staleState)"
+        case .idleInvariantViolation(let from, let engineRunning):
+            return "from=\(from) engineRunning=\(engineRunning)"
         case .rapidTapRejected:
             return ""
 

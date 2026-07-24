@@ -50,6 +50,12 @@ class DictationCoordinator: ObservableObject {
     private var currentModelName: String?
     private var dictationTask: Task<Void, Never>?
 
+    /// Incremented each time a new dictation actually starts (issue #60).
+    /// Delayed UI closures (RecordingView dismiss/auto-advance) capture the current
+    /// value and bail out if a newer session started before they fire, so a stale
+    /// reset can never tear down a fresh recording.
+    private(set) var dictationGeneration = 0
+
     /// Set when cold start dictation is deferred because the app is .inactive.
     /// Cleared in didBecomeActive when the retry happens.
     private var pendingColdStartDictation = false
@@ -292,6 +298,9 @@ class DictationCoordinator: ObservableObject {
             return
         }
 
+        // New session supersedes any pending delayed reset (issue #60).
+        dictationGeneration += 1
+
         // WHY this early return (only for Darwin notification path, NOT URL scheme):
         // iOS forbids starting an audio engine from background. If the engine isn't
         // running and we're in background (Darwin notification from keyboard), attempting
@@ -528,7 +537,15 @@ class DictationCoordinator: ObservableObject {
     }
 
     /// Reset status to idle (e.g., after user returns to keyboard).
+    ///
+    /// Issue #60: a UI-only reset while the pipeline is active orphans the audio
+    /// engine (keeps capturing) and the Live Activity (stuck on REC), so an active
+    /// session must go through the real teardown instead.
     func resetStatus() {
+        if status == .recording || status == .transcribing || status == .requested {
+            cancelDictation()
+            return
+        }
         updateStatus(.idle)
         // Keep lastResult so HomeView can display the last transcription card.
     }
@@ -801,6 +818,24 @@ class DictationCoordinator: ObservableObject {
 
     /// Write dictation status to App Group so the keyboard can observe it.
     private func updateStatus(_ newStatus: DictationStatus) {
+        // Invariant (issue #60): entering .idle while the engine is still capturing
+        // means some path skipped the teardown. Stop capture (engine stays warm per
+        // #106), force the Live Activity out of .recording, and log the violation so
+        // any future recurrence of this class is one log line, not a silent
+        // background recording.
+        if newStatus == .idle && audioEngine.isRecording {
+            PersistentLog.log(.idleInvariantViolation(
+                from: status.rawValue,
+                engineRunning: audioEngine.isEngineRunning
+            ))
+            if #available(iOS 14.0, *) {
+                DictusLogger.app.fault("Invariant violation: entering .idle while engine is recording — forcing teardown")
+            }
+            _ = audioEngine.collectSamples()
+            Task { await LiveActivityManager.shared.returnToStandby() }
+            LiveActivityManager.shared.startRecordingWatchdog()
+        }
+
         let oldStatus = status
         PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: newStatus.rawValue, source: "coordinator"))
         status = newStatus
