@@ -95,8 +95,6 @@ struct PaywallView: View {
                     .transition(.opacity)
             }
         }
-        // Success haptic fires exactly when the thank-you screen appears.
-        .sensoryFeedback(.success, trigger: showPurchaseSuccess)
         // The only way forward from the thank-you screen is Continue
         // (edge swipe-back still works as an escape hatch).
         .navigationBarBackButtonHidden(showPurchaseSuccess)
@@ -466,6 +464,13 @@ struct PaywallView: View {
         .background(Color.dictusBackground.ignoresSafeArea())
         .onAppear {
             successEntrance = true
+            // UIKit generator instead of SwiftUI sensoryFeedback: the state
+            // change happens while the StoreKit payment sheet still holds
+            // scene focus, where sensoryFeedback is silently dropped. The
+            // delay lands the haptic as the checkmark spring settles.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                HapticFeedback.textInserted()
+            }
         }
     }
 
