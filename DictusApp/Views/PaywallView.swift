@@ -59,7 +59,8 @@ struct PaywallView: View {
             .padding(.horizontal, 16)
         }
         .background(Color.dictusBackground.ignoresSafeArea())
-        .navigationTitle("Dictus Pro")
+        // Empty bar title: the hero's gradient title is the screen title.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             // Retry the product fetch if the launch-time load came back empty,
@@ -114,13 +115,22 @@ struct PaywallView: View {
                 .shadow(color: Color.dictusAccent.opacity(0.7), radius: 10)
                 .shadow(color: Color.dictusAccent.opacity(0.4), radius: 20)
 
+            Text("Dictus Pro")
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.dictusGradientStart, .dictusGradientEnd],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
             Text("Your voice, unlimited")
                 .font(.dictusBody)
                 .foregroundColor(.secondary)
         }
         .padding(.top, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Dictus Pro")
     }
 
     // MARK: - Feature Card
@@ -235,7 +245,7 @@ struct PaywallView: View {
                         .font(.dictusCaption.weight(.bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.dictusAccent, in: Capsule())
+                        .background(Color.dictusSuccess, in: Capsule())
                         .foregroundColor(.white)
                 }
 
@@ -250,6 +260,10 @@ struct PaywallView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(isSelected ? Color.dictusAccent : .clear, lineWidth: 2)
             )
+            // Make the whole card tappable: without an explicit content
+            // shape, hit-testing only registers on rendered content (text,
+            // icons), not on the Spacer or transparent background areas.
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.97))
         .accessibilityElement(children: .combine)
