@@ -335,6 +335,12 @@ struct PaywallView: View {
 
     // MARK: - Bottom Links
 
+    // Apple requires functional Terms of Use and Privacy Policy links for
+    // auto-renewable subscriptions (guideline 3.1.2). Force unwrap is safe:
+    // compile-time constant URLs that cannot be malformed.
+    private static let termsURL = URL(string: "https://getdictus.com/terms")!
+    private static let privacyURL = URL(string: "https://getdictus.com/privacy")!
+
     private var bottomLinks: some View {
         VStack(spacing: 8) {
             // Hidden while Pro is active: Apple requires a restore mechanism
@@ -348,8 +354,8 @@ struct PaywallView: View {
             }
 
             HStack(spacing: 16) {
-                Link("Terms of Service", destination: URL(string: "https://dictus.app/terms")!)
-                Link("Privacy Policy", destination: URL(string: "https://dictus.app/privacy")!)
+                Link("Terms of Service", destination: Self.termsURL)
+                Link("Privacy Policy", destination: Self.privacyURL)
             }
             .font(.dictusCaption)
             .foregroundColor(.secondary)
