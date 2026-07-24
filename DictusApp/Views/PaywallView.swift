@@ -28,11 +28,11 @@ struct PaywallView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 14) {
                 heroSection
 
                 // Feature cards (3 cards: Smart Mode, History, Vocabulary)
-                VStack(spacing: 16) {
+                VStack(spacing: 10) {
                     ForEach(ProFeature.allCases, id: \.self) { feature in
                         featureCard(feature)
                     }
@@ -90,57 +90,63 @@ struct PaywallView: View {
 
     // MARK: - Hero
 
-    /// Brand hero: logo in a glass tile with a blue glow, gradient title, tagline.
+    /// Brand hero: app-icon style tile (fixed dark gradient from the brand
+    /// kit) with a blue glow, and the tagline. The screen title comes from
+    /// the navigation bar, so the hero repeats no text.
     /// Glow uses the double-shadow pattern (tight + wide) from SwipeBackOverlayView.
     private var heroSection: some View {
-        VStack(spacing: 16) {
-            DictusLogo(height: 56)
-                .padding(24)
-                .dictusGlass(in: RoundedRectangle(cornerRadius: 24))
+        VStack(spacing: 12) {
+            // Forcing the dark color scheme keeps DictusLogo's side bars
+            // white on the dark tile in light mode too, matching the app icon.
+            DictusLogo(height: 48)
+                .environment(\.colorScheme, .dark)
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: 0x0D2040), Color(hex: 0x071020)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
                 .shadow(color: Color.dictusAccent.opacity(0.7), radius: 10)
                 .shadow(color: Color.dictusAccent.opacity(0.4), radius: 20)
-
-            Text("Dictus Pro")
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.dictusGradientStart, .dictusGradientEnd],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
 
             Text("Your voice, unlimited")
                 .font(.dictusBody)
                 .foregroundColor(.secondary)
         }
-        .padding(.top, 32)
+        .padding(.top, 8)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("Dictus Pro")
     }
 
     // MARK: - Feature Card
 
     /// Feature card with SF Symbol icon, title, and description.
-    /// Non-interactive (informational only per UI-SPEC).
+    /// Non-interactive (informational only per UI-SPEC). Compact metrics so
+    /// the plan cards stay above the fold on a 6.1-inch screen.
     private func featureCard(_ feature: ProFeature) -> some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             Image(systemName: feature.icon)
-                .font(.title2)
+                .font(.title3)
                 .foregroundColor(iconColor(for: feature))
-                .frame(width: 32)
+                .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(feature.displayName))
-                    .font(.dictusSubheading)
+                    .font(.dictusBody.weight(.semibold))
                 Text(LocalizedStringKey(feature.paywallDescription))
-                    .font(.dictusBody)
+                    .font(.dictusCaption)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
 
             Spacer()
         }
-        .padding(16)
+        .padding(12)
         .dictusGlass()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(feature.displayName): \(feature.paywallDescription)")
@@ -209,9 +215,9 @@ struct PaywallView: View {
             selectedProductID = product.id
         } label: {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.dictusSubheading)
+                        .font(.dictusBody.weight(.semibold))
                     priceText
                         .font(.dictusBody)
                         .foregroundColor(.secondary)
@@ -237,7 +243,7 @@ struct PaywallView: View {
                     .font(.title3)
                     .foregroundColor(isSelected ? .dictusAccent : .secondary)
             }
-            .padding(16)
+            .padding(14)
             .foregroundColor(.primary)
             .dictusGlass()
             .overlay(
