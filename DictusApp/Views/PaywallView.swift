@@ -49,6 +49,13 @@ struct PaywallView: View {
         .background(Color.dictusBackground.ignoresSafeArea())
         .navigationTitle("Dictus Pro")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // Retry the product fetch if the launch-time load came back empty,
+            // so a transient failure doesn't leave the CTA stuck on "...".
+            if subscriptionManager.products.isEmpty {
+                await subscriptionManager.loadProducts()
+            }
+        }
         .onChange(of: subscriptionManager.purchaseState) { _, newState in
             // Auto-dismiss paywall after successful purchase
             if newState == .success {

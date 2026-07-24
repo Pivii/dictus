@@ -46,9 +46,21 @@ final class SubscriptionManager: ObservableObject {
     // MARK: - Public API
 
     /// Fetch subscription products from App Store / StoreKit Config.
+    ///
+    /// Safe to call repeatedly: PaywallView retries on appear when the launch
+    /// fetch came back empty (e.g. store not ready during cold start).
     func loadProducts() async {
         do {
             products = try await Product.products(for: productIDs)
+            // An unknown product ID returns an empty array WITHOUT throwing —
+            // the signature of a missing StoreKit configuration. Log it so the
+            // dead "..." CTA is diagnosable from exported logs.
+            if products.isEmpty {
+                PersistentLog.log(.subscriptionError(
+                    action: "loadProducts",
+                    error: "empty result (StoreKit configuration missing or product ID unknown)"
+                ))
+            }
         } catch {
             PersistentLog.log(.subscriptionError(action: "loadProducts", error: error.localizedDescription))
         }
