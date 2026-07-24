@@ -64,13 +64,27 @@ struct HomeView: View {
     // MARK: - Logo Section
 
     /// Static 3-bar brand logo at the top of the home screen.
+    /// Subscribers see the Dictus Pro gradient wordmark from the paywall hero,
+    /// a quiet permanent reminder of what they unlocked.
     private var logoSection: some View {
         VStack(spacing: 8) {
             DictusLogo(height: 60)
                 .padding(.top, 8)
-            Text("Dictus")
-                .font(.dictusHeading)
-                .foregroundColor(.dictusAccent)
+            if proStatus.isProActive {
+                Text("Dictus Pro")
+                    .font(.dictusHeading)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.dictusGradientStart, .dictusGradientEnd],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            } else {
+                Text("Dictus")
+                    .font(.dictusHeading)
+                    .foregroundColor(.dictusAccent)
+            }
         }
         .padding(.bottom, 8)
     }
