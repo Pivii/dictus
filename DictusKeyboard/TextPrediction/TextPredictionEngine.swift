@@ -104,7 +104,16 @@ class TextPredictionEngine {
     /// The trie walks candidates during lookup with keyboard proximity scoring,
     /// supporting 100K+ words in ~0.4 MiB per language via mmap. SymSpell pre-generated
     /// all edit-distance deletes, using 15 MiB for just 10K words.
-    func spellCheck(_ word: String) -> (correction: String, alternatives: [String])? {
+    /// - Parameter isAtSentenceStart: whether the word sits at a sentence start
+    ///   in the host document (start-of-field, after newline or after .!?).
+    ///   Drives the proper-noun guard (#199): mid-sentence capitalized unknown
+    ///   words are preserved. Defaults to `true`, the conservative value —
+    ///   callers without position info keep full correction behavior (only the
+    ///   position-independent acronym rule applies).
+    func spellCheck(
+        _ word: String,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
         guard !word.isEmpty else { return nil }
 
         // Language-specific overrides bypass everything — e.g., "ca" is never valid French.
@@ -178,6 +187,22 @@ class TextPredictionEngine {
         if aospTrieEngine.wordExists(wordToCheck) {
             #if DEBUG
             AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "already-valid")
+            #endif
+            return nil
+        }
+
+        // Proper-noun guard (#199): only unknown words reach this point.
+        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
+        // all-caps acronym ("SNCF") is most likely intentional — preserve it
+        // instead of forcing the closest dictionary word. Runs AFTER
+        // languageOverride/UserDictionary (explicit corrections and learned
+        // words still win) and after accent expansion (accent-only fixes like
+        // "Helene" -> "Hélène" are high-confidence and keep working). The
+        // preserved word is then learned via handleSpace's recordUsage path,
+        // protecting future occurrences even at sentence start.
+        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
             #endif
             return nil
         }
@@ -302,8 +327,12 @@ class TextPredictionEngine {
     /// Strategy 2 is the key insight: instead of asking "what are the corrections for sui?"
     /// and hoping "suis" appears, we ask "what does the n-gram model predict after je?"
     /// and check if any prediction (like "suis") is close to what was typed ("sui").
-    func spellCheck(_ word: String, previousWord: String?) -> (correction: String, alternatives: [String])? {
-        let result = spellCheck(word)
+    func spellCheck(
+        _ word: String,
+        previousWord: String?,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
+        let result = spellCheck(word, isAtSentenceStart: isAtSentenceStart)
 
         // If no previous word context or n-grams not loaded, return standard result
         guard let prev = previousWord, !prev.isEmpty, aospTrieEngine.ngramsLoaded else {

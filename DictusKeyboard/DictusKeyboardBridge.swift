@@ -385,11 +385,23 @@ final class DictusKeyboardBridge: NSObject,
         // the proxy read is cheap and this is the freshest possible signal.
         refreshHostPolicy()
 
+        // Sentence position for the proper-noun guard (#199): an unknown
+        // capitalized word mid-sentence is preserved; at sentence start the
+        // capitalization is just autocap, so corrections stay enabled there.
+        let atSentenceStart: Bool = {
+            guard let ctx = controller?.textDocumentProxy.documentContextBeforeInput else { return true }
+            return ProperNounGuard.isAtSentenceStart(context: ctx, word: freshWord)
+        }()
+
         if let state = suggestionState, state.autocorrectEnabled,
            state.hostPolicy.autocorrectAllowed,
            !freshWord.isEmpty,
            !state.rejectedWords.contains(freshWord.lowercased()),
-           let result = state.performSpellCheck(freshWord, previousWord: previousWord),
+           let result = state.performSpellCheck(
+               freshWord,
+               previousWord: previousWord,
+               isAtSentenceStart: atSentenceStart
+           ),
            result.correction.lowercased() != freshWord.lowercased() {
             let proxy = controller?.textDocumentProxy
 

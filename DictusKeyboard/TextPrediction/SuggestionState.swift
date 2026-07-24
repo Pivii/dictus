@@ -160,7 +160,11 @@ class SuggestionState: ObservableObject {
         // Check spell correction first (mirrors what handleSpace will do)
         if autocorrectEnabled,
            !rejectedWords.contains(partial.lowercased()),
-           let result = engine.spellCheck(partial, previousWord: previousWord),
+           let result = engine.spellCheck(
+               partial,
+               previousWord: previousWord,
+               isAtSentenceStart: ProperNounGuard.isAtSentenceStart(context: context, word: partial)
+           ),
            result.correction.lowercased() != partial.lowercased() {
             // Standard mobile layout: [original | correction (bold) | alternative]
             var correctionSuggestions = [partial, result.correction]
@@ -250,7 +254,11 @@ class SuggestionState: ObservableObject {
             let spellResult: (correction: String, alternatives: [String])?
             if self.autocorrectEnabled,
                !self.rejectedWords.contains(partial.lowercased()) {
-                spellResult = self.engine.spellCheck(partial, previousWord: previousWord)
+                spellResult = self.engine.spellCheck(
+                    partial,
+                    previousWord: previousWord,
+                    isAtSentenceStart: ProperNounGuard.isAtSentenceStart(context: context, word: partial)
+                )
             } else {
                 spellResult = nil
             }
@@ -303,8 +311,14 @@ class SuggestionState: ObservableObject {
 
     /// Spell check with optional previous word context for n-gram boosting.
     /// When previousWord is provided, correction candidates are reranked by bigram frequency.
-    func performSpellCheck(_ word: String, previousWord: String?) -> (correction: String, alternatives: [String])? {
-        return engine.spellCheck(word, previousWord: previousWord)
+    /// isAtSentenceStart drives the proper-noun guard (#199); defaults to true
+    /// (conservative — corrections stay enabled for callers without position info).
+    func performSpellCheck(
+        _ word: String,
+        previousWord: String?,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
+        return engine.spellCheck(word, previousWord: previousWord, isAtSentenceStart: isAtSentenceStart)
     }
 
     /// Resets the suggestion state to idle.
