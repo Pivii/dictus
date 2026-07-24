@@ -51,7 +51,7 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <StoreKitConfigurationFileReference
-         identifier = "../../../DictusApp/Subscription/StoreKitConfig.storekit">
+         identifier = "../../DictusApp/Subscription/StoreKitConfig.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
