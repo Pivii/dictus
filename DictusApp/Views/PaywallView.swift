@@ -156,11 +156,15 @@ struct PaywallView: View {
 
     private var bottomLinks: some View {
         VStack(spacing: 8) {
-            Button("Restore purchases") {
-                Task { await subscriptionManager.restorePurchases() }
+            // Hidden while Pro is active: Apple requires a restore mechanism
+            // to exist (guideline 3.1.1), not to be shown to subscribers.
+            if !proStatus.isProActive {
+                Button("Restore purchases") {
+                    Task { await subscriptionManager.restorePurchases() }
+                }
+                .font(.dictusCaption)
+                .accessibilityLabel("Restore previous purchases")
             }
-            .font(.dictusCaption)
-            .accessibilityLabel("Restore previous purchases")
 
             HStack(spacing: 16) {
                 Link("Terms of Service", destination: URL(string: "https://dictus.app/terms")!)
