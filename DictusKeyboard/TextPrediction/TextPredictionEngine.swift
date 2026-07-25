@@ -154,10 +154,13 @@ class TextPredictionEngine {
         // the same apostrophe handling that AOSPTrieEngine uses internally.
         let lowered = word.lowercased()
         let wordToCheck: String
+        let apostrophePrefix: String?
         if let apoIndex = lowered.lastIndex(of: "'") {
             wordToCheck = String(lowered[lowered.index(after: apoIndex)...])
+            apostrophePrefix = String(lowered[...apoIndex])
         } else {
             wordToCheck = lowered
+            apostrophePrefix = nil
         }
         if UserDictionary.shared.isLearned(wordToCheck) {
             #if DEBUG
@@ -170,9 +173,13 @@ class TextPredictionEngine {
         // "tres" may exist in the trie as a low-frequency word, but "très" is far
         // more common. The accent expansion uses frequency comparison to decide.
         // "deja" → "déjà", "apres" → "après", "tres" → "très"
+        // The apostrophe prefix must be reassembled: wordToCheck is only the
+        // part after the apostrophe, so "J'etais" checks "etais" → "étais" and
+        // the correction is "j'" + "étais", not bare "étais".
         if let accented = aospTrieEngine.accentExpansion(wordToCheck) {
+            let full = (apostrophePrefix ?? "") + accented
             let isCapitalized = word.first?.isUppercase == true
-            let corrected = isCapitalized ? accented.capitalized : accented
+            let corrected = isCapitalized ? full.capitalized : full
             #if DEBUG
             AutocorrectDebugLog.autocorrectDecision(
                 original: word, corrected: corrected, branch: "accent", prevWord: nil
