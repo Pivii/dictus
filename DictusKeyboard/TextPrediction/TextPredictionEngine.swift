@@ -154,10 +154,13 @@ class TextPredictionEngine {
         // the same apostrophe handling that AOSPTrieEngine uses internally.
         let lowered = word.lowercased()
         let wordToCheck: String
+        let apostrophePrefix: String?
         if let apoIndex = lowered.lastIndex(of: "'") {
             wordToCheck = String(lowered[lowered.index(after: apoIndex)...])
+            apostrophePrefix = String(lowered[...apoIndex])
         } else {
             wordToCheck = lowered
+            apostrophePrefix = nil
         }
         if UserDictionary.shared.isLearned(wordToCheck) {
             #if DEBUG
@@ -170,9 +173,13 @@ class TextPredictionEngine {
         // "tres" may exist in the trie as a low-frequency word, but "très" is far
         // more common. The accent expansion uses frequency comparison to decide.
         // "deja" → "déjà", "apres" → "après", "tres" → "très"
+        // The apostrophe prefix must be reassembled: wordToCheck is only the
+        // part after the apostrophe, so "J'etais" checks "etais" → "étais" and
+        // the correction is "j'" + "étais", not bare "étais".
         if let accented = aospTrieEngine.accentExpansion(wordToCheck) {
+            let full = (apostrophePrefix ?? "") + accented
             let isCapitalized = word.first?.isUppercase == true
-            let corrected = isCapitalized ? accented.capitalized : accented
+            let corrected = isCapitalized ? full.capitalized : full
             #if DEBUG
             AutocorrectDebugLog.autocorrectDecision(
                 original: word, corrected: corrected, branch: "accent", prevWord: nil
@@ -191,23 +198,11 @@ class TextPredictionEngine {
             return nil
         }
 
-        // Proper-noun guard (#199): only unknown words reach this point.
-        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
-        // all-caps acronym ("SNCF") is most likely intentional — preserve it
-        // instead of forcing the closest dictionary word. Runs AFTER
-        // languageOverride/UserDictionary (explicit corrections and learned
-        // words still win) and after accent expansion (accent-only fixes like
-        // "Helene" -> "Hélène" are high-confidence and keep working). The
-        // preserved word is then learned via handleSpace's recordUsage path,
-        // protecting future occurrences even at sentence start.
-        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
-            #if DEBUG
-            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
-            #endif
-            return nil
-        }
-
         // Contraction expansion: "Cest" → "C'est", "jai" → "j'ai"
+        // Runs BEFORE the proper-noun guard: like accent expansion, it's a
+        // high-confidence exact transformation (registered prefix + dictionary
+        // suffix), so a capitalized "Cest" mid-sentence must correct to "C'est"
+        // rather than be preserved as a pseudo-name (and worse, learned).
         if let expanded = aospTrieEngine.contractionExpansion(word) {
             let isCapitalized = word.first?.isUppercase == true
             let corrected = isCapitalized ? expanded.capitalized : expanded
@@ -217,6 +212,21 @@ class TextPredictionEngine {
             )
             #endif
             return (corrected, [])
+        }
+
+        // Proper-noun guard (#199): only unknown words reach this point.
+        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
+        // all-caps acronym ("SNCF") is most likely intentional — preserve it
+        // instead of forcing the closest dictionary word. Runs AFTER the
+        // high-confidence branches (languageOverride, UserDictionary, accent
+        // and contraction expansion) but BEFORE the fuzzy ones (split, trie).
+        // The preserved word is then learned via handleSpace's recordUsage path,
+        // protecting future occurrences even at sentence start.
+        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
+            #endif
+            return nil
         }
 
         // Word splitting + single-word correction comparison.
@@ -332,6 +342,22 @@ class TextPredictionEngine {
         previousWord: String?,
         isAtSentenceStart: Bool = true
     ) -> (correction: String, alternatives: [String])? {
+        // Language overrides are authoritative — return before the bigram
+        // rerank can replace them. Concrete failure this prevents (#222):
+        // "je lai" → override "l'ai", but the corpus tokenizes "j'ai" as ONE
+        // token so bigram("ai" after "je") = 0, while bigram("lui" after "je")
+        // is huge and "lui" sits at edit distance 1 of "lai" — the rerank
+        // replaced the override with "lui" ("je lai fais" → "je lui fais").
+        if let override = aospTrieEngine.languageOverride(for: word) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectDecision(
+                original: word, corrected: override.correction,
+                branch: "language-override", prevWord: previousWord
+            )
+            #endif
+            return override
+        }
+
         let result = spellCheck(word, isAtSentenceStart: isAtSentenceStart)
 
         // If no previous word context or n-grams not loaded, return standard result

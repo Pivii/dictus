@@ -392,6 +392,12 @@ class KeyboardViewController: UIInputViewController {
         // Search/URL/email fields disable autocorrect and suggestions.
         bridge?.refreshHostPolicy()
 
+        // Re-sync the learned-words dictionary from the App Group (#222).
+        // The singleton caches in memory per process; if the user reset the
+        // dictionary in the app, this cached keyboard process must drop the
+        // stale copy or learned words keep bypassing autocorrect.
+        UserDictionary.shared.reload()
+
         // Set default opening layer from user preference.
         // WHY here not viewDidLoad: viewWillAppear fires each time the keyboard appears,
         // allowing the user to change settings in the app and see the effect immediately.

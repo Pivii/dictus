@@ -393,6 +393,15 @@ final class DictusKeyboardBridge: NSObject,
             return ProperNounGuard.isAtSentenceStart(context: ctx, word: freshWord)
         }()
 
+        // Whether the learning path below may record this word. Learning means
+        // "the pipeline evaluated the word and chose not to correct it" — NOT
+        // "the word reached the space key". Words typed where autocorrect never
+        // ran (search/URL fields, #200) or whose replacement was aborted by the
+        // boundary check (possibly phantom words, #191) must not be learned:
+        // a learned word bypasses autocorrect everywhere afterwards, which is
+        // how test typing in Safari's search bar broke "lai"/"Cest" in Messages.
+        var wordWasEvaluated = suggestionState?.hostPolicy.autocorrectAllowed ?? false
+
         if let state = suggestionState, state.autocorrectEnabled,
            state.hostPolicy.autocorrectAllowed,
            !freshWord.isEmpty,
@@ -425,7 +434,9 @@ final class DictusKeyboardBridge: NSObject,
             case .failed(let reason):
                 // Proxy desync detected — do NOT correct, do NOT delete.
                 // Fall through to the normal space path below so the user
-                // keeps their typed word and still gets a space.
+                // keeps their typed word and still gets a space. The word may
+                // be a phantom ("quee") — don't learn it either.
+                wordWasEvaluated = false
                 #if DEBUG
                 AutocorrectDebugLog.replacementAborted(
                     word: freshWord,
@@ -436,9 +447,11 @@ final class DictusKeyboardBridge: NSObject,
             }
         }
 
-        // Repetition learning: word was NOT corrected (user typed it as-is).
-        // Track usage — after 2 occurrences of an unknown word, learn it.
-        if let state = suggestionState, !freshWord.isEmpty {
+        // Repetition learning: the pipeline evaluated the word and did NOT
+        // correct it (user typed it as-is). Track usage — at the repetition
+        // threshold, learn it. Skipped when autocorrect never ran (see
+        // wordWasEvaluated above): those words were not vetted by the pipeline.
+        if let state = suggestionState, !freshWord.isEmpty, wordWasEvaluated {
             let word = freshWord
             if UserDictionary.shared.recordUsage(word) {
                 // Word just crossed the learning threshold — notify prediction engine
