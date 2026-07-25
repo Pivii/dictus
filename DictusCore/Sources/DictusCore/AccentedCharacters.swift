@@ -63,7 +63,7 @@ public enum FrenchAdaptiveKey {
         "a": "\u{00E0}",  // a-grave
         "u": "\u{00F9}",  // u-grave
         "i": "\u{00EE}",  // i-circumflex
-        "o": "\u{00F4}",  // o-circumflex
+        "o": "\u{00F4}"  // o-circumflex
     ]
 
     /// Bigrams where the second character is a vowel but the user almost certainly

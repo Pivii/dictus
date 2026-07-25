@@ -72,7 +72,6 @@ class KeyboardState: ObservableObject {
     /// Cleared automatically when recording ends (status becomes idle).
     private var coldStartGraceEnd: Date?
 
-
     private init() {
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardState",

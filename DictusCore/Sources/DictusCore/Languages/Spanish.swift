@@ -18,7 +18,7 @@ public let spanishProfile = LanguageProfile(
         "i": ["\u{00ED}"],                  // í
         "o": ["\u{00F3}"],                  // ó
         "u": ["\u{00FA}", "\u{00FC}"],      // ú, ü
-        "n": ["\u{00F1}"],                  // ñ
+        "n": ["\u{00F1}"]                  // ñ
     ],
     contractionPrefixes: []
 )

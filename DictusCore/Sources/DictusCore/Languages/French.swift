@@ -37,7 +37,7 @@ public let frenchProfile = LanguageProfile(
         // Excluded: "louvre" (l'ouvre) — the override lookup re-capitalizes, so
         // it would corrupt "Louvre" (the museum) into "L'ouvre".
         "lai": "l'ai",                           // lai -> l'ai (je l'ai vu)
-        "lest": "l'est",                         // lest -> l'est (il l'est)
+        "lest": "l'est"                         // lest -> l'est (il l'est)
     ],
     accentMap: [
         "e": ["\u{00E9}", "\u{00E8}", "\u{00EA}", "\u{00EB}"],  // é, è, ê, ë
@@ -45,12 +45,12 @@ public let frenchProfile = LanguageProfile(
         "i": ["\u{00EE}", "\u{00EF}"],                          // î, ï
         "o": ["\u{00F4}"],                                      // ô
         "u": ["\u{00F9}", "\u{00FB}", "\u{00FC}"],              // ù, û, ü
-        "c": ["\u{00E7}"],                                      // ç
+        "c": ["\u{00E7}"]                                      // ç
     ],
     contractionPrefixes: [
         // 1-character prefixes (l', d', c', j', n', s', m', t')
         "l'", "d'", "c'", "j'", "n'", "s'", "m'", "t'",
         // 2-character prefix (qu')
-        "qu'",
+        "qu'"
     ]
 )

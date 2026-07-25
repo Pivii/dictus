@@ -14,15 +14,17 @@ jobs:
   lint:
     name: SwiftLint
     runs-on: ubuntu-latest
+    # Pin the SwiftLint version so baseline matching stays consistent
+    # between CI and local runs (brew install swiftlint).
+    container:
+      image: ghcr.io/realm/swiftlint:0.63.2
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run SwiftLint
-        uses: norio-nomura/action-swiftlint@3.2.1
-        env:
-          DIFF_BASE: ${{ github.base_ref }}
-        with:
-          args: lint --reporter github-actions-logging
+      # --strict: any new violation (not in .swiftlint-baseline.json) fails CI.
+      # See issue #146 for the progressive tightening plan.
+      - name: Run SwiftLint (strict)
+        run: swiftlint lint --strict --reporter github-actions-logging
 
   build:
     name: Build (iOS Simulator)

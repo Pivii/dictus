@@ -33,7 +33,7 @@ struct EmojiPickerView: View {
     @State private var searchText: String = ""
     @State private var showCursor: Bool = true
     @State private var filteredEmojis: [String] = []
-    @State private var searchTask: Task<Void, Never>? = nil
+    @State private var searchTask: Task<Void, Never>?
 
     private let categories = EmojiStore.categories
 
@@ -317,13 +317,11 @@ struct EmojiPickerView: View {
         var results: [String] = []
         var seen = Set<String>()
 
-        for (keyword, emojis) in EmojiSearchFR.keywords {
-            if keyword.contains(query) {
-                for emoji in emojis where !seen.contains(emoji) {
-                    results.append(emoji)
-                    seen.insert(emoji)
-                    if results.count >= maxSearchResults { return results }
-                }
+        for (keyword, emojis) in EmojiSearchFR.keywords where keyword.contains(query) {
+            for emoji in emojis where !seen.contains(emoji) {
+                results.append(emoji)
+                seen.insert(emoji)
+                if results.count >= maxSearchResults { return results }
             }
         }
 
@@ -340,11 +338,9 @@ struct EmojiPickerView: View {
 
     private func searchUnicodeName(query: String) -> [String] {
         var results: [String] = []
-        for entry in EmojiStore.allEmojiNames {
-            if entry.name.contains(query) {
-                results.append(entry.emoji)
-                if results.count >= maxSearchResults { return results }
-            }
+        for entry in EmojiStore.allEmojiNames where entry.name.contains(query) {
+            results.append(entry.emoji)
+            if results.count >= maxSearchResults { return results }
         }
         return results
     }

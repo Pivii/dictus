@@ -1,3 +1,8 @@
+# Legacy violations are frozen in the baseline (issue #146, step 2).
+# Any NEW violation fails CI (`--strict`). After fixing legacy violations,
+# regenerate with: swiftlint lint --quiet --write-baseline .swiftlint-baseline.json
+baseline: .swiftlint-baseline.json
+
 included:
   - DictusApp
   - DictusKeyboard
@@ -34,6 +39,7 @@ opt_in_rules:
   - unneeded_parentheses_in_closure_argument
   - vertical_parameter_alignment_on_call
   - yoda_condition
+  - force_unwrapping
 
 force_cast: warning
 force_try: warning

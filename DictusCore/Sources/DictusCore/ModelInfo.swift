@@ -182,7 +182,7 @@ public struct ModelInfo: Identifiable {
             speedScore: 0.2,
             description: "Most accurate but slowest",
             visibility: .available
-        ),
+        )
     ]
 
     /// Set of all supported model identifiers for quick lookup.

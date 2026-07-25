@@ -29,7 +29,7 @@ final class SubscriptionManager: ObservableObject {
 
     private let productIDs: Set<String> = [
         SubscriptionManager.monthlyProductID,
-        SubscriptionManager.yearlyProductID,
+        SubscriptionManager.yearlyProductID
     ]
 
     var monthlyProduct: Product? { products.first { $0.id == Self.monthlyProductID } }

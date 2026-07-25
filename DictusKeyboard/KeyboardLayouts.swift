@@ -78,10 +78,10 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .shift, size: CGSize(width: 1.5, height: 1)),
                 key("w"), key("x"), key("c"), key("v"), key("b"), key("n"),
                 KeyDefinition(type: .input(key: "'", alternate: "accent")),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             // Row 4: 123 + emoji + space + return
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -96,10 +96,10 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .shift, size: CGSize(width: 1.5, height: 1)),
                 key("W"), key("X"), key("C"), key("V"), key("B"), key("N"),
                 KeyDefinition(type: .input(key: "'", alternate: "accent")),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             // Row 4: same as normal
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -113,16 +113,16 @@ enum KeyboardLayouts {
             [
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 key("a"), key("s"), key("d"), key("f"), key("g"), key("h"), key("j"), key("k"), key("l"),
-                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1))
             ],
             // Row 3: shift + 7 letters + delete = 10 units
             [
                 KeyDefinition(type: .shift, size: CGSize(width: 1.5, height: 1)),
                 key("z"), key("x"), key("c"), key("v"), key("b"), key("n"), key("m"),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             // Row 4: unified bottom row (123 + emoji + space + return)
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -132,14 +132,14 @@ enum KeyboardLayouts {
             [
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 key("A"), key("S"), key("D"), key("F"), key("G"), key("H"), key("J"), key("K"), key("L"),
-                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
+                KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1))
             ],
             [
                 KeyDefinition(type: .shift, size: CGSize(width: 1.5, height: 1)),
                 key("Z"), key("X"), key("C"), key("V"), key("B"), key("N"), key("M"),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -160,10 +160,10 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 punct("."), punct(","), punct("?"), punct("!"), punct("'"),
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             // Row 4: unified bottom row (ABC + emoji + space + return)
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -184,10 +184,10 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
                 punct("."), punct(","), punct("?"), punct("!"), punct("'"),
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
-                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1)),
+                KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             // Row 4: unified bottom row (ABC + emoji + space + return)
-            bottomRow(lang: lang, needsGlobe: needsGlobe),
+            bottomRow(lang: lang, needsGlobe: needsGlobe)
         ]
     }
 
@@ -213,7 +213,7 @@ enum KeyboardLayouts {
             KeyDefinition(type: .symbols, size: CGSize(width: 1.5, height: 1)),
             KeyDefinition(type: .input(key: "\u{1F600}", alternate: nil), size: CGSize(width: 1.5, height: 1)),
             KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: needsGlobe ? 4.0 : 5.0, height: 1)),
-            KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1)),
+            KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1))
         ])
         return row
     }

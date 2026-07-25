@@ -142,7 +142,7 @@ enum SoundFeedbackService {
             "electronic_04a", "electronic_04b", "electronic_04c",
             "electronic_04d", "electronic_04e", "electronic_04f",
             "electronic_04g",
-            "ui_chime_01",
+            "ui_chime_01"
         ]
     }
 

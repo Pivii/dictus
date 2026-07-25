@@ -16,9 +16,7 @@ enum DeviceClass {
 
     static let current: DeviceClass = {
         let h = UIScreen.main.bounds.height
-        if h <= 667 { return .compact }
-        else if h <= 852 { return .standard }
-        else { return .large }
+        if h <= 667 { return .compact } else if h <= 852 { return .standard } else { return .large }
     }()
 }
 

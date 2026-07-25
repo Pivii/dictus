@@ -74,7 +74,7 @@ public enum VerbalPunctuationPrepass {
         (#"\bpoint d['’]exclamation\b"#, "!"),
         (#"\bpoint virgule\b"#, ";"),
         (#"\bdeux points\b"#, ":"),
-        (#"\bvirgule\b"#, ","),
+        (#"\bvirgule\b"#, ",")
     ]
 
     /// The bare "period" rule is intentionally absent — see the type
@@ -87,7 +87,7 @@ public enum VerbalPunctuationPrepass {
         (#"\bfull stop\b"#, "."),
         (#"\bsemicolon\b"#, ";"),
         (#"\bcolon\b"#, ":"),
-        (#"\bcomma\b"#, ","),
+        (#"\bcomma\b"#, ",")
     ]
 
     // MARK: - Normalization
