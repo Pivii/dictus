@@ -342,6 +342,22 @@ class TextPredictionEngine {
         previousWord: String?,
         isAtSentenceStart: Bool = true
     ) -> (correction: String, alternatives: [String])? {
+        // Language overrides are authoritative — return before the bigram
+        // rerank can replace them. Concrete failure this prevents (#222):
+        // "je lai" → override "l'ai", but the corpus tokenizes "j'ai" as ONE
+        // token so bigram("ai" after "je") = 0, while bigram("lui" after "je")
+        // is huge and "lui" sits at edit distance 1 of "lai" — the rerank
+        // replaced the override with "lui" ("je lai fais" → "je lui fais").
+        if let override = aospTrieEngine.languageOverride(for: word) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectDecision(
+                original: word, corrected: override.correction,
+                branch: "language-override", prevWord: previousWord
+            )
+            #endif
+            return override
+        }
+
         let result = spellCheck(word, isAtSentenceStart: isAtSentenceStart)
 
         // If no previous word context or n-grams not loaded, return standard result
