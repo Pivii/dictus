@@ -20,7 +20,9 @@ import DictusCore
 /// WHY no separate buttons:
 /// Removing "Choisir", download arrow, and trash buttons simplifies the UI.
 /// Cards behave like native radio buttons — tap to select. Deletion uses
-/// swipe-to-delete in the parent ModelManagerView (like iOS Mail).
+/// swipe-to-delete in the parent ModelManagerView (like iOS Mail), plus an
+/// explicit overflow menu on downloaded cards (issue #193) because the rich
+/// card design does not signal that swipe actions exist.
 ///
 /// LAYOUT (top to bottom):
 /// Row 1: displayName + engine badge ("WK"/"PK") + optional "Recommended" badge
@@ -31,6 +33,12 @@ struct ModelCardView: View {
     let model: ModelInfo
     @ObservedObject var modelManager: ModelManager
     let onDownloadError: (String) -> Void
+
+    /// Called when the user asks to delete this model from the overflow menu
+    /// (issue #193). The parent owns the confirmation alert so the menu and
+    /// swipe-to-delete share the exact same deletion path. Nil hides the menu
+    /// (e.g. cards in the "Available" section or the onboarding flow).
+    var onDeleteRequest: (() -> Void)? = nil
 
     /// The current state for this model, with a safe default.
     private var state: ModelState {
@@ -52,6 +60,25 @@ struct ModelCardView: View {
         }
     }
 
+    /// Whether the overflow menu is visible. Only downloaded (.ready) cards
+    /// show it, and only when the parent provided a delete handler.
+    ///
+    /// WHY only .ready:
+    /// During download/prewarming the card is busy and deletion would race the
+    /// file operations; error cards already expose a retry/cleanup tap.
+    private var showsOverflowMenu: Bool {
+        guard onDeleteRequest != nil else { return false }
+        if case .ready = state { return true }
+        return false
+    }
+
+    /// Whether this model can actually be deleted right now.
+    /// Mirrors the swipe-to-delete rules in ModelManagerView: never the active
+    /// model, never the last downloaded one.
+    private var canDeleteModel: Bool {
+        !isActive && modelManager.downloadedModels.count > 1
+    }
+
     var body: some View {
         Button {
             handleCardTap()
@@ -61,6 +88,48 @@ struct ModelCardView: View {
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.95))
         .disabled(isCardDisabled)
+        // Overflow menu lives in an overlay OUTSIDE the Button label:
+        // interactive controls nested inside a Button label never receive
+        // taps (the whole label belongs to the button), so the menu must sit
+        // above the card in the view hierarchy to be tappable.
+        .overlay(alignment: .topTrailing) {
+            if showsOverflowMenu {
+                overflowMenu
+            }
+        }
+    }
+
+    // MARK: - Overflow menu (issue #193)
+
+    /// Explicit, always-visible entry point for model deletion so users don't
+    /// need to discover the swipe gesture. When deletion is blocked (active or
+    /// last model) the menu explains why instead of silently hiding the action.
+    private var overflowMenu: some View {
+        Menu {
+            if canDeleteModel {
+                Button(role: .destructive) {
+                    onDeleteRequest?()
+                } label: {
+                    Label("Delete Model", systemImage: "trash")
+                }
+            } else if isActive {
+                // Disabled explanatory row: the active model cannot be
+                // deleted, dictation would be left without a model.
+                Button("Select another model to delete this one") { }
+                    .disabled(true)
+            } else {
+                Button("At least one model must stay on your device") { }
+                    .disabled(true)
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                // Generous padding enlarges the tap target toward ~44pt.
+                .padding(12)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Model options")
     }
 
     // MARK: - Card content
@@ -91,6 +160,9 @@ struct ModelCardView: View {
                         .cornerRadius(4)
                 }
             }
+            // Reserve room for the overlaid ellipsis button so badges never
+            // slide underneath it on narrow screens.
+            .padding(.trailing, showsOverflowMenu ? 32 : 0)
 
             // Row 2: Localized description
             Text(model.localizedDescription)
