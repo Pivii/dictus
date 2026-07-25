@@ -65,6 +65,9 @@ struct SettingsView: View {
     /// Hidden polish debug screen (#141). Reached via long-press 3s on the Version row.
     @State private var showPolishDebug = false
 
+    /// Confirmation dialog for resetting the learned-words dictionary (#222).
+    @State private var showResetDictionaryConfirmation = false
+
     // MARK: - Body
 
     var body: some View {
@@ -134,6 +137,29 @@ struct SettingsView: View {
                 }
 
                 Toggle("Autocorrect", isOn: $autocorrectEnabled)
+
+                // Reset the learned-words dictionary (#222). Words learned by
+                // the keyboard bypass autocorrect forever, so users need a way
+                // to recover from accidental learning (e.g. typos recorded
+                // before the search-field learning gate existed).
+                Button("Reset learned words", role: .destructive) {
+                    // Sync from App Group first: words learned by the keyboard
+                    // process since app launch aren't in this process's cache.
+                    UserDictionary.shared.reload()
+                    showResetDictionaryConfirmation = true
+                }
+                .confirmationDialog(
+                    "Reset learned words?",
+                    isPresented: $showResetDictionaryConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Forget \(UserDictionary.shared.count) learned words", role: .destructive) {
+                        UserDictionary.shared.resetAll()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Words the keyboard learned from your typing will be forgotten and autocorrect will apply to them again.")
+                }
 
                 Toggle("Live Activity", isOn: $liveActivityEnabled)
                     .onChange(of: liveActivityEnabled) { _, enabled in

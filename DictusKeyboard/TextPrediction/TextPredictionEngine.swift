@@ -198,23 +198,11 @@ class TextPredictionEngine {
             return nil
         }
 
-        // Proper-noun guard (#199): only unknown words reach this point.
-        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
-        // all-caps acronym ("SNCF") is most likely intentional — preserve it
-        // instead of forcing the closest dictionary word. Runs AFTER
-        // languageOverride/UserDictionary (explicit corrections and learned
-        // words still win) and after accent expansion (accent-only fixes like
-        // "Helene" -> "Hélène" are high-confidence and keep working). The
-        // preserved word is then learned via handleSpace's recordUsage path,
-        // protecting future occurrences even at sentence start.
-        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
-            #if DEBUG
-            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
-            #endif
-            return nil
-        }
-
         // Contraction expansion: "Cest" → "C'est", "jai" → "j'ai"
+        // Runs BEFORE the proper-noun guard: like accent expansion, it's a
+        // high-confidence exact transformation (registered prefix + dictionary
+        // suffix), so a capitalized "Cest" mid-sentence must correct to "C'est"
+        // rather than be preserved as a pseudo-name (and worse, learned).
         if let expanded = aospTrieEngine.contractionExpansion(word) {
             let isCapitalized = word.first?.isUppercase == true
             let corrected = isCapitalized ? expanded.capitalized : expanded
@@ -224,6 +212,21 @@ class TextPredictionEngine {
             )
             #endif
             return (corrected, [])
+        }
+
+        // Proper-noun guard (#199): only unknown words reach this point.
+        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
+        // all-caps acronym ("SNCF") is most likely intentional — preserve it
+        // instead of forcing the closest dictionary word. Runs AFTER the
+        // high-confidence branches (languageOverride, UserDictionary, accent
+        // and contraction expansion) but BEFORE the fuzzy ones (split, trie).
+        // The preserved word is then learned via handleSpace's recordUsage path,
+        // protecting future occurrences even at sentence start.
+        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
+            #endif
+            return nil
         }
 
         // Word splitting + single-word correction comparison.
