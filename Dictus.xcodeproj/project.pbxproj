@@ -130,6 +130,7 @@
 		CC00000E /* Audio.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC10000E /* Audio.swift */; };
 		CC00000F /* DeviceKit in Frameworks */ = {isa = PBXBuildFile; productRef = CC900001 /* DeviceKit */; };
 		CC000020 /* DictusKeyboardBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100020 /* DictusKeyboardBridge.swift */; };
+		CC000040 /* HostInputTraits.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100040 /* HostInputTraits.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -262,6 +263,7 @@
 		CC100030 /* KeyboardMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMetrics.swift; sourceTree = "<group>"; };
 		CC100010 /* KeyboardLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayouts.swift; sourceTree = "<group>"; };
 		CC100020 /* DictusKeyboardBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictusKeyboardBridge.swift; sourceTree = "<group>"; };
+		CC100040 /* HostInputTraits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostInputTraits.swift; sourceTree = "<group>"; };
 		CC100001 /* GiellaUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GiellaUtils.swift; sourceTree = "<group>"; };
 		CC100002 /* KeyDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyDefinition.swift; sourceTree = "<group>"; };
 		CC100003 /* KeyboardDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDefinition.swift; sourceTree = "<group>"; };
@@ -381,6 +383,7 @@
 				CC100030 /* KeyboardMetrics.swift */,
 				CC100010 /* KeyboardLayouts.swift */,
 				CC100020 /* DictusKeyboardBridge.swift */,
+				CC100040 /* HostInputTraits.swift */,
 				CC400001 /* Vendored */,
 				AA400005 /* Views */,
 				AA400006 /* Models */,
@@ -992,6 +995,7 @@
 				CC000030 /* KeyboardMetrics.swift in Sources */,
 				CC000010 /* KeyboardLayouts.swift in Sources */,
 				CC000020 /* DictusKeyboardBridge.swift in Sources */,
+				CC000040 /* HostInputTraits.swift in Sources */,
 				CC000001 /* GiellaUtils.swift in Sources */,
 				CC000002 /* KeyDefinition.swift in Sources */,
 				CC000003 /* KeyboardDefinition.swift in Sources */,

@@ -128,6 +128,45 @@ public enum AutocorrectDebugLog {
         write("UNDO orig=\"\(original)\" rejected=\"\(rejected)\"")
     }
 
+    /// A word replacement was aborted because the live context failed the
+    /// boundary-safety check (#191). This is the proxy-desync signature:
+    /// the pipeline decided on a correction but the document no longer ends
+    /// with the word it planned to replace.
+    public static func replacementAborted(word: String, reason: String, contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-ABORT word=\"\(word)\" reason=\(reason) ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context right before an autocorrect replacement (#191).
+    public static func applyBefore(word: String, correction: String, prevWord: String?, contextTail: String) {
+        guard enabled else { return }
+        let prev = prevWord.map { "\"\($0)\"" } ?? "nil"
+        write("AUTOCORRECT-APPLY-BEFORE word=\"\(word)\" corr=\"\(correction)\" prev=\(prev) ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context after the deletion pass of a replacement (#191).
+    public static func applyAfterDelete(contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-APPLY-AFTER-DELETE ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context after inserting the correction + space (#191).
+    public static func applyAfterInsert(contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-APPLY-AFTER-INSERT ctx=\"\(contextTail)\"")
+    }
+
+    /// The host field's input traits changed the autocorrect/suggestions policy (#200).
+    /// Logged once per policy change (not per keystroke).
+    public static func hostPolicy(
+        autocorrectAllowed: Bool,
+        suggestionsAllowed: Bool,
+        reason: String
+    ) {
+        guard enabled else { return }
+        write("HOST-TRAITS autocorrect=\(autocorrectAllowed) suggestions=\(suggestionsAllowed) reason=\(reason)")
+    }
+
     /// Free-form note (use sparingly — prefer typed events above).
     public static func note(_ message: String) {
         guard enabled else { return }

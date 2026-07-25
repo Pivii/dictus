@@ -359,14 +359,36 @@ struct KeyboardRootView: View {
     }
 
     /// Replaces the word currently being typed with a replacement string.
+    ///
+    /// Boundary-safe (#191): `currentWord` comes from SuggestionState's async
+    /// update and can be stale when the user typed fast between the suggestion
+    /// computation and the tap. Deleting a blind `currentWord.count` characters
+    /// could then eat into the preceding word. Validate against the live
+    /// context first; on mismatch, do nothing destructive — the suggestion bar
+    /// refreshes on the next keystroke.
     private func replaceCurrentWord(
         proxy: UITextDocumentProxy,
         currentWord: String,
         replacement: String,
         addSpace: Bool
     ) {
-        for _ in 0..<currentWord.count {
-            proxy.deleteBackward()
+        switch AutocorrectReplacement.check(
+            context: proxy.documentContextBeforeInput,
+            word: currentWord
+        ) {
+        case .ok(let deleteCount):
+            for _ in 0..<deleteCount {
+                proxy.deleteBackward()
+            }
+        case .failed(let reason):
+            #if DEBUG
+            AutocorrectDebugLog.replacementAborted(
+                word: currentWord,
+                reason: reason,
+                contextTail: DictusKeyboardBridge.contextTail(proxy.documentContextBeforeInput)
+            )
+            #endif
+            return
         }
         proxy.insertText(replacement)
         if addSpace {

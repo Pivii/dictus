@@ -388,6 +388,10 @@ class KeyboardViewController: UIInputViewController {
         // until the view is about to appear. Calling in viewDidLoad would read stale data.
         bridge?.updateCapitalization()
 
+        // Read the host field's input traits now that the connection exists (#200).
+        // Search/URL/email fields disable autocorrect and suggestions.
+        bridge?.refreshHostPolicy()
+
         // Set default opening layer from user preference.
         // WHY here not viewDidLoad: viewWillAppear fires each time the keyboard appears,
         // allowing the user to change settings in the app and see the effect immediately.
@@ -768,6 +772,17 @@ class KeyboardViewController: UIInputViewController {
         // recheck autocapitalization. This ensures shift state stays correct even when
         // the user moves the cursor to a different position in the text.
         bridge?.updateCapitalization()
+        // The focused field may have changed (e.g. tapping another field in the
+        // same app) — re-read its input traits (#200).
+        bridge?.refreshHostPolicy()
+    }
+
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        // Some hosts move focus between fields without emitting textDidChange.
+        // Re-read the field's input traits so the autocorrect/suggestions policy
+        // matches the newly-focused field (#200).
+        bridge?.refreshHostPolicy()
     }
 
     // MARK: - Window Gesture Delay
