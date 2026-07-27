@@ -1,11 +1,11 @@
-// DictusApp/Models/ParakeetModelDownloader.swift
-// Downloads Parakeet model files from HuggingFace with real byte-level progress.
+// DictusApp/Models/ModelRepoDownloader.swift
+// Downloads model files from a HuggingFace repo with real byte-level progress.
 import Foundation
 import DictusCore
 import FluidAudio
 
-/// Downloads the Parakeet v3 model repo from HuggingFace into the exact directory
-/// FluidAudio's `AsrModels` expects, reporting real byte-level progress.
+/// Downloads a HuggingFace model repo (Parakeet or WhisperKit) into the exact
+/// directory the respective engine expects, reporting real byte-level progress.
 ///
 /// WHY this exists (issue #207, App Review rejection of 1.7.1 build 19):
 /// FluidAudio's `DownloadUtils.downloadRepo` attaches a `URLSessionDownloadDelegate`
@@ -16,11 +16,20 @@ import FluidAudio
 /// `Encoder.mlmodelc/weights/weight.bin` alone is ~92% of the ~483 MB payload, the bar
 /// sat at ~5% for minutes and then jumped to ~97% — App Review read that as a freeze.
 ///
-/// This downloader mirrors FluidAudio's file selection and on-disk layout so that
-/// `AsrModels.downloadAndLoad` finds the cached files and skips straight to CoreML
-/// compilation. Reference implementation for parity: FluidAudio 0.12.4
-/// `DownloadUtils.downloadRepo` — re-check the parity rules on any FluidAudio bump.
-final class ParakeetModelDownloader {
+/// Issue #210 generalized the class (formerly `ParakeetModelDownloader`) so WhisperKit
+/// models get the same MB counter, stall detection, and resume. The engine-specific
+/// knowledge (repo path, file selection, on-disk layout, final verification) lives in
+/// `Configuration.parakeet()` / `Configuration.whisperKit(variant:)`; the download
+/// machinery is shared.
+///
+/// Parity contracts to re-check on dependency bumps:
+/// - FluidAudio 0.12.4 `DownloadUtils.downloadRepo` (file selection + layout) so that
+///   `AsrModels.downloadAndLoad` finds the cached files and skips straight to CoreML
+///   compilation.
+/// - WhisperKit `WhisperKit.download` / HubApi snapshot layout
+///   (`Documents/huggingface/models/{repo}/{variant}`) so that
+///   `WhisperKitConfig(modelFolder:)` and `ModelManager.deleteModel` keep working.
+final class ModelRepoDownloader {
 
     // MARK: - Public types
 
@@ -44,8 +53,54 @@ final class ParakeetModelDownloader {
         var stallTimeout: TimeInterval = 30
         /// Attempts per file before the whole download fails (backoff 2s/4s/8s).
         var maxAttemptsPerFile: Int = 3
-        /// HuggingFace repo. Matches FluidAudio's `Repo.parakeet.remotePath`.
-        var repoPath: String = Repo.parakeet.remotePath
+        /// HuggingFace repo id, e.g. "argmaxinc/whisperkit-coreml".
+        let repoPath: String
+        /// Repo-relative directory prefixes (with trailing "/") whose contents are
+        /// downloaded recursively. Everything outside them is skipped.
+        let directoryPatterns: [String]
+        /// When true, root-level `.json`/`.txt` metadata files are also included
+        /// (FluidAudio parity — covers `parakeet_vocab.json` at the repo root).
+        let includesRootMetadata: Bool
+        /// Repo-relative paths that must exist on disk after the download —
+        /// the final-verification tripwire (see Phase 4 in `download`).
+        let requiredPaths: [String]
+
+        /// Parakeet v3 repo. Matches FluidAudio's `Repo.parakeet.remotePath`,
+        /// its file selection, and mirrors `AsrModels.modelsExist` verification.
+        static func parakeet() -> Configuration {
+            Configuration(
+                repoPath: Repo.parakeet.remotePath,
+                directoryPatterns: ModelNames.ASR.requiredModels.map { "\($0)/" }.sorted(),
+                includesRootMetadata: true,
+                requiredPaths: ModelNames.ASR.requiredModels + [ModelNames.ASR.vocabularyFile]
+            )
+        }
+
+        /// One WhisperKit variant from argmaxinc/whisperkit-coreml.
+        ///
+        /// WHY exact-folder matching is safe here: `WhisperKit.download` resolves the
+        /// variant with the glob `"*{variant}/*"`, but every identifier in our catalog
+        /// (`ModelInfo`) IS the exact top-level folder name in the repo, so the glob
+        /// resolves to that folder and nothing else. Selecting `{variant}/` directly
+        /// downloads the same file set into the same layout.
+        ///
+        /// Required paths = the three CoreML bundles every variant ships plus
+        /// `config.json` (verified against the repo tree for Small, Small Quantized,
+        /// Medium, and Turbo `_954MB` — Turbo's extra `TextDecoderContextPrefill.mlmodelc`
+        /// is downloaded too but not universally required).
+        static func whisperKit(variant: String) -> Configuration {
+            Configuration(
+                repoPath: "argmaxinc/whisperkit-coreml",
+                directoryPatterns: ["\(variant)/"],
+                includesRootMetadata: false,
+                requiredPaths: [
+                    "\(variant)/MelSpectrogram.mlmodelc",
+                    "\(variant)/AudioEncoder.mlmodelc",
+                    "\(variant)/TextDecoder.mlmodelc",
+                    "\(variant)/config.json",
+                ]
+            )
+        }
     }
 
     enum DownloadError: LocalizedError {
@@ -75,14 +130,18 @@ final class ParakeetModelDownloader {
 
     private let configuration: Configuration
 
-    init(configuration: Configuration = Configuration()) {
+    init(configuration: Configuration) {
         self.configuration = configuration
     }
 
     // MARK: - Public API
 
-    /// Downloads all required repo files into `cacheDir` — the FluidAudio repo
-    /// directory itself (`AsrModels.defaultCacheDirectory(for: .v3)`), NOT its parent.
+    /// Downloads all required repo files into `cacheDir` — the directory that maps
+    /// to the repo ROOT (repo-relative file paths are preserved below it):
+    /// - Parakeet: `AsrModels.defaultCacheDirectory(for: .v3)` (the repo directory
+    ///   itself, NOT its parent).
+    /// - WhisperKit: `Documents/huggingface/models/argmaxinc/whisperkit-coreml`
+    ///   (the variant folder lands inside it, matching HubApi's snapshot layout).
     ///
     /// Files already present on disk are skipped, which makes a retry after a
     /// failure resume where it left off (every file on disk is complete because
@@ -98,7 +157,7 @@ final class ParakeetModelDownloader {
         modelName: String,
         onProgress: @escaping @Sendable (Progress) -> Void
     ) async throws {
-        // Phase 1: list the repo tree and select files (parity with FluidAudio).
+        // Phase 1: list the repo tree and select files (engine parity via Configuration).
         let files = try await listRequiredFiles()
 
         // Phase 2: byte-weighted totals. The HF tree API reports real LFS blob
@@ -114,8 +173,8 @@ final class ParakeetModelDownloader {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
         // Phase 3: sequential per-file download loop. Sequential matches FluidAudio
-        // and keeps progress monotonic; bandwidth is dominated by one 445 MB file,
-        // so parallelism would buy nothing.
+        // and keeps progress monotonic; bandwidth is dominated by one huge weight
+        // file per repo, so parallelism would buy nothing.
         for file in files {
             try Task.checkCancellation()
 
@@ -148,18 +207,16 @@ final class ParakeetModelDownloader {
             reporter.fileCompleted(sizeBytes: Int64(max(0, file.size)))
         }
 
-        // Phase 4: parity tripwire — mirror AsrModels.modelsExist so we fail loudly
-        // here (with a localized error) instead of silently handing an incomplete
-        // cache to FluidAudio. If the repo layout ever drifts, this is the signal.
-        for model in ModelNames.ASR.requiredModels {
-            let path = cacheDir.appendingPathComponent(model)
+        // Phase 4: parity tripwire — mirror each engine's own existence check
+        // (AsrModels.modelsExist for Parakeet, the CoreML bundle set for WhisperKit)
+        // so we fail loudly here (with a localized error) instead of silently
+        // handing an incomplete cache to the engine. If the repo layout ever
+        // drifts, this is the signal.
+        for requiredPath in configuration.requiredPaths {
+            let path = cacheDir.appendingPathComponent(requiredPath)
             guard FileManager.default.fileExists(atPath: path.path) else {
-                throw DownloadError.missingRequiredFile(model)
+                throw DownloadError.missingRequiredFile(requiredPath)
             }
-        }
-        let vocabPath = cacheDir.appendingPathComponent(ModelNames.ASR.vocabularyFile)
-        guard FileManager.default.fileExists(atPath: vocabPath.path) else {
-            throw DownloadError.missingRequiredFile(ModelNames.ASR.vocabularyFile)
         }
     }
 
@@ -176,11 +233,11 @@ final class ParakeetModelDownloader {
         let size: Int?
     }
 
-    /// Recursively lists the repo tree and returns the files FluidAudio would
-    /// download: everything under the four required `.mlmodelc` directories, plus
-    /// root-level `.json`/`.txt` files (covers `parakeet_vocab.json`).
+    /// Recursively lists the repo tree and returns the files the engine would
+    /// download: everything under `configuration.directoryPatterns`, plus
+    /// root-level `.json`/`.txt` files when `includesRootMetadata` is set.
     private func listRequiredFiles() async throws -> [RepoFile] {
-        let patterns = ModelNames.ASR.requiredModels.map { "\($0)/" }.sorted()
+        let patterns = configuration.directoryPatterns
         var files: [RepoFile] = []
         var pendingDirectories = [""]
 
@@ -190,12 +247,16 @@ final class ParakeetModelDownloader {
 
             for item in items {
                 if item.type == "directory" {
-                    // Recurse only into (ancestors of) the required model dirs.
+                    // Recurse only into (ancestors of) the required directories.
                     if Self.shouldRecurse(into: item.path, patterns: patterns) {
                         pendingDirectories.append(item.path)
                     }
                 } else if item.type == "file" {
-                    if Self.shouldInclude(filePath: item.path, patterns: patterns) {
+                    if Self.shouldInclude(
+                        filePath: item.path,
+                        patterns: patterns,
+                        includesRootMetadata: configuration.includesRootMetadata
+                    ) {
                         files.append(RepoFile(path: item.path, size: item.size ?? -1))
                     }
                 }
@@ -211,11 +272,19 @@ final class ParakeetModelDownloader {
         }
     }
 
-    /// Parity with FluidAudio's file filter (DownloadUtils.swift:329-331).
-    static func shouldInclude(filePath: String, patterns: [String]) -> Bool {
-        patterns.contains { filePath.hasPrefix($0) }
-            || filePath.hasSuffix(".json")
-            || filePath.hasSuffix(".txt")
+    /// Parity with FluidAudio's file filter (DownloadUtils.swift:329-331) when
+    /// `includesRootMetadata` is true; plain prefix match otherwise (WhisperKit —
+    /// the variant folder already contains its own config/generation JSON files).
+    static func shouldInclude(
+        filePath: String,
+        patterns: [String],
+        includesRootMetadata: Bool
+    ) -> Bool {
+        if patterns.contains(where: { filePath.hasPrefix($0) }) {
+            return true
+        }
+        guard includesRootMetadata else { return false }
+        return filePath.hasSuffix(".json") || filePath.hasSuffix(".txt")
     }
 
     /// Fetches one directory listing from the HF tree API, with retry/backoff
@@ -379,7 +448,7 @@ private final class ProgressReporter: @unchecked Sendable {
     private let lock = NSLock()
     private let totalBytes: Int64
     private let totalFiles: Int
-    private let onProgress: @Sendable (ParakeetModelDownloader.Progress) -> Void
+    private let onProgress: @Sendable (ModelRepoDownloader.Progress) -> Void
 
     private var completedBytes: Int64 = 0
     private var completedFiles = 0
@@ -390,7 +459,7 @@ private final class ProgressReporter: @unchecked Sendable {
     init(
         totalBytes: Int64,
         totalFiles: Int,
-        onProgress: @escaping @Sendable (ParakeetModelDownloader.Progress) -> Void
+        onProgress: @escaping @Sendable (ModelRepoDownloader.Progress) -> Void
     ) {
         self.totalBytes = totalBytes
         self.totalFiles = totalFiles
@@ -426,8 +495,8 @@ private final class ProgressReporter: @unchecked Sendable {
         onProgress(progress)
     }
 
-    private func makeProgress() -> ParakeetModelDownloader.Progress {
-        ParakeetModelDownloader.Progress(
+    private func makeProgress() -> ModelRepoDownloader.Progress {
+        ModelRepoDownloader.Progress(
             bytesDownloaded: completedBytes + currentBytes,
             totalBytes: totalBytes,
             completedFiles: completedFiles,
@@ -516,9 +585,9 @@ private final class FileDownloadDelegate: NSObject, URLSessionDownloadDelegate, 
         if let response = downloadTask.response as? HTTPURLResponse,
            !(200..<300).contains(response.statusCode) {
             if response.statusCode == 429 || response.statusCode == 503 {
-                moveOrHTTPError = ParakeetModelDownloader.DownloadError.rateLimited(statusCode: response.statusCode)
+                moveOrHTTPError = ModelRepoDownloader.DownloadError.rateLimited(statusCode: response.statusCode)
             } else {
-                moveOrHTTPError = ParakeetModelDownloader.DownloadError.httpError(
+                moveOrHTTPError = ModelRepoDownloader.DownloadError.httpError(
                     path: filePath, statusCode: response.statusCode)
             }
             return
@@ -546,7 +615,7 @@ private final class FileDownloadDelegate: NSObject, URLSessionDownloadDelegate, 
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut {
                 // timeoutIntervalForRequest tripped = no bytes for the stall window.
-                continuation.resume(throwing: ParakeetModelDownloader.DownloadError.stalled(
+                continuation.resume(throwing: ModelRepoDownloader.DownloadError.stalled(
                     path: filePath, timeoutSeconds: stallTimeoutSeconds))
             } else {
                 continuation.resume(throwing: error)
