@@ -40,8 +40,12 @@ struct HomeView: View {
                 testDictationLink
             }
 
-            // Pro banner (hidden when subscribed)
-            ProBannerView()
+            // Pro banner (hidden when subscribed).
+            // Gated behind PremiumFlags.paywallVisible until the first Pro
+            // feature ships and ASC setup is done (#236, #79, #215).
+            if PremiumFlags.paywallVisible {
+                ProBannerView()
+            }
 
             Spacer()
         }

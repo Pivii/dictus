@@ -72,20 +72,24 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            // Section 0: Dictus Pro — always first
-            Section {
-                NavigationLink {
-                    PaywallView()
-                } label: {
-                    HStack {
-                        Image(systemName: "crown.fill")
-                            .foregroundColor(.dictusAccent)
-                        Text("Dictus Pro")
-                        Spacer()
-                        if proStatus.isProActive {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.dictusSuccess)
-                                .accessibilityLabel("Pro active")
+            // Section 0: Dictus Pro — always first.
+            // Gated behind PremiumFlags.paywallVisible until the first Pro
+            // feature ships and ASC setup is done (#236, #79, #215).
+            if PremiumFlags.paywallVisible {
+                Section {
+                    NavigationLink {
+                        PaywallView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "crown.fill")
+                                .foregroundColor(.dictusAccent)
+                            Text("Dictus Pro")
+                            Spacer()
+                            if proStatus.isProActive {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.dictusSuccess)
+                                    .accessibilityLabel("Pro active")
+                            }
                         }
                     }
                 }
@@ -175,44 +179,51 @@ struct SettingsView: View {
                 }
             }
 
-            // Section 3: Pro Features
-            Section("Pro Features") {
-                ForEach(ProFeature.allCases, id: \.self) { feature in
-                    if proStatus.isProActive {
-                        // Unlocked: show toggle
-                        Toggle(isOn: Binding(
-                            get: { AppGroup.defaults.bool(forKey: feature.settingsKey) },
-                            set: { AppGroup.defaults.set($0, forKey: feature.settingsKey) }
-                        )) {
-                            HStack(spacing: 8) {
-                                Image(systemName: feature.icon)
-                                    .foregroundColor(.dictusAccent)
-                                Text(LocalizedStringKey(feature.displayName))
+            // Section 3: Pro Features.
+            // Gated behind PremiumFlags.paywallVisible (#236): while hidden,
+            // the app must look like there is no subscription at all — no
+            // locked rows, no PRO pills, no navigation path to PaywallView.
+            // Pro toggles are also hidden: no user can be Pro while the
+            // paywall is unreachable (no ASC product exists yet, #215).
+            if PremiumFlags.paywallVisible {
+                Section("Pro Features") {
+                    ForEach(ProFeature.allCases, id: \.self) { feature in
+                        if proStatus.isProActive {
+                            // Unlocked: show toggle
+                            Toggle(isOn: Binding(
+                                get: { AppGroup.defaults.bool(forKey: feature.settingsKey) },
+                                set: { AppGroup.defaults.set($0, forKey: feature.settingsKey) }
+                            )) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: feature.icon)
+                                        .foregroundColor(.dictusAccent)
+                                    Text(LocalizedStringKey(feature.displayName))
+                                }
                             }
-                        }
-                    } else {
-                        // Locked: show lock + PRO pill, tap opens paywall
-                        NavigationLink {
-                            PaywallView()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: feature.icon)
-                                    .foregroundColor(.secondary)
-                                Text(LocalizedStringKey(feature.displayName))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.dictusAccent)
-                                    .accessibilityHidden(true)
-                                Text("PRO")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.vertical, 2)
-                                    .padding(.horizontal, 6)
-                                    .background(Color.dictusAccent)
-                                    .clipShape(Capsule())
-                                    .accessibilityLabel("Pro feature")
+                        } else {
+                            // Locked: show lock + PRO pill, tap opens paywall
+                            NavigationLink {
+                                PaywallView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: feature.icon)
+                                        .foregroundColor(.secondary)
+                                    Text(LocalizedStringKey(feature.displayName))
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.dictusAccent)
+                                        .accessibilityHidden(true)
+                                    Text("PRO")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 2)
+                                        .padding(.horizontal, 6)
+                                        .background(Color.dictusAccent)
+                                        .clipShape(Capsule())
+                                        .accessibilityLabel("Pro feature")
+                                }
                             }
                         }
                     }
