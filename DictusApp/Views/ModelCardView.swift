@@ -40,6 +40,13 @@ struct ModelCardView: View {
     /// (e.g. cards in the "Available" section or the onboarding flow).
     var onDeleteRequest: (() -> Void)? = nil
 
+    /// Tap-target padding around the ellipsis glyph and trailing space the
+    /// badge row reserves for it. Scaled with Dynamic Type (relative to the
+    /// glyph's .title3 font) so badges never slide under the button and the
+    /// enlarged menu hit area never eats card taps at accessibility sizes.
+    @ScaledMetric(relativeTo: .title3) private var overflowTapPadding: CGFloat = 12
+    @ScaledMetric(relativeTo: .title3) private var overflowReservedWidth: CGFloat = 32
+
     /// The current state for this model, with a safe default.
     private var state: ModelState {
         modelManager.modelStates[model.identifier] ?? .notDownloaded
@@ -112,13 +119,18 @@ struct ModelCardView: View {
                 } label: {
                     Label("Delete Model", systemImage: "trash")
                 }
-            } else if isActive {
+            } else if modelManager.downloadedModels.count <= 1 {
+                // Last-model case must win over the active case: a lone
+                // downloaded model is auto-activated by ModelManager, so
+                // checking isActive first would show "select another model"
+                // when there is no other model to select. This is also the
+                // only rule ModelManager.deleteModel actually enforces.
+                Button("At least one model must stay on your device") { }
+                    .disabled(true)
+            } else {
                 // Disabled explanatory row: the active model cannot be
                 // deleted, dictation would be left without a model.
                 Button("Select another model to delete this one") { }
-                    .disabled(true)
-            } else {
-                Button("At least one model must stay on your device") { }
                     .disabled(true)
             }
         } label: {
@@ -126,7 +138,7 @@ struct ModelCardView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 // Generous padding enlarges the tap target toward ~44pt.
-                .padding(12)
+                .padding(overflowTapPadding)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Model options")
@@ -162,7 +174,7 @@ struct ModelCardView: View {
             }
             // Reserve room for the overlaid ellipsis button so badges never
             // slide underneath it on narrow screens.
-            .padding(.trailing, showsOverflowMenu ? 32 : 0)
+            .padding(.trailing, showsOverflowMenu ? overflowReservedWidth : 0)
 
             // Row 2: Localized description
             Text(model.localizedDescription)
