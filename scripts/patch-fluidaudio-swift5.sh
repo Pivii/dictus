@@ -9,31 +9,35 @@
 # Swift 5 mode, where these errors don't exist. See ADR/ memory:
 # project_xcode_pin_fluidaudio.
 #
-# This edits the SPM CHECKOUT, which is wiped by "Reset Package Caches" / DerivedData
-# deletion. Re-run this script after any such reset, then rebuild.
+# This edits the SPM CHECKOUT, which is wiped whenever Xcode re-resolves packages
+# ("Reset Package Caches", DerivedData deletion — and sometimes Archive). Re-run
+# this script after any such reset, then rebuild.
 set -euo pipefail
 
-PKG=$(find "$HOME/Library/Developer/Xcode/DerivedData" \
-  -path "*/SourcePackages/checkouts/FluidAudio/Package.swift" 2>/dev/null | head -1)
-
-if [ -z "${PKG:-}" ]; then
-  echo "FluidAudio checkout not found. Open the project in Xcode (resolve packages) first."
-  exit 1
-fi
-
-if grep -q "swiftLanguageModes: \[.v5\]" "$PKG"; then
-  echo "Already patched: $PKG"
-  exit 0
-fi
-
-# Insert swiftLanguageModes before cxxLanguageStandard (arg-order requirement).
-python3 - "$PKG" <<'PY'
+FOUND=0
+while IFS= read -r PKG; do
+  FOUND=1
+  if grep -q "swiftLanguageModes: \[.v5\]" "$PKG"; then
+    echo "Already patched: $PKG"
+    continue
+  fi
+  # SPM checkouts can be read-only.
+  chmod u+w "$PKG"
+  # Insert swiftLanguageModes before cxxLanguageStandard (arg-order requirement).
+  python3 - "$PKG" <<'PY'
 import sys
 p = sys.argv[1]
 t = open(p).read()
 old = "    ],\n    cxxLanguageStandard: .cxx17\n)"
 new = "    ],\n    swiftLanguageModes: [.v5],\n    cxxLanguageStandard: .cxx17\n)"
-assert old in t, "anchor not found — FluidAudio Package.swift changed shape; patch manually."
+assert old in t, "anchor not found - FluidAudio Package.swift changed shape; patch manually."
 open(p, "w").write(t.replace(old, new))
 print("Patched:", p)
 PY
+done < <(find "$HOME/Library/Developer/Xcode/DerivedData" \
+  -path "*/SourcePackages/checkouts/FluidAudio/Package.swift" 2>/dev/null)
+
+if [ "$FOUND" -eq 0 ]; then
+  echo "FluidAudio checkout not found. Open the project in Xcode (resolve packages) first."
+  exit 1
+fi
