@@ -706,7 +706,12 @@ final class DictusKeyboardBridge: NSObject,
             correctedWord: correction,
             insertedSpace: true
         )
-        HapticFeedback.autocorrectApplied()
+        // No haptic on autocorrect (#224): the spacebar touchDown tick already fired
+        // ~100ms earlier, and stacking a second haptic reads as a keyboard glitch.
+        // Feedback is visual instead — the suggestion bar pulses its undo chip
+        // (SuggestionBarView). HapticFeedback.autocorrectApplied() is kept in
+        // DictusCore so re-adding is a one-line change if dogfooding shows
+        // silent correction hurts awareness.
         // Trigger n-gram predictions after autocorrection too.
         // The corrected word + space is now in the proxy — predict what comes next.
         state.clear()
