@@ -37,7 +37,7 @@
 		AA000045 /* UnifiedAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100045 /* UnifiedAudioEngine.swift */; };
 		AA000200 /* ObjCExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = AA100200 /* ObjCExceptionCatcher.m */; };
 		AA000050 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100050 /* ModelManager.swift */; };
-		AA000052 /* ParakeetModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100052 /* ParakeetModelDownloader.swift */; };
+		AA000052 /* ModelRepoDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100052 /* ModelRepoDownloader.swift */; };
 		AA000051 /* ModelManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100051 /* ModelManagerView.swift */; };
 		AA000060 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100060 /* ToolbarView.swift */; };
 		AA00006L /* LanguageSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10006L /* LanguageSwitcherView.swift */; };
@@ -72,7 +72,7 @@
 		AA0000D6 /* de_frequency.json in Resources */ = {isa = PBXBuildFile; fileRef = AA1000D6 /* de_frequency.json */; };
 		AA0000D4 /* SuggestionBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D4 /* SuggestionBarView.swift */; };
 		AA0000E0 /* KeyboardModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E0 /* KeyboardModePicker.swift */; };
-		AA0000E1 /* ModeSelectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E1 /* ModeSelectionPage.swift */; };
+		AA0000EA /* PolishTogglePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000EA /* PolishTogglePage.swift */; };
 		AA0000E2 /* GaugeBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E2 /* GaugeBarView.swift */; };
 		AA0000E3 /* ModelCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E3 /* ModelCardView.swift */; };
 		AA0000E4 /* SwipeBackOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000E4 /* SwipeBackOverlayView.swift */; };
@@ -193,7 +193,7 @@
 		AA100201 /* ObjCExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ObjCExceptionCatcher.h; sourceTree = "<group>"; };
 		AA100202 /* DictusApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "DictusApp-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA100050 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
-		AA100052 /* ParakeetModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParakeetModelDownloader.swift; sourceTree = "<group>"; };
+		AA100052 /* ModelRepoDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRepoDownloader.swift; sourceTree = "<group>"; };
 		AA100051 /* ModelManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManagerView.swift; sourceTree = "<group>"; };
 		AA100060 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
 		AA10006L /* LanguageSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSwitcherView.swift; sourceTree = "<group>"; };
@@ -228,7 +228,7 @@
 		AA1000D6 /* de_frequency.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = de_frequency.json; sourceTree = "<group>"; };
 		AA1000D4 /* SuggestionBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionBarView.swift; sourceTree = "<group>"; };
 		AA1000E0 /* KeyboardModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardModePicker.swift; sourceTree = "<group>"; };
-		AA1000E1 /* ModeSelectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectionPage.swift; sourceTree = "<group>"; };
+		AA1000EA /* PolishTogglePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishTogglePage.swift; sourceTree = "<group>"; };
 		AA1000E2 /* GaugeBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GaugeBarView.swift; sourceTree = "<group>"; };
 		AA1000E3 /* ModelCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCardView.swift; sourceTree = "<group>"; };
 		AA1000E4 /* SwipeBackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeBackOverlayView.swift; sourceTree = "<group>"; };
@@ -516,7 +516,7 @@
 			isa = PBXGroup;
 			children = (
 				AA100050 /* ModelManager.swift */,
-				AA100052 /* ParakeetModelDownloader.swift */,
+				AA100052 /* ModelRepoDownloader.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -530,7 +530,7 @@
 				AA1000A3 /* KeyboardSetupPage.swift */,
 				AA1000A4 /* ModelDownloadPage.swift */,
 				AA1000A5 /* GlobeKeyTutorialPage.swift */,
-				AA1000E1 /* ModeSelectionPage.swift */,
+				AA1000EA /* PolishTogglePage.swift */,
 				AA1000A9 /* OnboardingSuccessView.swift */,
 			);
 			path = Onboarding;
@@ -933,7 +933,7 @@
 				AA000041 /* TranscriptionService.swift in Sources */,
 				AA000043 /* RecordingView.swift in Sources */,
 				AA000050 /* ModelManager.swift in Sources */,
-				AA000052 /* ParakeetModelDownloader.swift in Sources */,
+				AA000052 /* ModelRepoDownloader.swift in Sources */,
 				AA000051 /* ModelManagerView.swift in Sources */,
 				AA000071 /* TestDictationView.swift in Sources */,
 				AA000090 /* MainTabView.swift in Sources */,
@@ -950,7 +950,7 @@
 				AA0000A7 /* LicensesView.swift in Sources */,
 				AA0000A8 /* DebugLogView.swift in Sources */,
 				AA0000E0 /* KeyboardModePicker.swift in Sources */,
-				AA0000E1 /* ModeSelectionPage.swift in Sources */,
+				AA0000EA /* PolishTogglePage.swift in Sources */,
 				AA0000F0 /* SpeechModelProtocol.swift in Sources */,
 				AA0000F1 /* ParakeetEngine.swift in Sources */,
 				AA0000E2 /* GaugeBarView.swift in Sources */,

@@ -1,7 +1,8 @@
 // DictusApp/Views/ModelManagerView.swift
 // Model management UI: download, select, and delete WhisperKit models.
 // Redesigned with Downloaded/Available sections, gauge-based model cards, and engine descriptions.
-// Swipe-to-delete on downloaded non-active model cards (like iOS Mail).
+// Swipe-to-delete on downloaded non-active model cards (like iOS Mail), plus an
+// explicit overflow menu on downloaded cards for discoverability (issue #193).
 import SwiftUI
 import DictusCore
 
@@ -133,6 +134,13 @@ struct ModelManagerView: View {
                             onDownloadError: { error in
                                 downloadError = error
                                 showErrorAlert = true
+                            },
+                            // Issue #193: explicit delete entry point via the
+                            // card's overflow menu. Funnels into the same
+                            // confirmation alert as swipe-to-delete.
+                            onDeleteRequest: {
+                                modelToDelete = model
+                                showDeleteAlert = true
                             }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
