@@ -6,8 +6,9 @@ import DictusCore
 /// Segmented picker for selecting the default keyboard layer with a miniature preview.
 ///
 /// WHY reusable component:
-/// This picker appears in both SettingsView and onboarding (ModeSelectionPage).
-/// Extracting it into a single component ensures consistent look and behavior.
+/// This picker used to appear in both SettingsView and onboarding; the
+/// onboarding layer-choice step was removed in #213 and the picker now lives
+/// in SettingsView only, where it stays fully functional.
 ///
 /// WHY @AppStorage instead of @Binding:
 /// When used inside onboarding (which has .id(currentPage) + transitions),
