@@ -45,6 +45,6 @@ public enum KnownAppSchemes {
         AppScheme(name: "Discord", scheme: "discord://", queryScheme: "discord"),
         AppScheme(name: "Teams", scheme: "msteams://", queryScheme: "msteams"),
         AppScheme(name: "Instagram", scheme: "instagram://", queryScheme: "instagram"),
-        AppScheme(name: "Notes", scheme: "mobilenotes://", queryScheme: "mobilenotes"),
+        AppScheme(name: "Notes", scheme: "mobilenotes://", queryScheme: "mobilenotes")
     ]
 }

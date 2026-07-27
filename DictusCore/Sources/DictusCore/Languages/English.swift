@@ -50,7 +50,7 @@ public let englishProfile = LanguageProfile(
         "whos": "who's",
         "wholl": "who'll",
         "theres": "there's",
-        "heres": "here's",
+        "heres": "here's"
     ],
     accentMap: [:],         // English has no diacritics that AccentExpander handles.
     contractionPrefixes: [] // English contractions are handled via the override map.

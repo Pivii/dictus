@@ -33,7 +33,7 @@ enum KeyboardLayout {
             KeyDefinition("B", output: "b"),
             KeyDefinition("N", output: "n"),
             KeyDefinition("'", type: .accentAdaptive, width: 1.0),
-            KeyDefinition("delete", type: .delete, width: 1.5),
+            KeyDefinition("delete", type: .delete, width: 1.5)
         ],
         // Row 4: bottom function row.
         // Emoji replaces globe (emoji icon instead of globe icon, same advanceToNextInputMode behavior).
@@ -43,8 +43,8 @@ enum KeyboardLayout {
             KeyDefinition("123", type: .layerSwitch, width: 1.2),
             KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 4.5),
-            KeyDefinition("return", type: .returnKey, width: 1.8),
-        ],
+            KeyDefinition("return", type: .returnKey, width: 1.8)
+        ]
     ]
 
     // MARK: - QWERTY Letters layer (when user selects QWERTY in settings)
@@ -71,7 +71,7 @@ enum KeyboardLayout {
             KeyDefinition("B", output: "b"),
             KeyDefinition("N", output: "n"),
             KeyDefinition("M", output: "m"),
-            KeyDefinition("delete", type: .delete, width: 1.5),
+            KeyDefinition("delete", type: .delete, width: 1.5)
         ],
         // Row 4: bottom function row (no mic -- mic is in toolbar per Plan 03-02)
         // Emoji replaces globe — same as AZERTY. No adaptive accent key on QWERTY (Apple convention).
@@ -79,8 +79,8 @@ enum KeyboardLayout {
             KeyDefinition("123", type: .layerSwitch, width: 1.2),
             KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 5.7),
-            KeyDefinition("return", type: .returnKey, width: 1.8),
-        ],
+            KeyDefinition("return", type: .returnKey, width: 1.8)
+        ]
     ]
 
     // MARK: - Dynamic Layout Selection
@@ -121,7 +121,7 @@ enum KeyboardLayout {
             KeyDefinition("?", output: "?"),
             KeyDefinition("!", output: "!"),
             KeyDefinition("'", output: "'"),
-            KeyDefinition("delete", type: .delete, width: 1.5),
+            KeyDefinition("delete", type: .delete, width: 1.5)
         ],
         // Row 4: back to letters + space + return (no mic — letters only)
         // Emoji replaces globe for consistency across all layers.
@@ -129,8 +129,8 @@ enum KeyboardLayout {
             KeyDefinition("ABC", type: .layerSwitch, width: 1.2),
             KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 4.7),
-            KeyDefinition("return", type: .returnKey, width: 1.8),
-        ],
+            KeyDefinition("return", type: .returnKey, width: 1.8)
+        ]
     ]
 
     // MARK: - Symbols layer (accessed via #+= on numbers layer)
@@ -152,14 +152,14 @@ enum KeyboardLayout {
             KeyDefinition("?", output: "?"),
             KeyDefinition("!", output: "!"),
             KeyDefinition("'", output: "'"),
-            KeyDefinition("delete", type: .delete, width: 1.5),
+            KeyDefinition("delete", type: .delete, width: 1.5)
         ],
         // Row 4: same as numbers — emoji replaces globe
         [
             KeyDefinition("ABC", type: .layerSwitch, width: 1.2),
             KeyDefinition("emoji", type: .emoji, width: 1.2),
             KeyDefinition("space", output: " ", type: .space, width: 4.7),
-            KeyDefinition("return", type: .returnKey, width: 1.8),
-        ],
+            KeyDefinition("return", type: .returnKey, width: 1.8)
+        ]
     ]
 }

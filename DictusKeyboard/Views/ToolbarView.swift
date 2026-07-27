@@ -15,13 +15,13 @@ struct ToolbarView: View {
     var onMicTap: () -> Void
 
     // Suggestion bar integration parameters (default to idle/empty)
-    var statusMessage: String? = nil
+    var statusMessage: String?
     var suggestions: [String] = []
     var suggestionMode: SuggestionMode = .idle
-    var onSuggestionTap: ((Int) -> Void)? = nil
+    var onSuggestionTap: ((Int) -> Void)?
 
     /// Callback when the user cycles the language via the toolbar switcher.
-    var onLanguageChanged: ((SupportedLanguage) -> Void)? = nil
+    var onLanguageChanged: ((SupportedLanguage) -> Void)?
 
     var body: some View {
         // WHY ZStack: ensures the banner text is centered horizontally across the

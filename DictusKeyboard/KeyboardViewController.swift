@@ -237,7 +237,7 @@ class KeyboardViewController: UIInputViewController {
             // (see hostingBottomToKeyboardTop / hostingBottomToInputBottom)
             hosting.view.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
-            hostingHeight,
+            hostingHeight
         ])
 
         // --- 6. Defer the height constraint to viewDidLayoutSubviews first run ---
@@ -808,11 +808,9 @@ class KeyboardViewController: UIInputViewController {
     private func disableWindowGestureDelay() {
         guard let window = view.window,
               let recognizers = window.gestureRecognizers else { return }
-        for recognizer in recognizers {
-            if recognizer.delaysTouchesBegan {
-                recognizer.delaysTouchesBegan = false
-                disabledGestureHashes.insert(recognizer.hash)
-            }
+        for recognizer in recognizers where recognizer.delaysTouchesBegan {
+            recognizer.delaysTouchesBegan = false
+            disabledGestureHashes.insert(recognizer.hash)
         }
     }
 
@@ -899,7 +897,7 @@ class KeyboardViewController: UIInputViewController {
                 keyboard.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
                 keyboard.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
                 keyboardHeight,
-                newHostingBottomIdle,
+                newHostingBottomIdle
             ])
             self.hostingBottomToKeyboardTop = newHostingBottomIdle
         }

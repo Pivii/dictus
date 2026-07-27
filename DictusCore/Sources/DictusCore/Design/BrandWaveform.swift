@@ -266,7 +266,7 @@ public struct BrandWaveform: View {
     /// means bars completely disappear at zero energy -- perfectly still.
     private var waveformContent: some View {
         Canvas { context, size in
-            let _ = driver.renderTick
+            _ = driver.renderTick
             let totalSpacing = barSpacing * CGFloat(barCount - 1)
             let barWidth = max((size.width - totalSpacing) / CGFloat(barCount), 2)
 
@@ -330,7 +330,7 @@ public struct BrandWaveform: View {
 #Preview("Active") {
     ZStack {
         Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(energyLevels: (0..<30).map { i in
+        BrandWaveform(energyLevels: (0..<30).map { _ in
             Float.random(in: 0.2...0.8)
         })
     }

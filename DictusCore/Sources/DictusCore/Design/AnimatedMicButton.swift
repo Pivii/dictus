@@ -60,7 +60,7 @@ public struct AnimatedMicButton: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             // Belt-and-suspenders guard: .disabled should prevent this,
             // but log if somehow reached during a non-tappable state.
             guard isTappable else {
@@ -68,7 +68,7 @@ public struct AnimatedMicButton: View {
                 return
             }
             onTap()
-        }) {
+        } label: {
             ZStack {
                 // Background ring effects
                 ringEffect
@@ -166,7 +166,7 @@ public struct AnimatedMicButton: View {
                     colors: [
                         Color.white.opacity(0),
                         Color.white.opacity(0.3),
-                        Color.white.opacity(0),
+                        Color.white.opacity(0)
                     ],
                     startPoint: UnitPoint(x: shimmerOffset - 0.3, y: 0.5),
                     endPoint: UnitPoint(x: shimmerOffset + 0.3, y: 0.5)

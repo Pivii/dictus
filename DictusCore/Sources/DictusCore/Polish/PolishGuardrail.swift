@@ -32,7 +32,7 @@ public enum PolishGuardrail {
     /// but the engine emitted English. The char-ratio guardrail misses this when
     /// the chat reply happens to be similar length to the raw input.
     public static func detectedLanguageMatches(polished: String,
-                                                target: SupportedLanguage) -> Bool {
+                                               target: SupportedLanguage) -> Bool {
         let trimmed = polished.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 12 else { return true }
         let recognizer = NLLanguageRecognizer()

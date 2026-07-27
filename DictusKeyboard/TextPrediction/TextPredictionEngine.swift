@@ -540,17 +540,17 @@ class TextPredictionEngine {
     /// Standard split requires ≥3 chars per part to avoid noise like "ho ne",
     /// but French has many 2-char pronouns/articles/connectives that commonly
     /// start missed-space compounds (e.g., "tuboeux" should split as "tu peux",
-    /// "jepense" as "je pense"). This whitelist restricts the 2-char relaxation
+    /// "jepense" as "je pense"). This allowlist restricts the 2-char relaxation
     /// to words that are structurally plausible as a left/right split half.
-    private static let shortSplitWhitelist: Set<String> = [
+    private static let shortSplitAllowlist: Set<String> = [
         "je", "tu", "il", "on", "me", "te", "se", "ne",
         "le", "la", "un", "du", "au", "en",
         "et", "ou", "ni", "si", "ça", "où", "ce"
     ]
 
-    /// Whether a split part is long enough or belongs to the short-word whitelist.
+    /// Whether a split part is long enough or belongs to the short-word allowlist.
     private static func isValidSplitPart(_ part: String) -> Bool {
-        return part.count >= 3 || (part.count == 2 && shortSplitWhitelist.contains(part))
+        return part.count >= 3 || (part.count == 2 && shortSplitAllowlist.contains(part))
     }
 
     // MARK: - Apostrophe Prefix Correction
@@ -576,7 +576,7 @@ class TextPredictionEngine {
         "b": "n",  // b'est → n'est
         "y": "t",  // y'es → t'es (adjacent on AZERTY top row)
         "r": "t",  // r'es → t'es
-        "u": "t",  // u'es → t'es
+        "u": "t"  // u'es → t'es
     ]
 
     /// Correct a word with invalid apostrophe prefix via keyboard proximity.
@@ -629,13 +629,12 @@ class TextPredictionEngine {
     ///
     /// Boundary splits with bigram evidence win over those without.
     private func trySplitWithSignal(_ word: String)
-        -> (split: String?, hasBoundarySignal: Bool, hasBigramEvidence: Bool)
-    {
+        -> (split: String?, hasBoundarySignal: Bool, hasBigramEvidence: Bool) {
         let chars = Array(word)
         // Minimum absolute part length 2; each part must also pass isValidSplitPart
-        // which requires either ≥3 chars or membership in the short-word whitelist.
+        // which requires either ≥3 chars or membership in the short-word allowlist.
         // This lets "tu peux" split from "tuboeux" while still blocking "ho ne"
-        // from "honne" (since "ho" is not whitelisted).
+        // from "honne" (since "ho" is not allowlisted).
         let minPartLength = 2
         guard chars.count >= 4 else { return (nil, false, false) }
 
@@ -664,7 +663,7 @@ class TextPredictionEngine {
             let left = String(chars[0..<splitPos])
             let right = String(chars[splitPos...])
 
-            // Both parts must meet the length/whitelist requirement.
+            // Both parts must meet the length/allowlist requirement.
             guard Self.isValidSplitPart(left) else { continue }
 
             let leftExists = aospTrieEngine.wordExists(left)

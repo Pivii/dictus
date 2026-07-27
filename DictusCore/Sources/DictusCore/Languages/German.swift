@@ -20,7 +20,7 @@ public let germanProfile = LanguageProfile(
     accentMap: [
         "a": ["\u{00E4}"],          // ä  (a-umlaut)
         "o": ["\u{00F6}"],          // ö  (o-umlaut)
-        "u": ["\u{00FC}"],          // ü  (u-umlaut)
+        "u": ["\u{00FC}"]          // ü  (u-umlaut)
         // ß is reached via the collapseRules ss→ß below, not single-char
         // substitution — it would require deleting a position, which the
         // single-char accent substitution algorithm doesn't model. Long-press
@@ -43,6 +43,6 @@ public let germanProfile = LanguageProfile(
         // German ß: lets users get `straße`, `weiß`, `groß`, `Spaß`, `heißen`.
         // `muss` (valid post-1996-reform 1st/3rd-person form) is protected by
         // the 5x dominance rule against archaic `muß`.
-        ("ss", "\u{00DF}"),
+        ("ss", "\u{00DF}")
     ]
 )

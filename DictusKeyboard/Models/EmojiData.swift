@@ -237,7 +237,7 @@ enum EmojiStore {
                 "🇲🇾", "🇸🇬", "🇳🇿", "🇦🇷", "🇨🇴", "🇨🇱", "🇵🇪", "🇺🇦",
                 "🇷🇴", "🇭🇺", "🇨🇿", "🇭🇷", "🇷🇸", "🇧🇬", "🇱🇺", "🇲🇨"
             ]
-        ),
+        )
     ]
 
     /// Flat array of all emojis across all categories (for search).
