@@ -1,6 +1,9 @@
 # Legacy violations are frozen in the baseline (issue #146, step 2).
 # Any NEW violation fails CI (`--strict`). After fixing legacy violations,
 # regenerate with: swiftlint lint --quiet --write-baseline .swiftlint-baseline.json
+# Note: length/complexity entries embed their count in the match key, so if CI
+# reports a baselined length/complexity violation as "new" after your change
+# (even when shrinking the span), regenerate the baseline in your PR.
 baseline: .swiftlint-baseline.json
 
 included:

@@ -38,7 +38,7 @@ struct ModelCardView: View {
     /// (issue #193). The parent owns the confirmation alert so the menu and
     /// swipe-to-delete share the exact same deletion path. Nil hides the menu
     /// (e.g. cards in the "Available" section or the onboarding flow).
-    var onDeleteRequest: (() -> Void)? = nil
+    var onDeleteRequest: (() -> Void)?
 
     /// Tap-target padding around the ellipsis glyph and trailing space the
     /// badge row reserves for it. Scaled with Dynamic Type (relative to the

@@ -97,7 +97,7 @@ final class ModelRepoDownloader {
                     "\(variant)/MelSpectrogram.mlmodelc",
                     "\(variant)/AudioEncoder.mlmodelc",
                     "\(variant)/TextDecoder.mlmodelc",
-                    "\(variant)/config.json",
+                    "\(variant)/config.json"
                 ]
             )
         }
