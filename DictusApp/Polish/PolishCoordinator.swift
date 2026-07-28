@@ -77,7 +77,12 @@ public final class PolishCoordinator {
     public func prewarm() {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
-        let target = SupportedLanguage.active
+        // Resolve the polish target through the transcription language mode
+        // (#226): explicit mode targets the dictated language, not the keyboard
+        // one; auto mode skips polish entirely (see polish()) so there is
+        // nothing to warm — don't pay to load the model into memory.
+        guard let target = TranscriptionLanguageMode.active
+            .polishTargetLanguage(keyboardLanguage: SupportedLanguage.active) else { return }
         Task { await engineToWarm.prewarm(targetLanguage: target) }
     }
 
@@ -117,7 +122,20 @@ public final class PolishCoordinator {
             return raw
         }
 
-        let target = SupportedLanguage.active
+        // Transcription language decoupling (#226): the polish prompts AND the
+        // deterministic typography pre/post passes (verbal punctuation, French
+        // NBSP) are tuned for the four tested languages. In Auto-detect mode
+        // the output language is unknown (could be zh, it, pt, …), so the whole
+        // polish layer is bypassed — the raw STT output is returned untouched.
+        // Stopgap until the dedicated auto-detect prompt lands (#239).
+        // Returning before any metrics are emitted keeps exported logs free of
+        // polish activity, which is how the #226 acceptance test verifies this.
+        // In explicit mode, polish targets the dictated language (not the
+        // keyboard language) so typography/prompts match the actual output.
+        guard let target = TranscriptionLanguageMode.active
+            .polishTargetLanguage(keyboardLanguage: SupportedLanguage.active) else {
+            return raw
+        }
 
         // `methodStart` anchors the full wall-clock the user actually waits for,
         // INCLUDING the deterministic passes (which the old timer excluded).
