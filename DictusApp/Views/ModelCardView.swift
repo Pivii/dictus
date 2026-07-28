@@ -53,7 +53,8 @@ struct ModelCardView: View {
     /// glyph's .title3 font) so badges never slide under the button and the
     /// enlarged menu hit area never eats card taps at accessibility sizes.
     @ScaledMetric(relativeTo: .title3) private var overflowTapPadding: CGFloat = 12
-    @ScaledMetric(relativeTo: .title3) private var overflowReservedWidth: CGFloat = 32
+    // 44pt per control: ~20pt .title3 glyph + 12pt tap padding on each side.
+    @ScaledMetric(relativeTo: .title3) private var overflowReservedWidth: CGFloat = 44
 
     /// Presents the supported-languages detail sheet (issue #240).
     /// Card-local state: each card owns its own sheet, which keeps the
