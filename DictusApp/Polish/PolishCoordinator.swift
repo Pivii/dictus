@@ -138,13 +138,15 @@ public final class PolishCoordinator {
         // mode the output language is unknown (could be zh, it, pt, …), so the
         // whole polish layer is bypassed — the raw STT output is returned
         // untouched. Stopgap until the dedicated auto-detect prompt lands (#239).
-        // Returning before any metrics are emitted keeps exported logs free of
-        // polish activity, which is how the #226 acceptance test verifies this.
+        // The bypass IS recorded (outcome .skippedAutoMode, ~0ms, no engine
+        // run): device testing showed a silent return makes the debug export
+        // look like the dictation never reached polish, which reads as a bug.
         // In explicit mode, polish targets the dictated language (not the
         // keyboard language) so typography/prompts match the actual output.
         // With Parakeet active the setting is ineffective: the policy resolves
         // every mode to the keyboard language, i.e. the pre-#226 behavior.
         guard let target = languagePolicy.polishTargetLanguage else {
+            await recordAutoModeBypass(raw: raw, languagePolicy: languagePolicy)
             return raw
         }
 
@@ -272,6 +274,29 @@ public final class PolishCoordinator {
     }
 
     // MARK: - Helpers
+
+    /// Record the Whisper Auto-detect bypass (#226) as a `.skippedAutoMode`
+    /// event: ~0ms, no mode, no engine run. `targetLanguage` is metrics
+    /// context only (nothing was targeted) — the keyboard language documents
+    /// the session state, matching what the JSON export's settings block shows.
+    private func recordAutoModeBypass(raw: String,
+                                      languagePolicy: TranscriptionLanguagePolicy) async {
+        let m = PolishMetrics(
+            engine: activeEngine.identifier,
+            mode: nil,
+            targetLanguage: languagePolicy.keyboardLanguage,
+            detectedLanguage: nil,
+            rawCharCount: raw.count,
+            polishedCharCount: raw.count,
+            latencyMs: 0,
+            outcome: .skippedAutoMode,
+            sttEngine: languagePolicy.engine.rawValue,
+            sttModelID: languagePolicy.modelIdentifier,
+            timings: PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0)
+        )
+        PolishMetrics.log(m)
+        await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
+    }
 
     /// Recording duration (seconds) below which the LLM polish is skipped (#141).
     /// On flash dictations the user wants instant text and the model rarely adds

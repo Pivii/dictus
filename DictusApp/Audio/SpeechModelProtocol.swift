@@ -96,12 +96,24 @@ class WhisperKitEngine: SpeechModelProtocol {
         //
         // `language` is optional since #226: nil means the user chose Auto-detect
         // and Whisper picks the language token itself instead of being forced.
+        //
+        // WHY `detectLanguage` must be explicit in auto mode:
+        // WhisperKit's `detectLanguage` defaults to `!usePrefillPrompt`
+        // (Configurations.swift), and Dictus passes `usePrefillPrompt: true` —
+        // so with `language: nil` alone, detection stays OFF and the prefill
+        // falls back to the `<|en|>` token. Device testing showed exactly that:
+        // French speech came out quasi-translated to English and Mandarin
+        // produced "[speaking in Chinese]" subtitle-style annotations.
+        // `detectLanguage: true` is designed to work together with the prefill
+        // (the detected token replaces the forced one). In follow/explicit
+        // modes the language is set and detection stays off, as before.
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             usePrefillPrompt: true,
             usePrefillCache: true,
+            detectLanguage: language == nil,
             skipSpecialTokens: true,
             chunkingStrategy: .vad
         )
@@ -110,6 +122,19 @@ class WhisperKitEngine: SpeechModelProtocol {
             audioArray: audioSamples,
             decodeOptions: options
         )
+
+        // Auto-detect observability (#226): surface what Whisper decided so
+        // exported logs can validate the fix (e.g. detected=zh for Mandarin).
+        // Only logged in auto mode — in follow/explicit the language is forced.
+        if language == nil {
+            let detected = results.first?.language ?? "unknown"
+            PersistentLog.log(.diagnosticProbe(
+                component: "WhisperKitEngine",
+                instanceID: "languageDetection",
+                action: "detected",
+                details: "detected=\(detected)"
+            ))
+        }
 
         let totalSegments = results.reduce(0) { $0 + $1.segments.count }
         let totalCharCount = results.reduce(0) { $0 + $1.text.count }

@@ -37,6 +37,13 @@ public struct PolishMetrics: Sendable, Codable {
         /// model never loaded. Distinct from `skipped` (gibberish / low language
         /// confidence) so the debug JSON shows *why* the engine was bypassed.
         case skippedShort
+        /// Whole polish layer bypassed because the transcription language mode
+        /// is Whisper Auto-detect (#226): the output language is unknown, so
+        /// neither the LLM nor the typography passes ran, and the raw STT text
+        /// was inserted as-is. Recorded (instead of silently returning) so the
+        /// debug export shows WHY nothing happened. Stopgap until the
+        /// dedicated auto-detect prompt lands (#239).
+        case skippedAutoMode
         case cancelled
         case engineFailed
     }

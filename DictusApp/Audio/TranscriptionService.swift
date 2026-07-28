@@ -153,13 +153,17 @@ class TranscriptionService {
 
         // Variant A — `.vad` only. Mirrors the change in SpeechModelProtocol.swift
         // so the legacy fallback path stays consistent with the active engine path.
-        // See SpeechModelProtocol.swift for rationale.
+        // See SpeechModelProtocol.swift for rationale — including WHY
+        // `detectLanguage` must be explicitly enabled in auto mode (WhisperKit
+        // defaults it to `!usePrefillPrompt`, which is false here, so a nil
+        // language alone would force the `<|en|>` prefill token).
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             usePrefillPrompt: true,
             usePrefillCache: true,
+            detectLanguage: language == nil,
             skipSpecialTokens: true,
             chunkingStrategy: .vad
         )
@@ -169,6 +173,11 @@ class TranscriptionService {
                 audioArray: audioSamples,
                 decodeOptions: options
             )
+
+            // Auto-detect observability (#226) — mirrors WhisperKitEngine.
+            if language == nil {
+                logAutoDetectedLanguage(results)
+            }
 
             let totalSegments = results.reduce(0) { $0 + $1.segments.count }
             let totalCharCount = results.reduce(0) { $0 + $1.text.count }
@@ -205,6 +214,19 @@ class TranscriptionService {
             PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
             throw TranscriptionError.transcriptionFailed(error.localizedDescription)
         }
+    }
+
+    /// Auto-detect observability (#226): surface what Whisper decided so
+    /// exported logs can validate auto mode (e.g. detected=zh for Mandarin).
+    /// Only called in auto mode — in follow/explicit the language is forced.
+    private func logAutoDetectedLanguage(_ results: [TranscriptionResult]) {
+        let detected = results.first?.language ?? "unknown"
+        PersistentLog.log(.diagnosticProbe(
+            component: "TranscriptionService",
+            instanceID: "languageDetection",
+            action: "detected",
+            details: "detected=\(detected)"
+        ))
     }
 
     /// Phase 37 instrumentation: emits `transcriptionPerformance` alongside the existing
