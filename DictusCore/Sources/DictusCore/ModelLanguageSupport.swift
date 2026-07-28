@@ -57,6 +57,38 @@ public struct ModelLanguageSupport: Equatable, Sendable {
         }
     }
 
+    /// Quality tier for the full-list breakdown of a multilingual model
+    /// (issue #240 design round).
+    ///
+    /// Tiers are grounded in OpenAI's published per-language large-v3
+    /// results on the FLEURS benchmark (the `language-breakdown.svg` chart
+    /// in the openai/whisper repository, extracted 2026-07-28):
+    /// - `good`: WER/CER <= ~10% (25 languages, Spanish 2.8% .. Arabic 9.6%)
+    /// - `fair`: ~10-25% (19 languages, Czech 10.1% .. Lithuanian 23.7%)
+    /// - `limited`: > 25% (Hebrew 26.1% .. Bengali 50.0%) or no published
+    ///   FLEURS number at all (low-resource long tail).
+    /// Numbers are for the LARGE models; smaller checkpoints degrade
+    /// further — the UI surfaces that caveat alongside the tiers.
+    public enum QualityTier: Equatable, Sendable {
+        case good
+        case fair
+        case limited
+    }
+
+    /// A quality tier together with the language codes assigned to it.
+    public struct TierGroup: Equatable, Sendable {
+        public let tier: QualityTier
+        /// Language codes in published-benchmark order (best WER first,
+        /// unbenchmarked codes appended); the UI re-sorts alphabetically
+        /// by localized name for scanning.
+        public let codes: [String]
+
+        public init(tier: QualityTier, codes: [String]) {
+            self.tier = tier
+            self.codes = codes
+        }
+    }
+
     /// Coverage class for the summary line.
     public let coverage: Coverage
 
@@ -66,14 +98,24 @@ public struct ModelLanguageSupport: Equatable, Sendable {
 
     /// Remaining documented language codes beyond `highlights`, shown as a
     /// compact list. Populated for Parakeet (its 25-language list is finite
-    /// and worth spelling out); empty for Whisper where the long tail
-    /// (≈94 more languages) is conveyed by the coverage summary instead.
+    /// and worth spelling out); empty for Whisper, which uses `tierGroups`
+    /// for its full breakdown instead.
     public let additionalCodes: [String]
 
-    public init(coverage: Coverage, highlights: [Entry], additionalCodes: [String] = []) {
+    /// Complete supported-language list grouped by published quality tier
+    /// (issue #240 design round). Populated for Whisper models (the full
+    /// tokenizer language set, ~100 codes); empty for Parakeet, whose
+    /// finite documented list lives in `highlights` + `additionalCodes`.
+    public let tierGroups: [TierGroup]
+
+    public init(coverage: Coverage,
+                highlights: [Entry],
+                additionalCodes: [String] = [],
+                tierGroups: [TierGroup] = []) {
         self.coverage = coverage
         self.highlights = highlights
         self.additionalCodes = additionalCodes
+        self.tierGroups = tierGroups
     }
 }
 
@@ -89,6 +131,52 @@ extension ModelLanguageSupport {
         Entry(code: "de")
     ]
 
+    /// The complete Whisper tokenizer language set (~100 codes, including
+    /// Cantonese `yue` added with large-v3), grouped by quality tier.
+    ///
+    /// SOURCE OF TRUTH for the code list: WhisperKit's `Constants.languages`
+    /// map (Sources/WhisperKit/Core/Models.swift), which mirrors OpenAI's
+    /// whisper tokenizer. One normalization: Whisper's legacy "jw" code for
+    /// Javanese is stored here as the valid ISO 639-1 "jv" so `Locale` can
+    /// name it (this data is display-only, never fed to the tokenizer).
+    ///
+    /// SOURCE OF TRUTH for tier assignment: OpenAI's published large-v3
+    /// per-language FLEURS results (language-breakdown.svg in the
+    /// openai/whisper repo; WER, or CER for zh/ja/ko/th). Codes without a
+    /// published FLEURS number default to `limited` — the honest claim for
+    /// the low-resource long tail. See `QualityTier` for thresholds.
+    static let whisperTierGroups: [TierGroup] = [
+        // <= ~10% WER/CER on FLEURS with large-v3 (best first):
+        // es 2.8, it 3.0, ko 3.1, pt 4.1, en 4.1, pl 4.6, ca 4.8, ja 4.9,
+        // de 4.9, ru 5.0, nl 5.2, fr 5.3, id 6.1, uk 6.4, tr 6.7, ms 7.3,
+        // sv 7.6, zh 7.7, fi 7.7, no 7.8, ro 8.2, th 8.4, vi 8.6, sk 9.2,
+        // ar 9.6
+        TierGroup(tier: .good, codes: [
+            "es", "it", "ko", "pt", "en", "pl", "ca", "ja", "de", "ru",
+            "nl", "fr", "id", "uk", "tr", "ms", "sv", "zh", "fi", "no",
+            "ro", "th", "vi", "sk", "ar"
+        ]),
+        // ~10-25% WER on FLEURS with large-v3:
+        // cs 10.1, hr 10.8, el 10.9, sr 11.6, da 12.0, bg 12.5, hu 12.9,
+        // tl 13.0, bs 13.0, gl 13.1, mk 14.7, hi 17.0, et 18.1, sl 18.3,
+        // ta 18.3, lv 19.4, az 19.7, ur 20.6, lt 23.7
+        TierGroup(tier: .fair, codes: [
+            "cs", "hr", "el", "sr", "da", "bg", "hu", "tl", "bs", "gl",
+            "mk", "hi", "et", "sl", "ta", "lv", "az", "ur", "lt"
+        ]),
+        // > 25% WER on FLEURS with large-v3 (he 26.1 .. bn 50.0), followed
+        // by every remaining tokenizer language without a published FLEURS
+        // number (low-resource long tail, alphabetical).
+        TierGroup(tier: .limited, codes: [
+            "he", "cy", "fa", "is", "kk", "af", "kn", "mr", "sw", "te",
+            "mi", "ne", "hy", "be", "gu", "pa", "bn",
+            "am", "as", "ba", "bo", "br", "eu", "fo", "ha", "haw", "ht",
+            "jv", "ka", "km", "la", "lb", "ln", "lo", "mg", "ml", "mn",
+            "mt", "my", "nn", "oc", "ps", "sa", "sd", "si", "sn", "so",
+            "sq", "su", "tg", "tk", "tt", "uz", "yi", "yo", "yue"
+        ])
+    ]
+
     /// Small-class multilingual Whisper (tiny/base/small/small quantized):
     /// full ≈99-language coverage, but Chinese is rough at this size
     /// (~22-31% CER per the #226 research) — steer users to medium/turbo.
@@ -96,7 +184,8 @@ extension ModelLanguageSupport {
         coverage: .whisperMultilingual,
         highlights: testedHighlights + [
             Entry(code: "zh", note: .impreciseUpgradeRecommended)
-        ]
+        ],
+        tierGroups: whisperTierGroups
     )
 
     /// High-accuracy multilingual Whisper (medium / large-v3 turbo):
@@ -105,12 +194,15 @@ extension ModelLanguageSupport {
         coverage: .whisperMultilingual,
         highlights: testedHighlights + [
             Entry(code: "zh", note: .goodOnThisModel)
-        ]
+        ],
+        tierGroups: whisperTierGroups
     )
 
     /// Parakeet TDT 0.6b v3: exactly the 25 European languages documented by
-    /// NVIDIA — nothing else. Chinese and other non-European languages are
-    /// NOT supported (#226 research; surfaced explicitly in the detail view).
+    /// NVIDIA — nothing else; Chinese and other non-European languages are
+    /// NOT supported (#226 research). The detail view conveys the limit via
+    /// the "25 European languages" summary plus the exhaustive list (design
+    /// round dropped the extra warning row as redundant).
     /// The 21 codes below are the documented list minus the four tested
     /// languages already present in `highlights`.
     static let parakeetV3 = ModelLanguageSupport(

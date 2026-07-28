@@ -110,14 +110,77 @@ final class ModelLanguageSupportTests: XCTestCase {
         }
     }
 
-    // MARK: - Whisper long tail
+    // MARK: - Whisper full list with quality tiers (#240 design round)
 
     func testWhisperModelsHaveNoAdditionalCodesList() {
-        // The ≈94-language long tail is conveyed by the coverage summary,
-        // not an exhaustive list (#240 plan).
+        // Whisper's full list lives in tierGroups; additionalCodes stays
+        // Parakeet-only.
         for model in ModelInfo.allIncludingDeprecated where model.engine == .whisperKit {
             XCTAssertTrue(model.languageSupport.additionalCodes.isEmpty,
                           "\(model.identifier) should not list additional codes")
+        }
+    }
+
+    func testParakeetHasNoTierGroups() {
+        // Parakeet's finite documented list needs no tier breakdown.
+        let parakeet = ModelInfo.forIdentifier("parakeet-tdt-0.6b-v3")
+        XCTAssertEqual(parakeet?.languageSupport.tierGroups.isEmpty, true)
+    }
+
+    func testWhisperTierGroupsCoverFullTokenizerSet() {
+        // Every Whisper model must carry the complete tokenizer language
+        // set: 100 unique codes (99 classic + Cantonese `yue`), grouped
+        // good -> fair -> limited.
+        for model in ModelInfo.allIncludingDeprecated where model.engine == .whisperKit {
+            let groups = model.languageSupport.tierGroups
+            XCTAssertEqual(groups.map(\.tier), [.good, .fair, .limited],
+                           "\(model.identifier) tiers out of order")
+            let allCodes = groups.flatMap(\.codes)
+            XCTAssertEqual(allCodes.count, 100,
+                           "\(model.identifier) must cover the full tokenizer set")
+            XCTAssertEqual(Set(allCodes).count, allCodes.count,
+                           "\(model.identifier) has duplicate codes across tiers")
+        }
+    }
+
+    func testWhisperTierAssignmentsMatchPublishedAnchors() {
+        // Spot-check the FLEURS-grounded assignments (OpenAI large-v3
+        // language-breakdown data): the four tested languages and Chinese
+        // are good-tier; Czech/Hindi are fair; Bengali and the unbenchmarked
+        // long tail (Cantonese, Hawaiian) are limited.
+        guard let support = ModelInfo.forIdentifier("openai_whisper-small")?.languageSupport,
+              let good = support.tierGroups.first(where: { $0.tier == .good }),
+              let fair = support.tierGroups.first(where: { $0.tier == .fair }),
+              let limited = support.tierGroups.first(where: { $0.tier == .limited }) else {
+            XCTFail("Whisper small missing tier groups")
+            return
+        }
+        for code in testedCodes + ["zh"] {
+            XCTAssertTrue(good.codes.contains(code), "\(code) should be good-tier")
+        }
+        XCTAssertTrue(fair.codes.contains("cs"))
+        XCTAssertTrue(fair.codes.contains("hi"))
+        XCTAssertTrue(limited.codes.contains("bn"))
+        XCTAssertTrue(limited.codes.contains("yue"))
+        XCTAssertTrue(limited.codes.contains("haw"))
+        // Whisper's legacy "jw" must be normalized to ISO "jv" for display.
+        XCTAssertTrue(limited.codes.contains("jv"))
+        XCTAssertFalse(limited.codes.contains("jw"))
+    }
+
+    func testWhisperTierCodesAreNameableByTheOS() {
+        // Every tier code must resolve to a real language name via Locale
+        // (guards against typos across the 100-code list). Codes may be
+        // 2-letter ISO 639-1 or 3-letter ISO 639-2/3 (haw, yue).
+        guard let support = ModelInfo.forIdentifier("openai_whisper-small")?.languageSupport else {
+            XCTFail("Whisper small missing language support")
+            return
+        }
+        for code in support.tierGroups.flatMap(\.codes) {
+            XCTAssertTrue((2...3).contains(code.count), "\(code) has unexpected length")
+            let name = Locale(identifier: "en").localizedString(forLanguageCode: code)
+            XCTAssertNotNil(name, "\(code) is not a language code the OS can name")
+            XCTAssertNotEqual(name, code, "\(code) resolved to itself — likely invalid")
         }
     }
 }

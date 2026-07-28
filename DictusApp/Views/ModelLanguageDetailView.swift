@@ -15,9 +15,12 @@ import DictusCore
 /// - one-line coverage summary ("About 99 languages", "25 European languages")
 /// - curated main languages, the four Dictus-tested ones first, with
 ///   per-tier quality notes where warranted (e.g. Chinese on small models)
-/// - Whisper: a footer noting the ≈94-language long tail
-/// - Parakeet: the full remaining documented list plus an explicit
-///   "no Chinese / non-European languages" warning
+/// - Whisper: the complete tokenizer language list grouped by published
+///   quality tier (design round, grounded in OpenAI's large-v3 FLEURS
+///   results), each tier as flowing comma-separated text, plus a caveat
+///   that tiers were measured on the large models
+/// - Parakeet: the full remaining documented list ("Also supported"); the
+///   25-language summary + exhaustive list convey the European-only limit
 struct ModelLanguageDetailView: View {
     let model: ModelInfo
 
@@ -54,16 +57,31 @@ struct ModelLanguageDetailView: View {
                     }
                 } header: {
                     Text("Main languages")
-                } footer: {
-                    if support.coverage == .whisperMultilingual {
-                        // Whisper long tail: conveyed as a footer instead of
-                        // listing ~94 rows nobody would scroll through.
-                        Text("Plus about 94 other languages, with variable quality.")
+                }
+
+                // Whisper: complete tokenizer language list grouped by
+                // published quality tier (design round). Flowing text per
+                // tier keeps ~100 languages scannable instead of 100 rows.
+                ForEach(Array(support.tierGroups.enumerated()), id: \.offset) { index, group in
+                    Section {
+                        Text(joinedLanguageNames(for: group))
+                            .font(.dictusCaption)
+                            .foregroundStyle(.secondary)
+                    } header: {
+                        Text(localizedTierHeader(for: group.tier))
+                    } footer: {
+                        // Ground the tiers honestly: numbers come from the
+                        // large models; the small ones degrade further.
+                        if index == support.tierGroups.count - 1 {
+                            Text("Quality measured on the large Whisper models. Smaller models are less accurate.")
+                        }
                     }
                 }
 
-                // Parakeet: finite documented list — spell out the rest and
-                // make the non-European exclusion explicit (#240 acceptance).
+                // Parakeet: finite documented list — spell out the rest.
+                // Together with the "25 European languages" summary this
+                // conveys the European-only limit (design round dropped the
+                // extra warning row as redundant).
                 if !support.additionalCodes.isEmpty {
                     Section {
                         Text(additionalLanguagesText)
@@ -71,18 +89,6 @@ struct ModelLanguageDetailView: View {
                             .foregroundStyle(.secondary)
                     } header: {
                         Text("Also supported")
-                    }
-                }
-
-                if support.coverage == .parakeetEuropean {
-                    Section {
-                        Label {
-                            Text("This model does not support Chinese or other non-European languages.")
-                                .font(.dictusCaption)
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
-                        }
                     }
                 }
             }
@@ -104,10 +110,35 @@ struct ModelLanguageDetailView: View {
     /// languages (Parakeet's remaining 21), sorted for stable reading order
     /// in the user's language.
     private var additionalLanguagesText: String {
-        support.additionalCodes
+        joinedNames(for: support.additionalCodes)
+    }
+
+    /// Comma-joined localized names for a Whisper quality tier.
+    /// The highlighted languages (already shown with notes in the "Main
+    /// languages" section) are filtered out so nothing appears twice.
+    private func joinedLanguageNames(for group: ModelLanguageSupport.TierGroup) -> String {
+        let highlighted = Set(support.highlights.map(\.code))
+        return joinedNames(for: group.codes.filter { !highlighted.contains($0) })
+    }
+
+    /// Localize, sort by the user's language, and join with commas.
+    private func joinedNames(for codes: [String]) -> String {
+        codes
             .map { ModelLanguageSupport.localizedLanguageName(for: $0) }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             .joined(separator: ", ")
+    }
+
+    /// Localized section header for a quality tier.
+    private func localizedTierHeader(for tier: ModelLanguageSupport.QualityTier) -> String {
+        switch tier {
+        case .good:
+            return String(localized: "Good quality")
+        case .fair:
+            return String(localized: "Fair quality")
+        case .limited:
+            return String(localized: "Limited quality")
+        }
     }
 
     /// Warning-tinted color for caveat notes, secondary for positive ones.
