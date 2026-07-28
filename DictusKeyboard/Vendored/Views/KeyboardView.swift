@@ -578,6 +578,7 @@ final internal class GiellaKeyboardView: UIView,
             activeKey = nil
         }
 
+        logBelowBoundsTouchIfNeeded(touches)
         handleTouches(touches)
     }
 
@@ -632,12 +633,150 @@ final internal class GiellaKeyboardView: UIView,
     ///
     /// This approach is simpler and more reliable than iterating visibleCells, because
     /// it uses the same layout engine that `indexPathForItem` uses internally.
+    ///
+    /// This is also what maps a below-bounds touch accepted by `point(inside:with:)`
+    /// (#138) onto the bottom row: its y is clamped to `height - margin`, which sits
+    /// inside the bottom-row cells. No parallel resolution path is needed.
     private func clampedPoint(_ point: CGPoint) -> CGPoint {
         let margin: CGFloat = 4.0
         return CGPoint(
             x: min(max(point.x, margin), collectionView.bounds.width - margin),
             y: min(max(point.y, margin), collectionView.bounds.height - margin)
         )
+    }
+
+    // MARK: - Bottom-row hit area (#138)
+
+    /// Accept touches landing slightly BELOW the key grid so the bottom row has the same
+    /// downward forgiveness as Apple's keyboard.
+    ///
+    /// WHY HERE: hit testing runs before any touch handler. UIKit's default implementation
+    /// rejects a point below `bounds`, so the touch is never delivered to `touchesBegan`
+    /// and `clampedPoint` never gets a chance to rescue it. Widening acceptance is the only
+    /// place the missed tap can be recovered without changing geometry (#117).
+    ///
+    /// Horizontal behaviour and the top edge are deliberately untouched: only the band
+    /// directly under the grid is added.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if super.point(inside: point, with: event) {
+            return true
+        }
+        let tolerance = KeyboardHitArea.bottomRowDownwardTolerance
+        guard tolerance > 0 else { return false }
+        return point.x >= bounds.minX
+            && point.x < bounds.maxX
+            && point.y >= bounds.maxY
+            && point.y < bounds.maxY + tolerance
+    }
+
+    /// Extend the invisible globe tap surface downward on the bottom row so the globe key
+    /// gets the same tolerance as its neighbours (#138).
+    ///
+    /// The globe is handled by a transparent `UIButton` overlaying its cell rather than by
+    /// `handleTouches`, because `advanceToNextInputMode()` needs the raw touch stream. That
+    /// button would otherwise be the one bottom-row key without downward tolerance. The
+    /// button has a clear background and no content, so a taller frame renders nothing.
+    private func hitFrame(forCellFrame frame: CGRect, inSection section: Int) -> CGRect {
+        guard section == currentPage.count - 1 else { return frame }
+        return CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: frame.width,
+            height: frame.height + KeyboardHitArea.bottomRowDownwardTolerance
+        )
+    }
+
+    /// Cheap key (own + input view bounds) of the last geometry logged by
+    /// `logHitAreaGeometry()`. Auto Layout re-runs `layoutSubviews` constantly; this keeps
+    /// the probe — and the layout-attribute lookups it needs — off the hot path.
+    private var lastHitAreaProbeKey: String?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        logHitAreaGeometry()
+    }
+
+    /// Emit the geometry the maintainer needs to calibrate
+    /// `KeyboardHitArea.bottomRowDownwardTolerance` against Apple's keyboard on a device.
+    ///
+    /// Read it in Settings → Logs, action `bottomRowHitArea`:
+    /// - `input=` / `inputSafeBottom=` — the input view's bounds and bottom safe-area inset.
+    /// - `bottomRowWin=` / `spaceWin=` — bottom-row and spacebar cell frames in WINDOW
+    ///   coordinates (x,y,wxh), so they can be compared with the screen height directly.
+    /// - `hitBandMaxYWin=` — the lowest y this keyboard now accepts, in window coordinates.
+    /// - `winH=` / `winSafeBottom=` — window height and its bottom inset: `winH -
+    ///   hitBandMaxYWin` is how much room is left below our hit area before the screen edge.
+    ///
+    /// Emitted once per distinct geometry (orientation change, page change, relayout).
+    private func logHitAreaGeometry() {
+        guard let window = window else { return }
+        // NOTE (#202): everything below is read-only. This runs inside a layout pass, so it
+        // must never touch the view hierarchy — that is what produced the infinite layout
+        // loop guarded against in `bounds.didSet`.
+        let probeKey = "\(bounds)|\(superview?.bounds ?? .zero)|\(currentPage.count)"
+        guard probeKey != lastHitAreaProbeKey else { return }
+
+        let bottomSection = currentPage.count - 1
+        guard bottomSection >= 0,
+              let bottomAttributes = collectionView.layoutAttributesForItem(
+                at: IndexPath(row: 0, section: bottomSection)) else { return }
+
+        let spacebarFrame: CGRect? = currentPage[bottomSection]
+            .firstIndex(where: { if case .spacebar = $0.type { return true } else { return false } })
+            .flatMap { collectionView.layoutAttributesForItem(at: IndexPath(row: $0, section: bottomSection)) }
+            .map { $0.frame }
+
+        let tolerance = KeyboardHitArea.bottomRowDownwardTolerance
+        let inputBounds = superview?.bounds ?? .zero
+        let inputSafeBottom = superview?.safeAreaInsets.bottom ?? 0
+        let bottomRowInWindow = collectionView.convert(bottomAttributes.frame, to: window)
+        let spacebarInWindow = spacebarFrame.map { collectionView.convert($0, to: window) }
+        let hitBandMaxYInWindow = convert(CGPoint(x: 0, y: bounds.maxY + tolerance), to: window).y
+
+        let details = "tolerance=\(fmt(tolerance))"
+            + " grid=\(fmt(bounds.size)) input=\(fmt(inputBounds.size))"
+            + " inputSafeBottom=\(fmt(inputSafeBottom))"
+            + " bottomRowWin=\(fmt(bottomRowInWindow))"
+            + " spaceWin=\(spacebarInWindow.map(fmt) ?? "none")"
+            + " hitBandMaxYWin=\(fmt(hitBandMaxYInWindow))"
+            + " winH=\(fmt(window.bounds.height)) winSafeBottom=\(fmt(window.safeAreaInsets.bottom))"
+
+        lastHitAreaProbeKey = probeKey
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "GiellaKeyboardView",
+            instanceID: "",
+            action: "bottomRowHitArea",
+            details: details
+        ))
+    }
+
+    /// Log a touch-down that landed BELOW the key grid — i.e. one that would have been
+    /// dropped entirely before #138. `overshoot` is how far below the grid's bottom edge
+    /// the finger landed, which is the raw material for tuning the tolerance: collect a
+    /// typing session and set the constant above the overshoots that are real taps.
+    private func logBelowBoundsTouchIfNeeded(_ touches: Set<UITouch>) {
+        guard let touch = touches.first else { return }
+        let overshoot = touch.location(in: self).y - bounds.maxY
+        guard overshoot > 0 else { return }
+        PersistentLog.log(.diagnosticProbe(
+            component: "GiellaKeyboardView",
+            instanceID: "",
+            action: "bottomRowBelowBoundsTouch",
+            details: "overshoot=\(fmt(overshoot)) tolerance=\(fmt(KeyboardHitArea.bottomRowDownwardTolerance))"
+        ))
+    }
+
+    private func fmt(_ value: CGFloat) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func fmt(_ size: CGSize) -> String {
+        "\(fmt(size.width))x\(fmt(size.height))"
+    }
+
+    private func fmt(_ rect: CGRect) -> String {
+        "\(fmt(rect.origin.x)),\(fmt(rect.origin.y)),\(fmt(rect.size))"
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with _: UIEvent?) {
@@ -892,7 +1031,7 @@ final internal class GiellaKeyboardView: UIView,
         let key = currentPage[indexPath.section][indexPath.row]
 
         if key.type == .keyboard {
-            keyboardButtonFrame = cell.frame
+            keyboardButtonFrame = hitFrame(forCellFrame: cell.frame, inSection: indexPath.section)
         }
 
         if let keyCell = cell as? KeyCell,

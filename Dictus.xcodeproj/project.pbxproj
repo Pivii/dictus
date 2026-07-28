@@ -92,6 +92,7 @@
 		AA00P207 /* PolishDebugExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10P207 /* PolishDebugExporter.swift */; };
 		AA0000F6 /* StopStandbyIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100005 /* StopStandbyIntent.swift */; };
 		AA0000G0 /* KeyTapSignposter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000G0 /* KeyTapSignposter.swift */; };
+		AA0000G1 /* KeyboardHitArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000G1 /* KeyboardHitArea.swift */; };
 		AA000P10 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA100P10 /* PrivacyInfo.xcprivacy */; };
 		AA000P20 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA100P20 /* PrivacyInfo.xcprivacy */; };
 		BB000001 /* DictusWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB100001 /* DictusWidgetBundle.swift */; };
@@ -248,6 +249,7 @@
 		AA10P205 /* PolishDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugView.swift; sourceTree = "<group>"; };
 		AA10P207 /* PolishDebugExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolishDebugExporter.swift; sourceTree = "<group>"; };
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
+		AA1000G1 /* KeyboardHitArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHitArea.swift; sourceTree = "<group>"; };
 		SS100001 /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
 		SS100002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		SS100003 /* ProBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProBannerView.swift; sourceTree = "<group>"; };
@@ -580,6 +582,7 @@
 			isa = PBXGroup;
 			children = (
 				AA1000G0 /* KeyTapSignposter.swift */,
+				AA1000G1 /* KeyboardHitArea.swift */,
 			);
 			path = TouchHandling;
 			sourceTree = "<group>";
@@ -996,6 +999,7 @@
 				AA0000D1 /* SuggestionState.swift in Sources */,
 				AA0000D4 /* SuggestionBarView.swift in Sources */,
 				AA0000G0 /* KeyTapSignposter.swift in Sources */,
+				AA0000G1 /* KeyboardHitArea.swift in Sources */,
 				CC000030 /* KeyboardMetrics.swift in Sources */,
 				CC000010 /* KeyboardLayouts.swift in Sources */,
 				CC000020 /* DictusKeyboardBridge.swift in Sources */,
