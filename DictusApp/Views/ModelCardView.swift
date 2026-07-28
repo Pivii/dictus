@@ -126,11 +126,17 @@ struct ModelCardView: View {
             // WHY spacing 0: each control carries its own scaled tap padding
             // (overflowTapPadding), which already provides ~44pt targets and
             // the visual gap between the two glyphs.
+            //
+            // WHY ⓘ is the OUTERMOST (trailing) element (design round,
+            // issue #240): the info button exists on every card state, so
+            // anchoring it at the corner keeps it at the exact same position
+            // whether or not the state-dependent overflow menu is present.
+            // The menu slides in to its left instead of pushing ⓘ around.
             HStack(spacing: 0) {
-                languageInfoButton
                 if showsOverflowMenu {
                     overflowMenu
                 }
+                languageInfoButton
             }
         }
         // Supported-languages detail sheet (issue #240). Attached to the card
@@ -363,10 +369,11 @@ struct ModelCardView: View {
     private var trailingContent: some View {
         switch state {
         case .notDownloaded:
-            // Subtle download hint icon
-            Image(systemName: "arrow.down.circle")
-                .font(.title2)
-                .foregroundColor(.dictusAccent)
+            // No download hint icon (design round, issue #240): the
+            // "Available" section already communicates downloadability and
+            // the whole card is the tap target, so the arrow was redundant
+            // and clashed visually with the corner-anchored info button.
+            EmptyView()
 
         case .downloading:
             // Progress is shown full-width in card body (Row 3)
