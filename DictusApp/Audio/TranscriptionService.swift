@@ -100,13 +100,33 @@ class TranscriptionService {
     func transcribe(audioSamples: [Float]) async throws -> String {
         let transcriptionStart = Date()
 
-        // Read user settings from App Group at transcription time
+        // Read user settings from App Group at transcription time.
+        //
+        // Since #226 the STT language is decoupled from the keyboard language:
+        // this is the single resolution point. The keyboard language key keeps
+        // driving layout/autocorrect only; STT resolves through the
+        // transcription language mode ("follow" by default, so pre-#226
+        // installs behave identically). nil = Whisper auto-detection.
+        // The keyboard toolbar switcher only ever writes SharedKeys.language,
+        // so an explicit or auto choice here can never be overridden by it.
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        let language = defaults?.string(forKey: SharedKeys.language) ?? "fr"
+        let keyboardLanguage = defaults?.string(forKey: SharedKeys.language) ?? "fr"
+        let mode = TranscriptionLanguageMode(
+            storedValue: defaults?.string(forKey: SharedKeys.transcriptionLanguage)
+        )
+        let language = mode.resolvedLanguageCode(keyboardLanguageCode: keyboardLanguage)
 
         // Determine active model name for logging
         let modelName = defaults?.string(forKey: SharedKeys.activeModel) ?? "unknown"
         PersistentLog.log(.transcriptionStarted(modelName: modelName))
+        // Trace the resolution so device tests (#226 acceptance: Mandarin via
+        // Auto-detect, toolbar-switcher non-override) can verify it from logs.
+        PersistentLog.log(.diagnosticProbe(
+            component: "TranscriptionService",
+            instanceID: "languageResolution",
+            action: "resolved",
+            details: "mode=\(mode.storedValue) keyboard=\(keyboardLanguage) stt=\(language ?? "auto")"
+        ))
 
         // Route to active engine if set (multi-engine path)
         if let activeEngine {

@@ -62,10 +62,13 @@ class ParakeetEngine: SpeechModelProtocol {
     ///
     /// - Parameters:
     ///   - audioSamples: Float32 audio samples at 16 kHz mono.
-    ///   - language: Language code. Parakeet TDT v3 auto-detects language from audio —
-    ///     this parameter is a no-op. Language forcing requires Qwen3-ASR (iOS 18+).
+    ///   - language: Language code (or `nil` for Auto-detect mode, #226).
+    ///     Parakeet TDT v3 auto-detects language from audio — this parameter is
+    ///     a no-op either way. The "Transcription language" setting is therefore
+    ///     only effective on Whisper models, which Settings documents via the
+    ///     existing Parakeet caveat. Language forcing requires Qwen3-ASR (iOS 18+).
     /// - Returns: Transcribed text.
-    func transcribe(audioSamples: [Float], language: String) async throws -> String {
+    func transcribe(audioSamples: [Float], language: String?) async throws -> String {
         guard let asrManager else {
             throw TranscriptionError.notReady
         }

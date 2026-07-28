@@ -25,9 +25,11 @@ protocol SpeechModelProtocol {
     /// Transcribe audio samples to text.
     /// - Parameters:
     ///   - audioSamples: Float32 audio samples at 16 kHz mono.
-    ///   - language: BCP-47 language code (e.g., "fr", "en").
+    ///   - language: BCP-47 language code (e.g., "fr", "en"), or `nil` to let
+    ///     the engine auto-detect the spoken language (issue #226 Auto-detect
+    ///     mode — Whisper's built-in language detection).
     /// - Returns: Transcribed text string.
-    func transcribe(audioSamples: [Float], language: String) async throws -> String
+    func transcribe(audioSamples: [Float], language: String?) async throws -> String
 }
 
 /// WhisperKit engine conforming to SpeechModelProtocol.
@@ -78,7 +80,7 @@ class WhisperKitEngine: SpeechModelProtocol {
         self.loadedModelName = modelIdentifier
     }
 
-    func transcribe(audioSamples: [Float], language: String) async throws -> String {
+    func transcribe(audioSamples: [Float], language: String?) async throws -> String {
         guard let whisperKit else {
             throw TranscriptionError.notReady
         }
@@ -91,6 +93,9 @@ class WhisperKitEngine: SpeechModelProtocol {
         // defaults to chunkingStrategy = .vad. Earlier attempts on #163 combined
         // .vad with threshold tweaks (noSpeechThreshold, logProbThreshold) which
         // regressed long-form turbo. Testing .vad in isolation here.
+        //
+        // `language` is optional since #226: nil means the user chose Auto-detect
+        // and Whisper picks the language token itself instead of being forced.
         let options = DecodingOptions(
             task: .transcribe,
             language: language,

@@ -520,9 +520,15 @@ class DictationCoordinator: ObservableObject {
                     recordingDuration: audioDuration
                 )
 
-                // Append trailing separator so chained dictations don't stick together
+                // Append trailing separator so chained dictations don't stick together.
+                // Auto-detect mode (#226) inserts the transcription as-is: the output
+                // language is unknown, and coercing Western punctuation/spacing onto
+                // e.g. Chinese ("你好。" + ". ") would corrupt the text. Follow and
+                // explicit modes keep the historical separator behavior unchanged.
                 let finalText: String
-                if let last = text.last, ".!?…".contains(last) {
+                if TranscriptionLanguageMode.active == .autoDetect {
+                    finalText = text
+                } else if let last = text.last, ".!?…".contains(last) {
                     finalText = text + " "
                 } else {
                     finalText = text + ". "
