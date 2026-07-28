@@ -332,8 +332,9 @@ class ModelManager: ObservableObject {
             // Download failure: deliberately NO cleanup (issue #210, same policy as
             // the Parakeet path) — the downloader moves each file into place
             // atomically, so anything on disk is a complete file and a retry skips
-            // it and resumes where it left off. The Settings "Retry" affordance
-            // still offers a full reset via cleanupFailedModel.
+            // it and resumes where it left off. Since issue #235, tapping the card's
+            // "Retry" affordance retries in place; the full reset lives in the
+            // overflow menu's "Delete partial download" entry (cleanupFailedModel).
 
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
@@ -432,8 +433,10 @@ class ModelManager: ObservableObject {
             // Deliberately NO cleanupModelFiles here after a download failure:
             // the downloader moves each file into place atomically, so anything on
             // disk is a complete file — leaving the cache intact lets a retry skip
-            // already-downloaded files and resume where it left off. The Settings
-            // "Retry" affordance still offers a full reset via cleanupFailedModel.
+            // already-downloaded files and resume where it left off. Since issue
+            // #235, tapping the card's "Retry" affordance retries in place; the
+            // full reset lives in the overflow menu's "Delete partial download"
+            // entry (cleanupFailedModel).
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }
@@ -546,7 +549,8 @@ class ModelManager: ObservableObject {
     }
 
     /// Cleans up a failed model's files and resets its state to not downloaded.
-    /// Called from UI when user wants to free disk space from a failed download.
+    /// Called from the error card's overflow menu ("Delete partial download",
+    /// issue #235) when the user wants to free disk space instead of retrying.
     func cleanupFailedModel(_ identifier: String) {
         cleanupModelFiles(identifier)
         modelStates[identifier] = .notDownloaded
