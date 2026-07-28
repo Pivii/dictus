@@ -94,6 +94,40 @@ final class PolishGuardrailTests: XCTestCase {
         XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: "", target: .french))
     }
 
+    // MARK: - Auto-mode language-match guardrail (#239)
+
+    /// Auto mode ratio band mirrors Natural: light corrections only.
+    func testAutoAcceptsNaturalBandAndRejectsOutside() {
+        let raw = String(repeating: "a", count: 100)
+        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: String(repeating: "a", count: 50), mode: .auto))
+        XCTAssertTrue(PolishGuardrail.accepts(raw: raw, polished: String(repeating: "a", count: 200), mode: .auto))
+        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: String(repeating: "a", count: 49), mode: .auto))
+        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: String(repeating: "a", count: 201), mode: .auto))
+    }
+
+    func testAutoLanguageMatchAcceptsSameLanguageAsInput() {
+        let polished = "Allora domani andiamo al mare, se il tempo è bello. Ci vediamo alle nove."
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: polished, inputLanguageCode: "it"))
+    }
+
+    /// The #239 device failure mode: English speech, French keyboard, polish
+    /// translated into French. With the input code as reference the translated
+    /// output must be rejected.
+    func testAutoLanguageMatchRejectsTranslationDrift() {
+        let polished = "Salut, tu viens à la réunion demain matin ? Je crois qu’on commence à neuf heures."
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(polished: polished, inputLanguageCode: "en"))
+    }
+
+    func testAutoLanguageMatchAcceptsChineseRoundTrip() {
+        let polished = "我觉得我们明天再讨论这个问题吧，然后周五之前把版本发出去。"
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: polished, inputLanguageCode: "zh-Hans"))
+    }
+
+    func testAutoLanguageMatchPassesShortOutputs() {
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: "Ok.", inputLanguageCode: "it"))
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: "", inputLanguageCode: "en"))
+    }
+
     // MARK: - Codable roundtrip
 
     /// Round-trip every Outcome through JSON. Required because the persistent

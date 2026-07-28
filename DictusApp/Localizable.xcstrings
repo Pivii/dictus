@@ -391,13 +391,13 @@
         }
       }
     },
-    "Auto-detect lets you dictate in any language Whisper supports. Transcription polish is disabled in this mode." : {
-      "comment" : "Transcription section footer shown when Auto-detect is selected (issue #226).",
+    "Auto-detect lets you dictate in any language Whisper supports. Polish adapts to the language you speak." : {
+      "comment" : "Transcription section footer shown when Auto-detect is selected (issue #226; polish behavior since #239).",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La détection automatique vous permet de dicter dans toutes les langues prises en charge par Whisper. Le polish de transcription est désactivé dans ce mode."
+            "value" : "La détection automatique vous permet de dicter dans toutes les langues prises en charge par Whisper. L'amélioration du texte s'adapte à la langue parlée."
           }
         }
       }

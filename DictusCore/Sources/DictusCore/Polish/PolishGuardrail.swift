@@ -14,13 +14,16 @@ import NaturalLanguage
 public enum PolishGuardrail {
 
     /// Returns `true` when `polished` is within the allowed ratio band for `mode`.
-    /// Natural: `[0.5, 2.0]`. Repair: `[0.3, 3.0]`. Empty raw → only empty polished accepted.
+    /// Natural: `[0.5, 2.0]`. Repair: `[0.3, 3.0]`. Auto (#239): same band as
+    /// Natural — the auto prompt is light-corrections-only, so anything outside
+    /// the Natural band is over/under-generation. Empty raw → only empty
+    /// polished accepted.
     public static func accepts(raw: String, polished: String, mode: PolishMode) -> Bool {
         guard !raw.isEmpty else { return polished.isEmpty }
         let ratio = Double(polished.count) / Double(raw.count)
         switch mode {
-        case .natural: return (0.5...2.0).contains(ratio)
-        case .repair:  return (0.3...3.0).contains(ratio)
+        case .natural, .auto: return (0.5...2.0).contains(ratio)
+        case .repair:         return (0.3...3.0).contains(ratio)
         }
     }
 
@@ -33,6 +36,27 @@ public enum PolishGuardrail {
     /// the chat reply happens to be similar length to the raw input.
     public static func detectedLanguageMatches(polished: String,
                                                target: SupportedLanguage) -> Bool {
+        matches(polished: polished, expectedCode: target.rawValue)
+    }
+
+    /// Auto-mode variant (#239): there is no target language, but the INPUT's
+    /// detected language is known — the polished output must be in the same
+    /// one. This is the runtime enforcement of the auto prompt's
+    /// never-translate contract: it catches translation drift (e.g. English
+    /// speech polished into the keyboard language) that the char-ratio check
+    /// cannot see. `inputLanguageCode` is an `NLLanguage` raw value (BCP-47ish:
+    /// "en", "it", "zh-Hans", …) from `PolishPipeline.detectLanguageCode`,
+    /// compared against the same recognizer's verdict on the output — so both
+    /// sides share one namespace.
+    public static func detectedLanguageMatches(polished: String,
+                                               inputLanguageCode: String) -> Bool {
+        matches(polished: polished, expectedCode: inputLanguageCode)
+    }
+
+    /// Shared core: `true` when the top language hypothesis of `polished`
+    /// equals `expectedCode` — or when the check cannot be trusted (short
+    /// output, low confidence), which passes through.
+    private static func matches(polished: String, expectedCode: String) -> Bool {
         let trimmed = polished.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 12 else { return true }
         let recognizer = NLLanguageRecognizer()
@@ -42,6 +66,6 @@ public enum PolishGuardrail {
               top.value >= 0.5 else {
             return true
         }
-        return top.key.rawValue == target.rawValue
+        return top.key.rawValue == expectedCode
     }
 }

@@ -9,13 +9,13 @@ import FoundationModels
 ///
 /// Availability is gated by `PolishAvailability.isAppleFMAvailable` upstream —
 /// `PolishCoordinator` instantiates this engine only when Apple Intelligence is
-/// usable. The cache has a small bound (8) because round 1 supports at most
-/// 4 languages × 2 modes = 8 combinations.
+/// usable. The cache has a small bound (9): 4 languages × 2 per-language modes
+/// + 1 language-agnostic Auto session (#239).
 @available(iOS 26.0, macOS 26.0, *)
 public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
     public let identifier = "apple-fm"
-    private let cache = SessionCache(capacity: 8)
+    private let cache = SessionCache(capacity: 9)
 
     /// Optional instructions override. `nil` in the app (uses the shipping
     /// prompts via `Self.instructions`); the eval harness injects a candidate
@@ -36,10 +36,24 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         instructionsOverride?(mode, language) ?? Self.instructions(for: mode, language: language)
     }
 
+    /// Normalize the session-cache language for a mode. `.auto` has a single
+    /// language-agnostic prompt, so its session key must not vary with the
+    /// caller-supplied placeholder language — otherwise a `prewarm(mode: .auto)`
+    /// and the subsequent `polish(mode: .auto)` could miss each other and the
+    /// warm session would be wasted. `.english` is an arbitrary canonical
+    /// filler; `instructions(for:language:)` ignores it in `.auto` mode.
+    private static func sessionLanguage(for mode: PolishMode,
+                                        requested: SupportedLanguage) -> SupportedLanguage {
+        mode == .auto ? .english : requested
+    }
+
     public func polish(raw: String,
                        targetLanguage: SupportedLanguage,
                        mode: PolishMode) async throws -> String {
-        let key = SessionKey(mode: mode, language: targetLanguage)
+        let key = SessionKey(
+            mode: mode,
+            language: Self.sessionLanguage(for: mode, requested: targetLanguage)
+        )
         // A session lives exactly one polish call. `prewarm()` (fired at
         // recording start) leaves a fresh, warmed session in the cache; we use
         // it here on a cache hit, or create one if no prewarm ran. The `defer`
@@ -73,17 +87,21 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Create a FRESH Natural session for `targetLanguage` and prewarm it.
+    /// Create a FRESH session for `(mode, targetLanguage)` and prewarm it.
     /// Called from `PolishCoordinator.prewarm()` at app launch and at the start
-    /// of every recording (#141). Dropping any existing session first guarantees
-    /// we warm a virgin session (instructions only, zero accumulated transcript)
-    /// — the prerequisite for the stateless invariant in `polish()`.
-    public func prewarm(targetLanguage: SupportedLanguage) async {
-        let key = SessionKey(mode: .natural, language: targetLanguage)
+    /// of every recording (#141). The coordinator passes `.natural` for the
+    /// per-language path and `.auto` in Auto-detect mode (#239) so the warmed
+    /// instructions match the ones `polish()` will use. Dropping any existing
+    /// session first guarantees we warm a virgin session (instructions only,
+    /// zero accumulated transcript) — the prerequisite for the stateless
+    /// invariant in `polish()`.
+    public func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async {
+        let language = Self.sessionLanguage(for: mode, requested: targetLanguage)
+        let key = SessionKey(mode: mode, language: language)
         await cache.drop(key)
         let session = await cache.session(
             for: key,
-            instructions: resolvedInstructions(mode: .natural, language: targetLanguage)
+            instructions: resolvedInstructions(mode: mode, language: language)
         )
         session.prewarm()
     }
@@ -97,10 +115,14 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     /// survives in the dispatch only as the documented behaviour for any
     /// future language added without a dedicated prompt — see
     /// `docs/agents/language-onboarding.md` §"Polish prompt".
+    /// `.auto` mode (#239) ignores `language` entirely: one language-agnostic
+    /// prompt covers every auto-detected input language.
     public static func instructions(for mode: PolishMode,
                                     language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
         switch (mode, language) {
+        case (.auto, _):
+            return PolishAutoPrompt.instructions(glossary: glossary)
         case (.natural, .french):
             return PolishNaturalPromptFR.instructions(glossary: glossary)
         case (.natural, .english):
