@@ -14,7 +14,7 @@ import DictusCore
 /// The entire card is a single tappable surface. Behavior depends on model state:
 /// - .ready + not active -> select as active model
 /// - .notDownloaded -> start download
-/// - .error -> cleanup and retry
+/// - .error -> relaunch the download in place (issue #235)
 /// - .downloading / .prewarming -> card disabled (no tap)
 ///
 /// WHY no separate buttons:
@@ -39,6 +39,14 @@ struct ModelCardView: View {
     /// swipe-to-delete share the exact same deletion path. Nil hides the menu
     /// (e.g. cards in the "Available" section or the onboarding flow).
     var onDeleteRequest: (() -> Void)?
+
+    /// Called when the user asks to delete the kept files of a FAILED download
+    /// from the overflow menu (issue #235). Separate from `onDeleteRequest`
+    /// because the cleanup path differs (cleanupFailedModel, not deleteModel)
+    /// and the `.ready` deletion rules (never active, never last) do not apply:
+    /// a partial download is never active or usable. The parent owns the
+    /// confirmation alert, mirroring the #193 pattern.
+    var onDeletePartialRequest: (() -> Void)?
 
     /// Tap-target padding around the ellipsis glyph and trailing space the
     /// badge row reserves for it. Scaled with Dynamic Type (relative to the
@@ -67,16 +75,24 @@ struct ModelCardView: View {
         }
     }
 
-    /// Whether the overflow menu is visible. Only downloaded (.ready) cards
-    /// show it, and only when the parent provided a delete handler.
+    /// Whether the overflow menu is visible. Shown on downloaded (.ready) cards
+    /// and on failed-download (.error) cards, each gated on the parent having
+    /// provided the matching handler.
     ///
-    /// WHY only .ready:
+    /// WHY .ready and .error only:
     /// During download/prewarming the card is busy and deletion would race the
-    /// file operations; error cards already expose a retry/cleanup tap.
+    /// file operations. Error cards need the menu since issue #235: the card
+    /// tap now retries the download in place, so the full reset (delete kept
+    /// files) moved from the tap to an explicit destructive menu entry.
     private var showsOverflowMenu: Bool {
-        guard onDeleteRequest != nil else { return false }
-        if case .ready = state { return true }
-        return false
+        switch state {
+        case .ready:
+            return onDeleteRequest != nil
+        case .error:
+            return onDeletePartialRequest != nil
+        default:
+            return false
+        }
     }
 
     /// Whether this model can actually be deleted right now.
@@ -113,7 +129,17 @@ struct ModelCardView: View {
     /// last model) the menu explains why instead of silently hiding the action.
     private var overflowMenu: some View {
         Menu {
-            if canDeleteModel {
+            if case .error = state {
+                // Issue #235: full reset for a failed download. Frees the kept
+                // files (the resume cache) and returns the card to "Available".
+                // The .ready rules (never active, never last) deliberately do
+                // NOT gate this entry — a partial download is never usable.
+                Button(role: .destructive) {
+                    onDeletePartialRequest?()
+                } label: {
+                    Label("Delete partial download", systemImage: "trash")
+                }
+            } else if canDeleteModel {
                 Button(role: .destructive) {
                     onDeleteRequest?()
                 } label: {
@@ -263,7 +289,16 @@ struct ModelCardView: View {
             if !isActive {
                 modelManager.selectModel(model.identifier)
             }
-        case .notDownloaded:
+        case .notDownloaded, .error:
+            // Issue #235: .error shares the .notDownloaded path so tapping
+            // "Retry" relaunches the download in place. Both engine paths keep
+            // completed files after a download failure (issue #210 resume
+            // policy) and ModelRepoDownloader skips files already on disk, so
+            // this resumes instead of restarting from zero. A second failure
+            // lands back in .error through downloadModel's own catch blocks.
+            // The old behavior (cleanupFailedModel) wiped the kept files and
+            // moved the card to "Available" — that full reset now lives in the
+            // overflow menu's "Delete partial download" entry.
             Task {
                 do {
                     try await modelManager.downloadModel(model.identifier)
@@ -271,8 +306,6 @@ struct ModelCardView: View {
                     onDownloadError(error.localizedDescription)
                 }
             }
-        case .error:
-            modelManager.cleanupFailedModel(model.identifier)
         case .downloading, .prewarming:
             // Card is disabled in these states — this shouldn't fire
             break

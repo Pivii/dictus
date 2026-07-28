@@ -30,6 +30,13 @@ struct ModelManagerView: View {
     @State private var modelToDelete: ModelInfo?
     @State private var showDeleteAlert = false
 
+    /// Controls the partial-download delete confirmation alert (issue #235).
+    /// Separate from modelToDelete because the confirmed action differs:
+    /// cleanupFailedModel (wipe kept files of a failed download) instead of
+    /// deleteModel (remove a ready model, guarded by the last-model rule).
+    @State private var partialModelToDelete: ModelInfo?
+    @State private var showPartialDeleteAlert = false
+
     /// Tracks any download error to show in an alert.
     @State private var downloadError: String?
     @State private var showErrorAlert = false
@@ -141,6 +148,14 @@ struct ModelManagerView: View {
                             onDeleteRequest: {
                                 modelToDelete = model
                                 showDeleteAlert = true
+                            },
+                            // Issue #235: full reset for a failed download via
+                            // the overflow menu. Only wired here — error cards
+                            // always live in the Downloaded section (the
+                            // Available filter excludes the .error state).
+                            onDeletePartialRequest: {
+                                partialModelToDelete = model
+                                showPartialDeleteAlert = true
                             }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -236,6 +251,18 @@ struct ModelManagerView: View {
             }
         } message: { model in
             Text("Delete \(model.displayName)? The model will be removed from your device.")
+        }
+        // Partial-download delete confirmation alert (issue #235).
+        // WHY no ModelManager error handling here: cleanupFailedModel cannot
+        // throw — file removals are best-effort (try?) and the state reset to
+        // .notDownloaded always happens, moving the card back to "Available".
+        .alert("Delete partial download?", isPresented: $showPartialDeleteAlert, presenting: partialModelToDelete) { model in
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                modelManager.cleanupFailedModel(model.identifier)
+            }
+        } message: { model in
+            Text("Delete the partially downloaded files for \(model.displayName)? The next download will start from the beginning.")
         }
         // Error alert
         .alert("Error", isPresented: $showErrorAlert) {
