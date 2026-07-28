@@ -26,6 +26,13 @@ public struct LiveActivityStateMachine {
     /// The current phase. Read-only from outside; mutated only via transition(to:) or reset().
     public private(set) var currentPhase: Phase = .idle
 
+    /// True while a dictation cycle runs without any Live Activity available
+    /// (standby bootstrap from .idle failed, e.g. Live Activities disabled in
+    /// iOS Settings). While set, rejected transitions from .idle are expected —
+    /// the whole recording/transcribing/ready pipeline fires with no activity
+    /// to drive — so they carry no diagnostic value.
+    public private(set) var isInNoActivityCycle: Bool = false
+
     /// Allowed transitions for each phase.
     /// WHY a stored property (not computed): The map is constant and small (6 entries).
     /// Storing it avoids re-creating the dictionary on every transition call.
@@ -47,7 +54,32 @@ public struct LiveActivityStateMachine {
         let allowed = validTransitions[currentPhase] ?? []
         guard allowed.contains(target) else { return false }
         currentPhase = target
+        // A successful transition means the pipeline is progressing normally,
+        // so the no-activity cycle (if any) is over.
+        isInNoActivityCycle = false
         return true
+    }
+
+    /// Mark the start of a dictation cycle that runs without a Live Activity.
+    /// Called by LiveActivityManager when the standby bootstrap from .idle fails.
+    public mutating func beginNoActivityCycle() {
+        isInNoActivityCycle = true
+    }
+
+    /// Explicitly end the no-activity cycle (an activity became available again).
+    public mutating func endNoActivityCycle() {
+        isInNoActivityCycle = false
+    }
+
+    /// Whether a rejected transition is worth persisting to the exported log.
+    /// WHY: During a no-activity cycle, every dictation sink still calls the
+    /// manager (recording, transcribing, ready) and each call is rejected from
+    /// .idle. Persisting each rejection floods exports with redundant entries
+    /// (issue #233). Suppression is deliberately narrow: it applies ONLY from
+    /// .idle during a declared no-activity cycle — rejections while an activity
+    /// exists keep logging, preserving the #42 desync diagnostics.
+    public var shouldLogRejection: Bool {
+        !(isInNoActivityCycle && currentPhase == .idle)
     }
 
     /// Returns true if phase is .recording -- used by watchdog logic to decide
@@ -59,6 +91,7 @@ public struct LiveActivityStateMachine {
     /// Reset to idle (for teardown/recovery).
     public mutating func reset() {
         currentPhase = .idle
+        isInNoActivityCycle = false
     }
 
     /// Force-set the phase without validation.
@@ -67,5 +100,11 @@ public struct LiveActivityStateMachine {
     /// the normal transition rules. forcePhase keeps the state machine in sync.
     public mutating func forcePhase(_ phase: Phase) {
         currentPhase = phase
+        // Forcing any non-idle phase means an activity exists (recovery, orphan
+        // adoption, bootstrap success) — the no-activity cycle is over. Forcing
+        // .idle (teardown) keeps the flag: still no activity to drive.
+        if phase != .idle {
+            isInNoActivityCycle = false
+        }
     }
 }
