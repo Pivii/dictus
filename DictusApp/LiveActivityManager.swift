@@ -53,6 +53,15 @@ class LiveActivityManager {
             stateMachine = copy
             return true
         } else {
+            // During a no-activity dictation cycle (standby bootstrap failed from
+            // .idle), every downstream sink is rejected from .idle by design.
+            // One bootstrapUnavailable entry already names the cause -- persisting
+            // each rejection would only flood exports (#233). Rejections while an
+            // activity exists keep logging: those are the #42 desync diagnostics.
+            guard stateMachine.shouldLogRejection else {
+                DictusLogger.app.debug("LiveActivity: suppressed rejection \(self.currentPhase.rawValue, privacy: .public) -> \(target.rawValue, privacy: .public) (no-activity cycle)")
+                return false
+            }
             DictusLogger.app.warning("LiveActivity: rejected transition \(self.currentPhase.rawValue, privacy: .public) -> \(target.rawValue, privacy: .public)")
             PersistentLog.log(.liveActivityFailed(context: "rejectedTransition", error: "\(currentPhase.rawValue)->\(target.rawValue)"))
             return false
@@ -230,6 +239,55 @@ class LiveActivityManager {
 
     // MARK: - Standby Mode
 
+    /// Outcome of a standby start attempt.
+    /// WHY a return value: `transitionToRecording()` needs the concrete reason a
+    /// bootstrap could not produce an activity so it can persist a single
+    /// `bootstrapUnavailable` entry with that reason (issue #233). Every case maps
+    /// to exactly one return path of `startStandbyActivity()`.
+    enum StandbyStartOutcome {
+        case created                    // New activity requested successfully
+        case alreadyStandby             // Activity exists and is already in standby
+        case alreadyRunning             // Activity exists in a non-standby phase
+        case orphanRecovered            // Adopted an existing system activity
+        case disabledInApp              // In-app Live Activity toggle is off
+        case systemActivitiesDisabled   // iOS Settings per-app toggle is off
+        case requestFailed(String)      // Activity.request threw
+
+        /// True when an activity exists after the call (bootstrap can proceed).
+        var activityAvailable: Bool {
+            switch self {
+            case .created, .alreadyStandby, .alreadyRunning, .orphanRecovered:
+                return true
+            case .disabledInApp, .systemActivitiesDisabled, .requestFailed:
+                return false
+            }
+        }
+
+        /// Greppable reason token for PersistentLog entries.
+        var reason: String {
+            switch self {
+            case .created: return "created"
+            case .alreadyStandby: return "alreadyStandby"
+            case .alreadyRunning: return "alreadyRunning"
+            case .orphanRecovered: return "orphanRecovered"
+            case .disabledInApp: return "disabledInApp"
+            case .systemActivitiesDisabled: return "systemActivitiesDisabled"
+            case .requestFailed(let error): return "requestFailed: \(error)"
+            }
+        }
+    }
+
+    /// Persist a standby-skip outcome to the exportable log.
+    /// WHY a helper: every silent return path must produce a greppable entry with
+    /// both enablement booleans (#233); centralizing keeps the call sites compact.
+    private func logStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool) {
+        PersistentLog.log(.liveActivityStandbySkipped(
+            reason: reason,
+            isEnabled: isEnabled,
+            activitiesEnabled: activitiesEnabled
+        ))
+    }
+
     /// Start a Live Activity in standby mode.
     /// Called when the app enters background -- gives the user a persistent
     /// Dynamic Island indicator that Dictus is ready to record.
@@ -243,28 +301,42 @@ class LiveActivityManager {
     /// backgrounded and Activity.request() fails with "Target is not foreground".
     /// Synchronous execution ensures the activity is created during the transition.
     /// Zombie cleanup is handled separately by cleanupStaleActivities() at app init.
-    func startStandbyActivity() {
+    ///
+    /// WHY every return path persists a PersistentLog entry:
+    /// The #233 failure signature was a recovery attempt followed by silence --
+    /// an early return that only hit the OS logger, which is not part of the
+    /// user-exportable log. Exported logs must always show which path returned.
+    @discardableResult
+    func startStandbyActivity() -> StandbyStartOutcome {
         guard isEnabled else {
             DictusLogger.app.info("Live Activity disabled by user preference -- skipping")
-            return
+            logStandbySkipped(reason: "disabledInApp", isEnabled: false,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
+            return .disabledInApp
         }
 
         // Allow transition from idle->standby or if already standby (no-op)
         // WHY: Prevents creating duplicate activities when app re-enters background
         if currentPhase == .standby && currentActivity != nil {
             DictusLogger.app.info("Live Activity already in standby -- skipping")
-            return
+            logStandbySkipped(reason: "alreadyStandby", isEnabled: true,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
+            return .alreadyStandby
         }
 
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             DictusLogger.app.info("Live Activities disabled by user -- skipping")
-            return
+            // Prime suspect of #233: the iOS Settings per-app toggle. This was the
+            // only fully silent path -- it MUST name areActivitiesEnabled=false.
+            logStandbySkipped(reason: "systemActivitiesDisabled", isEnabled: true, activitiesEnabled: false)
+            return .systemActivitiesDisabled
         }
 
         // Sync currentActivity reference (may be stale after intent or force-quit)
         if let current = currentActivity,
            !Activity<DictusLiveActivityAttributes>.activities.contains(where: { $0.id == current.id }) {
             DictusLogger.app.info("currentActivity stale (killed by intent or force-quit) -- clearing")
+            PersistentLog.log(.liveActivityFailed(context: "startStandby-staleRef", error: "activity \(current.id) gone from system"))
             currentActivity = nil
             currentPhase = .idle
             syncStateMachine(to: .idle)
@@ -275,15 +347,13 @@ class LiveActivityManager {
         // in ActivityKit. cleanupStaleActivities() runs async in init() and may not have
         // finished yet. Checking the system list prevents creating a second activity.
         let systemActivities = Activity<DictusLiveActivityAttributes>.activities
-        if currentActivity == nil && !systemActivities.isEmpty {
+        if currentActivity == nil, let existing = systemActivities.first {
             // Recover orphaned activity instead of creating a new one
-            if let existing = systemActivities.first {
-                currentActivity = existing
-                currentPhase = mapContentPhase(existing.content.state.phase)
-                syncStateMachine(to: currentPhase)
-                DictusLogger.app.info("Recovered orphaned Live Activity: \(existing.id, privacy: .public)")
-                PersistentLog.log(.liveActivityStarted(id: "orphan-recovered:\(existing.id)"))
-            }
+            currentActivity = existing
+            currentPhase = mapContentPhase(existing.content.state.phase)
+            syncStateMachine(to: currentPhase)
+            DictusLogger.app.info("Recovered orphaned Live Activity: \(existing.id, privacy: .public)")
+            PersistentLog.log(.liveActivityStarted(id: "orphan-recovered:\(existing.id)"))
             // End any extras beyond the first (shouldn't happen, but defense in depth)
             for activity in systemActivities.dropFirst() {
                 Task {
@@ -294,12 +364,14 @@ class LiveActivityManager {
                     DictusLogger.app.info("Ended duplicate Live Activity: \(activity.id, privacy: .public)")
                 }
             }
+            return .orphanRecovered
         }
 
         // Don't create duplicate activities
         guard currentActivity == nil else {
             DictusLogger.app.info("Live Activity already running -- skipping startStandby")
-            return
+            logStandbySkipped(reason: "alreadyRunning", isEnabled: true, activitiesEnabled: true)
+            return .alreadyRunning
         }
 
         let attributes = DictusLiveActivityAttributes()
@@ -319,9 +391,11 @@ class LiveActivityManager {
             syncStateMachine(to: .standby)
             DictusLogger.app.info("Live Activity started in standby (id: \(activity.id, privacy: .public))")
             PersistentLog.log(.liveActivityStarted(id: activity.id))
+            return .created
         } catch {
             DictusLogger.app.error("Failed to start Live Activity: \(error.localizedDescription, privacy: .public)")
             PersistentLog.log(.liveActivityFailed(context: "startStandby", error: error.localizedDescription))
+            return .requestFailed(error.localizedDescription)
         }
     }
 
@@ -365,11 +439,17 @@ class LiveActivityManager {
         // (which also calls startStandbyActivity) is UNREACHABLE after the guard returns.
         if currentPhase == .idle {
             PersistentLog.log(.liveActivityTransition(from: "idle", to: "recording-bootstrap"))
-            startStandbyActivity()
-            // If bootstrap failed (e.g., app is background), log and continue without DI.
+            let outcome = startStandbyActivity()
+            // If bootstrap failed (e.g., app is background, or Live Activities are
+            // disabled at the system level), dictation continues without a DI --
             // ensureActivityAlive() will retry on didBecomeActive.
-            if currentActivity == nil {
-                PersistentLog.log(.liveActivityFailed(context: "bootstrap", error: "startStandby failed from idle"))
+            // ONE bootstrapUnavailable entry carries the concrete reason for this
+            // cycle; the downstream sinks (transcribing, ready) would otherwise each
+            // add a rejectedTransition entry from .idle with zero information (#233).
+            if !outcome.activityAvailable {
+                PersistentLog.log(.liveActivityFailed(context: "bootstrapUnavailable", error: outcome.reason))
+                stateMachine.beginNoActivityCycle()
+                return
             }
         }
 
@@ -388,9 +468,9 @@ class LiveActivityManager {
             // WHY only delayed path: startStandbyActivity() is synchronous but the activity
             // needs a moment before it can accept updates. The delayed updateToRecording()
             // is the ONLY update path — no duplicate immediate Task (#49).
-            startStandbyActivity()
-            if currentActivity == nil {
-                PersistentLog.log(.liveActivityFailed(context: "bootstrap-fallback", error: "startStandby failed, no DI"))
+            let outcome = startStandbyActivity()
+            if !outcome.activityAvailable {
+                PersistentLog.log(.liveActivityFailed(context: "bootstrap-fallback", error: outcome.reason))
             }
             currentPhase = .recording  // Lock state immediately to prevent races (#49)
             syncStateMachine(to: .recording)
@@ -569,7 +649,14 @@ class LiveActivityManager {
     /// WHY: After cold start, Activity.request() silently fails from background.
     /// Calling this on didBecomeActive retries from the foreground where it succeeds.
     func ensureActivityAlive() {
-        guard isEnabled else { return }
+        // WHY every outcome persists a PersistentLog entry: same rationale as
+        // startStandbyActivity() -- the #233 signature was a retry attempt whose
+        // result was invisible in exported logs. Each exit names what was found.
+        guard isEnabled else {
+            logStandbySkipped(reason: "ensureAlive-disabledInApp", isEnabled: false,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
+            return
+        }
 
         // Detect externally-ended activities (e.g., StopStandbyIntent bypasses manager).
         // WHY: The intent ends the activity via activity.end() but can't call stopStandbyActivity()
@@ -583,8 +670,15 @@ class LiveActivityManager {
             syncStateMachine(to: .idle)
         }
 
-        guard currentActivity == nil || currentPhase == .idle else { return }
+        guard currentActivity == nil || currentPhase == .idle else {
+            // Activity exists and phase is coherent -- nothing to recreate.
+            logStandbySkipped(reason: "ensureAlive-healthy-\(currentPhase.rawValue)", isEnabled: true,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
+            return
+        }
         PersistentLog.log(.liveActivityTransition(from: currentPhase.rawValue, to: "recovery-standby"))
+        // startStandbyActivity() persists its own outcome (created, orphanRecovered,
+        // systemActivitiesDisabled, requestFailed, ...) -- no extra entry needed here.
         startStandbyActivity()
     }
 
