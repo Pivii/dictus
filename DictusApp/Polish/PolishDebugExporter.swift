@@ -97,7 +97,7 @@ enum PolishDebugExporter {
 
         var outcomes: [String: Int] = [
             "success": 0, "rejectedGuardrail": 0, "skipped": 0,
-            "skippedShort": 0, "cancelled": 0, "engineFailed": 0
+            "skippedShort": 0, "skippedAutoMode": 0, "cancelled": 0, "engineFailed": 0
         ]
         for e in entries {
             outcomes[e.metrics.outcome.rawValue, default: 0] += 1

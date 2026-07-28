@@ -77,7 +77,16 @@ public final class PolishCoordinator {
     public func prewarm() {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
-        let target = SupportedLanguage.active
+        // Resolve the polish target through the engine-aware language policy
+        // (#226): explicit mode targets the dictated language, not the keyboard
+        // one; Whisper auto mode skips polish entirely (see polish()) so there
+        // is nothing to warm — don't pay to load the model into memory. With
+        // Parakeet active the setting is ineffective and this resolves to the
+        // keyboard language in every mode, exactly the pre-#226 behavior.
+        // Prewarm has no dictation-scoped policy to receive (it fires at app
+        // launch and ~1.5s into recording), so it snapshots on its own — a
+        // stale warm target is harmless (prewarm is best-effort).
+        guard let target = TranscriptionLanguagePolicy.snapshot().polishTargetLanguage else { return }
         Task { await engineToWarm.prewarm(targetLanguage: target) }
     }
 
@@ -105,19 +114,41 @@ public final class PolishCoordinator {
     /// language detection skips, when the engine throws/cancels, or when the
     /// guardrail rejects the output.
     ///
-    /// `sttModelID` is the active model identifier (e.g. "openai_whisper-small",
-    /// "parakeet-tdt-0.6b-v3"). It's carried through to metrics so the JSON
-    /// export is self-describing — analysis doesn't need to cross-reference the
-    /// app log to know which STT model produced each event.
+    /// `languagePolicy` is the per-dictation snapshot captured by
+    /// DictationCoordinator at transcription start (#226). It carries the STT
+    /// engine, the model identifier (e.g. "openai_whisper-small",
+    /// "parakeet-tdt-0.6b-v3" — kept in metrics so the JSON export is
+    /// self-describing), and the polish target. Using the snapshot instead of
+    /// re-reading App Group state here guarantees polish targets the same
+    /// language the STT engine was given, even if the user changed the
+    /// keyboard language while transcription was running.
     public func polish(raw: String,
-                       sttEngine: SpeechEngine,
-                       sttModelID: String,
+                       languagePolicy: TranscriptionLanguagePolicy,
                        recordingDuration: TimeInterval) async -> String {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
             return raw
         }
 
-        let target = SupportedLanguage.active
+        let sttEngine = languagePolicy.engine
+        let sttModelID = languagePolicy.modelIdentifier
+
+        // Transcription language decoupling (#226): the polish prompts AND the
+        // deterministic typography pre/post passes (verbal punctuation, French
+        // NBSP) are tuned for the four tested languages. In Whisper Auto-detect
+        // mode the output language is unknown (could be zh, it, pt, …), so the
+        // whole polish layer is bypassed — the raw STT output is returned
+        // untouched. Stopgap until the dedicated auto-detect prompt lands (#239).
+        // The bypass IS recorded (outcome .skippedAutoMode, ~0ms, no engine
+        // run): device testing showed a silent return makes the debug export
+        // look like the dictation never reached polish, which reads as a bug.
+        // In explicit mode, polish targets the dictated language (not the
+        // keyboard language) so typography/prompts match the actual output.
+        // With Parakeet active the setting is ineffective: the policy resolves
+        // every mode to the keyboard language, i.e. the pre-#226 behavior.
+        guard let target = languagePolicy.polishTargetLanguage else {
+            await recordAutoModeBypass(raw: raw, languagePolicy: languagePolicy)
+            return raw
+        }
 
         // `methodStart` anchors the full wall-clock the user actually waits for,
         // INCLUDING the deterministic passes (which the old timer excluded).
@@ -243,6 +274,29 @@ public final class PolishCoordinator {
     }
 
     // MARK: - Helpers
+
+    /// Record the Whisper Auto-detect bypass (#226) as a `.skippedAutoMode`
+    /// event: ~0ms, no mode, no engine run. `targetLanguage` is metrics
+    /// context only (nothing was targeted) — the keyboard language documents
+    /// the session state, matching what the JSON export's settings block shows.
+    private func recordAutoModeBypass(raw: String,
+                                      languagePolicy: TranscriptionLanguagePolicy) async {
+        let m = PolishMetrics(
+            engine: activeEngine.identifier,
+            mode: nil,
+            targetLanguage: languagePolicy.keyboardLanguage,
+            detectedLanguage: nil,
+            rawCharCount: raw.count,
+            polishedCharCount: raw.count,
+            latencyMs: 0,
+            outcome: .skippedAutoMode,
+            sttEngine: languagePolicy.engine.rawValue,
+            sttModelID: languagePolicy.modelIdentifier,
+            timings: PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0)
+        )
+        PolishMetrics.log(m)
+        await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
+    }
 
     /// Recording duration (seconds) below which the LLM polish is skipped (#141).
     /// On flash dictations the user wants instant text and the model rarely adds
