@@ -23,6 +23,13 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.language, store: UserDefaults(suiteName: AppGroup.identifier))
     private var language = "fr"
 
+    /// Transcription (STT) language mode, decoupled from the keyboard language (#226).
+    /// Stored as its raw App Group encoding: "follow" (default), "auto", or an
+    /// explicit code ("fr"/"en"/"es"/"de"). "follow" preserves the historical
+    /// behavior where STT tracks the keyboard language.
+    @AppStorage(SharedKeys.transcriptionLanguage, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var transcriptionLanguage = TranscriptionLanguageMode.followStoredValue
+
     @AppStorage(SharedKeys.keyboardLayout, store: UserDefaults(suiteName: AppGroup.identifier))
     private var keyboardLayout = "azerty"
 
@@ -97,18 +104,20 @@ struct SettingsView: View {
 
             // Section 1: Transcription
             Section {
-                Picker("Transcription language", selection: $language) {
-                    // Iterate over SupportedLanguage so adding a new language
-                    // (German PR2, future onboardings) only requires the enum case.
+                // STT language, decoupled from the keyboard language (#226).
+                // "Follow keyboard language" is the default and preserves the
+                // historical coupled behavior. "Auto-detect" lets Whisper pick
+                // the language itself, unlocking languages without a Dictus
+                // keyboard (Chinese, Italian, …). Explicit entries stay limited
+                // to the four tested languages by product decision — the long
+                // tail goes through Auto-detect only.
+                Picker("Transcription language", selection: $transcriptionLanguage) {
+                    Text("Follow keyboard language")
+                        .tag(TranscriptionLanguageMode.followStoredValue)
+                    Text("Auto-detect")
+                        .tag(TranscriptionLanguageMode.autoStoredValue)
                     ForEach(SupportedLanguage.allCases, id: \.rawValue) { lang in
                         Text(lang.displayName).tag(lang.rawValue)
-                    }
-                }
-                .onChange(of: language) { _, newLang in
-                    // Auto-switch keyboard layout to the language's default.
-                    // French -> AZERTY, English/Spanish -> QWERTY.
-                    if let lang = SupportedLanguage(rawValue: newLang) {
-                        keyboardLayout = lang.defaultLayout.rawValue
                     }
                 }
                 if isParakeetActive {
@@ -122,11 +131,37 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Transcription")
+            } footer: {
+                // Surface the Auto-detect polish bypass (#226 stopgap, see #239)
+                // so users understand why polish stops running in this mode.
+                if transcriptionLanguage == TranscriptionLanguageMode.autoStoredValue {
+                    Text("Auto-detect lets you dictate in any language Whisper supports. Transcription polish is disabled in this mode.")
+                }
             }
 
             // Section 2: Clavier
             // All toggles are always visible — there's only one keyboard type now.
             Section {
+                // Keyboard language: drives layout, key labels, and
+                // autocorrect/prediction dictionaries. Moved here from the
+                // Transcription section in #226 — it no longer drives STT by
+                // itself (only when the transcription language is "Follow
+                // keyboard language").
+                Picker("Keyboard language", selection: $language) {
+                    // Iterate over SupportedLanguage so adding a new language
+                    // (German PR2, future onboardings) only requires the enum case.
+                    ForEach(SupportedLanguage.allCases, id: \.rawValue) { lang in
+                        Text(lang.displayName).tag(lang.rawValue)
+                    }
+                }
+                .onChange(of: language) { _, newLang in
+                    // Auto-switch keyboard layout to the language's default.
+                    // French -> AZERTY, English/Spanish -> QWERTY.
+                    if let lang = SupportedLanguage(rawValue: newLang) {
+                        keyboardLayout = lang.defaultLayout.rawValue
+                    }
+                }
+
                 DefaultLayerPicker()
 
                 Picker("Layout", selection: $keyboardLayout) {
