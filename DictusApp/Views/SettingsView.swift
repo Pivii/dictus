@@ -132,9 +132,9 @@ struct SettingsView: View {
             } header: {
                 Text("Transcription")
             } footer: {
-                // Surface the Auto-detect polish bypass (#226 stopgap, see #239)
-                // so users understand why polish stops running in this mode,
-                // plus a pointer to the per-model language details (#240).
+                // Explain Auto-detect behavior (#226) — since #239 polish runs
+                // in this mode with the language-agnostic prompt — plus a
+                // pointer to the per-model language details (#240).
                 // The Whisper-specific line is hidden while Parakeet is active
                 // (the caveat above already says the setting has no effect
                 // there), but the per-model language pointer stays useful for
@@ -142,7 +142,7 @@ struct SettingsView: View {
                 if transcriptionLanguage == TranscriptionLanguageMode.autoStoredValue {
                     VStack(alignment: .leading, spacing: 4) {
                         if !isParakeetActive {
-                            Text("Auto-detect lets you dictate in any language Whisper supports. Transcription polish is disabled in this mode.")
+                            Text("Auto-detect lets you dictate in any language Whisper supports. Polish adapts to the language you speak.")
                         }
                         Text("Language support varies by model. Tap ⓘ on a model card in Models for details.")
                     }
