@@ -77,12 +77,16 @@ public final class PolishCoordinator {
     public func prewarm() {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
-        // Resolve the polish target through the transcription language mode
+        // Resolve the polish target through the engine-aware language policy
         // (#226): explicit mode targets the dictated language, not the keyboard
-        // one; auto mode skips polish entirely (see polish()) so there is
-        // nothing to warm — don't pay to load the model into memory.
-        guard let target = TranscriptionLanguageMode.active
-            .polishTargetLanguage(keyboardLanguage: SupportedLanguage.active) else { return }
+        // one; Whisper auto mode skips polish entirely (see polish()) so there
+        // is nothing to warm — don't pay to load the model into memory. With
+        // Parakeet active the setting is ineffective and this resolves to the
+        // keyboard language in every mode, exactly the pre-#226 behavior.
+        // Prewarm has no dictation-scoped policy to receive (it fires at app
+        // launch and ~1.5s into recording), so it snapshots on its own — a
+        // stale warm target is harmless (prewarm is best-effort).
+        guard let target = TranscriptionLanguagePolicy.snapshot().polishTargetLanguage else { return }
         Task { await engineToWarm.prewarm(targetLanguage: target) }
     }
 
@@ -110,30 +114,37 @@ public final class PolishCoordinator {
     /// language detection skips, when the engine throws/cancels, or when the
     /// guardrail rejects the output.
     ///
-    /// `sttModelID` is the active model identifier (e.g. "openai_whisper-small",
-    /// "parakeet-tdt-0.6b-v3"). It's carried through to metrics so the JSON
-    /// export is self-describing — analysis doesn't need to cross-reference the
-    /// app log to know which STT model produced each event.
+    /// `languagePolicy` is the per-dictation snapshot captured by
+    /// DictationCoordinator at transcription start (#226). It carries the STT
+    /// engine, the model identifier (e.g. "openai_whisper-small",
+    /// "parakeet-tdt-0.6b-v3" — kept in metrics so the JSON export is
+    /// self-describing), and the polish target. Using the snapshot instead of
+    /// re-reading App Group state here guarantees polish targets the same
+    /// language the STT engine was given, even if the user changed the
+    /// keyboard language while transcription was running.
     public func polish(raw: String,
-                       sttEngine: SpeechEngine,
-                       sttModelID: String,
+                       languagePolicy: TranscriptionLanguagePolicy,
                        recordingDuration: TimeInterval) async -> String {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
             return raw
         }
 
+        let sttEngine = languagePolicy.engine
+        let sttModelID = languagePolicy.modelIdentifier
+
         // Transcription language decoupling (#226): the polish prompts AND the
         // deterministic typography pre/post passes (verbal punctuation, French
-        // NBSP) are tuned for the four tested languages. In Auto-detect mode
-        // the output language is unknown (could be zh, it, pt, …), so the whole
-        // polish layer is bypassed — the raw STT output is returned untouched.
-        // Stopgap until the dedicated auto-detect prompt lands (#239).
+        // NBSP) are tuned for the four tested languages. In Whisper Auto-detect
+        // mode the output language is unknown (could be zh, it, pt, …), so the
+        // whole polish layer is bypassed — the raw STT output is returned
+        // untouched. Stopgap until the dedicated auto-detect prompt lands (#239).
         // Returning before any metrics are emitted keeps exported logs free of
         // polish activity, which is how the #226 acceptance test verifies this.
         // In explicit mode, polish targets the dictated language (not the
         // keyboard language) so typography/prompts match the actual output.
-        guard let target = TranscriptionLanguageMode.active
-            .polishTargetLanguage(keyboardLanguage: SupportedLanguage.active) else {
+        // With Parakeet active the setting is ineffective: the policy resolves
+        // every mode to the keyboard language, i.e. the pre-#226 behavior.
+        guard let target = languagePolicy.polishTargetLanguage else {
             return raw
         }
 

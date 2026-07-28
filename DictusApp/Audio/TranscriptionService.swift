@@ -97,27 +97,26 @@ class TranscriptionService {
     /// WHY the fallback:
     /// During transition to multi-engine, the prepare(whisperKit:) path is still used.
     /// The fallback ensures zero regressions while new engine routing is added.
-    func transcribe(audioSamples: [Float]) async throws -> String {
+    ///
+    /// WHY `languagePolicy` is a parameter instead of reading App Group here (#226):
+    /// The STT language is decoupled from the keyboard language, and the whole
+    /// dictation pipeline (STT + polish + finalization) must run on ONE
+    /// consistent snapshot. DictationCoordinator captures the policy once at
+    /// transcription start and passes it down, so a mid-dictation keyboard
+    /// language change cannot desync transcription from polish. In particular,
+    /// the keyboard toolbar switcher only ever writes SharedKeys.language, so
+    /// an explicit or auto choice can never be overridden by it.
+    func transcribe(audioSamples: [Float],
+                    languagePolicy: TranscriptionLanguagePolicy) async throws -> String {
         let transcriptionStart = Date()
 
-        // Read user settings from App Group at transcription time.
-        //
-        // Since #226 the STT language is decoupled from the keyboard language:
-        // this is the single resolution point. The keyboard language key keeps
-        // driving layout/autocorrect only; STT resolves through the
-        // transcription language mode ("follow" by default, so pre-#226
-        // installs behave identically). nil = Whisper auto-detection.
-        // The keyboard toolbar switcher only ever writes SharedKeys.language,
-        // so an explicit or auto choice here can never be overridden by it.
-        let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        let keyboardLanguage = defaults?.string(forKey: SharedKeys.language) ?? "fr"
-        let mode = TranscriptionLanguageMode(
-            storedValue: defaults?.string(forKey: SharedKeys.transcriptionLanguage)
-        )
-        let language = mode.resolvedLanguageCode(keyboardLanguageCode: keyboardLanguage)
+        // nil = Whisper auto-detection. Parakeet ignores the value entirely.
+        let language = languagePolicy.sttLanguageCode
 
-        // Determine active model name for logging
-        let modelName = defaults?.string(forKey: SharedKeys.activeModel) ?? "unknown"
+        // Determine active model name for logging (from the same snapshot the
+        // engine choice was derived from, so logs describe the actual model).
+        let modelName = languagePolicy.modelIdentifier.isEmpty
+            ? "unknown" : languagePolicy.modelIdentifier
         PersistentLog.log(.transcriptionStarted(modelName: modelName))
         // Trace the resolution so device tests (#226 acceptance: Mandarin via
         // Auto-detect, toolbar-switcher non-override) can verify it from logs.
@@ -125,7 +124,7 @@ class TranscriptionService {
             component: "TranscriptionService",
             instanceID: "languageResolution",
             action: "resolved",
-            details: "mode=\(mode.storedValue) keyboard=\(keyboardLanguage) stt=\(language ?? "auto")"
+            details: "mode=\(languagePolicy.mode.storedValue) keyboard=\(languagePolicy.keyboardLanguage.rawValue) engine=\(languagePolicy.engine.rawValue) stt=\(language ?? "auto")"
         ))
 
         // Route to active engine if set (multi-engine path)

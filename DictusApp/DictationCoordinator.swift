@@ -507,26 +507,39 @@ class DictationCoordinator: ObservableObject {
                 SoundFeedbackService.playRecordStop()
 
                 try await ensureEngineReady()
-                let rawText = try await transcriptionService.transcribe(audioSamples: samples)
+
+                // One language-policy snapshot per dictation (#226): mode,
+                // keyboard language, engine, and model are captured HERE and
+                // propagated through STT, polish, and finalization. Without
+                // the snapshot, each stage would re-read App Group state and a
+                // keyboard-toolbar language change while transcription runs
+                // could make Whisper transcribe in one language and polish in
+                // another. The policy is also engine-aware: with Parakeet
+                // active the setting is Whisper-only-effective, so every mode
+                // resolves to the historical follow behavior.
+                let languagePolicy = TranscriptionLanguagePolicy.snapshot()
+
+                let rawText = try await transcriptionService.transcribe(
+                    audioSamples: samples,
+                    languagePolicy: languagePolicy
+                )
 
                 // Polish layer (#141) — passes raw through when toggle off, when language
                 // detection skips, when the engine throws/cancels, or when the guardrail rejects.
-                let activeModelID = defaults.string(forKey: SharedKeys.activeModel) ?? ""
-                let sttEngine = ModelInfo.forIdentifier(activeModelID)?.engine ?? .whisperKit
                 let text = await PolishCoordinator.shared.polish(
                     raw: rawText,
-                    sttEngine: sttEngine,
-                    sttModelID: activeModelID,
+                    languagePolicy: languagePolicy,
                     recordingDuration: audioDuration
                 )
 
                 // Append trailing separator so chained dictations don't stick together.
-                // Auto-detect mode (#226) inserts the transcription as-is: the output
-                // language is unknown, and coercing Western punctuation/spacing onto
-                // e.g. Chinese ("你好。" + ". ") would corrupt the text. Follow and
-                // explicit modes keep the historical separator behavior unchanged.
+                // Whisper Auto-detect mode (#226) inserts the transcription as-is: the
+                // output language is unknown, and coercing Western punctuation/spacing
+                // onto e.g. Chinese ("你好。" + ". ") would corrupt the text. Follow and
+                // explicit modes — and Parakeet in every mode — keep the historical
+                // separator behavior unchanged.
                 let finalText: String
-                if TranscriptionLanguageMode.active == .autoDetect {
+                if languagePolicy.insertsTranscriptionAsIs {
                     finalText = text
                 } else if let last = text.last, ".!?…".contains(last) {
                     finalText = text + " "

@@ -104,11 +104,96 @@ public enum TranscriptionLanguageMode: Equatable, Sendable {
     /// In `.autoDetect` mode the output language is unknown and the fr/en/es/de
     /// prompts don't apply — polish is skipped as a stopgap until the dedicated
     /// auto-detect prompt lands (follow-up #239).
+    ///
+    /// NOTE: engine-agnostic. Callers in the dictation pipeline should go
+    /// through `TranscriptionLanguagePolicy`, which additionally neutralizes
+    /// the setting for Parakeet (the setting is Whisper-only-effective).
     public func polishTargetLanguage(keyboardLanguage: SupportedLanguage) -> SupportedLanguage? {
         switch self {
         case .followKeyboard: return keyboardLanguage
         case .autoDetect: return nil
         case .explicit(let language): return language
         }
+    }
+}
+
+/// One immutable language-policy snapshot per dictation.
+///
+/// WHY a snapshot instead of reading `TranscriptionLanguageMode.active` /
+/// `SupportedLanguage.active` at each pipeline stage (#226 review follow-up):
+/// Transcription is async and takes seconds. If polish and finalization re-read
+/// App Group state after STT completes, a keyboard-toolbar language change (or
+/// a Settings change) mid-dictation could transcribe with one language and
+/// polish/finalize with another. Capturing mode, keyboard language, and engine
+/// once — at transcription start — makes the whole pipeline self-consistent.
+///
+/// WHY the engine is part of the policy:
+/// The "Transcription language" setting is Whisper-only-effective. Parakeet
+/// ignores the language parameter and auto-detects natively, so with Parakeet
+/// active EVERY mode must behave exactly like the historical follow behavior
+/// (polish toward the keyboard language, normal separators) — otherwise
+/// selecting Auto-detect would silently degrade Parakeet flows that the
+/// setting cannot influence in the first place.
+public struct TranscriptionLanguagePolicy: Equatable, Sendable {
+    /// The user's transcription language mode at snapshot time.
+    public let mode: TranscriptionLanguageMode
+    /// The keyboard language at snapshot time.
+    public let keyboardLanguage: SupportedLanguage
+    /// The active STT engine at snapshot time.
+    public let engine: SpeechEngine
+    /// The active model identifier at snapshot time (metrics metadata).
+    /// Captured here so polish metrics describe the model that actually
+    /// transcribed, even if the user switches models mid-dictation.
+    public let modelIdentifier: String
+
+    public init(mode: TranscriptionLanguageMode,
+                keyboardLanguage: SupportedLanguage,
+                engine: SpeechEngine,
+                modelIdentifier: String) {
+        self.mode = mode
+        self.keyboardLanguage = keyboardLanguage
+        self.engine = engine
+        self.modelIdentifier = modelIdentifier
+    }
+
+    /// Capture the current App Group state. Call once per dictation, at
+    /// transcription start, and propagate the result through STT, polish,
+    /// and finalization.
+    public static func snapshot() -> TranscriptionLanguagePolicy {
+        let defaults = AppGroup.defaults
+        let modelIdentifier = defaults.string(forKey: SharedKeys.activeModel) ?? ""
+        return TranscriptionLanguagePolicy(
+            mode: TranscriptionLanguageMode(
+                storedValue: defaults.string(forKey: SharedKeys.transcriptionLanguage)
+            ),
+            keyboardLanguage: SupportedLanguage.active,
+            engine: ModelInfo.forIdentifier(modelIdentifier)?.engine ?? .whisperKit,
+            modelIdentifier: modelIdentifier
+        )
+    }
+
+    /// Language code for the STT engine, or `nil` for Whisper auto-detection.
+    /// Parakeet ignores the parameter either way; it receives the keyboard
+    /// code exactly as it did before #226 so its flows stay byte-identical.
+    public var sttLanguageCode: String? {
+        guard engine == .whisperKit else { return keyboardLanguage.rawValue }
+        return mode.resolvedLanguageCode(keyboardLanguageCode: keyboardLanguage.rawValue)
+    }
+
+    /// Polish target language, or `nil` when polish must be bypassed
+    /// (Whisper Auto-detect mode only — see `TranscriptionLanguageMode`).
+    /// With Parakeet active the setting is ineffective, so polish keeps the
+    /// historical follow behavior (keyboard language) in every mode.
+    public var polishTargetLanguage: SupportedLanguage? {
+        guard engine == .whisperKit else { return keyboardLanguage }
+        return mode.polishTargetLanguage(keyboardLanguage: keyboardLanguage)
+    }
+
+    /// True when the transcription must be inserted literally as-is (no
+    /// trailing-separator coercion): Whisper Auto-detect only, where the
+    /// output language is unknown and appending Western punctuation to e.g.
+    /// CJK text would corrupt it.
+    public var insertsTranscriptionAsIs: Bool {
+        engine == .whisperKit && mode == .autoDetect
     }
 }

@@ -105,3 +105,69 @@ final class TranscriptionLanguageModeTests: XCTestCase {
         )
     }
 }
+
+/// Engine-aware per-dictation policy snapshot (#226 review follow-up):
+/// the setting is Whisper-only-effective, so with Parakeet active every
+/// mode must resolve to the historical follow behavior.
+final class TranscriptionLanguagePolicyTests: XCTestCase {
+
+    private func policy(_ mode: TranscriptionLanguageMode,
+                        keyboard: SupportedLanguage,
+                        engine: SpeechEngine) -> TranscriptionLanguagePolicy {
+        TranscriptionLanguagePolicy(
+            mode: mode, keyboardLanguage: keyboard, engine: engine, modelIdentifier: "test-model"
+        )
+    }
+
+    // MARK: - Whisper: the setting is effective
+
+    func testWhisperFollowBehavesLikeToday() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .whisperKit)
+        XCTAssertEqual(sut.sttLanguageCode, "fr")
+        XCTAssertEqual(sut.polishTargetLanguage, .french)
+        XCTAssertFalse(sut.insertsTranscriptionAsIs)
+    }
+
+    func testWhisperAutoDetectBypassesPolishAndSeparator() {
+        let sut = policy(.autoDetect, keyboard: .french, engine: .whisperKit)
+        XCTAssertNil(sut.sttLanguageCode, "nil enables Whisper language detection")
+        XCTAssertNil(sut.polishTargetLanguage, "polish is bypassed in auto mode")
+        XCTAssertTrue(sut.insertsTranscriptionAsIs)
+    }
+
+    func testWhisperExplicitIgnoresKeyboardLanguage() {
+        let sut = policy(.explicit(.english), keyboard: .french, engine: .whisperKit)
+        XCTAssertEqual(sut.sttLanguageCode, "en")
+        XCTAssertEqual(sut.polishTargetLanguage, .english,
+                       "polish must match the dictated language, not the keyboard")
+        XCTAssertFalse(sut.insertsTranscriptionAsIs)
+    }
+
+    // MARK: - Parakeet: the setting is ineffective, flows stay unchanged
+
+    func testParakeetFollowBehavesLikeToday() {
+        let sut = policy(.followKeyboard, keyboard: .spanish, engine: .parakeet)
+        XCTAssertEqual(sut.sttLanguageCode, "es")
+        XCTAssertEqual(sut.polishTargetLanguage, .spanish)
+        XCTAssertFalse(sut.insertsTranscriptionAsIs)
+    }
+
+    func testParakeetAutoDetectKeepsPolishAndSeparator() {
+        // Selecting Auto-detect must NOT degrade Parakeet flows: the engine
+        // ignores the language parameter, so polish and separators keep the
+        // pre-#226 follow behavior.
+        let sut = policy(.autoDetect, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(sut.sttLanguageCode, "fr")
+        XCTAssertEqual(sut.polishTargetLanguage, .french)
+        XCTAssertFalse(sut.insertsTranscriptionAsIs)
+    }
+
+    func testParakeetExplicitKeepsKeyboardPolishTarget() {
+        // Explicit mode cannot influence Parakeet either — polish keeps
+        // targeting the keyboard language exactly as before #226.
+        let sut = policy(.explicit(.english), keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(sut.sttLanguageCode, "fr")
+        XCTAssertEqual(sut.polishTargetLanguage, .french)
+        XCTAssertFalse(sut.insertsTranscriptionAsIs)
+    }
+}
