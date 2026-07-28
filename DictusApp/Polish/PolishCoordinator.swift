@@ -143,7 +143,8 @@ public final class PolishCoordinator {
         // language, not the keyboard one). Auto-detect mode — BOTH engines,
         // per the #239 amendment — runs the language-agnostic auto path: the
         // output language is unknown (could be zh, it, pt, …), so the engine
-        // uses the auto prompt and the per-language regex passes stay off.
+        // uses the auto prompt; the verbal-punctuation pre-pass runs keyed on
+        // the DETECTED language, and the typography post-pass stays off.
         switch languagePolicy.polishPromptSelection {
         case .language(let target):
             return await polishTargeted(
@@ -292,11 +293,17 @@ public final class PolishCoordinator {
 
     /// Polish for Auto-detect transcription mode, BOTH engines: the input
     /// language is whatever the STT engine detected, so the engine runs with
-    /// the language-agnostic auto prompt (`PolishMode.auto`) and the
-    /// per-language deterministic passes (verbal punctuation, French NBSP)
-    /// stay OFF — the prompt owns typography, and regexes tuned for the four
+    /// the language-agnostic auto prompt (`PolishMode.auto`).
+    ///
+    /// Deterministic passes in auto mode: the verbal-punctuation pre-pass DOES
+    /// run, keyed on the DETECTED language (`PolishPipeline.autoPreprocess`) —
+    /// device testing showed spoken commands stayed literal without it, and
+    /// the regex is the only reliable conversion for French. The per-language
+    /// typography POST-pass (French NBSP) stays off: it is keyed on a target
+    /// language that does not exist here, and regexes tuned for the four
     /// tested languages would mangle e.g. CJK full-width punctuation. Every
-    /// non-success outcome returns `raw` unchanged (worst case output == input).
+    /// non-success outcome returns the deterministic floor (`preprocessed`,
+    /// == raw for languages without rules), never losing the conversion work.
     ///
     /// Metrics convention: `targetLanguage` is session context only (nothing
     /// is targeted in auto mode) — the keyboard language documents the state,
@@ -312,23 +319,32 @@ public final class PolishCoordinator {
         // guardrails (see PolishPipeline); doubles as the metrics context.
         let contextLanguage = languagePolicy.keyboardLanguage
 
+        // Detection runs FIRST (before the duration gate) because the verbal-
+        // punctuation pre-pass needs the detected language as its key — and,
+        // exactly like the per-language path, flash dictations must still get
+        // their spoken commands converted even when the LLM is skipped (#185).
+        let detectedCode = PolishPipeline.detectLanguageCode(in: raw)
+        let preprocessed = PolishPipeline.autoPreprocess(raw, detectedCode: detectedCode)
+
         // Duration gate (#141): on a flash dictation the user wants instant
-        // text. Unlike the per-language path there is no deterministic floor
-        // to keep (those passes are per-language), so raw is returned as-is.
+        // text, so the LLM is skipped — but the deterministic floor is kept.
         if recordingDuration < Self.engineMinDuration {
+            let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
-                outcome: .skippedShort, raw: raw, finalCount: raw.count,
-                languagePolicy: languagePolicy, engineID: activeEngine.identifier
+                outcome: .skippedShort, raw: raw, finalCount: preprocessed.count,
+                languagePolicy: languagePolicy, engineID: activeEngine.identifier,
+                detectedLanguage: detectedCode, latencyMs: detectMs,
+                timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
             await emit(m, raw: raw, polished: nil)
-            return raw
+            return preprocessed
         }
 
         // Gibberish gate — same skip-on-gibberish rule as the per-language
         // path (ADR 0002), but on the raw NLLanguage code: auto mode must
         // accept the whole long tail (zh, it, pt, …), not just the four
-        // supported languages.
-        guard let detectedCode = PolishPipeline.detectLanguageCode(in: raw) else {
+        // supported languages. No detection → no pre-pass ran → raw is intact.
+        guard let detectedCode else {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
                 outcome: .skipped, raw: raw, finalCount: raw.count,
@@ -342,11 +358,11 @@ public final class PolishCoordinator {
 
         let currentEngine = activeEngine
         inflight?.cancel()
-        // Detection is the only pre-engine work in auto mode (no regex passes).
+        // Pre-engine work in auto mode: detection + detected-language pre-pass.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let task = Task {
             await PolishPipeline.transform(
-                preprocessed: raw, engine: currentEngine, target: contextLanguage, mode: .auto
+                preprocessed: preprocessed, engine: currentEngine, target: contextLanguage, mode: .auto
             )
         }
         inflight = task
@@ -354,7 +370,7 @@ public final class PolishCoordinator {
         let bundle = await task.value
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let returned = PolishPipeline.resolvedOutput(
-            bundle, preprocessed: raw, target: contextLanguage, mode: .auto
+            bundle, preprocessed: preprocessed, target: contextLanguage, mode: .auto
         )
         let m = autoEventMetrics(
             outcome: bundle.outcome, raw: raw, finalCount: returned.count,

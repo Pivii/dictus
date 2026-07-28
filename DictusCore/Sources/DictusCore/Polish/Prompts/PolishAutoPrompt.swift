@@ -12,9 +12,16 @@ import Foundation
 /// in, light corrections only, stay faithful, NEVER translate.
 ///
 /// Differences vs the per-language Natural prompts, on purpose:
-/// - No verbal-punctuation rule: the deterministic pre-pass does not run in
-///   auto mode (it is per-language), and punctuation-word names differ per
-///   language — asking the model to guess them invites false positives.
+/// - The verbal-punctuation rule is multilingual: it lists the fr/en/es/de
+///   command vocabulary from the per-language prompts in one rule. For fr/en
+///   the deterministic pre-pass (`PolishPipeline.autoPreprocess`, keyed on
+///   the detected language) converts the commands before the model sees the
+///   text — the rule is the backup layer, and the ONLY layer for es/de
+///   (their regex rules land in step 7) and any other language. Bare
+///   sentence-period words ("point", "period", "punto", "Punkt") are
+///   deliberately absent: without a known language context they are too
+///   ambiguous, mirroring the #185 regex exclusion; the model supplies
+///   terminal periods on its own.
 /// - Typography is delegated to the model ("use the conventions of the input
 ///   language") because the regex post-pass is off — it would mangle CJK
 ///   full-width punctuation. Known trade-off: French NBSP before `?!;:` is
@@ -42,10 +49,16 @@ enum PolishAutoPrompt {
         1. Punctuation: add or fix sentence punctuation using the conventions OF THE INPUT LANGUAGE. Examples: full-width 。，？！ for Chinese and Japanese; ¿…? and ¡…! for Spanish; standard . , ? ! for English.
         2. Capitalize sentence starts and proper nouns in languages that use capitalization. Leave scripts without capitalization exactly as they are.
         3. Insert missing accents and diacritics required by the input language's spelling (`cafe` → `café`).
-        4. Remove same-word back-to-back duplicates that are clearly involuntary stutters (`I I think` → `I think`). Only immediate same-word repetition.
-        5. Remove pure hesitation fillers (`uh`, `um`, `euh`, `ähm`, `este`, `eeh`) when they carry no meaning. KEEP transition words that carry intent.
-        6. `<<NL>>` markers represent hard line breaks. Keep them character-for-character at the same position. Capitalize the first letter of the sentence that follows each marker where the language uses capitalization. Do NOT alter, paraphrase, surround with spaces, or add new markers.
-        7. Fix obvious one-letter typos.
+        4. Verbal punctuation and formatting: when the speaker says a punctuation or line-break command IN THE INPUT'S OWN LANGUAGE, replace it with the actual mark or line break and REMOVE the words. Command vocabulary by language:
+           - French: `virgule` → `,`, `point d'interrogation` → `?`, `point d'exclamation` → `!`, `deux points` → `:`, `point virgule` → `;`, `à la ligne` / `retour à la ligne` / `nouvelle ligne` → line break.
+           - English: `comma` → `,`, `question mark` → `?`, `exclamation mark` / `exclamation point` → `!`, `full stop` → `.`, `colon` → `:`, `semicolon` → `;`, `new line` / `newline` → line break.
+           - Spanish: `coma` → `,`, `signo de interrogación` → `?` (with opening `¿`), `signo de exclamación` → `!` (with opening `¡`), `dos puntos` → `:`, `punto y coma` → `;`, `nueva línea` → line break.
+           - German: `Komma` → `,`, `Fragezeichen` → `?`, `Ausrufezeichen` → `!`, `Doppelpunkt` → `:`, `Semikolon` / `Strichpunkt` → `;`, `neue Zeile` → line break.
+           Apply mid-clause too, and the equivalent commands in other languages. Only when the words are clearly a spoken command — not when the speaker talks ABOUT punctuation.
+        5. Remove same-word back-to-back duplicates that are clearly involuntary stutters (`I I think` → `I think`). Only immediate same-word repetition.
+        6. Remove pure hesitation fillers (`uh`, `um`, `euh`, `ähm`, `este`, `eeh`) when they carry no meaning. KEEP transition words that carry intent.
+        7. `<<NL>>` markers represent hard line breaks. Keep them character-for-character at the same position. Capitalize the first letter of the sentence that follows each marker where the language uses capitalization. Do NOT alter, paraphrase, surround with spaces, or add new markers.
+        8. Fix obvious one-letter typos.
 
         PRESERVE — DO NOT change these:
 
@@ -75,6 +88,11 @@ enum PolishAutoPrompt {
 
         INPUT: allora domani andiamo al mare se il tempo è bello
         OUTPUT: Allora domani andiamo al mare, se il tempo è bello.
+
+        Verbal-command example. The speaker dictates punctuation in their own language; convert it and remove the words:
+
+        INPUT: perfecto nos vemos mañana signo de exclamación
+        OUTPUT: ¡Perfecto, nos vemos mañana!
 
         Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position:
 

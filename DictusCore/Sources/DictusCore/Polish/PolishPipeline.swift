@@ -118,10 +118,12 @@ public enum PolishPipeline {
     /// matches what the coordinator's `< engineMinDuration` gate already returns.
     /// (#185)
     ///
-    /// Auto mode (#239): no deterministic pass ran (they are per-language), so
-    /// the floor is `preprocessed` UNCHANGED — worst case output == input, per
-    /// the acceptance criteria. `target` is the engine placeholder and must not
-    /// leak typography here either.
+    /// Auto mode (#239): the floor is `preprocessed` — the `autoPreprocess`
+    /// output, i.e. the input with verbal-punctuation commands already
+    /// converted when the detected language has rules, or the input unchanged
+    /// otherwise. No target typography is applied: `target` is the engine
+    /// placeholder and must not leak French NBSP (or any per-language rule)
+    /// onto a language chosen by detection.
     public static func resolvedOutput(_ result: Result,
                                       preprocessed: String,
                                       target: SupportedLanguage,
@@ -131,6 +133,30 @@ public enum PolishPipeline {
         }
         guard mode != .auto else { return preprocessed }
         return PolishPostpass.decodeFromEngine(preprocessed, language: target)
+    }
+
+    /// Deterministic pre-pass for the auto path (#239 device-test fix).
+    ///
+    /// Device testing showed spoken punctuation/formatting commands ("point
+    /// d'exclamation", "retour à la ligne") were left as literal words in
+    /// auto mode while the per-language path converts them. The conversion
+    /// lives in `VerbalPunctuationPrepass` — a regex layer that exists
+    /// precisely because Apple FM cannot be prompted into applying French
+    /// verbal punctuation reliably (see that type's doc) — so prompt-only
+    /// parity is not achievable and the regex must run here too.
+    ///
+    /// The rules are keyed on the DETECTED language, never the keyboard one,
+    /// preserving the auto contract: a language with no rules (it, zh, …
+    /// today; also es/de until their step-7 rules land) passes through
+    /// byte-identical, so CJK text is never touched. False-positive tolerance
+    /// is exactly the per-language path's (same regexes, incl. the #185 bare
+    /// "point"/"period" exclusion).
+    public static func autoPreprocess(_ raw: String, detectedCode: String?) -> String {
+        guard let detectedCode,
+              let supported = SupportedLanguage(rawValue: detectedCode) else {
+            return raw
+        }
+        return VerbalPunctuationPrepass.apply(raw, language: supported)
     }
 
     // MARK: - Language detection + mode selection

@@ -20,6 +20,23 @@ final class PolishAutoPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains(PolishPostpass.newlineMarker))
     }
 
+    /// #239 device-test fix: the prompt carries the multilingual spoken-command
+    /// vocabulary (backup layer for fr/en, only layer for es/de and beyond).
+    /// Bare sentence-period words stay excluded (#185).
+    func testAutoPromptListsVerbalCommandVocabulary() {
+        let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
+        for command in ["point d'exclamation", "retour à la ligne",
+                        "exclamation mark", "new line",
+                        "signo de exclamación", "nueva línea",
+                        "Ausrufezeichen", "neue Zeile"] {
+            XCTAssertTrue(prompt.contains(command), "missing spoken command \(command)")
+        }
+        XCTAssertFalse(prompt.contains("`point` →"), "bare French 'point' must stay excluded (#185)")
+        XCTAssertFalse(prompt.contains("`period`"), "bare English 'period' must stay excluded (#185)")
+        XCTAssertFalse(prompt.contains("`punto` →"), "bare Spanish 'punto' must stay excluded (#185)")
+        XCTAssertFalse(prompt.contains("`Punkt`"), "bare German 'Punkt' must stay excluded (#185)")
+    }
+
     func testAutoPromptEmbedsGlossary() {
         let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
         for term in PolishGlossary.terms {

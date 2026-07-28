@@ -109,8 +109,10 @@ public enum PolishPromptSelection: Equatable, Sendable {
     case language(SupportedLanguage)
     /// Polish with the language-agnostic auto-detect prompt (#239): the input
     /// language is whatever the STT engine detected, the prompt polishes in
-    /// that same language and never translates. Typography regex passes stay
-    /// OFF — they are tuned per language and would mangle e.g. CJK full-width
+    /// that same language and never translates. The verbal-punctuation
+    /// pre-pass runs keyed on the DETECTED language
+    /// (`PolishPipeline.autoPreprocess`); the typography POST-pass stays OFF —
+    /// it is tuned per language and would mangle e.g. CJK full-width
     /// punctuation.
     case autoDetected
 }

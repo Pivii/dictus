@@ -120,17 +120,19 @@ func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> 
 }
 
 /// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
-/// no verbal-punctuation pre-pass, no language typography post-pass, engine
-/// runs the language-agnostic auto prompt, non-success falls back to the raw
-/// input unchanged. `target` below is the placeholder the engine API requires
-/// — the auto prompt and guardrails ignore it.
+/// verbal-punctuation pre-pass keyed on the DETECTED language
+/// (`autoPreprocess`), no language typography post-pass, engine runs the
+/// language-agnostic auto prompt, non-success falls back to the deterministic
+/// floor (the pre-pass output). `target` below is the placeholder the engine
+/// API requires — the auto prompt and guardrails ignore it.
 @available(macOS 26.0, *)
 func runOnceAuto(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
     guard let detectedCode = PolishPipeline.detectLanguageCode(in: fx.raw) else {
         return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
     }
-    let r = await PolishPipeline.transform(preprocessed: fx.raw, engine: engine, target: .english, mode: .auto)
-    let final = PolishPipeline.resolvedOutput(r, preprocessed: fx.raw, target: .english, mode: .auto)
+    let preprocessed = PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode)
+    let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: .english, mode: .auto)
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: .english, mode: .auto)
     return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, mode: .auto)
 }
 

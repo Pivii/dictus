@@ -22,8 +22,9 @@ public enum PolishMode: String, Codable, Sendable {
     /// per-language prompt to pick. A single English-written prompt instructs
     /// the model to polish the text in whatever language it is written in —
     /// light corrections only, never translate. Active for BOTH engines when
-    /// the transcription-language mode is Auto. The language-specific
-    /// typography pre/post passes stay off in this mode; the prompt owns
-    /// typography.
+    /// the transcription-language mode is Auto. The verbal-punctuation
+    /// pre-pass runs keyed on the DETECTED language (see
+    /// `PolishPipeline.autoPreprocess`); the language-specific typography
+    /// POST-pass stays off in this mode — the prompt owns typography.
     case auto
 }

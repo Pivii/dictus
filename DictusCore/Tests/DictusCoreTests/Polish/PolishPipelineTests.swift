@@ -180,8 +180,49 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(result.engineOutput, input)
     }
 
-    /// Auto-mode fallback is the input UNCHANGED (worst case output == input):
-    /// no deterministic pass ran, and the placeholder target must not leak
+    // MARK: - autoPreprocess() (#239 device-test fix: spoken commands in auto mode)
+
+    /// The device-observed bug: "point d'exclamation" / "retour à la ligne"
+    /// stayed literal in auto mode. The pre-pass keyed on the DETECTED
+    /// language must convert them exactly like the per-language path.
+    func testAutoPreprocessConvertsFrenchCommands() {
+        let raw = "on va tester si ça arrive à fonctionner point d'exclamation retour à la ligne on va voir"
+        let out = PolishPipeline.autoPreprocess(raw, detectedCode: "fr")
+        XCTAssertTrue(out.contains("!"))
+        XCTAssertTrue(out.contains("\n"))
+        XCTAssertFalse(out.lowercased().contains("point d'exclamation"))
+        XCTAssertFalse(out.lowercased().contains("retour à la ligne"))
+    }
+
+    func testAutoPreprocessConvertsEnglishCommands() {
+        let raw = "sounds good exclamation mark new line see you tomorrow question mark"
+        let out = PolishPipeline.autoPreprocess(raw, detectedCode: "en")
+        XCTAssertTrue(out.contains("!"))
+        XCTAssertTrue(out.contains("?"))
+        XCTAssertTrue(out.contains("\n"))
+        XCTAssertFalse(out.lowercased().contains("exclamation mark"))
+        XCTAssertFalse(out.lowercased().contains("new line"))
+    }
+
+    /// Same tolerance as the per-language path: the bare "point" word is NOT
+    /// converted (#185) — quoting/noun contexts survive.
+    func testAutoPreprocessKeepsBarePointNoun() {
+        let raw = "de mon point de vue c'est un bon point de départ"
+        XCTAssertEqual(PolishPipeline.autoPreprocess(raw, detectedCode: "fr"), raw)
+    }
+
+    /// Languages without rules pass through byte-identical — the CJK
+    /// guarantee holds through the pre-pass too.
+    func testAutoPreprocessLeavesUnsupportedLanguagesUntouched() {
+        let zh = "我觉得我们明天再讨论这个问题吧，然后周五之前把版本发出去。"
+        XCTAssertEqual(PolishPipeline.autoPreprocess(zh, detectedCode: "zh-Hans"), zh)
+        let it = "allora domani andiamo al mare se il tempo è bello"
+        XCTAssertEqual(PolishPipeline.autoPreprocess(it, detectedCode: "it"), it)
+        XCTAssertEqual(PolishPipeline.autoPreprocess("whatever text", detectedCode: nil), "whatever text")
+    }
+
+    /// Auto-mode fallback is the pre-pass floor (worst case output == input
+    /// for languages without rules): the placeholder target must not leak
     /// typography into the floor.
     func testResolvedOutputAutoFallbackReturnsInputUnchanged() {
         let input = "ça va ?"

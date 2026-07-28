@@ -74,5 +74,57 @@
       { "notContains": "meeting tomorrow" },
       { "lengthRatioMax": 1.3 }
     ]
+  },
+  {
+    "id": "auto-verbal-fr",
+    "lang": "auto",
+    "sttEngine": "PK",
+    "raw": "j'ai fini la préparation du dossier point d'exclamation retour à la ligne je te l'envoie demain matin virgule dis-moi si ça te va",
+    "expect": [
+      { "contains": "!" },
+      { "contains": "\n" },
+      { "contains": "," },
+      { "notContains": "point d'exclamation" },
+      { "notContains": "retour à la ligne" },
+      { "notContains": "virgule" },
+      { "regexAbsent": "<<NL>>" },
+      { "lengthRatioMax": 1.2 }
+    ]
+  },
+  {
+    "id": "auto-verbal-en",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "ok that sounds great exclamation mark new line see you tomorrow at the office question mark",
+    "expect": [
+      { "contains": "!" },
+      { "contains": "?" },
+      { "contains": "\n" },
+      { "notContains": "exclamation mark" },
+      { "notContains": "new line" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "auto-verbal-quote-tolerance-fr",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "de mon point de vue c'est un bon point de départ pour le projet",
+    "expect": [
+      { "contains": "point de vue" },
+      { "contains": "point de départ" },
+      { "lengthRatioMax": 1.2 }
+    ]
+  },
+  {
+    "id": "auto-verbal-es-prompt-layer",
+    "lang": "auto",
+    "sttEngine": "PK",
+    "raw": "perfecto nos vemos mañana a las nueve signo de exclamación",
+    "expect": [
+      { "contains": "!" },
+      { "notContains": "signo de exclamación" },
+      { "lengthRatioMax": 1.2 }
+    ]
   }
 ]
