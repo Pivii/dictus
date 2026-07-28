@@ -127,19 +127,37 @@ final class ModelLanguageSupportTests: XCTestCase {
         XCTAssertEqual(parakeet?.languageSupport.tierGroups.isEmpty, true)
     }
 
+    /// Golden copy of WhisperKit's tokenizer language map (Constants in
+    /// Core/Models.swift, 99 classic codes + Cantonese `yue`), with the same
+    /// jw -> jv Javanese normalization the production data applies. Kept as an
+    /// independent literal so a missing or substituted code in the production
+    /// tiers fails the comparison, not just a count check.
+    private static let whisperTokenizerCodes: Set<String> = [
+        "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo",
+        "br", "bs", "ca", "cs", "cy", "da", "de", "el", "en", "es",
+        "et", "eu", "fa", "fi", "fo", "fr", "gl", "gu", "ha", "haw",
+        "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it", "ja",
+        "jv", "ka", "kk", "km", "kn", "ko", "la", "lb", "ln", "lo",
+        "lt", "lv", "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt",
+        "my", "ne", "nl", "nn", "no", "oc", "pa", "pl", "ps", "pt",
+        "ro", "ru", "sa", "sd", "si", "sk", "sl", "sn", "so", "sq",
+        "sr", "su", "sv", "sw", "ta", "te", "tg", "th", "tk", "tl",
+        "tr", "tt", "uk", "ur", "uz", "vi", "yi", "yo", "yue", "zh"
+    ]
+
     func testWhisperTierGroupsCoverFullTokenizerSet() {
         // Every Whisper model must carry the complete tokenizer language
-        // set: 100 unique codes (99 classic + Cantonese `yue`), grouped
-        // good -> fair -> limited.
+        // set, grouped good -> fair -> limited, matching the golden copy
+        // code-for-code (not just by count).
         for model in ModelInfo.allIncludingDeprecated where model.engine == .whisperKit {
             let groups = model.languageSupport.tierGroups
             XCTAssertEqual(groups.map(\.tier), [.good, .fair, .limited],
                            "\(model.identifier) tiers out of order")
             let allCodes = groups.flatMap(\.codes)
-            XCTAssertEqual(allCodes.count, 100,
-                           "\(model.identifier) must cover the full tokenizer set")
             XCTAssertEqual(Set(allCodes).count, allCodes.count,
                            "\(model.identifier) has duplicate codes across tiers")
+            XCTAssertEqual(Set(allCodes), Self.whisperTokenizerCodes,
+                           "\(model.identifier) must match the tokenizer set exactly")
         }
     }
 
