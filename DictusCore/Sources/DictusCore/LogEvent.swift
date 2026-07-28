@@ -136,6 +136,12 @@ public enum LogEvent: Sendable {
     case liveActivityTransition(from: String, to: String)
     case liveActivityFailed(context: String, error: String)
     case liveActivityEnded(reason: String)
+    /// A standby start/recovery attempt returned without creating a new activity.
+    /// WHY the two booleans: When the Dynamic Island silently never appears, the
+    /// exported log must show BOTH the in-app toggle and the iOS-level
+    /// ActivityAuthorizationInfo().areActivitiesEnabled value to tell the causes
+    /// apart (issue #233 — the system toggle was the only fully silent path).
+    case liveActivityStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool)
 
     // MARK: Cold Start Diagnostics
     case coldStartURLReceived(isColdStart: Bool, isEngineDead: Bool, hasBeenActive: Bool)
@@ -201,7 +207,8 @@ public enum LogEvent: Sendable {
             return .lifecycle
         case .subscriptionError:
             return .lifecycle
-        case .liveActivityStarted, .liveActivityTransition, .liveActivityFailed, .liveActivityEnded:
+        case .liveActivityStarted, .liveActivityTransition, .liveActivityFailed, .liveActivityEnded,
+             .liveActivityStandbySkipped:
             return .lifecycle
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded, .deviceCapabilitySnapshot:
@@ -243,6 +250,7 @@ public enum LogEvent: Sendable {
              .appLaunched, .appWhisperKitLoaded, .logExportCompleted,
              .deviceCapabilitySnapshot,
              .liveActivityStarted, .liveActivityTransition, .liveActivityEnded,
+             .liveActivityStandbySkipped,
              .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry,
              .overlayShown, .overlayHidden, .statusChanged,
              .waveformAppeared, .waveformDisappeared, .waveformRefreshIDChanged,
@@ -321,6 +329,7 @@ public enum LogEvent: Sendable {
         case .liveActivityTransition: return "liveActivityTransition"
         case .liveActivityFailed: return "liveActivityFailed"
         case .liveActivityEnded: return "liveActivityEnded"
+        case .liveActivityStandbySkipped: return "liveActivityStandbySkipped"
         case .appLaunched: return "appLaunched"
         case .appDidBecomeActive: return "appDidBecomeActive"
         case .appWillResignActive: return "appWillResignActive"
@@ -477,6 +486,8 @@ public enum LogEvent: Sendable {
             return "context=\(context) error=\(error)"
         case .liveActivityEnded(let reason):
             return "reason=\(reason)"
+        case .liveActivityStandbySkipped(let reason, let isEnabled, let activitiesEnabled):
+            return "reason=\(reason) isEnabled=\(isEnabled) areActivitiesEnabled=\(activitiesEnabled)"
 
         // Lifecycle
         case .appLaunched(let version):

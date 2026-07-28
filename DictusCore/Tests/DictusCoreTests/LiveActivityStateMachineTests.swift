@@ -161,4 +161,74 @@ final class LiveActivityStateMachineTests: XCTestCase {
         sm.reset()
         XCTAssertEqual(sm.currentPhase, .idle)
     }
+
+    // MARK: - No-Activity Cycle Suppression (#233)
+
+    func testShouldLogRejectionTrueByDefault() {
+        let sm = LiveActivityStateMachine()
+        XCTAssertTrue(sm.shouldLogRejection, "rejections from idle must log when no cycle is declared")
+    }
+
+    func testBeginNoActivityCycleSuppressesIdleRejections() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        XCTAssertTrue(sm.isInNoActivityCycle)
+        XCTAssertFalse(sm.shouldLogRejection, "idle rejections during a no-activity cycle must be suppressed")
+    }
+
+    func testSuppressionOnlyAppliesWhileIdle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.forcePhase(.standby)
+        // forcePhase to non-idle means an activity exists -- #42 diagnostics must log
+        XCTAssertTrue(sm.shouldLogRejection)
+    }
+
+    func testSuccessfulTransitionEndsNoActivityCycle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.transition(to: .standby)
+        XCTAssertFalse(sm.isInNoActivityCycle)
+        XCTAssertTrue(sm.shouldLogRejection)
+    }
+
+    func testFailedTransitionKeepsNoActivityCycle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        // idle -> transcribing is invalid: the exact spam pattern from #233
+        XCTAssertFalse(sm.transition(to: .transcribing))
+        XCTAssertTrue(sm.isInNoActivityCycle)
+        XCTAssertFalse(sm.shouldLogRejection)
+    }
+
+    func testForcePhaseToNonIdleEndsNoActivityCycle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.forcePhase(.recording)
+        XCTAssertFalse(sm.isInNoActivityCycle)
+    }
+
+    func testForcePhaseToIdleKeepsNoActivityCycle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.forcePhase(.idle)
+        XCTAssertTrue(sm.isInNoActivityCycle, "teardown to idle still has no activity -- keep suppressing")
+        XCTAssertFalse(sm.shouldLogRejection)
+    }
+
+    func testEndNoActivityCycleRestoresLogging() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.endNoActivityCycle()
+        XCTAssertFalse(sm.isInNoActivityCycle)
+        XCTAssertTrue(sm.shouldLogRejection)
+    }
+
+    func testResetEndsNoActivityCycle() {
+        var sm = LiveActivityStateMachine()
+        sm.beginNoActivityCycle()
+        sm.reset()
+        XCTAssertFalse(sm.isInNoActivityCycle)
+        XCTAssertTrue(sm.shouldLogRejection)
+    }
 }
