@@ -53,7 +53,14 @@ struct ModelCardView: View {
     /// glyph's .title3 font) so badges never slide under the button and the
     /// enlarged menu hit area never eats card taps at accessibility sizes.
     @ScaledMetric(relativeTo: .title3) private var overflowTapPadding: CGFloat = 12
-    @ScaledMetric(relativeTo: .title3) private var overflowReservedWidth: CGFloat = 32
+    // 44pt per control: ~20pt .title3 glyph + 12pt tap padding on each side.
+    @ScaledMetric(relativeTo: .title3) private var overflowReservedWidth: CGFloat = 44
+
+    /// Presents the supported-languages detail sheet (issue #240).
+    /// Card-local state: each card owns its own sheet, which keeps the
+    /// parent Downloaded/Available sections free of per-model plumbing and
+    /// automatically covers deprecated models shown in "Downloaded".
+    @State private var showsLanguageInfo = false
 
     /// The current state for this model, with a safe default.
     private var state: ModelState {
@@ -111,15 +118,56 @@ struct ModelCardView: View {
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.95))
         .disabled(isCardDisabled)
-        // Overflow menu lives in an overlay OUTSIDE the Button label:
-        // interactive controls nested inside a Button label never receive
-        // taps (the whole label belongs to the button), so the menu must sit
-        // above the card in the view hierarchy to be tappable.
+        // Overflow menu and language-info button live in an overlay OUTSIDE
+        // the Button label: interactive controls nested inside a Button label
+        // never receive taps (the whole label belongs to the button), so both
+        // must sit above the card in the view hierarchy to be tappable.
         .overlay(alignment: .topTrailing) {
-            if showsOverflowMenu {
-                overflowMenu
+            // WHY spacing 0: each control carries its own scaled tap padding
+            // (overflowTapPadding), which already provides ~44pt targets and
+            // the visual gap between the two glyphs.
+            //
+            // WHY ⓘ is the OUTERMOST (trailing) element (design round,
+            // issue #240): the info button exists on every card state, so
+            // anchoring it at the corner keeps it at the exact same position
+            // whether or not the state-dependent overflow menu is present.
+            // The menu slides in to its left instead of pushing ⓘ around.
+            HStack(spacing: 0) {
+                if showsOverflowMenu {
+                    overflowMenu
+                }
+                languageInfoButton
             }
         }
+        // Supported-languages detail sheet (issue #240). Attached to the card
+        // (not the parent list) so every card — Downloaded, Available, and
+        // deprecated models — exposes it without extra wiring.
+        .sheet(isPresented: $showsLanguageInfo) {
+            ModelLanguageDetailView(model: model)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    // MARK: - Language info button (issue #240)
+
+    /// Unobtrusive ⓘ entry point for the per-model supported-languages sheet.
+    /// Visible in every model state: language coverage is useful before
+    /// downloading, while downloading, and on error/deprecated cards alike.
+    /// Styled identically to the overflow glyph so the top-trailing controls
+    /// read as one cluster.
+    private var languageInfoButton: some View {
+        Button {
+            showsLanguageInfo = true
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                // Generous padding enlarges the tap target toward ~44pt.
+                .padding(overflowTapPadding)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Supported languages")
     }
 
     // MARK: - Overflow menu (issue #193)
@@ -198,9 +246,10 @@ struct ModelCardView: View {
                         .cornerRadius(4)
                 }
             }
-            // Reserve room for the overlaid ellipsis button so badges never
-            // slide underneath it on narrow screens.
-            .padding(.trailing, showsOverflowMenu ? overflowReservedWidth : 0)
+            // Reserve room for the overlaid top-trailing controls so badges
+            // never slide underneath them on narrow screens. The ⓘ button is
+            // always present (one width); the ellipsis menu adds a second.
+            .padding(.trailing, showsOverflowMenu ? overflowReservedWidth * 2 : overflowReservedWidth)
 
             // Row 2: Localized description
             Text(model.localizedDescription)
@@ -320,10 +369,11 @@ struct ModelCardView: View {
     private var trailingContent: some View {
         switch state {
         case .notDownloaded:
-            // Subtle download hint icon
-            Image(systemName: "arrow.down.circle")
-                .font(.title2)
-                .foregroundColor(.dictusAccent)
+            // No download hint icon (design round, issue #240): the
+            // "Available" section already communicates downloadability and
+            // the whole card is the tap target, so the arrow was redundant
+            // and clashed visually with the corner-anchored info button.
+            EmptyView()
 
         case .downloading:
             // Progress is shown full-width in card body (Row 3)
