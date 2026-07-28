@@ -32,6 +32,44 @@ protocol SpeechModelProtocol {
     func transcribe(audioSamples: [Float], language: String?) async throws -> String
 }
 
+/// Failures raised while preparing a speech model for transcription.
+///
+/// WHY a dedicated error type (issue #249):
+/// The dictation path used to hand WhisperKit the model *name* with downloads
+/// enabled, so a missing or unreachable model surfaced WhisperKit's own English
+/// developer-facing string ("Model not found. Please check the model or repo name
+/// and try again.") straight into the keyboard's error banner. These cases carry
+/// localised, user-actionable text instead, while `diagnosticDescription` keeps the
+/// English technical detail for `PersistentLog`.
+enum SpeechModelError: LocalizedError {
+    /// The selected variant is absent from the local model repository, or its
+    /// folder holds no compiled Core ML bundle.
+    case modelNotInstalled(identifier: String)
+
+    /// The model files are present but the engine failed to load them.
+    case engineLoadFailed(identifier: String, underlying: Error)
+
+    /// User-facing text. Written to `SharedKeys.lastError` and displayed by the keyboard.
+    var errorDescription: String? {
+        switch self {
+        case .modelNotInstalled:
+            return String(localized: "This model is not installed. Open Dictus and download it in the Models tab.")
+        case .engineLoadFailed:
+            return String(localized: "The transcription model could not be loaded. Open Dictus and try again.")
+        }
+    }
+
+    /// English technical detail for the log. Never shown to the user.
+    var diagnosticDescription: String {
+        switch self {
+        case .modelNotInstalled(let identifier):
+            return "model not installed locally: \(identifier)"
+        case .engineLoadFailed(let identifier, let underlying):
+            return "engine load failed for \(identifier): \(underlying)"
+        }
+    }
+}
+
 /// WhisperKit engine conforming to SpeechModelProtocol.
 ///
 /// WHY a wrapper class instead of making TranscriptionService conform directly:
@@ -67,12 +105,20 @@ class WhisperKitEngine: SpeechModelProtocol {
             return
         }
 
+        // Load from the local repository only (issue #249). Downloading belongs to
+        // the model manager, never to a transcription path — see the equivalent
+        // guard in DictationCoordinator.ensureWhisperKitEngineReady.
+        guard let modelFolder = WhisperModelRepository.installedModelFolderURL(for: modelIdentifier) else {
+            throw SpeechModelError.modelNotInstalled(identifier: modelIdentifier)
+        }
+
         let config = WhisperKitConfig(
             model: modelIdentifier,
+            modelFolder: modelFolder.path,
             verbose: false,
             prewarm: true,
             load: true,
-            download: true
+            download: false
         )
 
         let kit = try await WhisperKit(config)
