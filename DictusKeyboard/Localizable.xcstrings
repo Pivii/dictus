@@ -132,6 +132,17 @@
           }
         }
       }
+    },
+    "Microphone unavailable, the model is loading" : {
+      "comment" : "Accessibility label for the keyboard mic button while the transcription model is loading (issue #250).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micro indisponible, le modèle est en cours de chargement"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

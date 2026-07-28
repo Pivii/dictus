@@ -4,6 +4,26 @@ import UIKit
 import Combine
 import DictusCore
 
+/// A transient message shown in the keyboard toolbar in place of the language
+/// switcher / suggestion bar.
+///
+/// WHY a type instead of a bare String: not every message is a failure.
+/// "the model is loading" is a normal transient wait, and rendering it in the
+/// same red as a real error framed it as a breakage (issue #250).
+struct KeyboardStatusMessage: Equatable {
+    let text: String
+    /// Errors render in red, informational messages in the secondary colour.
+    let isError: Bool
+
+    static func error(_ text: String) -> KeyboardStatusMessage {
+        KeyboardStatusMessage(text: text, isError: true)
+    }
+
+    static func info(_ text: String) -> KeyboardStatusMessage {
+        KeyboardStatusMessage(text: text, isError: false)
+    }
+}
+
 /// Observes cross-process state changes from DictusApp via Darwin notifications.
 /// Reads actual data from App Group UserDefaults after each notification.
 ///
@@ -19,7 +39,12 @@ class KeyboardState: ObservableObject {
 
     @Published var dictationStatus: DictationStatus = .idle
     @Published var lastTranscription: String?
-    @Published var statusMessage: String?
+    @Published var statusMessage: KeyboardStatusMessage?
+
+    /// How the mic button should present itself with respect to the model load
+    /// state written by DictusApp (issue #250). Driven by `MicAvailabilityPolicy`
+    /// — see `refreshMicAvailability()`.
+    @Published private(set) var micAvailability: MicAvailability = .available
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
@@ -81,6 +106,7 @@ class KeyboardState: ObservableObject {
         ))
         // Read initial state from App Group
         refreshFromDefaults()
+        refreshMicAvailability()
 
         // Observe Darwin notifications for real-time updates
         DarwinNotificationCenter.addObserver(
@@ -113,14 +139,120 @@ class KeyboardState: ObservableObject {
             }
         }
 
+        // Model load transitions (issue #250). DictusApp posts this whenever
+        // SharedKeys.modelLoadState changes value, so the mic button can dim
+        // while a load is in flight and un-dim the moment it finishes, with
+        // the keyboard left open throughout.
+        DarwinNotificationCenter.addObserver(
+            for: DarwinNotificationName.modelLoadStateChanged
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                self?.refreshMicAvailability()
+            }
+        }
     }
 
     deinit {
         logProbe("deinit")
         stopWatchdog()
+        modelLoadTimer?.invalidate()
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.statusChanged)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.transcriptionReady)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.waveformUpdate)
+        DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.modelLoadStateChanged)
+    }
+
+    // MARK: - Model load presentation (issue #250)
+
+    /// Re-evaluation timer for the mic button's not-ready state.
+    /// Only runs while a load is in flight and is still young enough to be
+    /// trusted, so its lifetime is bounded by `MicAvailabilityPolicy.staleLoadCutoff`.
+    private var modelLoadTimer: Timer?
+
+    /// When this process first saw a `loading` value that carried no timestamp.
+    /// Fallback for a state written by a build older than #250 — without it we
+    /// would have no way to age the value at all.
+    private var firstObservedLoadingAt: Date?
+
+    /// Re-read the shared model load state and derive the mic presentation.
+    ///
+    /// WHY synchronize() first: cross-process writes from DictusApp can lag a
+    /// few ms behind the actual state change — same reason `startRecording()`
+    /// does it before reading the guard value.
+    func refreshMicAvailability() {
+        defaults.synchronize()
+
+        let (state, changedAt) = ModelLoadStateStore.read(from: defaults)
+
+        // Age the value. Prefer the app's own timestamp: it is the only thing
+        // that can tell "started 300ms ago" from "stranded by a force-quit an
+        // hour ago", because this process may have just launched either way.
+        let loadStartedAt: Date?
+        if state == .loading {
+            if changedAt == nil, firstObservedLoadingAt == nil {
+                firstObservedLoadingAt = Date()
+            }
+            loadStartedAt = changedAt ?? firstObservedLoadingAt
+        } else {
+            firstObservedLoadingAt = nil
+            loadStartedAt = nil
+        }
+
+        let now = Date()
+        let newAvailability = MicAvailabilityPolicy.availability(
+            state: state,
+            loadStartedAt: loadStartedAt,
+            now: now
+        )
+        if newAvailability != micAvailability {
+            micAvailability = newAvailability
+        }
+
+        // Keep re-evaluating only while the presentation can still change on
+        // its own: crossing the surface delay, or ageing past the stale cutoff.
+        // The Darwin notification handles the load actually finishing; the
+        // timer's re-read also covers a notification lost while the extension
+        // was suspended.
+        let needsTimer = MicAvailabilityPolicy.needsReevaluation(
+            state: state,
+            loadStartedAt: loadStartedAt,
+            now: now
+        )
+        if needsTimer {
+            startModelLoadTimer()
+        } else {
+            stopModelLoadTimer()
+        }
+    }
+
+    /// WHY 0.25s: fine enough that the 0.6s surface delay lands within a frame
+    /// or two of its nominal value, and the whole timer is bounded to 30s, so
+    /// this is at most ~120 UserDefaults reads per load.
+    private func startModelLoadTimer() {
+        guard modelLoadTimer == nil else { return }
+        modelLoadTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.refreshMicAvailability()
+        }
+    }
+
+    private func stopModelLoadTimer() {
+        modelLoadTimer?.invalidate()
+        modelLoadTimer = nil
+    }
+
+    // MARK: - Toolbar messages
+
+    /// Show a transient toolbar message and clear it after `duration`.
+    ///
+    /// WHY the identity check before clearing: a newer message may have replaced
+    /// this one in the meantime (e.g. a refusal followed by a real error), and
+    /// the older timer must not wipe it.
+    func showStatusMessage(_ message: KeyboardStatusMessage, duration: TimeInterval = 3) {
+        statusMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self, self.statusMessage == message else { return }
+            self.statusMessage = nil
+        }
     }
 
     // MARK: - Watchdog
@@ -267,12 +399,9 @@ class KeyboardState: ObservableObject {
                     activeSessionID = nil
                     // Read and display error message from App Group
                     if status == .failed, let errorMsg = defaults.string(forKey: SharedKeys.lastError) {
-                        statusMessage = errorMsg
+                        showStatusMessage(.error(errorMsg))
                         defaults.removeObject(forKey: SharedKeys.lastError)
                         defaults.synchronize()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                            self?.statusMessage = nil
-                        }
                     }
                 }
             }
@@ -397,6 +526,9 @@ class KeyboardState: ObservableObject {
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.
         refreshFromDefaults()
+        // Same for the model load state: a load may have started, finished, or
+        // been stranded by a force-quit while we were suspended (issue #250).
+        refreshMicAvailability()
     }
 
     /// Called when a controller disappears. Only the current owner may hide the keyboard.
@@ -452,8 +584,14 @@ class KeyboardState: ObservableObject {
         let loadStateRaw = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
         if loadStateRaw == ModelLoadState.loading.rawValue {
             PersistentLog.log(.dictationDeferred(reason: "keyboard refused — model load in flight"))
-            statusMessage = String(localized: "Model is loading. Please open Dictus.")
+            // Informational, not an error: this is a normal transient wait, and
+            // the message already names the resolving action (issue #250).
+            showStatusMessage(.info(String(localized: "Model is loading. Please open Dictus.")))
             HapticFeedback.actionRefused()
+            // The button may not have been dimmed yet (fast path, or a load that
+            // only just started). Re-evaluate now so the presentation catches up
+            // with what the guard just told the user.
+            refreshMicAvailability()
             return
         }
 

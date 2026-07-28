@@ -14,8 +14,13 @@ struct ToolbarView: View {
     let dictationStatus: DictationStatus
     var onMicTap: () -> Void
 
+    /// Whether the mic should present its not-ready state because a model load
+    /// is in flight (issue #250). Presentation only — the authoritative refusal
+    /// still lives in `KeyboardState.startRecording()`.
+    var micAvailability: MicAvailability = .available
+
     // Suggestion bar integration parameters (default to idle/empty)
-    var statusMessage: String?
+    var statusMessage: KeyboardStatusMessage?
     var suggestions: [String] = []
     var suggestionMode: SuggestionMode = .idle
     var onSuggestionTap: ((Int) -> Void)?
@@ -36,9 +41,11 @@ struct ToolbarView: View {
                 // access settings between typing sessions when the bar reverts to idle.
                 HStack {
                     if let message = statusMessage {
-                        Text(message)
+                        Text(message.text)
                             .font(.caption)
-                            .foregroundColor(.red)
+                            // Only real failures are red. A model still loading
+                            // is a normal transient wait (issue #250).
+                            .foregroundColor(message.isError ? .red : .secondary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
                     } else if suggestions.isEmpty {
@@ -53,7 +60,15 @@ struct ToolbarView: View {
                         )
                     }
 
-                    AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
+                    if micAvailability == .modelLoading && dictationStatus.isMicRestingState {
+                        // Model load in flight: same dimmed treatment as the
+                        // no-Full-Access case, but still tappable so the tap
+                        // explains the wait instead of doing nothing.
+                        unavailableMic(isTappable: true, onTap: onMicTap)
+                            .accessibilityLabel(Text("Microphone unavailable, the model is loading"))
+                    } else {
+                        AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
+                    }
                 }
             } else {
                 // No Full Access: centered banner text + disabled mic on the right
@@ -70,9 +85,7 @@ struct ToolbarView: View {
                 HStack {
                     Spacer()
 
-                    AnimatedMicButton(status: .idle, isPill: true, onTap: {})
-                        .disabled(true)
-                        .opacity(0.4)
+                    unavailableMic(isTappable: false, onTap: {})
                 }
             }
         }
@@ -84,5 +97,33 @@ struct ToolbarView: View {
         // extending to 46pt. With 4pt top padding, 52pt total provides enough
         // breathing room above and below the pill without clipping.
         .frame(height: 52)
+    }
+
+    /// The single "mic not available" presentation, shared by every reason the
+    /// mic can be unavailable (issue #250).
+    ///
+    /// WHY one builder: the no-Full-Access case already had a dimmed mic. A
+    /// second, divergent disabled style for model loading would teach the user
+    /// two different visual vocabularies for the same idea. The two cases
+    /// differ only in whether the tap does something — Full Access has nothing
+    /// useful to say here (the toolbar already carries its own banner), while a
+    /// load in flight explains itself through the toolbar message.
+    @ViewBuilder
+    private func unavailableMic(isTappable: Bool, onTap: @escaping () -> Void) -> some View {
+        AnimatedMicButton(status: .idle, isPill: true, onTap: onTap)
+            .disabled(!isTappable)
+            .opacity(0.4)
+    }
+}
+
+private extension DictationStatus {
+    /// Whether the mic button is currently sitting idle, i.e. the toolbar mic is
+    /// the "start a dictation" affordance rather than live lifecycle feedback.
+    ///
+    /// The not-ready presentation must never mask recording/transcribing
+    /// states: those own the button while they last, and a load cannot be in
+    /// flight for them anyway.
+    var isMicRestingState: Bool {
+        self == .idle || self == .ready || self == .failed
     }
 }
