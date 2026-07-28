@@ -19,6 +19,13 @@ public enum SharedKeys {
     /// "ready" = active model is loaded in RAM and `transcribe()` calls will succeed.
     /// The keyboard reads this to refuse mic taps during load (issue #144).
     public static let modelLoadState = "dictus.modelLoadState"
+    /// Double (timeIntervalSince1970): when `modelLoadState` last changed value.
+    /// Written by DictusApp in the same breath as the state itself.
+    /// The keyboard uses it to age a `loading` value (issue #250): a stale one
+    /// left behind by a force-quit mid-load is recognised as old and never
+    /// dims the mic button. Absent or 0 means "age unknown" — consumers must
+    /// fall back to their own first-observation time, never to "just started".
+    public static let modelLoadStateChangedAt = "dictus.modelLoadStateChangedAt"
 
     // Keyboard-App cross-process contracts (added for Plan 3.1)
     /// Current keyboard layout type stored as String ("azerty" or "qwerty")

@@ -36,6 +36,13 @@ public enum DarwinNotificationName {
     /// request as a cold start. Used to dismiss the Dynamic Island standby indicator
     /// so the UI no longer suggests "ready to dictate" when the engine is asleep.
     public static let warmStateReleased = "com.pivi.dictus.warmStateReleased" as CFString
+
+    /// Posted by DictusApp whenever `SharedKeys.modelLoadState` changes value
+    /// (app -> keyboard, issue #250). The keyboard re-reads the state so the
+    /// mic button can reflect a load in flight before the user taps, and can
+    /// return to normal as soon as the load finishes without the keyboard
+    /// having to be dismissed and reopened.
+    public static let modelLoadStateChanged = "com.pivi.dictus.modelLoadStateChanged" as CFString
 }
 
 /// Global callback registry for Darwin notifications.

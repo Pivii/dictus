@@ -982,8 +982,12 @@ class DictationCoordinator: ObservableObject {
     func setModelLoadState(_ newState: ModelLoadState, reason: String) {
         let oldRaw = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
         guard oldRaw != newState.rawValue else { return }
-        defaults.set(newState.rawValue, forKey: SharedKeys.modelLoadState)
-        defaults.synchronize()
+        // The store writes the state *and* the moment it changed — the keyboard
+        // needs that timestamp to age a `loading` value (#250).
+        ModelLoadStateStore.write(newState, to: defaults)
+        // Cross-process ping so the keyboard's mic button can reflect the load
+        // while it is on screen, not only on its next appearance (#250).
+        DarwinNotificationCenter.post(DarwinNotificationName.modelLoadStateChanged)
         PersistentLog.log(.modelLoadStateChanged(from: oldRaw, to: newState.rawValue, reason: reason))
         NotificationCenter.default.post(
             name: .dictusModelLoadStateChanged,
