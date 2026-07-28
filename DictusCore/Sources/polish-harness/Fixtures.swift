@@ -8,14 +8,18 @@ import DictusCore
 struct Fixture: Codable {
     let id: String
     let raw: String
-    /// BCP-47-ish: "fr" / "en" / "es" / "de". Maps to SupportedLanguage.
+    /// BCP-47-ish: "fr" / "en" / "es" / "de" runs the per-language path.
+    /// Anything else ("auto", "zh", "it", …) runs the Auto-detect path (#239)
+    /// — mirroring the app, where languages without a dedicated prompt only
+    /// ever reach polish through auto mode.
     let lang: String
     /// "PK" (Parakeet) or "WK" (WhisperKit). Defaults to Parakeet.
     let sttEngine: String?
     /// Declarative contract checks (eval mode). Each entry sets ONE predicate.
     let expect: [Expectation]?
 
-    var language: SupportedLanguage { SupportedLanguage(rawValue: lang) ?? .french }
+    /// `nil` routes the fixture through the Auto-detect path.
+    var language: SupportedLanguage? { SupportedLanguage(rawValue: lang) }
     var speechEngine: SpeechEngine { sttEngine == "WK" ? .whisperKit : .parakeet }
 }
 

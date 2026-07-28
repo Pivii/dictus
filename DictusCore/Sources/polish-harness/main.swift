@@ -96,13 +96,16 @@ struct RunOutcome {
     let engineOutput: String?
     let outcome: PolishMetrics.Outcome
     let engineMs: Int
-    let detected: SupportedLanguage?
+    /// Raw NLLanguage code of the input ("fr", "it", "zh-Hans", …).
+    let detected: String?
     let mode: PolishMode?
 }
 
 @available(macOS 26.0, *)
 func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
-    let target = fx.language
+    guard let target = fx.language else {
+        return await runOnceAuto(fx, engine: engine)
+    }
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
     // Mirror the coordinator's fallback: non-success returns the deterministic
     // floor (decoded pre-pass), never the literal raw. (#185)
@@ -112,8 +115,23 @@ func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> 
     }
     let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: target, mode: mode)
-    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: target)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected, mode: mode)
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: target, mode: mode)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected.rawValue, mode: mode)
+}
+
+/// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
+/// no verbal-punctuation pre-pass, no language typography post-pass, engine
+/// runs the language-agnostic auto prompt, non-success falls back to the raw
+/// input unchanged. `target` below is the placeholder the engine API requires
+/// — the auto prompt and guardrails ignore it.
+@available(macOS 26.0, *)
+func runOnceAuto(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
+    guard let detectedCode = PolishPipeline.detectLanguageCode(in: fx.raw) else {
+        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
+    }
+    let r = await PolishPipeline.transform(preprocessed: fx.raw, engine: engine, target: .english, mode: .auto)
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: fx.raw, target: .english, mode: .auto)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, mode: .auto)
 }
 
 @available(macOS 26.0, *)
@@ -127,7 +145,7 @@ func runHarness() async {
             for run in 1...max(1, runs) {
                 let o = await runOnce(fx, engine: engine)
                 let tag = runs > 1 ? " #\(run)" : ""
-                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected?.rawValue ?? "-")→\(o.mode?.rawValue ?? "-")"
+                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected ?? "-")→\(o.mode?.rawValue ?? "-")"
                 print("  polished\(tag): \(o.final)")
                 print("            (\(route))")
                 // When the guardrail rejects, `final` is the raw fallback — surface

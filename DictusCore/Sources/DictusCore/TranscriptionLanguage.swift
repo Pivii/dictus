@@ -93,28 +93,26 @@ public enum TranscriptionLanguageMode: Equatable, Sendable {
         }
     }
 
-    /// The polish target language for this mode, or `nil` when polish must be
-    /// bypassed entirely.
-    ///
-    /// WHY polish follows the *transcription* language, not the keyboard:
-    /// The polish prompts and typography passes must match the language of the
-    /// STT output. In `.explicit` mode the user dictates in that language even
-    /// if the keyboard shows another one — targeting the keyboard language
-    /// would, e.g., apply French NBSP typography to English text.
-    /// In `.autoDetect` mode the output language is unknown and the fr/en/es/de
-    /// prompts don't apply — polish is skipped as a stopgap until the dedicated
-    /// auto-detect prompt lands (follow-up #239).
-    ///
-    /// NOTE: engine-agnostic. Callers in the dictation pipeline should go
-    /// through `TranscriptionLanguagePolicy`, which additionally neutralizes
-    /// the setting for Parakeet (the setting is Whisper-only-effective).
-    public func polishTargetLanguage(keyboardLanguage: SupportedLanguage) -> SupportedLanguage? {
-        switch self {
-        case .followKeyboard: return keyboardLanguage
-        case .autoDetect: return nil
-        case .explicit(let language): return language
-        }
-    }
+}
+
+/// Polish-stage prompt selection, resolved per dictation from the language
+/// policy (#239).
+///
+/// WHY an enum instead of an optional `SupportedLanguage`:
+/// Before #239, `nil` meant "bypass polish entirely" (the #226 stopgap). Now
+/// auto mode DOES polish — with a dedicated language-agnostic prompt — so the
+/// two meanings ("no language known" vs "don't polish") would collide in an
+/// optional. The enum makes the branch explicit at every call site.
+public enum PolishPromptSelection: Equatable, Sendable {
+    /// Polish with the per-language prompt catalog (fr/en/es/de) and the
+    /// language-specific typography pre/post passes.
+    case language(SupportedLanguage)
+    /// Polish with the language-agnostic auto-detect prompt (#239): the input
+    /// language is whatever the STT engine detected, the prompt polishes in
+    /// that same language and never translates. Typography regex passes stay
+    /// OFF — they are tuned per language and would mangle e.g. CJK full-width
+    /// punctuation.
+    case autoDetected
 }
 
 /// One immutable language-policy snapshot per dictation.
@@ -180,13 +178,35 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable {
         return mode.resolvedLanguageCode(keyboardLanguageCode: keyboardLanguage.rawValue)
     }
 
-    /// Polish target language, or `nil` when polish must be bypassed
-    /// (Whisper Auto-detect mode only — see `TranscriptionLanguageMode`).
-    /// With Parakeet active the setting is ineffective, so polish keeps the
-    /// historical follow behavior (keyboard language) in every mode.
-    public var polishTargetLanguage: SupportedLanguage? {
-        guard engine == .whisperKit else { return keyboardLanguage }
-        return mode.polishTargetLanguage(keyboardLanguage: keyboardLanguage)
+    /// Polish-stage prompt selection (#239).
+    ///
+    /// WHY polish follows the *transcription* language, not the keyboard:
+    /// The polish prompts and typography passes must match the language of the
+    /// STT output. In `.explicit` mode the user dictates in that language even
+    /// if the keyboard shows another one — targeting the keyboard language
+    /// would, e.g., apply French NBSP typography to English text.
+    ///
+    /// WHY auto mode ignores the engine (#239 scope amendment): Parakeet
+    /// natively transcribes whichever of its 25 languages is spoken, so in
+    /// Auto mode its output language is just as unknown as Whisper's —
+    /// targeting the keyboard language made polish TRANSLATE foreign speech
+    /// (observed on device: en dictation on a fr keyboard → French output).
+    /// Both engines therefore use the language-agnostic auto prompt in Auto
+    /// mode. This is a polish-stage decision only — `sttLanguageCode` keeps
+    /// Parakeet's follow behavior because the engine ignores the parameter.
+    ///
+    /// In follow/explicit modes the setting stays Whisper-only-effective:
+    /// with Parakeet active, explicit resolves to the keyboard language, the
+    /// exact pre-#226 behavior.
+    public var polishPromptSelection: PolishPromptSelection {
+        switch mode {
+        case .autoDetect:
+            return .autoDetected
+        case .followKeyboard:
+            return .language(keyboardLanguage)
+        case .explicit(let language):
+            return .language(engine == .whisperKit ? language : keyboardLanguage)
+        }
     }
 
     /// True when the transcription must be inserted literally as-is (no

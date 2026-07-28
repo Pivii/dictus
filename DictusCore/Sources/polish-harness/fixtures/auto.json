@@ -1,0 +1,78 @@
+[
+  {
+    "id": "auto-fr",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "euh je pense qu'on devrait partir demain matin parce que la route va être longue",
+    "expect": [
+      { "contains": "route" },
+      { "notContains": "because" },
+      { "notContains": "tomorrow" },
+      { "regexAbsent": "<<NL>>" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  },
+  {
+    "id": "auto-en",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "uh i think we should ship the new version on friday it looks pretty stable",
+    "expect": [
+      { "contains": "friday" },
+      { "notContains": "vendredi" },
+      { "regexAbsent": "<<NL>>" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  },
+  {
+    "id": "auto-en-parakeet-french-keyboard",
+    "lang": "auto",
+    "sttEngine": "PK",
+    "raw": "hey are you coming to the meeting tomorrow morning i think we start at nine",
+    "expect": [
+      { "contains": "meeting" },
+      { "contains": "tomorrow" },
+      { "notContains": "réunion" },
+      { "notContains": "demain" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  },
+  {
+    "id": "auto-zh",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "呃我觉得我们明天再讨论这个问题吧然后周五之前把版本发出去",
+    "expect": [
+      { "contains": "明天" },
+      { "contains": "。" },
+      { "notContains": "tomorrow" },
+      { "notContains": "demain" },
+      { "lengthRatioMax": 1.5 }
+    ]
+  },
+  {
+    "id": "auto-it",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "allora ho parlato con marco ieri sera e mi ha detto che il progetto va bene ci vediamo giovedì",
+    "expect": [
+      { "contains": "giovedì" },
+      { "notContains": "thursday" },
+      { "notContains": "jeudi" },
+      { "regexAbsent": "<<NL>>" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  },
+  {
+    "id": "auto-newline-marker",
+    "lang": "auto",
+    "sttEngine": "WK",
+    "raw": "salut voilà les points pour demain\npremier point la réunion\ndeuxième point le budget",
+    "expect": [
+      { "contains": "budget" },
+      { "regexAbsent": "<<NL>>" },
+      { "notContains": "meeting tomorrow" },
+      { "lengthRatioMax": 1.3 }
+    ]
+  }
+]

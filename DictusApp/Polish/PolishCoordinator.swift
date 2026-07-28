@@ -5,10 +5,12 @@ import DictusCore
 
 /// Orchestrates the polish layer:
 /// 1. Honour the global toggle (`SharedKeys.polishEnabled`).
-/// 2. Detect the language of the raw STT output via `NLLanguageRecognizer`.
-/// 3. Skip on gibberish (top hypothesis below `confidenceThreshold`).
+/// 2. Branch on the resolved prompt selection (#239): per-language path for
+///    follow/explicit modes, language-agnostic auto path for Auto-detect.
+/// 3. Detect the language of the raw STT output via `NLLanguageRecognizer`;
+///    skip on gibberish (top hypothesis below `confidenceThreshold`).
 /// 4. Choose mode: `.natural` for Whisper or `.natural`/`.repair` for Parakeet
-///    depending on detected-vs-target match.
+///    depending on detected-vs-target match; `.auto` in Auto-detect mode.
 /// 5. Run the engine with cancellation support, apply the guardrail, emit metrics.
 ///
 /// Hooked into the dictation pipeline in `DictationCoordinator` between the STT
@@ -77,17 +79,22 @@ public final class PolishCoordinator {
     public func prewarm() {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
-        // Resolve the polish target through the engine-aware language policy
-        // (#226): explicit mode targets the dictated language, not the keyboard
-        // one; Whisper auto mode skips polish entirely (see polish()) so there
-        // is nothing to warm — don't pay to load the model into memory. With
-        // Parakeet active the setting is ineffective and this resolves to the
-        // keyboard language in every mode, exactly the pre-#226 behavior.
+        // Resolve the prompt selection through the engine-aware language
+        // policy (#226/#239): explicit mode targets the dictated language, not
+        // the keyboard one; Auto mode warms the language-agnostic auto session
+        // (the language argument is a placeholder the engine normalizes).
         // Prewarm has no dictation-scoped policy to receive (it fires at app
         // launch and ~1.5s into recording), so it snapshots on its own — a
         // stale warm target is harmless (prewarm is best-effort).
-        guard let target = TranscriptionLanguagePolicy.snapshot().polishTargetLanguage else { return }
-        Task { await engineToWarm.prewarm(targetLanguage: target) }
+        let selection = TranscriptionLanguagePolicy.snapshot().polishPromptSelection
+        Task {
+            switch selection {
+            case .language(let target):
+                await engineToWarm.prewarm(mode: .natural, targetLanguage: target)
+            case .autoDetected:
+                await engineToWarm.prewarm(mode: .auto, targetLanguage: .english)
+            }
+        }
     }
 
     /// Recent polish events (memory-cached) for the debug screen.
@@ -129,26 +136,38 @@ public final class PolishCoordinator {
             return raw
         }
 
+        // Transcription language decoupling (#226/#239): the prompt selection
+        // branches on the resolved mode. Follow/explicit modes run the
+        // per-language path (prompts + typography passes tuned for the four
+        // tested languages; in explicit mode polish targets the dictated
+        // language, not the keyboard one). Auto-detect mode — BOTH engines,
+        // per the #239 amendment — runs the language-agnostic auto path: the
+        // output language is unknown (could be zh, it, pt, …), so the engine
+        // uses the auto prompt and the per-language regex passes stay off.
+        switch languagePolicy.polishPromptSelection {
+        case .language(let target):
+            return await polishTargeted(
+                raw: raw, target: target,
+                languagePolicy: languagePolicy, recordingDuration: recordingDuration
+            )
+        case .autoDetected:
+            return await polishAutoDetected(
+                raw: raw, languagePolicy: languagePolicy, recordingDuration: recordingDuration
+            )
+        }
+    }
+
+    // MARK: - Per-language path
+
+    /// The historical polish path: verbal-punctuation pre-pass, duration gate,
+    /// gibberish gate, per-language prompt, typography post-pass. `target` is
+    /// the resolved polish language from the policy snapshot.
+    private func polishTargeted(raw: String,
+                                target: SupportedLanguage,
+                                languagePolicy: TranscriptionLanguagePolicy,
+                                recordingDuration: TimeInterval) async -> String {
         let sttEngine = languagePolicy.engine
         let sttModelID = languagePolicy.modelIdentifier
-
-        // Transcription language decoupling (#226): the polish prompts AND the
-        // deterministic typography pre/post passes (verbal punctuation, French
-        // NBSP) are tuned for the four tested languages. In Whisper Auto-detect
-        // mode the output language is unknown (could be zh, it, pt, …), so the
-        // whole polish layer is bypassed — the raw STT output is returned
-        // untouched. Stopgap until the dedicated auto-detect prompt lands (#239).
-        // The bypass IS recorded (outcome .skippedAutoMode, ~0ms, no engine
-        // run): device testing showed a silent return makes the debug export
-        // look like the dictation never reached polish, which reads as a bug.
-        // In explicit mode, polish targets the dictated language (not the
-        // keyboard language) so typography/prompts match the actual output.
-        // With Parakeet active the setting is ineffective: the policy resolves
-        // every mode to the keyboard language, i.e. the pre-#226 behavior.
-        guard let target = languagePolicy.polishTargetLanguage else {
-            await recordAutoModeBypass(raw: raw, languagePolicy: languagePolicy)
-            return raw
-        }
 
         // `methodStart` anchors the full wall-clock the user actually waits for,
         // INCLUDING the deterministic passes (which the old timer excluded).
@@ -187,19 +206,12 @@ public final class PolishCoordinator {
                 sttModelID: sttModelID,
                 timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
             )
-            PolishMetrics.log(m)
-            await metricsRing.append(PolishDebugEntry(raw: raw, polished: finalShort, metrics: m))
+            await emit(m, raw: raw, polished: finalShort)
             return finalShort
         }
 
-        let detected = PolishPipeline.detectLanguage(in: preprocessed)
-
-        // Resolve the engine for this call — see `activeEngine` doc-comment.
-        let currentEngine = activeEngine
-        let engineID = currentEngine.identifier
-
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
-        guard let detected else {
+        guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
             // Return the deterministic floor, NOT the literal raw: the verbal-
             // punctuation pre-pass already ran (~0ms) and the user expects their
             // spoken "virgule"/"point" turned into marks even when the LLM is
@@ -209,7 +221,7 @@ public final class PolishCoordinator {
             let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
             let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
             let m = PolishMetrics(
-                engine: engineID,
+                engine: activeEngine.identifier,
                 mode: nil,
                 targetLanguage: target,
                 detectedLanguage: nil,
@@ -221,12 +233,14 @@ public final class PolishCoordinator {
                 sttModelID: sttModelID,
                 timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
             )
-            PolishMetrics.log(m)
-            await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
+            await emit(m, raw: raw, polished: nil)
             return fallback
         }
 
         let mode = PolishPipeline.mode(sttEngine: sttEngine, detected: detected, target: target)
+
+        // Resolve the engine for this call — see `activeEngine` doc-comment.
+        let currentEngine = activeEngine
 
         inflight?.cancel()
         // Everything above (pre-pass + detection + mode) is the preprocess cost;
@@ -248,10 +262,12 @@ public final class PolishCoordinator {
         // On any non-success (engine failed, guardrail rejected, cancelled) fall
         // back to the deterministic floor, never the literal raw — see
         // `PolishPipeline.resolvedOutput`. (#185)
-        let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, target: target)
+        let returned = PolishPipeline.resolvedOutput(
+            bundle, preprocessed: preprocessed, target: target, mode: mode
+        )
 
         let m = PolishMetrics(
-            engine: engineID,
+            engine: currentEngine.identifier,
             mode: mode,
             targetLanguage: target,
             detectedLanguage: detected.rawValue,
@@ -267,35 +283,126 @@ public final class PolishCoordinator {
                 postprocessMs: bundle.postprocessMs
             )
         )
-        PolishMetrics.log(m)
-        await metricsRing.append(PolishDebugEntry(raw: raw, polished: bundle.engineOutput, metrics: m))
+        await emit(m, raw: raw, polished: bundle.engineOutput)
 
         return returned
     }
 
-    // MARK: - Helpers
+    // MARK: - Auto-detect path (#239)
 
-    /// Record the Whisper Auto-detect bypass (#226) as a `.skippedAutoMode`
-    /// event: ~0ms, no mode, no engine run. `targetLanguage` is metrics
-    /// context only (nothing was targeted) — the keyboard language documents
-    /// the session state, matching what the JSON export's settings block shows.
-    private func recordAutoModeBypass(raw: String,
-                                      languagePolicy: TranscriptionLanguagePolicy) async {
-        let m = PolishMetrics(
-            engine: activeEngine.identifier,
-            mode: nil,
+    /// Polish for Auto-detect transcription mode, BOTH engines: the input
+    /// language is whatever the STT engine detected, so the engine runs with
+    /// the language-agnostic auto prompt (`PolishMode.auto`) and the
+    /// per-language deterministic passes (verbal punctuation, French NBSP)
+    /// stay OFF — the prompt owns typography, and regexes tuned for the four
+    /// tested languages would mangle e.g. CJK full-width punctuation. Every
+    /// non-success outcome returns `raw` unchanged (worst case output == input).
+    ///
+    /// Metrics convention: `targetLanguage` is session context only (nothing
+    /// is targeted in auto mode) — the keyboard language documents the state,
+    /// matching the JSON export's settings block. `detectedLanguage` carries
+    /// the raw NLLanguage code of the INPUT (e.g. "it", "zh-Hans"), which is
+    /// how device tests validate output language == input language. Engine
+    /// runs are identified by `mode == .auto` in the debug export.
+    private func polishAutoDetected(raw: String,
+                                    languagePolicy: TranscriptionLanguagePolicy,
+                                    recordingDuration: TimeInterval) async -> String {
+        let methodStart = Date()
+        // Engine-API placeholder in auto mode — never used for typography or
+        // guardrails (see PolishPipeline); doubles as the metrics context.
+        let contextLanguage = languagePolicy.keyboardLanguage
+
+        // Duration gate (#141): on a flash dictation the user wants instant
+        // text. Unlike the per-language path there is no deterministic floor
+        // to keep (those passes are per-language), so raw is returned as-is.
+        if recordingDuration < Self.engineMinDuration {
+            let m = autoEventMetrics(
+                outcome: .skippedShort, raw: raw, finalCount: raw.count,
+                languagePolicy: languagePolicy, engineID: activeEngine.identifier
+            )
+            await emit(m, raw: raw, polished: nil)
+            return raw
+        }
+
+        // Gibberish gate — same skip-on-gibberish rule as the per-language
+        // path (ADR 0002), but on the raw NLLanguage code: auto mode must
+        // accept the whole long tail (zh, it, pt, …), not just the four
+        // supported languages.
+        guard let detectedCode = PolishPipeline.detectLanguageCode(in: raw) else {
+            let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+            let m = autoEventMetrics(
+                outcome: .skipped, raw: raw, finalCount: raw.count,
+                languagePolicy: languagePolicy, engineID: activeEngine.identifier,
+                latencyMs: detectMs,
+                timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
+            )
+            await emit(m, raw: raw, polished: nil)
+            return raw
+        }
+
+        let currentEngine = activeEngine
+        inflight?.cancel()
+        // Detection is the only pre-engine work in auto mode (no regex passes).
+        let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+        let task = Task {
+            await PolishPipeline.transform(
+                preprocessed: raw, engine: currentEngine, target: contextLanguage, mode: .auto
+            )
+        }
+        inflight = task
+
+        let bundle = await task.value
+        let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+        let returned = PolishPipeline.resolvedOutput(
+            bundle, preprocessed: raw, target: contextLanguage, mode: .auto
+        )
+        let m = autoEventMetrics(
+            outcome: bundle.outcome, raw: raw, finalCount: returned.count,
+            languagePolicy: languagePolicy, engineID: currentEngine.identifier,
+            mode: .auto, detectedLanguage: detectedCode, latencyMs: totalMs,
+            timings: PolishTimings(
+                preprocessMs: preprocessMs,
+                engineMs: bundle.engineMs,
+                postprocessMs: bundle.postprocessMs
+            )
+        )
+        await emit(m, raw: raw, polished: bundle.engineOutput)
+        return returned
+    }
+
+    /// Metrics for one auto-path event. Defaults cover the skip exits (no
+    /// mode, no detection, ~0ms); the engine-run exit overrides them.
+    /// `targetLanguage` is the keyboard language — session context only.
+    private func autoEventMetrics(outcome: PolishMetrics.Outcome,
+                                  raw: String,
+                                  finalCount: Int,
+                                  languagePolicy: TranscriptionLanguagePolicy,
+                                  engineID: String,
+                                  mode: PolishMode? = nil,
+                                  detectedLanguage: String? = nil,
+                                  latencyMs: Int = 0,
+                                  timings: PolishTimings =
+                                      PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0)
+    ) -> PolishMetrics {
+        PolishMetrics(
+            engine: engineID,
+            mode: mode,
             targetLanguage: languagePolicy.keyboardLanguage,
-            detectedLanguage: nil,
+            detectedLanguage: detectedLanguage,
             rawCharCount: raw.count,
-            polishedCharCount: raw.count,
-            latencyMs: 0,
-            outcome: .skippedAutoMode,
+            polishedCharCount: finalCount,
+            latencyMs: latencyMs,
+            outcome: outcome,
             sttEngine: languagePolicy.engine.rawValue,
             sttModelID: languagePolicy.modelIdentifier,
-            timings: PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0)
+            timings: timings
         )
+    }
+
+    /// Log one metrics event and append it to the debug ring.
+    private func emit(_ m: PolishMetrics, raw: String, polished: String?) async {
         PolishMetrics.log(m)
-        await metricsRing.append(PolishDebugEntry(raw: raw, polished: nil, metrics: m))
+        await metricsRing.append(PolishDebugEntry(raw: raw, polished: polished, metrics: m))
     }
 
     /// Recording duration (seconds) below which the LLM polish is skipped (#141).

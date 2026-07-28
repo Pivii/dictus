@@ -43,7 +43,7 @@ final class PolishPipelineTests: XCTestCase {
         let result = PolishPipeline.Result(
             engineOutput: "Ok, petit test.", outcome: .success, engineMs: 5, postprocessMs: 0
         )
-        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ignored", target: .french)
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ignored", target: .french, mode: .natural)
         XCTAssertEqual(out, "Ok, petit test.")
     }
 
@@ -55,7 +55,7 @@ final class PolishPipelineTests: XCTestCase {
         let result = PolishPipeline.Result(
             engineOutput: nil, outcome: .engineFailed, engineMs: 600, postprocessMs: 0
         )
-        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french)
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french, mode: .natural)
         XCTAssertEqual(out, preprocessed)
         XCTAssertFalse(out.contains("virgule"))
     }
@@ -67,7 +67,7 @@ final class PolishPipelineTests: XCTestCase {
         let result = PolishPipeline.Result(
             engineOutput: "something the guardrail rejected", outcome: .rejectedGuardrail, engineMs: 700, postprocessMs: 1
         )
-        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french)
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: preprocessed, target: .french, mode: .natural)
         XCTAssertEqual(out, preprocessed)
     }
 
@@ -77,7 +77,7 @@ final class PolishPipelineTests: XCTestCase {
         let result = PolishPipeline.Result(
             engineOutput: nil, outcome: .cancelled, engineMs: 0, postprocessMs: 0
         )
-        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ça va ?", target: .french)
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: "ça va ?", target: .french, mode: .natural)
         XCTAssertEqual(out, "ça va\u{00A0}?")
     }
 
@@ -106,5 +106,97 @@ final class PolishPipelineTests: XCTestCase {
 
     func testModeParakeetRepairWhenMismatched() {
         XCTAssertEqual(PolishPipeline.mode(sttEngine: .parakeet, detected: .english, target: .french), .repair)
+    }
+
+    // MARK: - Auto mode (#239)
+
+    /// Auto mode must detect languages outside the four supported ones —
+    /// that's the whole point of `detectLanguageCode` vs `detectLanguage`.
+    func testDetectLanguageCodeRecognisesUnsupportedLanguages() {
+        let zh = PolishPipeline.detectLanguageCode(
+            in: "我觉得我们明天再讨论这个问题吧然后周五之前把版本发出去"
+        )
+        XCTAssertEqual(zh, "zh-Hans")
+        let it = PolishPipeline.detectLanguageCode(
+            in: "allora ho parlato con Marco ieri sera e mi ha detto che il progetto va bene"
+        )
+        XCTAssertEqual(it, "it")
+    }
+
+    func testDetectLanguageCodeReturnsNilForEmpty() {
+        XCTAssertNil(PolishPipeline.detectLanguageCode(in: "   \n  "))
+    }
+
+    /// `detectLanguage` keeps its historical contract on top of the code-level
+    /// detection: unsupported languages resolve to nil.
+    func testDetectLanguageReturnsNilForUnsupportedLanguage() {
+        XCTAssertNil(PolishPipeline.detectLanguage(
+            in: "allora ho parlato con Marco ieri sera e mi ha detto che il progetto va bene"
+        ))
+    }
+
+    /// In auto mode the target-language typography must NOT run: a French
+    /// input with `target: .french` as engine placeholder keeps its ASCII
+    /// space before `?` (no NBSP) — the prompt owns typography in auto mode.
+    func testTransformAutoSkipsLanguageTypography() async {
+        let input = "bonjour comment ça va aujourd'hui, j'espère que tu vas bien ?"
+        let result = await PolishPipeline.transform(
+            preprocessed: input,
+            engine: PassthroughPolishEngine(),
+            target: .french,
+            mode: .auto
+        )
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertEqual(result.engineOutput, input)
+        XCTAssertFalse(result.engineOutput?.contains("\u{00A0}") == true)
+    }
+
+    /// CJK text with full-width punctuation must survive the auto transform
+    /// byte-for-byte through the passthrough engine — no mangling by any
+    /// regex pass.
+    func testTransformAutoPreservesCJKPunctuation() async {
+        let input = "我觉得我们明天再讨论这个问题吧，然后周五之前把版本发出去。你觉得可以吗？"
+        let result = await PolishPipeline.transform(
+            preprocessed: input,
+            engine: PassthroughPolishEngine(),
+            target: .english,
+            mode: .auto
+        )
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertEqual(result.engineOutput, input)
+    }
+
+    /// Newline markers still round-trip in auto mode (the marker encode/decode
+    /// is language-agnostic and stays on).
+    func testTransformAutoPreservesNewlines() async {
+        let input = "first line of the message here\nsecond line of the message here"
+        let result = await PolishPipeline.transform(
+            preprocessed: input,
+            engine: PassthroughPolishEngine(),
+            target: .english,
+            mode: .auto
+        )
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertEqual(result.engineOutput, input)
+    }
+
+    /// Auto-mode fallback is the input UNCHANGED (worst case output == input):
+    /// no deterministic pass ran, and the placeholder target must not leak
+    /// typography into the floor.
+    func testResolvedOutputAutoFallbackReturnsInputUnchanged() {
+        let input = "ça va ?"
+        let result = PolishPipeline.Result(
+            engineOutput: nil, outcome: .engineFailed, engineMs: 100, postprocessMs: 0
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: input, target: .french, mode: .auto)
+        XCTAssertEqual(out, input, "no NBSP, no typography — raw input is the auto floor")
+    }
+
+    func testResolvedOutputAutoSuccessReturnsEngineOutput() {
+        let result = PolishPipeline.Result(
+            engineOutput: "Polished text.", outcome: .success, engineMs: 100, postprocessMs: 1
+        )
+        let out = PolishPipeline.resolvedOutput(result, preprocessed: "polished text", target: .english, mode: .auto)
+        XCTAssertEqual(out, "Polished text.")
     }
 }

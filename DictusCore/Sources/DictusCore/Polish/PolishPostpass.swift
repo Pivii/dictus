@@ -35,10 +35,11 @@ public enum PolishPostpass {
         text.replacingOccurrences(of: "\n", with: newlineMarker)
     }
 
-    /// Run on the engine's output. Restores newlines from markers and
-    /// applies language-specific typography Apple FM is unreliable about.
-    public static func decodeFromEngine(_ polished: String,
-                                        language: SupportedLanguage) -> String {
+    /// Language-agnostic half of the decode: restores newlines from markers
+    /// and collapses stray blank lines. This is the ONLY post-pass applied in
+    /// Auto-detect mode (#239) — the language typography below is per-language
+    /// and would mangle unknown scripts (e.g. CJK full-width punctuation).
+    public static func decodeNewlines(_ polished: String) -> String {
         var out = polished
         out = out.replacingOccurrences(of: newlineMarker, with: "\n")
 
@@ -55,6 +56,14 @@ public enum PolishPostpass {
             with: "\n",
             options: [.regularExpression]
         )
+        return out
+    }
+
+    /// Run on the engine's output. Restores newlines from markers and
+    /// applies language-specific typography Apple FM is unreliable about.
+    public static func decodeFromEngine(_ polished: String,
+                                        language: SupportedLanguage) -> String {
+        var out = decodeNewlines(polished)
 
         switch language {
         case .french:

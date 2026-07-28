@@ -16,4 +16,14 @@ public enum PolishMode: String, Codable, Sendable {
     /// Words may be substituted to reconstruct the user's intent in the
     /// target language. Active only on Parakeet when detected != target.
     case repair
+
+    /// Language-agnostic polish for Auto-detect transcription mode (#239):
+    /// the input language was auto-detected by the STT engine, so there is no
+    /// per-language prompt to pick. A single English-written prompt instructs
+    /// the model to polish the text in whatever language it is written in —
+    /// light corrections only, never translate. Active for BOTH engines when
+    /// the transcription-language mode is Auto. The language-specific
+    /// typography pre/post passes stay off in this mode; the prompt owns
+    /// typography.
+    case auto
 }
