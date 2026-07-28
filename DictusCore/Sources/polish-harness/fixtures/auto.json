@@ -106,7 +106,7 @@
     ]
   },
   {
-    "id": "auto-verbal-quote-tolerance-fr",
+    "id": "auto-verbal-period-word-tolerance-fr",
     "lang": "auto",
     "sttEngine": "WK",
     "raw": "de mon point de vue c'est un bon point de départ pour le projet",
