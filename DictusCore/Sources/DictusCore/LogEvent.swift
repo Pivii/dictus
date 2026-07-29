@@ -141,7 +141,12 @@ public enum LogEvent: Sendable {
     /// exported log must show BOTH the in-app toggle and the iOS-level
     /// ActivityAuthorizationInfo().areActivitiesEnabled value to tell the causes
     /// apart (issue #233 — the system toggle was the only fully silent path).
-    case liveActivityStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool)
+    /// WHY activityState: both booleans can read true while the activity the
+    /// manager is holding has already been ended by the system. Without the
+    /// activity's real state, that failure looks identical to a healthy skip in
+    /// an exported log, which is how #257 went unnoticed for 8 hours. nil means
+    /// the manager held no activity at all.
+    case liveActivityStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool, activityState: LiveActivityLiveness?)
 
     // MARK: Cold Start Diagnostics
     case coldStartURLReceived(isColdStart: Bool, isEngineDead: Bool, hasBeenActive: Bool)
@@ -486,8 +491,8 @@ public enum LogEvent: Sendable {
             return "context=\(context) error=\(error)"
         case .liveActivityEnded(let reason):
             return "reason=\(reason)"
-        case .liveActivityStandbySkipped(let reason, let isEnabled, let activitiesEnabled):
-            return "reason=\(reason) isEnabled=\(isEnabled) areActivitiesEnabled=\(activitiesEnabled)"
+        case .liveActivityStandbySkipped(let reason, let isEnabled, let activitiesEnabled, let activityState):
+            return "reason=\(reason) isEnabled=\(isEnabled) areActivitiesEnabled=\(activitiesEnabled) activityState=\(activityState?.rawValue ?? "none")"
 
         // Lifecycle
         case .appLaunched(let version):
