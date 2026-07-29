@@ -1034,7 +1034,13 @@ private extension DictationCoordinator {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.info("Parakeet init already in progress — awaiting existing task")
                 }
-                try await existingTask.value
+                // Same reason as the WhisperKit path (issue #249): the in-flight task
+                // rethrows its raw FluidAudio/Core ML error to every awaiting caller.
+                do {
+                    try await existingTask.value
+                } catch {
+                    throw SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+                }
                 return
             }
 
@@ -1062,7 +1068,17 @@ private extension DictationCoordinator {
                 initTask = nil
             } catch {
                 initTask = nil
-                throw error
+                // Wrap anything FluidAudio or Core ML raises (issue #249) — those
+                // messages are English and developer-facing, and `handleError` writes
+                // whatever reaches it into the keyboard's error banner.
+                let wrapped = SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ParakeetLoad",
+                    instanceID: modelName,
+                    action: "loadFailed",
+                    details: wrapped.diagnosticDescription
+                ))
+                throw wrapped
             }
         } else {
             if #available(iOS 14.0, *) {
