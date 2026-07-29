@@ -1286,6 +1286,17 @@
         }
       }
     },
+    "No model downloaded. Open Dictus to download a model." : {
+      "comment" : "Error shown when dictation is triggered before any model has been downloaded (issue #249).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun modèle téléchargé. Ouvrez Dictus pour télécharger un modèle."
+          }
+        }
+      }
+    },
     "No polish events yet. Toggle on, dictate something, then come back." : {
 
     },
@@ -2018,6 +2029,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur de modèles a renvoyé une réponse invalide."
+          }
+        }
+      }
+    },
+    "The transcription model could not be loaded. Open Dictus and try again." : {
+      "comment" : "Error shown when the local Whisper model files are present but fail to load (issue #249).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle de transcription n'a pas pu être chargé. Ouvrez Dictus et réessayez."
+          }
+        }
+      }
+    },
+    "This model is not installed. Open Dictus and download it in the Models tab." : {
+      "comment" : "Error shown when dictation is triggered while the selected Whisper model is missing from the local model repository (issue #249).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce modèle n'est pas installé. Ouvrez Dictus et téléchargez-le dans l'onglet Modèles."
           }
         }
       }

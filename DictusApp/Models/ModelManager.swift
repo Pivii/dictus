@@ -90,9 +90,12 @@ class ModelManager: ObservableObject {
     /// `WhisperKit.download` historically used and that `WhisperKitConfig(modelFolder:)`
     /// expects: `Documents/huggingface/models/argmaxinc/whisperkit-coreml/{identifier}`.
     /// Single source of truth so download, delete, and cleanup stay path-parallel (issue #210).
+    ///
+    /// The path itself now lives in `WhisperModelRepository` so the dictation path can
+    /// resolve the very same folder and load models without touching the network
+    /// (issue #249). This property is kept as the local shorthand for the call sites below.
     private var whisperKitRepoDirectory: URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml", isDirectory: true)
+        WhisperModelRepository.repositoryURL()
     }
 
     /// Per-model last-logged progress decile, so PersistentLog gets ~10 lines per
