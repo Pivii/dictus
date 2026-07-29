@@ -280,11 +280,17 @@ class LiveActivityManager {
     /// Persist a standby-skip outcome to the exportable log.
     /// WHY a helper: every silent return path must produce a greppable entry with
     /// both enablement booleans (#233); centralizing keeps the call sites compact.
-    private func logStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool) {
+    /// WHY it reads `currentLiveness` by default: every existing call site skips
+    /// *because of* the activity the manager already holds, so the state that
+    /// explains the skip is that activity's own. Only the dead-activity path
+    /// passes a state explicitly, because it has just cleared the reference (#257).
+    private func logStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool,
+                                   activityState: LiveActivityLiveness? = nil) {
         PersistentLog.log(.liveActivityStandbySkipped(
             reason: reason,
             isEnabled: isEnabled,
-            activitiesEnabled: activitiesEnabled
+            activitiesEnabled: activitiesEnabled,
+            activityState: activityState ?? currentLiveness
         ))
     }
 
@@ -314,6 +320,12 @@ class LiveActivityManager {
                               activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
             return .disabledInApp
         }
+
+        // Drop a dead reference BEFORE the fast paths below. WHY first: an activity
+        // the system ended still satisfies `currentActivity != nil`, so the
+        // alreadyStandby short-circuit would report a corpse as healthy standby on
+        // every background transition and the pill would never be recreated (#257).
+        discardActivityIfNotLive(context: "startStandby")
 
         // Allow transition from idle->standby or if already standby (no-op)
         // WHY: Prevents creating duplicate activities when app re-enters background
@@ -346,7 +358,7 @@ class LiveActivityManager {
         // WHY: After crash/force-quit, currentActivity is nil but old activities persist
         // in ActivityKit. cleanupStaleActivities() runs async in init() and may not have
         // finished yet. Checking the system list prevents creating a second activity.
-        let systemActivities = Activity<DictusLiveActivityAttributes>.activities
+        let systemActivities = adoptableSystemActivities()
         if currentActivity == nil, let existing = systemActivities.first {
             // Recover orphaned activity instead of creating a new one
             currentActivity = existing
@@ -432,6 +444,14 @@ class LiveActivityManager {
         // WHY at the very start: If the user starts a new recording while a watchdog
         // from the previous cycle is still ticking, the watchdog must NOT fire mid-recording.
         cancelRecordingWatchdog()
+
+        // Drop a dead reference so the auto-bootstrap below can actually fire.
+        // WHY here and not only in ensureActivityAlive(): a keyboard dictation never
+        // foregrounds the app, and didBecomeActive is ensureActivityAlive()'s only
+        // caller. Without this, a system-ended activity keeps currentPhase on
+        // .standby, the bootstrap is skipped, and every update() below is dropped
+        // silently -- the user dictates and no Dynamic Island ever appears (#257).
+        discardActivityIfNotLive(context: "transitionToRecording")
 
         // Auto-bootstrap: if no activity exists, create standby first.
         // WHY BEFORE validateTransition: idle→recording is invalid, but idle→standby→recording
@@ -642,6 +662,99 @@ class LiveActivityManager {
         }
     }
 
+    // MARK: - System State Reconciliation
+
+    /// ActivityKit's own view of the activity the manager is holding.
+    /// nil when the manager holds no activity.
+    private var currentLiveness: LiveActivityLiveness? {
+        currentActivity.map { Self.liveness(of: $0) }
+    }
+
+    /// Map ActivityKit's `ActivityState` onto the pure value the decision is made from.
+    /// WHY `@unknown default`: `ActivityState` is not frozen -- iOS has added cases
+    /// since 16.1 and this build must not crash or guess on a future one.
+    private static func liveness(of activity: Activity<DictusLiveActivityAttributes>) -> LiveActivityLiveness {
+        switch activity.activityState {
+        case .active: return .active
+        case .stale: return .stale
+        case .ended: return .ended
+        case .dismissed: return .dismissed
+        @unknown default: return .unknown
+        }
+    }
+
+    /// Drop the held activity when ActivityKit no longer considers it usable.
+    /// Returns the state that was observed, or nil when the reference is fine.
+    ///
+    /// WHY this exists at all (#257): every previous liveness check asked whether the
+    /// activity id still appears in `Activity.activities`. It always does -- ActivityKit
+    /// ends a Live Activity after 8 hours, and an `.ended` activity stays in that list
+    /// until its UI is removed. So the manager kept believing a dead pill was healthy,
+    /// the Dynamic Island never came back, and only a reinstall cleared it.
+    ///
+    /// WHY it calls end() on something already ended: `.ended` still occupies
+    /// `Activity.activities`. Ending it with `.immediate` evicts it, so the orphan
+    /// adoption in startStandbyActivity() cannot hand the same corpse straight back.
+    ///
+    /// WHY it does NOT create a replacement: maintainer decision on #257. Recreating
+    /// here would open a fresh 8-hour window every time and could loop forever on an
+    /// app left open. The next dictation bootstraps a standby activity through
+    /// transitionToRecording()'s existing auto-bootstrap path, which needs .idle --
+    /// which is exactly the state this leaves behind.
+    @discardableResult
+    private func discardActivityIfNotLive(context: String) -> LiveActivityLiveness? {
+        guard let activity = currentActivity else { return nil }
+        let liveness = Self.liveness(of: activity)
+        guard liveness.decision == .treatAsAbsent else { return nil }
+
+        autoDismissTask?.cancel()
+        autoDismissTask = nil
+        cancelRecordingWatchdog()
+
+        currentActivity = nil
+        currentPhase = .idle
+        syncStateMachine(to: .idle)
+        PersistentLog.log(.liveActivityEnded(reason: "\(context)-notLive-\(liveness.rawValue)"))
+        DictusLogger.app.info("Live Activity \(liveness.rawValue, privacy: .public) -- clearing dead reference (\(context, privacy: .public))")
+
+        Task {
+            await activity.end(
+                .init(state: .init(phase: .standby), staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+        }
+        return liveness
+    }
+
+    /// Re-push the activity's current content with a fresh staleDate.
+    /// WHY not a teardown: a `.stale` activity is still live and still updatable --
+    /// only its content is past `staleDate`. Standby sits stale by design (nothing
+    /// updates it and staleInterval is 30s), so tearing it down would kill every
+    /// standby pill 30 seconds after it appeared. See LiveActivityLiveness.decision.
+    private func refreshStaleActivity(_ activity: Activity<DictusLiveActivityAttributes>) {
+        Task {
+            await activity.update(
+                .init(state: activity.content.state, staleDate: Date().addingTimeInterval(self.staleInterval))
+            )
+            DictusLogger.app.info("Live Activity content refreshed -- was stale")
+        }
+    }
+
+    /// Live activities from the system list, with any non-live ones ended and excluded.
+    /// WHY: `Activity.activities` lists `.ended` activities too. Adopting one as an
+    /// "orphan" would hand the manager a dead reference and reproduce #257 through
+    /// the bootstrap path instead of the recovery path.
+    private func adoptableSystemActivities() -> [Activity<DictusLiveActivityAttributes>] {
+        let all = Activity<DictusLiveActivityAttributes>.activities
+        for corpse in all where Self.liveness(of: corpse).decision == .treatAsAbsent {
+            DictusLogger.app.info("Ending non-live system Live Activity: \(corpse.id, privacy: .public)")
+            Task {
+                await corpse.end(.init(state: .init(phase: .standby), staleDate: nil), dismissalPolicy: .immediate)
+            }
+        }
+        return all.filter { Self.liveness(of: $0).decision != .treatAsAbsent }
+    }
+
     // MARK: - Recovery
 
     /// Recreate the Live Activity if it was lost (e.g., Activity.request failed from background).
@@ -670,8 +783,29 @@ class LiveActivityManager {
             syncStateMachine(to: .idle)
         }
 
+        // The check above only catches an activity that LEFT the system list. An
+        // activity the system ended is still in it, so ask ActivityKit for the
+        // activity's own state before trusting currentPhase (#257).
+        if let deadState = discardActivityIfNotLive(context: "ensureAlive") {
+            // Deliberately no startStandbyActivity() here -- see discardActivityIfNotLive.
+            logStandbySkipped(reason: "ensureAlive-clearedNotLive", isEnabled: true,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                              activityState: deadState)
+            return
+        }
+
+        // Still live but its content is out of date: refresh rather than tear down.
+        if let activity = currentActivity, Self.liveness(of: activity).decision == .refresh {
+            refreshStaleActivity(activity)
+            logStandbySkipped(reason: "ensureAlive-refreshed-\(currentPhase.rawValue)", isEnabled: true,
+                              activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
+            return
+        }
+
         guard currentActivity == nil || currentPhase == .idle else {
-            // Activity exists and phase is coherent -- nothing to recreate.
+            // Activity exists, phase is coherent, and ActivityKit reports it .active.
+            // WHY that last part matters: this line used to be reachable with a dead
+            // activity, which is the entire #257 symptom.
             logStandbySkipped(reason: "ensureAlive-healthy-\(currentPhase.rawValue)", isEnabled: true,
                               activitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled)
             return
