@@ -292,6 +292,7 @@ struct ModelManagerView: View {
             ModelLoadingOverlay(
                 modelManager: modelManager,
                 modelIdentifier: item.id,
+                context: .modelSelection,
                 isPresented: Binding(
                     get: { preparingModelID != nil },
                     set: { if !$0 { preparingModelID = nil } }

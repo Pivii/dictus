@@ -188,6 +188,19 @@ struct DictusApp: App {
                 .queryItems?
                 .first(where: { $0.name == "source" })?
                 .value == "keyboard"
+            let isPrepareOnly = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains(where: { $0.name == "intent" && $0.value == "prepare" }) ?? false
+
+            if isFromKeyboard && isPrepareOnly {
+                DictusLogger.app.info("Keyboard requested model preparation without recording")
+                PersistentLog.log(.dictationDeferred(reason: "keyboard prepare-only URL"))
+                NotificationCenter.default.post(
+                    name: .dictusKeyboardPreparationRequested,
+                    object: nil
+                )
+                return
+            }
 
             // Show cold start overlay when:
             // 1. TRUE cold start: app was terminated by iOS and keyboard just launched it
@@ -228,4 +241,17 @@ struct DictusApp: App {
             break
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted by `DictationCoordinator.setModelLoadState` whenever the persisted
+    /// `SharedKeys.modelLoadState` changes. UI overlays observe this to dismiss
+    /// themselves once the model is `.ready` (issue #144).
+    static let dictusModelLoadStateChanged = Notification.Name("DictusModelLoadStateChanged")
+
+    /// Posted when the keyboard opens Dictus only to prepare a model before a
+    /// later, explicit microphone tap (issue #262).
+    static let dictusKeyboardPreparationRequested = Notification.Name(
+        "DictusKeyboardPreparationRequested"
+    )
 }

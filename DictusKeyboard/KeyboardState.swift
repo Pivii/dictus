@@ -49,8 +49,12 @@ class KeyboardState: ObservableObject {
     /// WHY extensionContext: This is the Apple-documented API for app extensions
     /// to open URLs. Neither SwiftUI's openURL nor the responder chain work
     /// reliably in keyboard extensions.
-    func openURLFromExtension(_ url: URL) {
-        controller?.extensionContext?.open(url)
+    func openURLFromExtension(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let extensionContext = controller?.extensionContext else {
+            completion(false)
+            return
+        }
+        extensionContext.open(url, completionHandler: completion)
     }
 
     private let defaults = AppGroup.defaults
@@ -443,17 +447,15 @@ class KeyboardState: ObservableObject {
         }
         lastMicTapDate = now
 
-        // Issue #144: refuse mic taps while the app is mid-load (e.g. swapping to
-        // the turbo model). Without this gate the user can pile up dispatches that
-        // collapse into a Swift.CancellationError storm when the load finishes.
+        // Issue #262: a model load is now a prepare-only handoff. Opening Dictus
+        // lets the app show truthful preparation feedback instead of leaving the
+        // user with a refusal message in the keyboard. The app still prevents a
+        // recording from starting until the model is ready.
         // We synchronize defaults first because cross-process writes from DictusApp
         // can lag a few ms behind the actual state change.
-        defaults.synchronize()
-        let loadStateRaw = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
-        if loadStateRaw == ModelLoadState.loading.rawValue {
-            PersistentLog.log(.dictationDeferred(reason: "keyboard refused — model load in flight"))
-            statusMessage = String(localized: "Model is loading. Please open Dictus.")
-            HapticFeedback.actionRefused()
+        if isModelLoading() {
+            PersistentLog.log(.keyboardMicTapped)
+            deferRecordingForModelPreparation()
             return
         }
 
@@ -462,6 +464,15 @@ class KeyboardState: ObservableObject {
 
         PersistentLog.log(.keyboardMicTapped)
         markRequested()
+
+        // The model can begin loading after the first check while this tap is
+        // being handed to DictusApp. Re-check immediately before posting the
+        // recording request so a model swap cannot race into a recording.
+        if isModelLoading() {
+            forceResetToIdle()
+            deferRecordingForModelPreparation(reason: "model became loading before Darwin handoff")
+            return
+        }
 
         // Try background recording first — if app is alive, it will handle this
         // notification and start recording without coming to the foreground.
@@ -475,6 +486,11 @@ class KeyboardState: ObservableObject {
             guard let self = self else { return }
             let elapsedMs = Int(Date().timeIntervalSince(darwinPostTime) * 1000)
             if self.dictationStatus == .requested {
+                if self.isModelLoading() {
+                    self.forceResetToIdle()
+                    self.deferRecordingForModelPreparation(reason: "model became loading before fallback URL")
+                    return
+                }
                 PersistentLog.log(.coldStartDarwinFallback(
                     elapsedMs: elapsedMs,
                     status: self.dictationStatus.rawValue
@@ -482,12 +498,53 @@ class KeyboardState: ObservableObject {
                 self.logProbe("fallbackOpenURL", details: self.sessionDetails())
                 // App didn't respond — not running. Open URL to launch it.
                 let url = URL(string: "dictus://dictate?source=keyboard")!
-                if let openURL = self.openURL {
-                    openURL(url)
-                } else {
-                    self.openURLFromExtension(url)
+                self.openDictusURL(url)
+            }
+        }
+    }
+
+    /// Open Dictus without creating a recording request. The user explicitly
+    /// starts dictation with a second tap once preparation has completed (#262).
+    private func openModelPreparation() {
+        guard let url = URL(string: "dictus://dictate?source=keyboard&intent=prepare") else {
+            return
+        }
+        openDictusURL(url)
+    }
+
+    /// Re-read the shared state at each handoff boundary because the app can
+    /// start a model swap after the keyboard's previous snapshot.
+    private func isModelLoading() -> Bool {
+        defaults.synchronize()
+        let rawState = defaults.string(forKey: SharedKeys.modelLoadState)
+            ?? ModelLoadState.idle.rawValue
+        return rawState == ModelLoadState.loading.rawValue
+    }
+
+    /// Defer recording without leaving a requested state behind in the keyboard.
+    private func deferRecordingForModelPreparation(reason: String = "keyboard opened Dictus for model preparation") {
+        PersistentLog.log(.dictationDeferred(reason: reason))
+        openModelPreparation()
+    }
+
+    /// Prefer the extension context because the SwiftUI openURL callback has no
+    /// success result and can fail silently in a keyboard extension.
+    private func openDictusURL(_ url: URL) {
+        if controller?.extensionContext != nil {
+            openURLFromExtension(url) { [weak self] succeeded in
+                guard !succeeded else { return }
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardState",
+                    instanceID: self?.instanceID ?? "unknown",
+                    action: "extensionURLFallback",
+                    details: "extensionContext.open returned false"
+                ))
+                DispatchQueue.main.async { [weak self] in
+                    self?.openURL?(url)
                 }
             }
+        } else if let openURL {
+            openURL(url)
         }
     }
 

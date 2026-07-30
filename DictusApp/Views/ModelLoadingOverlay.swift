@@ -28,7 +28,11 @@ struct ModelLoadingOverlay: View {
     /// once the model becomes ready so the cover dismisses itself.
     @Binding var isPresented: Bool
 
+    /// The user-facing flow that caused preparation to be shown.
+    let context: ModelPreparationContext
+
     @State private var showCompletion = false
+    @State private var activeContext: ModelPreparationContext
 
     /// Tracks whether we have ever observed an active prep phase (downloading,
     /// compiling, or loading). Without this, the overlay would auto-dismiss
@@ -42,6 +46,19 @@ struct ModelLoadingOverlay: View {
         case compiling
         case loading
         case ready
+    }
+
+    init(
+        modelManager: ModelManager,
+        modelIdentifier: String,
+        context: ModelPreparationContext = .modelSelection,
+        isPresented: Binding<Bool>
+    ) {
+        self.modelManager = modelManager
+        self.modelIdentifier = modelIdentifier
+        self.context = context
+        self._isPresented = isPresented
+        self._activeContext = State(initialValue: context)
     }
 
     var body: some View {
@@ -81,7 +98,7 @@ struct ModelLoadingOverlay: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 140)
+                .frame(height: activeContext.isPrepareOnly ? 164 : 140)
                 .padding(.top, 24)
 
                 Spacer()
@@ -93,6 +110,9 @@ struct ModelLoadingOverlay: View {
         .interactiveDismissDisabled(true)
         .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { _ in
             checkForCompletion()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardPreparationRequested)) { _ in
+            activeContext = .keyboardColdStart
         }
         .onChange(of: currentModelState) { _, _ in
             checkForCompletion()
@@ -166,15 +186,46 @@ struct ModelLoadingOverlay: View {
             Text("Model ready")
                 .font(.dictusSubheading)
                 .foregroundStyle(.primary)
+
+            if activeContext.isPrepareOnly {
+                Text("Return to your app and tap the microphone again.")
+                    .font(.dictusCaption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
         }
     }
 
     private var stayOnPageNotice: some View {
-        Text("Please stay on this page — do not leave the app.")
-            .font(.dictusCaption)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 48)
+        VStack(spacing: 8) {
+            Text(explanationText)
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            if !(showCompletion && activeContext.isPrepareOnly) {
+                Text(activeContext.isPrepareOnly
+                     ? "Please wait for preparation to finish."
+                     : "Please stay on this page — do not leave the app.")
+                    .font(.dictusCaption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 48)
+            }
+        }
+    }
+
+    private var explanationText: LocalizedStringKey {
+        switch activeContext {
+        case .onboarding:
+            return "Dictus prepares your transcription model for offline dictation."
+        case .modelSelection:
+            return "This preparation may take a moment and is usually not needed for every dictation."
+        case .keyboardColdStart:
+            return "Your model needs to be prepared before this dictation. This is usually an exceptional step."
+        }
     }
 
     // MARK: - Phase logic
@@ -231,8 +282,8 @@ struct ModelLoadingOverlay: View {
         case .downloading:
             return [
                 String(localized: "Downloading the model…"),
-                String(localized: "Receiving neural weights…"),
-                String(localized: "Streaming model files…"),
+                String(localized: "Preparing the files…"),
+                String(localized: "Getting everything ready…"),
                 String(localized: "Almost there…"),
                 String(localized: "Finishing the download…")
             ]
@@ -240,26 +291,26 @@ struct ModelLoadingOverlay: View {
             // Turbo's compile takes ~2 minutes — needs enough variety so the
             // copy doesn't visibly loop within that window.
             return [
+                String(localized: "Preparing the model…"),
                 String(localized: "Optimizing for your iPhone…"),
-                String(localized: "Compiling for the Neural Engine…"),
-                String(localized: "Calibrating audio layers…"),
-                String(localized: "Tuning attention heads…"),
-                String(localized: "Specializing kernels for your chip…"),
-                String(localized: "Building the inference graph…"),
-                String(localized: "Warming up the matrix multipliers…"),
-                String(localized: "Aligning model weights to memory…"),
-                String(localized: "Caching transformer layers…"),
-                String(localized: "Quantizing for on-device speed…"),
-                String(localized: "Polishing the final pass…"),
-                String(localized: "A few more seconds…")
+                String(localized: "Setting up offline transcription…"),
+                String(localized: "Adapting the model to your iPhone…"),
+                String(localized: "Configuring voice transcription…"),
+                String(localized: "Preparing the final steps…"),
+                String(localized: "Getting Dictus ready…"),
+                String(localized: "Setting up the transcription engine…"),
+                String(localized: "Checking the model…"),
+                String(localized: "Almost ready…"),
+                String(localized: "A few more seconds…"),
+                String(localized: "Finishing the preparation…")
             ]
         case .loading:
             return [
-                String(localized: "Loading into memory…"),
-                String(localized: "Mapping the model into RAM…"),
+                String(localized: "Loading the model…"),
                 String(localized: "Preparing dictation…"),
-                String(localized: "Priming the audio pipeline…"),
-                String(localized: "Almost ready…")
+                String(localized: "Getting transcription ready…"),
+                String(localized: "Almost ready…"),
+                String(localized: "One last step…")
             ]
         case .ready:
             return []
@@ -286,7 +337,12 @@ struct ModelLoadingOverlay: View {
         // The model is ready, but if we have never seen any actual work happen
         // yet, the parent likely just opened the overlay and the state will
         // imminently flip to `.downloading`. Keep the cover up.
-        guard hasSeenWorkPhase else { return }
+        let preparationWasAlreadyReady = activeContext.isPrepareOnly
+            && currentModelState == .ready
+            && modelManager.modelLoadState == .ready
+        guard hasSeenWorkPhase || preparationWasAlreadyReady else {
+            return
+        }
         guard !showCompletion else { return }
 
         withAnimation(.easeInOut(duration: 0.35)) {
@@ -295,7 +351,7 @@ struct ModelLoadingOverlay: View {
 
         // Brief celebration moment before the cover slides away.
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             withAnimation(.easeOut(duration: 0.4)) {
                 isPresented = false
             }

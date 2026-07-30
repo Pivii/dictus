@@ -372,7 +372,9 @@ class DictationCoordinator: ObservableObject {
         let currentLoadState = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
         if currentLoadState == ModelLoadState.loading.rawValue && !fromURL {
             PersistentLog.log(.dictationDeferred(reason: "model load in flight (state=loading)"))
-            handleError(String(localized: "Model is loading. Please wait."))
+            // Keep the keyboard request pending. KeyboardState re-reads the
+            // shared state before its fallback URL and opens the prepare-only
+            // flow instead of showing a refusal message.
             return
         }
 
@@ -1087,11 +1089,4 @@ private extension DictationCoordinator {
             try await ensureWhisperKitEngineReady(modelName: "openai_whisper-small")
         }
     }
-}
-
-extension Notification.Name {
-    /// Posted by `DictationCoordinator.setModelLoadState` whenever the persisted
-    /// `SharedKeys.modelLoadState` changes. UI overlays observe this to dismiss
-    /// themselves once the model is `.ready` (issue #144).
-    static let dictusModelLoadStateChanged = Notification.Name("DictusModelLoadStateChanged")
 }
