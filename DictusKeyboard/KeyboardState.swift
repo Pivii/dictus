@@ -483,11 +483,7 @@ class KeyboardState: ObservableObject {
                 self.logProbe("fallbackOpenURL", details: self.sessionDetails())
                 // App didn't respond — not running. Open URL to launch it.
                 let url = URL(string: "dictus://dictate?source=keyboard")!
-                if let openURL = self.openURL {
-                    openURL(url)
-                } else {
-                    self.openURLFromExtension(url)
-                }
+                self.openDictusURL(url)
             }
         }
     }
@@ -498,10 +494,16 @@ class KeyboardState: ObservableObject {
         guard let url = URL(string: "dictus://dictate?source=keyboard&intent=prepare") else {
             return
         }
-        if let openURL = openURL {
-            openURL(url)
-        } else {
+        openDictusURL(url)
+    }
+
+    /// Prefer the extension context because the SwiftUI openURL callback has no
+    /// success result and can fail silently in a keyboard extension.
+    private func openDictusURL(_ url: URL) {
+        if controller?.extensionContext != nil {
             openURLFromExtension(url)
+        } else if let openURL {
+            openURL(url)
         }
     }
 
