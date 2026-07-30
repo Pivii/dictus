@@ -709,6 +709,13 @@ class KeyboardViewController: UIInputViewController {
     /// `dictStatusChange_enter` / `dictStatusChange_skippedInactive` from device
     /// logs. `mode=` is additive.
     private func applyAreaMode(_ mode: KeyboardAreaMode) {
+        // The subscription above is deliberately synchronous — no .receive(on: .main)
+        // — and this method mutates Auto Layout constraints and view visibility, so
+        // an emission from a background thread would corrupt UIKit state silently.
+        // WHY assert and not dispatchPrecondition: the latter also traps in release,
+        // and crashing a shipped keyboard is worse than the bug it would catch.
+        assert(Thread.isMainThread, "applyAreaMode must run on the main thread — it mutates UIKit layout")
+
         // Issue #116 diagnostic: entry log (fires even when a guard trips).
         let status = KeyboardState.shared.dictationStatus.rawValue
         let oldHosting = hostingHeightConstraint?.constant ?? -1
