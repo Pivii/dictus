@@ -392,8 +392,9 @@ class ModelManager: ObservableObject {
             defer { isPrewarming = false }
 
             // Step 4: Load and compile CoreML models.
-            // ParakeetEngine.prepare() calls AsrModels.downloadAndLoad() which will find
-            // the already-downloaded files and skip straight to compilation.
+            // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
+            // them; it never downloads anything itself (issue #252). This method is the
+            // only place a Parakeet download starts.
             //
             // Phase 37 instrumentation mirrors the WhisperKit path: measure prewarm
             // duration + jetsam-headroom delta so both engines produce comparable
