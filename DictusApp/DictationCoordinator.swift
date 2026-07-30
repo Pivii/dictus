@@ -1088,16 +1088,3 @@ private extension DictationCoordinator {
         }
     }
 }
-
-extension Notification.Name {
-    /// Posted by `DictationCoordinator.setModelLoadState` whenever the persisted
-    /// `SharedKeys.modelLoadState` changes. UI overlays observe this to dismiss
-    /// themselves once the model is `.ready` (issue #144).
-    static let dictusModelLoadStateChanged = Notification.Name("DictusModelLoadStateChanged")
-
-    /// Posted when the keyboard opens Dictus only to prepare a model before a
-    /// later, explicit microphone tap (issue #262).
-    static let dictusKeyboardPreparationRequested = Notification.Name(
-        "DictusKeyboardPreparationRequested"
-    )
-}
