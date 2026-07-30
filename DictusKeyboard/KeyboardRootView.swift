@@ -60,10 +60,6 @@ struct KeyboardRootView: View {
     /// ObservableObject alive in a 50 MB process.
     @State private var isProActive = false
 
-    /// Gates the panel's open/close transition. Reduced motion removes the
-    /// animation entirely rather than shortening it.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
     /// openURL environment action works because it goes through the responder
@@ -132,21 +128,20 @@ struct KeyboardRootView: View {
     /// The mode change is the only state involved — `KeyboardState` owns it and
     /// both layers read it (#271), so no flag is duplicated here.
     ///
-    /// WHY the animation is on the panel body only, and never on geometry:
-    /// the hosting height and bottom anchor move synchronously in UIKit, inside
-    /// the same turn as the mode change, deliberately (#99, #142). Animating that
-    /// is exactly the family of change that produced four regressions in this
-    /// area. A fade of the panel's own content costs nothing and touches no
-    /// constraint.
+    /// WHY the mode change itself is deliberately NOT animated: the branches of
+    /// the `switch` below are the single child of a VStack, so a transition on
+    /// the branch keeps the outgoing and incoming views alive together and the
+    /// VStack stacks them — the outgoing bar above the incoming one. Two stacked
+    /// bars is the exact artefact this design was reshaped to avoid, and a
+    /// transient one is no better. The bar therefore swaps instantly, ☰ to ✕ in
+    /// place, and the fade lives inside the panel body where it stacks nothing.
+    ///
+    /// Nothing here animates geometry either: the hosting height and bottom
+    /// anchor move synchronously in UIKit, in the same turn as the mode change,
+    /// deliberately (#99, #142).
     private func togglePanel() {
         isProActive = ProStatusManager.isProActiveStatic
-        if reduceMotion {
-            state.togglePanelPresentation()
-        } else {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                state.togglePanelPresentation()
-            }
-        }
+        state.togglePanelPresentation()
     }
 
     var body: some View {
@@ -210,9 +205,6 @@ struct KeyboardRootView: View {
                             availableHeight: max(0, geo.size.height - toolbarHeight),
                             onLanguageChanged: onLanguageChanged
                         )
-                        // Fade only. See togglePanel() for why nothing here
-                        // animates geometry.
-                        .transition(.opacity)
                     }
                 }
             case .keys:

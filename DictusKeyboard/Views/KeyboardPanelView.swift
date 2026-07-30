@@ -34,6 +34,17 @@ struct KeyboardPanelView: View {
     /// tapped, without waiting for the ~200 ms grid rebuild that follows.
     @State private var language: SupportedLanguage = .active
 
+    /// The open transition, and the only animation in the panel.
+    ///
+    /// It lives here rather than on the mode change because the keyboard area's
+    /// branches are the single child of a VStack: animating the branch swap would
+    /// keep the outgoing bar laid out above the incoming one for the duration.
+    /// Fading this view in stacks nothing and touches no constraint.
+    @State private var contentOpacity: Double = 0
+
+    /// Reduced motion removes the fade rather than shortening it.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let rowHeight: CGFloat = 44
 
     var body: some View {
@@ -62,10 +73,19 @@ struct KeyboardPanelView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: availableHeight)
+        .opacity(contentOpacity)
         .onAppear {
             // The language can have been changed in DictusApp since this view was
             // last built; the panel is cheap to re-read on every open.
             language = .active
+
+            if reduceMotion {
+                contentOpacity = 1
+            } else {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    contentOpacity = 1
+                }
+            }
         }
     }
 
