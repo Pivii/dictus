@@ -8,7 +8,7 @@ class KeyboardViewController: UIInputViewController {
     let controllerID = String(UUID().uuidString.prefix(8))
 
     private var hostingController: UIHostingController<KeyboardRootView>?
-    private var dictationStatusCancellable: AnyCancellable?
+    private var areaModeCancellable: AnyCancellable?
 
     /// Process-wide SuggestionState (see SuggestionState.shared). Per-controller
     /// instances leaked via SwiftUI @ObservedObject backing storage that survives
@@ -60,10 +60,10 @@ class KeyboardViewController: UIInputViewController {
 
     /// Whether viewWillAppear has fired at least once. Guards the Combine handler
     /// from changing hosting height before the controller is registered with KeyboardState.
-    /// WHY: During cold start, the Combine subscription fires in viewDidLoad with .recording
-    /// status, but SwiftUI's showsOverlay is still false (activeControllerID doesn't match).
-    /// Expanding the hosting view at this point shows the toolbar in a full-height area,
-    /// displacing it to the middle of the screen.
+    /// WHY: During cold start, the Combine subscription fires in viewDidLoad with a
+    /// `.recording` mode, but SwiftUI still presents `.keys` (activeControllerID doesn't
+    /// match). Expanding the hosting view at this point shows the toolbar in a full-height
+    /// area, displacing it to the middle of the screen.
     private var hasAppeared = false
 
     override func viewDidLoad() {
@@ -144,9 +144,6 @@ class KeyboardViewController: UIInputViewController {
             bridge: keyBridge,
             onLanguageChanged: { [weak self] newLang in
                 self?.handleLanguageChange(newLang)
-            },
-            onEmojiDismiss: { [weak self] in
-                self?.toggleEmojiPicker()
             }
         )
         let hosting = UIHostingController(rootView: rootView)
@@ -332,14 +329,14 @@ class KeyboardViewController: UIInputViewController {
             reloadKeyboardLayout()
         }
 
-        // (Re)subscribe to dictation status here, not in viewDidLoad.
+        // (Re)subscribe to the keyboard area mode here, not in viewDidLoad.
         // WHY: iOS caches UIInputViewController instances across app-switches and
         // rarely deallocates them, so stale controllers would keep mutating
-        // hostingHeightConstraint on every status change (issue #128). By subscribing
+        // hostingHeightConstraint on every mode change (issue #128). By subscribing
         // in viewWillAppear and cancelling in viewDidDisappear, only the currently
         // visible controller is reactive. Assignment is idempotent — the previous
         // AnyCancellable is released on reassignment, which cancels its subscription.
-        observeRecordingState()
+        observeKeyboardAreaMode()
 
         // Force height recalculation when keyboard reappears (e.g., after app switch).
         // Without this, the inputView may retain a stale height from before the switch.
@@ -353,17 +350,19 @@ class KeyboardViewController: UIInputViewController {
             details: "old=\(oldHeight) new=\(newHeight) hSizeClass=\(traitCollection.horizontalSizeClass.rawValue) vSizeClass=\(traitCollection.verticalSizeClass.rawValue)"
         ))
 
-        // Apply current dictation state to hosting height now that we're registered.
-        // During cold start, handleDictationStatusChange was skipped (hasAppeared was false).
-        // Now that activeControllerID matches, SwiftUI's showsOverlay will be correct,
-        // so the constraint and SwiftUI content change happen together — no displaced toolbar.
+        // Apply the current keyboard area mode now that we're registered.
+        // During cold start, applyAreaMode was skipped (hasAppeared was false).
+        // Now that activeControllerID matches, KeyboardRootView.presentedMode agrees
+        // with us, so the constraint and SwiftUI content change together — no
+        // displaced toolbar. This also restores a picker the user left open when
+        // iOS hands the keyboard to a fresh controller.
         let statusBeforeHandle = KeyboardState.shared.dictationStatus.rawValue
-        handleDictationStatusChange(KeyboardState.shared.dictationStatus)
+        applyAreaMode(KeyboardState.shared.areaMode)
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "viewWillAppear_afterHandle",
-            details: "statusBefore=\(statusBeforeHandle) statusAfter=\(KeyboardState.shared.dictationStatus.rawValue) hostingConst=\(hostingHeightConstraint?.constant ?? -1)"
+            details: "statusBefore=\(statusBeforeHandle) statusAfter=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) hostingConst=\(hostingHeightConstraint?.constant ?? -1)"
         ))
 
         inputView?.setNeedsLayout()
@@ -521,7 +520,7 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: action,
-            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) memMB=\(MemoryFootprint.residentMB())"
+            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) memMB=\(MemoryFootprint.residentMB())"
         ))
     }
 
@@ -539,19 +538,19 @@ class KeyboardViewController: UIInputViewController {
         ))
         PersistentLog.log(.keyboardDidDisappear)
 
-        // Tear down the dictation status subscription so this (now-detached)
-        // controller no longer reacts when KeyboardState publishes. iOS caches
+        // Tear down the area mode subscription so this (now-detached) controller
+        // no longer reacts when KeyboardState publishes. iOS caches
         // UIInputViewController and rarely releases it, so without this cleanup
         // 10+ stale controllers race on hostingHeightConstraint (issue #128).
         // viewWillAppear re-subscribes on reattach.
-        dictationStatusCancellable?.cancel()
-        dictationStatusCancellable = nil
+        areaModeCancellable?.cancel()
+        areaModeCancellable = nil
 
         // Issue #142: skip registerControllerDisappearance during an active
         // dictation session. iOS calls viewDidDisappear on the keyboard right
         // before bringing DictusApp foreground for cold-start; an immediate
         // unregister would flip activeControllerID→nil and isKeyboardVisible
-        // →false, making KeyboardRootView.showsOverlay recompute to false and
+        // →false, making KeyboardRootView.presentedMode fall back to `.keys` and
         // SwiftUI swap RecordingOverlay→ToolbarView while hostingConst is still
         // 276pt. iOS's keyboard-down animation snapshot then captures that
         // inconsistent layout (toolbar centred in expanded hosting), freezing
@@ -562,10 +561,7 @@ class KeyboardViewController: UIInputViewController {
         // the keyboard is truly dismissed during recording (no successor), the
         // synchronous deinit safety net below catches it.
         let status = KeyboardState.shared.dictationStatus
-        let isActiveSession = status == .requested
-            || status == .recording
-            || status == .transcribing
-        if isActiveSession {
+        if status.ownsKeyboardArea {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardViewController",
                 instanceID: controllerID,
@@ -675,43 +671,56 @@ class KeyboardViewController: UIInputViewController {
         return total
     }
 
-    // MARK: - Recording State Observation
+    // MARK: - Keyboard Area Mode Observation
 
-    /// Observe KeyboardState.dictationStatus to hide/show the UIKit keyboard
-    /// when the recording overlay is active. The SwiftUI hosting view handles
-    /// showing the overlay itself -- we just need to hide the UIKit keyboard.
+    /// Observe KeyboardState.areaMode to keep the UIKit side of the keyboard area
+    /// in step with what SwiftUI renders: hosting height, hosting bottom anchor,
+    /// and whether the key grid is hidden.
     ///
-    /// WHY Combine instead of NotificationCenter: KeyboardState uses @Published
-    /// for dictationStatus. Subscribing via Combine's $dictationStatus publisher
-    /// gives us direct observation without adding manual notification posts.
-    private func observeRecordingState() {
-        dictationStatusCancellable = KeyboardState.shared.$dictationStatus
-            // No .receive(on: .main) — dictationStatus is always set on the main thread
-            // (Darwin observer dispatches to main, mic button is UI action).
+    /// WHY $areaMode and not $dictationStatus: the mode is recomputed in
+    /// `dictationStatus`'s `didSet`, which runs *after* `$dictationStatus` has
+    /// already published. A sink on the status would therefore read a stale mode.
+    /// The mode's own publisher carries the value we need.
+    ///
+    /// WHY Combine instead of NotificationCenter: `areaMode` is @Published, so
+    /// this needs no manual notification posts — and it is precisely the
+    /// NotificationCenter round-trip that #271 removed.
+    private func observeKeyboardAreaMode() {
+        areaModeCancellable = KeyboardState.shared.$areaMode
+            // No .receive(on: .main) — areaMode is only ever set on the main thread
+            // (Darwin observer dispatches to main, key taps are UI actions).
             // Removing the async dispatch ensures the constraint change happens SYNCHRONOUSLY
             // with the @Published change, BEFORE SwiftUI re-evaluates its body.
             // Without this, there's a 1-frame delay where the overlay renders at 52pt (toolbar
             // height) before the hosting view expands to full height — causing the waveform
             // to flash at the top then drop to center.
-            .sink { [weak self] status in
-                self?.handleDictationStatusChange(status)
+            .sink { [weak self] mode in
+                self?.applyAreaMode(mode)
             }
     }
 
-    private func handleDictationStatusChange(_ status: DictationStatus) {
-        // Issue #116 diagnostic: entry log (fires even when guard trips).
+    /// React to a keyboard-area mode change: check that we are the controller
+    /// allowed to touch the layout, then apply it.
+    ///
+    /// The probe action names below are deliberately unchanged from the
+    /// status-driven handler this replaced — #260 and #261 are open and quote
+    /// `dictStatusChange_enter` / `dictStatusChange_skippedInactive` from device
+    /// logs. `mode=` is additive.
+    private func applyAreaMode(_ mode: KeyboardAreaMode) {
+        // Issue #116 diagnostic: entry log (fires even when a guard trips).
+        let status = KeyboardState.shared.dictationStatus.rawValue
         let oldHosting = hostingHeightConstraint?.constant ?? -1
         let activeID = KeyboardState.shared.activeControllerID ?? "none"
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "dictStatusChange_enter",
-            details: "status=\(status.rawValue) hasAppeared=\(hasAppeared) oldHosting=\(oldHosting) isShowingEmoji=\(isShowingEmoji) activeID=\(activeID)"
+            details: "status=\(status) mode=\(mode.rawValue) hasAppeared=\(hasAppeared) oldHosting=\(oldHosting) activeID=\(activeID)"
         ))
 
         // Don't change hosting height until the controller is registered with KeyboardState.
-        // During cold start, this fires in viewDidLoad before viewWillAppear — SwiftUI's
-        // showsOverlay is still false, so expanding now would show the toolbar displaced
+        // During cold start, this fires in viewDidLoad before viewWillAppear — SwiftUI still
+        // presents `.keys` there, so expanding now would show the toolbar displaced
         // in a full-height hosting view. viewWillAppear calls this manually after registering.
         guard hasAppeared else { return }
 
@@ -722,27 +731,75 @@ class KeyboardViewController: UIInputViewController {
         // path in viewDidDisappear covers the well-behaved case; this guard
         // short-circuits stale controllers that iOS forgot to notify. Only the
         // controller currently owning the keyboard window mutates layout.
+        // KeyboardRootView.presentedMode applies the same predicate, so a
+        // non-owning controller and its root view always agree on `.keys`.
         guard KeyboardState.shared.activeControllerID == controllerID else {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardViewController",
                 instanceID: controllerID,
                 action: "dictStatusChange_skippedInactive",
-                details: "status=\(status.rawValue) activeID=\(activeID)"
+                details: "status=\(status) mode=\(mode.rawValue) activeID=\(activeID)"
             ))
             return
         }
 
-        let isRecording = status == .requested || status == .recording || status == .transcribing
+        applyLayout(for: mode)
+    }
 
-        // Dismiss emoji picker if recording starts
-        if isRecording && isShowingEmoji {
-            isShowingEmoji = false
-        }
+    /// The keyboard area's layout, one branch per mode.
+    ///
+    /// Every case sets all three things explicitly — hosting height, hosting
+    /// bottom anchor, key-grid visibility — with no fallthrough. Before #271 this
+    /// was a chain of negated guards where restoring the collapsed toolbar height
+    /// was conditional on the emoji flag being false, so a full-area state that
+    /// was not added to the chain collapsed to 52 pt while still rendering.
+    ///
+    /// None of these branches touches `heightConstraint`, the keyboard's own
+    /// declared height — that remains a no-go zone (#166).
+    private func applyLayout(for mode: KeyboardAreaMode) {
+        let oldHosting = hostingHeightConstraint?.constant ?? -1
+        let status = KeyboardState.shared.dictationStatus.rawValue
 
-        giellaKeyboard?.isHidden = isRecording || isShowingEmoji
+        switch mode {
+        case .keys:
+            giellaKeyboard?.isHidden = false
+            hostingHeightConstraint?.constant = toolbarHeight
+            setHostingExpanded(false)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_idle",
+                details: "old=\(oldHosting) new=\(toolbarHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
 
-        if isRecording {
-            // Expand hosting view to fill the full keyboard area for the recording overlay
+        case .emoji:
+            giellaKeyboard?.isHidden = true
+            let fullHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fullHeight
+            setHostingExpanded(true)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_emojiOpen",
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
+        case .panel:
+            // Reserved for #241. No view is attached yet, but the geometry is:
+            // adding the panel is adding a SwiftUI branch, not editing this switch.
+            giellaKeyboard?.isHidden = true
+            let fullHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fullHeight
+            setHostingExpanded(true)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_panelOpen",
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
+        case .recording:
+            giellaKeyboard?.isHidden = true
             let fullHeight = computeKeyboardHeight()
             hostingHeightConstraint?.constant = fullHeight
             setHostingExpanded(true)
@@ -750,17 +807,7 @@ class KeyboardViewController: UIInputViewController {
                 component: "KeyboardViewController",
                 instanceID: controllerID,
                 action: "hostingSet_recording",
-                details: "old=\(oldHosting) new=\(fullHeight) status=\(status.rawValue)"
-            ))
-        } else if !isShowingEmoji {
-            // Restore toolbar-only height (unless emoji picker is open)
-            hostingHeightConstraint?.constant = toolbarHeight
-            setHostingExpanded(false)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_idle",
-                details: "old=\(oldHosting) new=\(toolbarHeight) status=\(status.rawValue)"
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
             ))
         }
 
@@ -901,24 +948,20 @@ class KeyboardViewController: UIInputViewController {
             ])
             self.hostingBottomToKeyboardTop = newHostingBottomIdle
         }
-        // reloadKeyboardLayout always returns the layout to idle (the height
-        // is reset to toolbarHeight just below). Make sure the expanded bottom
-        // anchor isn't lingering active from a previous recording/emoji state.
+        // The rebuild above always produces a fresh, visible key grid pinned to the
+        // idle anchor, so make sure the expanded bottom anchor isn't lingering
+        // active from the state we're about to re-derive.
         hostingBottomToInputBottom?.isActive = false
 
         self.giellaKeyboard = keyboard
 
-        // Ensure hosting view is at toolbar-only height. If a previous recording
-        // left it at full height, the keyboard grid would be squashed below a large
-        // empty hosting area — causing the key shrinking bug on language switch.
-        let oldHostingRL = hostingHeightConstraint?.constant ?? -1
-        hostingHeightConstraint?.constant = toolbarHeight
-        PersistentLog.log(.diagnosticProbe(
-            component: "KeyboardViewController",
-            instanceID: controllerID,
-            action: "reloadLayout_hostingReset",
-            details: "old=\(oldHostingRL) new=\(toolbarHeight)"
-        ))
+        // Re-apply whatever the keyboard area presents, rather than hardcoding the
+        // toolbar height. Leaving the hosting view at full height would squash the
+        // new key grid below a large empty area (the key-shrinking bug on language
+        // switch); hardcoding 52pt instead squashed the emoji picker, which keeps
+        // the language switcher in its toolbar and can therefore trigger a reload
+        // while it owns the area. The switch is the only thing that gets both right.
+        applyLayout(for: KeyboardState.shared.areaMode)
 
         // Force height recalculation — the new GiellaKeyboardView may have different
         // intrinsic content size during initial layout. Without this, iOS keeps the
@@ -948,44 +991,16 @@ class KeyboardViewController: UIInputViewController {
 
     // MARK: - Emoji Picker
 
-    /// Whether the emoji picker is currently visible.
-    private(set) var isShowingEmoji = false
-
-    /// Toggle emoji picker visibility. The emoji picker UI itself is wired in Plan 02.
+    /// Toggle emoji picker visibility, called by the bridge's emoji key through
+    /// the onEmojiToggle closure.
     ///
-    /// WHY toggle here (not in bridge): The bridge handles key events but doesn't
-    /// own the view hierarchy. Showing/hiding views is the controller's responsibility.
-    /// The bridge calls this via the onEmojiToggle closure.
+    /// It only moves the shared mode: the layout follows from the $areaMode
+    /// subscription and SwiftUI re-renders off the same value. Before #271 this
+    /// method mutated a controller-local Bool, drove the layout by hand, and then
+    /// posted a NotificationCenter message so KeyboardRootView's own Bool could
+    /// catch up — three ways for the two layers to disagree.
     func toggleEmojiPicker() {
-        isShowingEmoji.toggle()
-        giellaKeyboard?.isHidden = isShowingEmoji
-
-        let oldHostingEmoji = hostingHeightConstraint?.constant ?? -1
-        if isShowingEmoji {
-            // Expand hosting to cover keyboard area for emoji picker
-            let fullHeight = computeKeyboardHeight()
-            hostingHeightConstraint?.constant = fullHeight
-            setHostingExpanded(true)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_emojiOpen",
-                details: "old=\(oldHostingEmoji) new=\(fullHeight)"
-            ))
-        } else {
-            hostingHeightConstraint?.constant = toolbarHeight
-            setHostingExpanded(false)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_emojiClose",
-                details: "old=\(oldHostingEmoji) new=\(toolbarHeight)"
-            ))
-        }
-        inputView?.setNeedsLayout()
-
-        // Notify SwiftUI to show/hide emoji picker
-        NotificationCenter.default.post(name: .dictusToggleEmoji, object: nil)
+        KeyboardState.shared.toggleEmojiPresentation()
     }
 }
 
@@ -995,7 +1010,4 @@ extension Notification.Name {
     /// Posted by KeyboardViewController when text changes externally (paste, cursor move).
     /// KeyboardView listens for this to recheck autocapitalisation.
     static let dictusTextDidChange = Notification.Name("dictusTextDidChange")
-
-    /// Posted when the emoji picker should toggle visibility.
-    static let dictusToggleEmoji = Notification.Name("dictusToggleEmoji")
 }

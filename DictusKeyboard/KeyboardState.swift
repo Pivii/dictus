@@ -17,7 +17,24 @@ class KeyboardState: ObservableObject {
     private let instanceID = String(UUID().uuidString.prefix(8))
     private(set) var activeSessionID: String?
 
-    @Published var dictationStatus: DictationStatus = .idle
+    /// WHY didSet and not a sync call at each write site: this property is
+    /// assigned from a dozen places (Darwin refresh, mic tap, cancel, watchdog
+    /// reset, transcription insert, and both of its retry paths). A property
+    /// observer is the only funnel none of them can bypass, so the area mode
+    /// below can never drift out of step with the dictation lifecycle.
+    @Published var dictationStatus: DictationStatus = .idle {
+        didSet { syncAreaModeWithStatus() }
+    }
+
+    /// What the keyboard area is presenting: the key grid, a full-area picker or
+    /// panel, or the recording overlay. Single source of truth for both the
+    /// SwiftUI root view and the UIKit view controller (#271).
+    ///
+    /// `private(set)`: `.recording` is owned by the dictation lifecycle and every
+    /// other transition goes through `presentAreaMode(_:)`, so no caller can put
+    /// the two layers into a state the type forbids.
+    @Published private(set) var areaMode: KeyboardAreaMode = .keys
+
     @Published var lastTranscription: String?
     @Published var statusMessage: String?
     @Published var waveformEnergy: [Float] = []
@@ -196,6 +213,45 @@ class KeyboardState: ObservableObject {
     private func stopWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = nil
+    }
+
+    // MARK: - Keyboard area presentation
+
+    /// Keeps the presented mode in step with the dictation lifecycle.
+    ///
+    /// This is where "starting a dictation dismisses the emoji picker" lives: an
+    /// explicit transition to `.recording`, rather than the SwiftUI `onChange`
+    /// side effect it used to be. Assigned unconditionally — including when the
+    /// resolved mode is unchanged — because the layout used to be re-applied on
+    /// every status write, and that repetition is load-bearing: it is how a
+    /// keyboard returning from suspension re-synchronises its hosting geometry.
+    private func syncAreaModeWithStatus() {
+        areaMode = KeyboardAreaMode.resolving(status: dictationStatus, current: areaMode)
+    }
+
+    /// Present `mode` in the keyboard area.
+    ///
+    /// `.recording` is rejected: the overlay belongs to the dictation lifecycle
+    /// above, so no UI toggle can start or dismiss one. Toggles are likewise
+    /// ignored while a dictation owns the area — the key grid is hidden then, so
+    /// nothing can reach this in practice, but the invariant holds by
+    /// construction instead of by every caller remembering to check.
+    func presentAreaMode(_ mode: KeyboardAreaMode) {
+        guard mode != .recording, !dictationStatus.ownsKeyboardArea else {
+            logProbe(
+                "presentAreaModeIgnored",
+                details: "requested=\(mode.rawValue) current=\(areaMode.rawValue) status=\(dictationStatus.rawValue)"
+            )
+            return
+        }
+        logProbe("presentAreaMode", details: "from=\(areaMode.rawValue) to=\(mode.rawValue)")
+        areaMode = mode
+    }
+
+    /// Show or hide the emoji picker. Called by the emoji key (through the
+    /// controller) and by the picker's own dismiss button.
+    func toggleEmojiPresentation() {
+        presentAreaMode(areaMode == .emoji ? .keys : .emoji)
     }
 
     // MARK: - Recording commands (keyboard -> app)

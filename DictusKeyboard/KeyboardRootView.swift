@@ -13,12 +13,18 @@ extension DefaultKeyboardLayer {
     }
 }
 
-/// Root SwiftUI view for the keyboard extension chrome (toolbar + recording overlay).
+/// Root SwiftUI view for the keyboard extension chrome (toolbar + full-area
+/// presentations).
 ///
 /// Phase 18 architecture change: The keyboard grid is now a UIKit GiellaKeyboardView
 /// added as a direct subview in KeyboardViewController. This SwiftUI view only renders:
 /// - ToolbarView (always visible when not recording)
 /// - RecordingOverlay (replaces keyboard area during recording)
+/// - EmojiPickerView (replaces the key grid, toolbar stays)
+///
+/// Which of those it renders is decided by a single `KeyboardAreaMode` read from
+/// KeyboardState (#271) — the same value KeyboardViewController switches on for
+/// the layout, so the two layers cannot drift apart.
 ///
 /// WHY SwiftUI for toolbar/overlay but UIKit for keys:
 /// The toolbar and recording overlay are simple SwiftUI layouts that don't need
@@ -29,9 +35,6 @@ struct KeyboardRootView: View {
     @ObservedObject private var state = KeyboardState.shared
     @ObservedObject private var waveformDriver = KeyboardWaveformDriver.shared
     @State private var instanceID = String(UUID().uuidString.prefix(8))
-    /// Whether the emoji picker is currently visible.
-    /// Toggled via NotificationCenter from KeyboardViewController.toggleEmojiPicker().
-    @State private var showingEmoji = false
     /// Observable state for the suggestion bar, owned by KeyboardViewController.
     /// WHY @ObservedObject (not @StateObject): The controller creates and owns SuggestionState,
     /// injecting the same instance into both this view (for display) and the bridge (for updates).
@@ -48,37 +51,57 @@ struct KeyboardRootView: View {
     /// The controller uses this to reload the GiellaKeyboardView with the new layout.
     var onLanguageChanged: ((SupportedLanguage) -> Void)?
 
-    /// Invoked when the user taps the emoji picker's dismiss button.
-    /// Supplied by KeyboardViewController with [weak self] capture so we don't
-    /// retain the controller through the hosting view (issue #134).
-    var onEmojiDismiss: (() -> Void)?
-
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
     /// openURL environment action works because it goes through the responder
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
-    /// Whether the recording overlay should be visible.
-    /// Extracted as a computed property for clear animation binding.
-    private var showsOverlay: Bool {
-        let isActiveStatus = state.dictationStatus == .requested
-            || state.dictationStatus == .recording
-            || state.dictationStatus == .transcribing
-        guard isActiveStatus else { return false }
+    /// Fixed toolbar height, matching `KeyboardViewController.toolbarHeight`.
+    private let toolbarHeight: CGFloat = 52
 
-        // Only the registered active controller shows the overlay.
-        // The legacy `activeControllerID == nil` fallback existed to mask the
-        // controller leak from #128: stale KeyboardRootView instances rendered
-        // RecordingOverlay in parallel with the visible one, producing the
-        // duplicate grey overlay observed in issue #116. With #128 fixed,
-        // stale controllers are dormant and this fallback is unnecessary.
-        return state.activeControllerID == controllerID && state.isKeyboardVisible
+    /// What this view presents.
+    ///
+    /// The mode itself is owned by KeyboardState; what this adds is the
+    /// presenter check. iOS caches UIInputViewController instances and their
+    /// KeyboardRootViews keep receiving updates long after they leave the window
+    /// (#128 / #134) — a stale view that rendered a full-area mode produced the
+    /// duplicate grey overlay in #116. Only the registered active controller
+    /// presents anything but the key grid, and the view controller applies the
+    /// same predicate to the layout, so the two layers cannot disagree.
+    ///
+    /// The legacy `activeControllerID == nil` fallback that used to mask #128 is
+    /// deliberately not reinstated: with #128 fixed, stale controllers are dormant.
+    private var presentedMode: KeyboardAreaMode {
+        guard state.activeControllerID == controllerID, state.isKeyboardVisible else {
+            return .keys
+        }
+        return state.areaMode
+    }
+
+    /// The toolbar as it renders above a full-area presentation.
+    ///
+    /// The suggestion slots stay empty: the key grid is hidden in these modes, so
+    /// there is no word being typed to suggest for. Tapping the mic needs no
+    /// dismissal call — `.recording` supersedes whatever fills the area.
+    private var fullAreaToolbar: some View {
+        ToolbarView(
+            hasFullAccess: state.controller?.hasFullAccess ?? false,
+            dictationStatus: state.dictationStatus,
+            onMicTap: { state.startRecording() },
+            statusMessage: state.statusMessage,
+            suggestions: [],
+            suggestionMode: .idle,
+            onSuggestionTap: { _ in },
+            onLanguageChanged: onLanguageChanged
+        )
+        .frame(height: toolbarHeight)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if showsOverlay {
+            switch presentedMode {
+            case .recording:
                 // Recording overlay fills the full area (toolbar + keyboard space).
                 // The UIKit keyboard is hidden by KeyboardViewController when recording.
                 RecordingOverlay(
@@ -89,7 +112,7 @@ struct KeyboardRootView: View {
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() }
                 )
-            } else if showingEmoji {
+            case .emoji:
                 // GeometryReader measures the actual space available to SwiftUI.
                 // WHY: In keyboard extensions, the hosting controller may not give the
                 // full screen width/height to SwiftUI due to safe area or system insets.
@@ -97,20 +120,7 @@ struct KeyboardRootView: View {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
                         // Toolbar stays visible during emoji browsing
-                        ToolbarView(
-                            hasFullAccess: state.controller?.hasFullAccess ?? false,
-                            dictationStatus: state.dictationStatus,
-                            onMicTap: {
-                                showingEmoji = false
-                                state.startRecording()
-                            },
-                            statusMessage: state.statusMessage,
-                            suggestions: [],
-                            suggestionMode: .idle,
-                            onSuggestionTap: { _ in },
-                            onLanguageChanged: onLanguageChanged
-                        )
-                        .frame(height: 52)
+                        fullAreaToolbar
                         // Emoji picker uses exact measured dimensions
                         EmojiPickerView(
                             onEmojiInsert: { emoji in
@@ -121,19 +131,22 @@ struct KeyboardRootView: View {
                                 state.controller?.textDocumentProxy.deleteBackward()
                                 HapticFeedback.keyTapped()
                             },
-                            onDismiss: {
-                                // Invokes KeyboardViewController.toggleEmojiPicker() via
-                                // [weak self] closure injected at viewDidLoad time.
-                                // Avoids the (controller as? KeyboardViewController) cast
-                                // that used to require a strong controller ref (#134).
-                                onEmojiDismiss?()
-                            },
+                            onDismiss: { state.presentAreaMode(.keys) },
                             availableWidth: geo.size.width,
-                            availableHeight: geo.size.height - 52
+                            availableHeight: geo.size.height - toolbarHeight
                         )
                     }
                 }
-            } else {
+            case .panel:
+                // Reserved for the hamburger panel (#241). The layout contract is
+                // already settled here — toolbar on top, panel content filling the
+                // rest — so #241 replaces this placeholder with its view instead of
+                // reopening the mode refactor. Nothing sets `.panel` yet.
+                VStack(spacing: 0) {
+                    fullAreaToolbar
+                    Color.clear
+                }
+            case .keys:
                 // Toolbar only -- the keyboard grid is UIKit, managed by KeyboardViewController
                 ToolbarView(
                     hasFullAccess: state.controller?.hasFullAccess ?? false,
@@ -159,23 +172,21 @@ struct KeyboardRootView: View {
         // animation snapshot freezes that centred-toolbar layout on screen.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
-        .onChange(of: showsOverlay) { _, isShowing in
-            let usedFallback = isShowing && state.activeControllerID == nil
+        // Action name kept verbatim (and `isShowing=` with it): #260 and #261 are
+        // open and quote this line from device logs. `mode=` is additive.
+        .onChange(of: presentedMode) { _, mode in
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardRootView",
                 instanceID: instanceID,
                 action: "showsOverlayChanged",
-                details: "isShowing=\(isShowing) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID) usedFallback=\(usedFallback)"
+                details: "isShowing=\(mode == .recording) mode=\(mode.rawValue) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID)"
             ))
-            // Dismiss emoji picker when recording starts
-            if isShowing {
-                showingEmoji = false
-            }
+            // No emoji dismissal here: `.recording` replaces whatever filled the
+            // area, so mutual exclusion is the type's job now, not this callback's.
             syncWaveformDriver()
         }
         .onChange(of: state.dictationStatus) { _, newStatus in
-            let showsOverlay = newStatus == .requested || newStatus == .recording || newStatus == .transcribing
-            if showsOverlay {
+            if newStatus.ownsKeyboardArea {
                 PersistentLog.log(.overlayShown(status: newStatus.rawValue))
             } else {
                 PersistentLog.log(.overlayHidden(status: newStatus.rawValue))
@@ -229,9 +240,6 @@ struct KeyboardRootView: View {
             ))
             syncWaveformDriver(forceHidden: true)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dictusToggleEmoji)) { _ in
-            showingEmoji.toggle()
-        }
     }
 
     private func syncWaveformDriver(forceHidden: Bool = false) {
@@ -239,7 +247,7 @@ struct KeyboardRootView: View {
             presenterID: controllerID,
             status: state.dictationStatus,
             energyLevels: state.waveformEnergy,
-            isVisible: !forceHidden && showsOverlay
+            isVisible: !forceHidden && presentedMode == .recording
         )
     }
 
