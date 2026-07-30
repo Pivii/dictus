@@ -67,11 +67,19 @@ public enum SupportedLanguage: String, CaseIterable, Codable, Sendable {
         return lang
     }
 
-    /// Cycles to the next language in order: fr -> en -> es -> fr.
-    /// Used by the keyboard toolbar language switcher on tap.
-    public func next() -> SupportedLanguage {
-        let all = SupportedLanguage.allCases
-        guard let idx = all.firstIndex(of: self) else { return .french }
-        return all[(idx + 1) % all.count]
+    /// Makes `language` the active keyboard language.
+    ///
+    /// Writes the language AND that language's `defaultLayout`, because the two
+    /// are still welded together: picking English forces QWERTY. Decoupling them
+    /// is #272 — until then this is the one place the pair is written, so the
+    /// coupling is visible instead of being duplicated at each call site.
+    ///
+    /// WHY here and not in the picker view: #241 moved language selection from the
+    /// toolbar into the keyboard panel, and the same two writes have to happen
+    /// wherever selection ends up living. In DictusCore they are also testable —
+    /// the keyboard extension target has no test bundle.
+    public static func activate(_ language: SupportedLanguage) {
+        AppGroup.defaults.set(language.rawValue, forKey: SharedKeys.language)
+        AppGroup.defaults.set(language.defaultLayout.rawValue, forKey: SharedKeys.keyboardLayout)
     }
 }
