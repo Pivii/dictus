@@ -474,9 +474,8 @@ class ModelManager: ObservableObject {
     /// cancelled each other with `Swift.CancellationError`.
     ///
     /// We now flip `modelLoadState` to `.loading` immediately and trigger the load
-    /// up front. The keyboard reads `modelLoadState` and refuses mic taps while a
-    /// load is in flight, and `ModelLoadingOverlay` covers the app to surface the
-    /// wait to the user.
+    /// up front. If the keyboard is tapped while a load is in flight, it opens
+    /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
         activeModel = identifier

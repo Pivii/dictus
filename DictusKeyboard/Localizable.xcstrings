@@ -121,17 +121,6 @@
           }
         }
       }
-    },
-    "Model is loading. Please open Dictus." : {
-      "comment" : "Shown in the keyboard when the user taps the mic during a model load (issue #144).",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modèle en cours de chargement. Ouvrez Dictus."
-          }
-        }
-      }
     }
   },
   "version" : "1.1"

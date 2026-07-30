@@ -188,6 +188,19 @@ struct DictusApp: App {
                 .queryItems?
                 .first(where: { $0.name == "source" })?
                 .value == "keyboard"
+            let isPrepareOnly = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains(where: { $0.name == "intent" && $0.value == "prepare" }) ?? false
+
+            if isFromKeyboard && isPrepareOnly {
+                DictusLogger.app.info("Keyboard requested model preparation without recording")
+                PersistentLog.log(.dictationDeferred(reason: "keyboard prepare-only URL"))
+                NotificationCenter.default.post(
+                    name: .dictusKeyboardPreparationRequested,
+                    object: nil
+                )
+                return
+            }
 
             // Show cold start overlay when:
             // 1. TRUE cold start: app was terminated by iOS and keyboard just launched it

@@ -169,6 +169,7 @@ struct ModelDownloadPage: View {
             ModelLoadingOverlay(
                 modelManager: modelManager,
                 modelIdentifier: item.id,
+                context: .onboarding,
                 isPresented: Binding(
                     get: { preparingModelID != nil },
                     set: { if !$0 { preparingModelID = nil } }

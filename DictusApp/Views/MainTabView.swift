@@ -30,11 +30,31 @@ struct MainTabView: View {
     /// Tracks whether the app was opened from the keyboard for cold start dictation.
     @State private var isColdStartMode = false
 
+    /// Active model preparation requested by the keyboard without starting a
+    /// recording. The overlay dismisses itself after its contextual ready state.
+    @State private var preparingModelID: String?
+
     @Environment(\.scenePhase) private var scenePhase
+
+    private var activeModelIdentifier: String {
+        modelManager.activeModel
+            ?? AppGroup.defaults.string(forKey: SharedKeys.activeModel)
+            ?? "openai_whisper-small"
+    }
 
     var body: some View {
         ZStack {
-            if isColdStartMode {
+            if let preparingModelID {
+                ModelLoadingOverlay(
+                    modelManager: modelManager,
+                    modelIdentifier: preparingModelID,
+                    context: .keyboardColdStart,
+                    isPresented: Binding(
+                        get: { self.preparingModelID != nil },
+                        set: { if !$0 { self.preparingModelID = nil } }
+                    )
+                )
+            } else if isColdStartMode {
                 // Full-screen branded overlay with animated swipe gesture and bilingual text.
                 // WHY SwipeBackOverlayView instead of inline code:
                 // The overlay has its own animation state and bilingual logic -- keeping it
@@ -85,9 +105,18 @@ struct MainTabView: View {
         // BEFORE DictusApp's (SwiftUI propagates inner-to-outer), so we can't rely
         // on DictusApp having set the AppGroup flag yet.
         .onOpenURL { url in
-            if let host = url.host, host == "dictate",
-               let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-               query.contains(where: { $0.name == "source" && $0.value == "keyboard" }) {
+            guard let host = url.host, host == "dictate",
+                  let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                  query.contains(where: { $0.name == "source" && $0.value == "keyboard" }) else {
+                return
+            }
+
+            if query.contains(where: { $0.name == "intent" && $0.value == "prepare" }) {
+                preparingModelID = activeModelIdentifier
+                return
+            }
+
+            if !query.isEmpty {
                 if !Self.hasHandledURL {
                     // True cold start: process was just launched by keyboard URL.
                     isColdStartMode = true
@@ -99,6 +128,9 @@ struct MainTabView: View {
                 }
                 Self.hasHandledURL = true
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardPreparationRequested)) { _ in
+            preparingModelID = activeModelIdentifier
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
