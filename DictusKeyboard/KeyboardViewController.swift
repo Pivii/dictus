@@ -691,10 +691,10 @@ class KeyboardViewController: UIInputViewController {
         areaModeCancellable = KeyboardState.shared.areaModePublisher
             // No .receive(on: .main) — areaMode is only ever set on the main thread
             // (Darwin observer dispatches to main, key taps are UI actions).
-            // Removing the async dispatch ensures the constraint change happens SYNCHRONOUSLY
-            // with the @Published change, BEFORE SwiftUI re-evaluates its body.
-            // Without this, there's a 1-frame delay where the overlay renders at 52pt (toolbar
-            // height) before the hosting view expands to full height — causing the waveform
+            // Staying synchronous ensures the constraint change lands in the same
+            // turn as the mode change, BEFORE SwiftUI draws. Without this, there's a
+            // 1-frame delay where the overlay renders at 52pt (toolbar height)
+            // before the hosting view expands to full height — causing the waveform
             // to flash at the top then drop to center.
             .sink { [weak self] mode in
                 self?.applyAreaMode(mode)
@@ -720,10 +720,13 @@ class KeyboardViewController: UIInputViewController {
             details: "status=\(status) mode=\(mode.rawValue) hasAppeared=\(hasAppeared) oldHosting=\(oldHosting) activeID=\(activeID)"
         ))
 
-        // Don't change hosting height until the controller is registered with KeyboardState.
-        // During cold start, this fires in viewDidLoad before viewWillAppear — SwiftUI still
-        // presents `.keys` there, so expanding now would show the toolbar displaced
-        // in a full-height hosting view. viewWillAppear calls this manually after registering.
+        // Don't change hosting height until the controller is registered with
+        // KeyboardState: an unregistered controller's KeyboardRootView still
+        // presents `.keys`, so expanding now would show the toolbar displaced in a
+        // full-height hosting view. viewWillAppear registers, then applies the mode
+        // explicitly. The subscription is also created there, and areaModePublisher
+        // does not replay on subscribe, so nothing should reach this before
+        // viewWillAppear — the guard stays as a cheap invariant on that ordering.
         guard hasAppeared else { return }
 
         // Defense-in-depth for #128: iOS caches UIInputViewController and does not
