@@ -29,7 +29,7 @@ Spawn a `general-purpose` agent with the issue number substituted in. Do not sho
 >
 > **Phase 2 — Analyse and plan.** Locate every site the brief describes; briefs name types and behaviours, not paths, so find them yourself. Map every consumer of what you are about to change *before* changing anything. Write the plan: ordered changes, risks, and how each acceptance criterion will be verified. If the plan shows the brief is wrong or incomplete, **stop and report** rather than improvising.
 >
-> **Phase 3 — Implement.** Branch off `develop` (`feature/N-short-slug`); never work on `develop` or `main`. Atomic commits referencing `(refs #N)`. Match the surrounding code — this codebase documents *why* extensively in comments, keep that. No TODOs, no stubs, no partial implementations.
+> **Phase 3 — Implement.** If you are already on a branch named for this issue (a pre-made worktree), stay on it. Otherwise branch off `develop` (`feature/N-short-slug`). Never work on `develop` or `main`. Atomic commits referencing `(refs #N)`. Match the surrounding code — this codebase documents *why* extensively in comments, keep that. No TODOs, no stubs, no partial implementations.
 >
 > **Phase 4 — Verify.** Build all three targets (DictusApp, DictusKeyboard, DictusCore). Run the test suite and add tests where the change is testable. Run SwiftLint and keep the baseline stable; if it shifts, regenerate it in its own commit. Walk the acceptance criteria one by one and record evidence for each. You cannot validate on a physical device — do what the simulator allows, then list precisely what remains for the maintainer, with exact steps.
 >
