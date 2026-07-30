@@ -677,16 +677,18 @@ class KeyboardViewController: UIInputViewController {
     /// in step with what SwiftUI renders: hosting height, hosting bottom anchor,
     /// and whether the key grid is hidden.
     ///
-    /// WHY $areaMode and not $dictationStatus: the mode is recomputed in
+    /// WHY areaModePublisher and not $dictationStatus: the mode is recomputed in
     /// `dictationStatus`'s `didSet`, which runs *after* `$dictationStatus` has
     /// already published. A sink on the status would therefore read a stale mode.
-    /// The mode's own publisher carries the value we need.
+    /// The mode's own publisher carries the value we need — and it emits from
+    /// `didSet`, so the synchronous layout below cannot make SwiftUI render an
+    /// already-superseded mode. See the note on `KeyboardState.areaMode`.
     ///
-    /// WHY Combine instead of NotificationCenter: `areaMode` is @Published, so
-    /// this needs no manual notification posts — and it is precisely the
-    /// NotificationCenter round-trip that #271 removed.
+    /// WHY Combine instead of NotificationCenter: this needs no manual
+    /// notification posts — and it is precisely the NotificationCenter round-trip
+    /// that #271 removed.
     private func observeKeyboardAreaMode() {
-        areaModeCancellable = KeyboardState.shared.$areaMode
+        areaModeCancellable = KeyboardState.shared.areaModePublisher
             // No .receive(on: .main) — areaMode is only ever set on the main thread
             // (Darwin observer dispatches to main, key taps are UI actions).
             // Removing the async dispatch ensures the constraint change happens SYNCHRONOUSLY
@@ -729,11 +731,13 @@ class KeyboardViewController: UIInputViewController {
         // responding to Darwin status changes for minutes after losing window
         // attachment, no viewDidDisappear event logged). The subscription-cancel
         // path in viewDidDisappear covers the well-behaved case; this guard
-        // short-circuits stale controllers that iOS forgot to notify. Only the
-        // controller currently owning the keyboard window mutates layout.
-        // KeyboardRootView.presentedMode applies the same predicate, so a
-        // non-owning controller and its root view always agree on `.keys`.
-        guard KeyboardState.shared.activeControllerID == controllerID else {
+        // short-circuits stale controllers that iOS forgot to notify.
+        //
+        // It applies to `.recording` only, mirroring KeyboardRootView.presentedMode
+        // exactly — the two layers have to agree on what is presented, and that is
+        // where the reasoning lives. A picker is opened by a key on the visible
+        // keyboard, which is not the case #128 was ever about.
+        guard mode != .recording || KeyboardState.shared.activeControllerID == controllerID else {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardViewController",
                 instanceID: controllerID,

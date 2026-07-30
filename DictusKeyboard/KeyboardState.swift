@@ -33,7 +33,41 @@ class KeyboardState: ObservableObject {
     /// `private(set)`: `.recording` is owned by the dictation lifecycle and every
     /// other transition goes through `presentAreaMode(_:)`, so no caller can put
     /// the two layers into a state the type forbids.
-    @Published private(set) var areaMode: KeyboardAreaMode = .keys
+    ///
+    /// WHY this is not `@Published`: `@Published` notifies in `willSet`, while the
+    /// property still holds the OLD value. KeyboardViewController reacts to a mode
+    /// change by forcing `layoutIfNeeded()` — deliberately, so the hosting
+    /// constraint is in place before SwiftUI draws (#99, #142). But a forced UIKit
+    /// layout makes UIHostingController run its SwiftUI update pass right there,
+    /// inside the `willSet`: the body reads the old mode, renders it, and marks
+    /// itself clean. A status change survives that, because the next status
+    /// (`requested → recording → transcribing`) notifies again and the view
+    /// catches up. A one-shot transition does not — opening the emoji picker left
+    /// the keyboard area blank, with the hosting view expanded to 268 pt and the
+    /// SwiftUI body still on `.keys` (device-log confirmed).
+    ///
+    /// Notifying from `didSet` instead means every observer — the controller's
+    /// sink and SwiftUI alike — reads the value that is actually stored.
+    private(set) var areaMode: KeyboardAreaMode = .keys {
+        didSet {
+            objectWillChange.send()
+            areaModeSubject.send(areaMode)
+        }
+    }
+
+    /// Backs `areaModePublisher`. A subject rather than `@Published`'s projected
+    /// publisher for the `didSet` reason above.
+    private let areaModeSubject = PassthroughSubject<KeyboardAreaMode, Never>()
+
+    /// Emits the keyboard area mode after every assignment, including assignments
+    /// that leave the value unchanged — re-applying the layout on each dictation
+    /// status write is how a keyboard returning from suspension re-synchronises.
+    ///
+    /// Unlike `@Published`, this does not replay the current value on subscribe:
+    /// `viewWillAppear` applies `areaMode` explicitly, which covers that.
+    var areaModePublisher: AnyPublisher<KeyboardAreaMode, Never> {
+        areaModeSubject.eraseToAnyPublisher()
+    }
 
     @Published var lastTranscription: String?
     @Published var statusMessage: String?

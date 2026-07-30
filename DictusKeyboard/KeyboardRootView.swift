@@ -62,21 +62,29 @@ struct KeyboardRootView: View {
 
     /// What this view presents.
     ///
-    /// The mode itself is owned by KeyboardState; what this adds is the
-    /// presenter check. iOS caches UIInputViewController instances and their
+    /// The mode is owned by KeyboardState; what this adds is the presenter check
+    /// on `.recording` only. iOS caches UIInputViewController instances and their
     /// KeyboardRootViews keep receiving updates long after they leave the window
-    /// (#128 / #134) — a stale view that rendered a full-area mode produced the
-    /// duplicate grey overlay in #116. Only the registered active controller
-    /// presents anything but the key grid, and the view controller applies the
-    /// same predicate to the layout, so the two layers cannot disagree.
+    /// (#128 / #134) — a stale view that rendered the overlay produced the
+    /// duplicate grey panel in #116.
+    ///
+    /// WHY the pickers are deliberately NOT gated the same way, keeping the
+    /// pre-#271 split: `.recording` is pushed from another process and can arrive
+    /// while no controller owns the keyboard (`activeID=none`, #260), so it needs
+    /// an owner to be worth drawing. A picker is opened by a key the user just
+    /// touched on the visible keyboard; gating it on ownership would blank the
+    /// keyboard area for the whole #260 window instead of merely delaying an
+    /// overlay.
     ///
     /// The legacy `activeControllerID == nil` fallback that used to mask #128 is
     /// deliberately not reinstated: with #128 fixed, stale controllers are dormant.
     private var presentedMode: KeyboardAreaMode {
+        let mode = state.areaMode
+        guard mode == .recording else { return mode }
         guard state.activeControllerID == controllerID, state.isKeyboardVisible else {
             return .keys
         }
-        return state.areaMode
+        return mode
     }
 
     /// The toolbar as it renders above a full-area presentation.
