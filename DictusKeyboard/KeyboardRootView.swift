@@ -47,9 +47,22 @@ struct KeyboardRootView: View {
     /// new predictions. The bridge owns textDocumentProxy access and state management.
     var bridge: DictusKeyboardBridge?
 
-    /// Callback when the user cycles language via the toolbar switcher.
+    /// Callback when the user picks a language in the hamburger panel.
     /// The controller uses this to reload the GiellaKeyboardView with the new layout.
     var onLanguageChanged: ((SupportedLanguage) -> Void)?
+
+    /// Whether the Pro entry is hidden from the panel bar.
+    ///
+    /// WHY @State refreshed on open rather than an observed ProStatusManager:
+    /// the extension reads Pro status from the App Group, and a subscription
+    /// cannot be bought while the keyboard is the frontmost surface — so a read
+    /// each time the panel opens is both sufficient and cheaper than keeping an
+    /// ObservableObject alive in a 50 MB process.
+    @State private var isProActive = false
+
+    /// Gates the panel's open/close transition. Reduced motion removes the
+    /// animation entirely rather than shortening it.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
@@ -92,7 +105,11 @@ struct KeyboardRootView: View {
     /// The suggestion slots stay empty: the key grid is hidden in these modes, so
     /// there is no word being typed to suggest for. Tapping the mic needs no
     /// dismissal call — `.recording` supersedes whatever fills the area.
-    private var fullAreaToolbar: some View {
+    ///
+    /// `isPanelOpen` picks between the two presentations of the same 52 pt bar:
+    /// the dictation cockpit, and the panel header that replaces the mic with the
+    /// gear (#241).
+    private func fullAreaToolbar(isPanelOpen: Bool = false) -> some View {
         ToolbarView(
             hasFullAccess: state.controller?.hasFullAccess ?? false,
             dictationStatus: state.dictationStatus,
@@ -101,9 +118,35 @@ struct KeyboardRootView: View {
             suggestions: [],
             suggestionMode: .idle,
             onSuggestionTap: { _ in },
-            onLanguageChanged: onLanguageChanged
+            isPanelOpen: isPanelOpen,
+            onPanelToggle: { togglePanel() },
+            onSettingsTap: { state.openDictusApp(intent: "settings") },
+            isProActive: isProActive,
+            onProTap: { state.openDictusApp(intent: "pro") }
         )
         .frame(height: toolbarHeight)
+    }
+
+    /// Open or close the hamburger panel.
+    ///
+    /// The mode change is the only state involved — `KeyboardState` owns it and
+    /// both layers read it (#271), so no flag is duplicated here.
+    ///
+    /// WHY the animation is on the panel body only, and never on geometry:
+    /// the hosting height and bottom anchor move synchronously in UIKit, inside
+    /// the same turn as the mode change, deliberately (#99, #142). Animating that
+    /// is exactly the family of change that produced four regressions in this
+    /// area. A fade of the panel's own content costs nothing and touches no
+    /// constraint.
+    private func togglePanel() {
+        isProActive = ProStatusManager.isProActiveStatic
+        if reduceMotion {
+            state.togglePanelPresentation()
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                state.togglePanelPresentation()
+            }
+        }
     }
 
     var body: some View {
@@ -128,7 +171,7 @@ struct KeyboardRootView: View {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
                         // Toolbar stays visible during emoji browsing
-                        fullAreaToolbar
+                        fullAreaToolbar()
                         // Emoji picker uses exact measured dimensions
                         EmojiPickerView(
                             onEmojiInsert: { emoji in
@@ -152,13 +195,25 @@ struct KeyboardRootView: View {
                     }
                 }
             case .panel:
-                // Reserved for the hamburger panel (#241). The layout contract is
-                // already settled here — toolbar on top, panel content filling the
-                // rest — so #241 replaces this placeholder with its view instead of
-                // reopening the mode refactor. Nothing sets `.panel` yet.
-                VStack(spacing: 0) {
-                    fullAreaToolbar
-                    Color.clear
+                // The hamburger panel (#241). Same layout contract #271 reserved:
+                // the bar on top, the panel filling the rest. The bar keeps its
+                // 52 pt and swaps its contents, so opening the panel moves no
+                // geometry the mode change had not already moved.
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        fullAreaToolbar(isPanelOpen: true)
+                        KeyboardPanelView(
+                            // Clamped for the same reason as the emoji picker: the
+                            // body can be evaluated on a frame where the hosting
+                            // height constraint has not landed yet, leaving
+                            // geo.size.height at the 52 pt bar.
+                            availableHeight: max(0, geo.size.height - toolbarHeight),
+                            onLanguageChanged: onLanguageChanged
+                        )
+                        // Fade only. See togglePanel() for why nothing here
+                        // animates geometry.
+                        .transition(.opacity)
+                    }
                 }
             case .keys:
                 // Toolbar only -- the keyboard grid is UIKit, managed by KeyboardViewController
@@ -172,7 +227,7 @@ struct KeyboardRootView: View {
                     onSuggestionTap: { index in
                         handleSuggestionTap(index: index)
                     },
-                    onLanguageChanged: onLanguageChanged
+                    onPanelToggle: { togglePanel() }
                 )
                 // No KeyboardView here -- it's UIKit, added directly by KeyboardViewController
                 // No bottom spacer -- the UIKit keyboard handles its own height
@@ -239,6 +294,11 @@ struct KeyboardRootView: View {
 
             // Refresh cached haptic enabled state from UserDefaults.
             HapticFeedback.refreshEnabledState()
+
+            // Also read here, not only in togglePanel(): iOS can hand the keyboard
+            // to a fresh controller while the panel is open, and viewWillAppear
+            // restores `.panel` — that path never goes through the toggle.
+            isProActive = ProStatusManager.isProActiveStatic
 
             // Language is set in KeyboardViewController.viewWillAppear, which fires
             // on every keyboard appearance and picks up any App Group preference changes.
