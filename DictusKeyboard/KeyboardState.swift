@@ -23,7 +23,22 @@ class KeyboardState: ObservableObject {
     /// observer is the only funnel none of them can bypass, so the area mode
     /// below can never drift out of step with the dictation lifecycle.
     @Published var dictationStatus: DictationStatus = .idle {
-        didSet { syncAreaModeWithStatus() }
+        didSet {
+            syncAreaModeWithStatus()
+            // overlayShown / overlayHidden used to be emitted from
+            // KeyboardRootView's .onChange, i.e. once per live root view, which is
+            // ~9 lines per transition (#255). They describe this stored value
+            // changing, so they belong here — once, whichever view observes it.
+            // The guard reproduces .onChange semantics exactly: didSet also fires
+            // on writes that leave the value unchanged, .onChange does not.
+            if oldValue != dictationStatus {
+                if dictationStatus.ownsKeyboardArea {
+                    PersistentLog.log(.overlayShown(status: dictationStatus.rawValue))
+                } else {
+                    PersistentLog.log(.overlayHidden(status: dictationStatus.rawValue))
+                }
+            }
+        }
     }
 
     /// What the keyboard area is presenting: the key grid, a full-area picker or
