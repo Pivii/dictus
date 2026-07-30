@@ -144,6 +144,28 @@ final class ParakeetModelRepositoryTests: XCTestCase {
         XCTAssertNil(resolvedCacheDirectory())
     }
 
+    func testVocabularyThatIsADirectoryIsAbsent() throws {
+        // `fileExists` alone answers yes for a directory, which would let an empty
+        // `parakeet_vocab.json/` pass and defer the failure to FluidAudio.
+        try makeCompleteCache()
+        let vocabulary = cacheDirectory.appendingPathComponent(vocabularyFileName)
+        try FileManager.default.removeItem(at: vocabulary)
+        try FileManager.default.createDirectory(at: vocabulary, withIntermediateDirectories: true)
+
+        XCTAssertNil(resolvedCacheDirectory())
+    }
+
+    func testCompiledMarkerThatIsADirectoryIsAbsent() throws {
+        try makeCompleteCache()
+        let marker = cacheDirectory
+            .appendingPathComponent("Encoder.mlmodelc", isDirectory: true)
+            .appendingPathComponent("coremldata.bin")
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: true)
+
+        XCTAssertNil(resolvedCacheDirectory())
+    }
+
     // MARK: - Guard against a vacuous pass
 
     func testEmptyRequirementSetNeverPasses() throws {

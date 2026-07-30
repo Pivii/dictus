@@ -70,7 +70,7 @@ public enum ParakeetModelRepository {
         guard !requiredModelBundles.isEmpty else { return false }
 
         let vocabulary = cacheDirectory.appendingPathComponent(vocabularyFileName)
-        guard fileManager.fileExists(atPath: vocabulary.path) else { return false }
+        guard isRegularFile(vocabulary, fileManager: fileManager) else { return false }
 
         return requiredModelBundles.allSatisfy { bundleName in
             isCompiledModelBundle(
@@ -91,6 +91,18 @@ public enum ParakeetModelRepository {
             return false
         }
         let marker = bundleURL.appendingPathComponent(compiledModelMarkerFile)
-        return fileManager.fileExists(atPath: marker.path)
+        return isRegularFile(marker, fileManager: fileManager)
+    }
+
+    /// Whether the path holds a file rather than a directory.
+    ///
+    /// WHY the distinction matters: `fileExists(atPath:)` alone answers yes for a
+    /// directory too, so a `coremldata.bin/` or `parakeet_vocab.json/` directory would
+    /// read as a usable cache and the failure would only surface once FluidAudio tried
+    /// to read it — which is the wipe-and-re-download path this check exists to avoid.
+    private static func isRegularFile(_ url: URL, fileManager: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue
     }
 }
