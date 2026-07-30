@@ -372,7 +372,9 @@ class DictationCoordinator: ObservableObject {
         let currentLoadState = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
         if currentLoadState == ModelLoadState.loading.rawValue && !fromURL {
             PersistentLog.log(.dictationDeferred(reason: "model load in flight (state=loading)"))
-            handleError(String(localized: "Model is loading. Please wait."))
+            // Keep the keyboard request pending. KeyboardState re-reads the
+            // shared state before its fallback URL and opens the prepare-only
+            // flow instead of showing a refusal message.
             return
         }
 

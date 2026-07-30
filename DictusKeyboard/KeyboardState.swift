@@ -49,8 +49,12 @@ class KeyboardState: ObservableObject {
     /// WHY extensionContext: This is the Apple-documented API for app extensions
     /// to open URLs. Neither SwiftUI's openURL nor the responder chain work
     /// reliably in keyboard extensions.
-    func openURLFromExtension(_ url: URL) {
-        controller?.extensionContext?.open(url)
+    func openURLFromExtension(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let extensionContext = controller?.extensionContext else {
+            completion(false)
+            return
+        }
+        extensionContext.open(url, completionHandler: completion)
     }
 
     private let defaults = AppGroup.defaults
@@ -449,12 +453,9 @@ class KeyboardState: ObservableObject {
         // recording from starting until the model is ready.
         // We synchronize defaults first because cross-process writes from DictusApp
         // can lag a few ms behind the actual state change.
-        defaults.synchronize()
-        let loadStateRaw = defaults.string(forKey: SharedKeys.modelLoadState) ?? ModelLoadState.idle.rawValue
-        if loadStateRaw == ModelLoadState.loading.rawValue {
+        if isModelLoading() {
             PersistentLog.log(.keyboardMicTapped)
-            PersistentLog.log(.dictationDeferred(reason: "keyboard opened Dictus for model preparation"))
-            openModelPreparation()
+            deferRecordingForModelPreparation()
             return
         }
 
@@ -463,6 +464,15 @@ class KeyboardState: ObservableObject {
 
         PersistentLog.log(.keyboardMicTapped)
         markRequested()
+
+        // The model can begin loading after the first check while this tap is
+        // being handed to DictusApp. Re-check immediately before posting the
+        // recording request so a model swap cannot race into a recording.
+        if isModelLoading() {
+            forceResetToIdle()
+            deferRecordingForModelPreparation(reason: "model became loading before Darwin handoff")
+            return
+        }
 
         // Try background recording first — if app is alive, it will handle this
         // notification and start recording without coming to the foreground.
@@ -476,6 +486,11 @@ class KeyboardState: ObservableObject {
             guard let self = self else { return }
             let elapsedMs = Int(Date().timeIntervalSince(darwinPostTime) * 1000)
             if self.dictationStatus == .requested {
+                if self.isModelLoading() {
+                    self.forceResetToIdle()
+                    self.deferRecordingForModelPreparation(reason: "model became loading before fallback URL")
+                    return
+                }
                 PersistentLog.log(.coldStartDarwinFallback(
                     elapsedMs: elapsedMs,
                     status: self.dictationStatus.rawValue
@@ -497,11 +512,37 @@ class KeyboardState: ObservableObject {
         openDictusURL(url)
     }
 
+    /// Re-read the shared state at each handoff boundary because the app can
+    /// start a model swap after the keyboard's previous snapshot.
+    private func isModelLoading() -> Bool {
+        defaults.synchronize()
+        let rawState = defaults.string(forKey: SharedKeys.modelLoadState)
+            ?? ModelLoadState.idle.rawValue
+        return rawState == ModelLoadState.loading.rawValue
+    }
+
+    /// Defer recording without leaving a requested state behind in the keyboard.
+    private func deferRecordingForModelPreparation(reason: String = "keyboard opened Dictus for model preparation") {
+        PersistentLog.log(.dictationDeferred(reason: reason))
+        openModelPreparation()
+    }
+
     /// Prefer the extension context because the SwiftUI openURL callback has no
     /// success result and can fail silently in a keyboard extension.
     private func openDictusURL(_ url: URL) {
         if controller?.extensionContext != nil {
-            openURLFromExtension(url)
+            openURLFromExtension(url) { [weak self] succeeded in
+                guard !succeeded else { return }
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardState",
+                    instanceID: self?.instanceID ?? "unknown",
+                    action: "extensionURLFallback",
+                    details: "extensionContext.open returned false"
+                ))
+                DispatchQueue.main.async { [weak self] in
+                    self?.openURL?(url)
+                }
+            }
         } else if let openURL {
             openURL(url)
         }
