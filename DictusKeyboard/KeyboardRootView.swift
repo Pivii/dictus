@@ -141,7 +141,13 @@ struct KeyboardRootView: View {
                             },
                             onDismiss: { state.presentAreaMode(.keys) },
                             availableWidth: geo.size.width,
-                            availableHeight: geo.size.height - toolbarHeight
+                            // Clamped: the body can be evaluated on a frame where
+                            // the hosting height constraint has not landed yet, so
+                            // `geo.size.height` is still the 52pt toolbar and the
+                            // subtraction goes negative. Handing a negative height
+                            // to the picker is the same family of bug as the blank
+                            // area this refactor already had to fix.
+                            availableHeight: max(0, geo.size.height - toolbarHeight)
                         )
                     }
                 }
