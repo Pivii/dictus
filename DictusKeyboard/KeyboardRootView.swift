@@ -188,35 +188,51 @@ struct KeyboardRootView: View {
         .background(Color.clear)
         // Action name kept verbatim (and `isShowing=` with it): #260 and #261 are
         // open and quote this line from device logs. `mode=` is additive.
+        //
+        // Only the owning view logs (#255). iOS keeps ~9 KeyboardRootView instances
+        // alive at once, so an unrestricted emission here reported one mode change
+        // ~9 times — a reader taking the file at face value sees a controller
+        // lifecycle bug that does not exist. Non-owners present `.keys` by
+        // construction, so their transitions carry no information the owner's line
+        // does not already have. The owner-less window (#260) stays visible without
+        // this line: KeyboardViewController's `dictStatusChange_enter` carries
+        // `activeID=none`, and KeyboardState logs `registerControllerDisappearance`
+        // and `presentAreaMode` at the source.
         .onChange(of: presentedMode) { _, mode in
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardRootView",
-                instanceID: instanceID,
-                action: "showsOverlayChanged",
-                details: "isShowing=\(mode == .recording) mode=\(mode.rawValue) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID)"
-            ))
+            if state.activeControllerID == controllerID {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardRootView",
+                    instanceID: instanceID,
+                    action: "showsOverlayChanged",
+                    details: "isShowing=\(mode == .recording) mode=\(mode.rawValue) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID)"
+                ))
+            }
             // No emoji dismissal here: `.recording` replaces whatever filled the
             // area, so mutual exclusion is the type's job now, not this callback's.
             syncWaveformDriver()
         }
-        .onChange(of: state.dictationStatus) { _, newStatus in
-            if newStatus.ownsKeyboardArea {
-                PersistentLog.log(.overlayShown(status: newStatus.rawValue))
-            } else {
-                PersistentLog.log(.overlayHidden(status: newStatus.rawValue))
-            }
+        // overlayShown/overlayHidden moved to KeyboardState (#255): they describe an
+        // app-wide dictation state change, not a per-view event, so they belong
+        // where the status is stored rather than in every observer's onChange.
+        .onChange(of: state.dictationStatus) { _, _ in
             syncWaveformDriver()
         }
         .onChange(of: state.waveformEnergy) { _, _ in
             syncWaveformDriver()
         }
+        // Only the incoming owner logs (#255). Ownership hand-over is already
+        // recorded once per transition at the source, by KeyboardState's
+        // registerControllerAppearance / registerControllerDisappearance probes;
+        // what this adds is the confirmation that the new owner's view saw it.
         .onChange(of: state.activeControllerID) { _, newOwner in
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardRootView",
-                instanceID: instanceID,
-                action: "activeControllerChanged",
-                details: "newOwner=\(newOwner ?? "none") controllerID=\(controllerID)"
-            ))
+            if newOwner == controllerID {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardRootView",
+                    instanceID: instanceID,
+                    action: "activeControllerChanged",
+                    details: "newOwner=\(newOwner ?? "none") controllerID=\(controllerID)"
+                ))
+            }
             syncWaveformDriver()
         }
         .onChange(of: state.isKeyboardVisible) { _, _ in
