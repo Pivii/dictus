@@ -138,10 +138,17 @@ public enum PersistentLog {
     }
 
     /// Clear all logs.
+    ///
+    /// WHY the wipe runs on `writeQueue` too (#255): the queue is what orders this
+    /// against concurrent `log()` calls. Resetting the collapse state on the queue
+    /// but wiping the file off it leaves the two unordered, so a line logged around
+    /// a Clear could be written after the wipe and survive it, or be swallowed.
     public static func clear() {
         guard let url = fileURL else { return }
-        writeQueue.sync { resetCollapseState() }
-        coordinatedWrite("", to: url)
+        writeQueue.sync {
+            resetCollapseState()
+            coordinatedWrite("", to: url)
+        }
     }
 
     /// Remove log entries older than retentionPeriod (7 days).

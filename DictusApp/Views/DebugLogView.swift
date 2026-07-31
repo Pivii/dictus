@@ -56,6 +56,15 @@ struct DebugLogView: View {
     @State private var hiddenLineCount = 0
     @State private var isLoading = false
 
+    /// Identifies the most recently started reload.
+    ///
+    /// WHY (#255): the read moved off the main thread, so two reloads can now be
+    /// in flight at once — a pull-to-refresh returns immediately and Clear Logs
+    /// starts its own. Without this token the slower completion wins on arrival
+    /// order alone, so clearing the log while a reload is still reading puts the
+    /// old content straight back on screen. Only the newest reload may publish.
+    @State private var reloadToken = 0
+
     /// Most recent lines the screen parses and renders.
     ///
     /// WHY bounded (#255): the log cap is now 1MB, roughly 7000 lines. Parsing all
@@ -169,6 +178,8 @@ struct DebugLogView: View {
     /// .onAppear. The full content is kept for Copy; only the tail is parsed.
     private func reloadLogs() {
         isLoading = true
+        reloadToken += 1
+        let token = reloadToken
         DispatchQueue.global(qos: .userInitiated).async {
             let content = PersistentLog.read()
             let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
@@ -176,6 +187,9 @@ struct DebugLogView: View {
             let parsed = Self.parseEntries(from: lines.suffix(Self.displayedLineLimit))
 
             DispatchQueue.main.async {
+                // A newer reload has started since this one began; its result is
+                // the current truth, so drop ours rather than overwrite it.
+                guard token == reloadToken else { return }
                 logContent = content
                 entries = parsed
                 hiddenLineCount = hidden
