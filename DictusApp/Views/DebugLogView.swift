@@ -100,7 +100,11 @@ struct DebugLogView: View {
                     .onAppear {
                         scrollToBottom(proxy: proxy)
                     }
-                    .onChange(of: entries.count) { _ in
+                    // Keyed on the newest entry, not the count: once the file is
+                    // saturated the displayed tail sits at `displayedLineLimit`
+                    // forever, so a count-based trigger would stop firing exactly
+                    // when the log is busiest.
+                    .onChange(of: entries.last?.id) { _ in
                         scrollToBottom(proxy: proxy)
                     }
                 }
@@ -113,7 +117,7 @@ struct DebugLogView: View {
                 Menu {
                     Button(role: .destructive) {
                         PersistentLog.clear()
-                        reloadLogs()
+                        Task { await reloadLogs() }
                     } label: {
                         Label("Clear", systemImage: "trash")
                     }
@@ -129,10 +133,10 @@ struct DebugLogView: View {
             }
         }
         .onAppear {
-            reloadLogs()
+            Task { await reloadLogs() }
         }
         .refreshable {
-            reloadLogs()
+            await reloadLogs()
         }
     }
 
@@ -176,26 +180,28 @@ struct DebugLogView: View {
     /// WHY off the main thread (#255): reading and splitting a 1MB file, then
     /// parsing thousands of lines, is long enough to drop frames if it runs inside
     /// .onAppear. The full content is kept for Copy; only the tail is parsed.
-    private func reloadLogs() {
+    /// WHY async rather than fire-and-forget: `.refreshable` dismisses its spinner
+    /// when the closure returns, so a reload that only *starts* the work makes the
+    /// pull-to-refresh report success before anything has been read.
+    private func reloadLogs() async {
         isLoading = true
         reloadToken += 1
         let token = reloadToken
-        DispatchQueue.global(qos: .userInitiated).async {
+
+        let limit = Self.displayedLineLimit
+        let (content, parsed, hidden) = await Task.detached(priority: .userInitiated) {
             let content = PersistentLog.read()
             let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
-            let hidden = max(0, lines.count - Self.displayedLineLimit)
-            let parsed = Self.parseEntries(from: lines.suffix(Self.displayedLineLimit))
+            return (content, Self.parseEntries(from: lines.suffix(limit)), max(0, lines.count - limit))
+        }.value
 
-            DispatchQueue.main.async {
-                // A newer reload has started since this one began; its result is
-                // the current truth, so drop ours rather than overwrite it.
-                guard token == reloadToken else { return }
-                logContent = content
-                entries = parsed
-                hiddenLineCount = hidden
-                isLoading = false
-            }
-        }
+        // A newer reload has started since this one began; its result is the
+        // current truth, so drop ours rather than overwrite it.
+        guard token == reloadToken else { return }
+        logContent = content
+        entries = parsed
+        hiddenLineCount = hidden
+        isLoading = false
     }
 
     /// Parse raw log text into structured LogEntry values.
@@ -208,7 +214,12 @@ struct DebugLogView: View {
     /// it falls through to a raw-text fallback entry.
     ///
     /// WHY static: it runs on a background queue, so it must not capture the view.
-    private static func parseEntries(from lines: ArraySlice<Substring>) -> [LogEntry] {
+    ///
+    /// WHY `nonisolated`: a `View`'s members are main-actor isolated by default, so
+    /// calling this off the main actor is a Swift 6 error. Parsing text touches no
+    /// view state, and the whole point (#255) is that it does not run on the main
+    /// thread — the isolation was never real, only invisible behind GCD.
+    private nonisolated static func parseEntries(from lines: ArraySlice<Substring>) -> [LogEntry] {
         lines.compactMap { line in
             // Pattern: [timestamp] LEVEL   [subsystem] eventName params...
             // The timestamp is ISO8601, level is 7-char padded, subsystem in brackets
