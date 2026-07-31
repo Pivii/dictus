@@ -190,10 +190,17 @@ public struct AnimatedMicButton: View {
 
     // MARK: - Animation Control
 
+    /// WHY there is no log line here any more (#255): this view is instantiated
+    /// once per live keyboard root view, and iOS keeps ~9 of those alive at a time,
+    /// so `statusChanged source=micButton` reported a single transition ~9 times —
+    /// 44 lines for 5 dictations in the measured session. The transition itself is
+    /// already logged exactly once by whoever owns the status: `KeyboardState`
+    /// (`source=keyboardState`) in the extension, `DictationCoordinator`
+    /// (`source=coordinator`) in the app. Nothing is lost.
+    ///
+    /// The animation reset below is deliberately NOT gated: it must keep running on
+    /// every instance, including the app's own visible recording UI.
     private func handleStatusChange(from oldStatus: DictationStatus, to newStatus: DictationStatus) {
-        // Log every status transition for diagnostics
-        PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: newStatus.rawValue, source: "micButton"))
-
         // Reset ALL animation state to concrete values WITHOUT animation first.
         // WHY: This cancels any existing repeating animations that could stack
         // with the new ones, causing jitter or incorrect visual state.

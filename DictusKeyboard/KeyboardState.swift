@@ -23,7 +23,39 @@ class KeyboardState: ObservableObject {
     /// observer is the only funnel none of them can bypass, so the area mode
     /// below can never drift out of step with the dictation lifecycle.
     @Published var dictationStatus: DictationStatus = .idle {
-        didSet { syncAreaModeWithStatus() }
+        didSet {
+            syncAreaModeWithStatus()
+            // The keyboard's dictation transitions are logged here and nowhere
+            // else (#255).
+            //
+            // They used to be emitted from observers — `statusChanged` from
+            // AnimatedMicButton, overlayShown/overlayHidden from
+            // KeyboardRootView — i.e. once per live view. iOS keeps ~9 of those
+            // alive, so one transition was written ~9 times and a reader counted
+            // 9 transitions where 1 happened.
+            //
+            // The same funnel argument as the area mode above applies: this
+            // property is assigned from a dozen places and the observer is the
+            // only one none of them can bypass. `refreshFromDefaults` is not:
+            // `markRequested` writes `.requested` directly, which is why
+            // `idle → requested` was, before this, recorded *only* by the
+            // per-instance mic button line.
+            //
+            // The guard reproduces `.onChange` semantics exactly: didSet also
+            // fires on writes that leave the value unchanged, `.onChange` does not.
+            if oldValue != dictationStatus {
+                PersistentLog.log(.statusChanged(
+                    from: oldValue.rawValue,
+                    to: dictationStatus.rawValue,
+                    source: "keyboardState"
+                ))
+                if dictationStatus.ownsKeyboardArea {
+                    PersistentLog.log(.overlayShown(status: dictationStatus.rawValue))
+                } else {
+                    PersistentLog.log(.overlayHidden(status: dictationStatus.rawValue))
+                }
+            }
+        }
     }
 
     /// What the keyboard area is presenting: the key grid, a full-area picker or
@@ -352,11 +384,10 @@ class KeyboardState: ObservableObject {
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
             let oldStatus = dictationStatus
+            // The statusChanged line this used to emit here now comes from
+            // dictationStatus's didSet (#255), which fires for this write and for
+            // the ones that never went through this method.
             dictationStatus = status
-
-            if oldStatus != status {
-                PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: status.rawValue, source: "keyboardState"))
-            }
 
             // Start/restart watchdog on any active state transition, stop when leaving.
             // WHY restart (not just start): transitioning .requested → .recording
