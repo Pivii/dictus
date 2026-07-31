@@ -52,7 +52,7 @@ final class PersistentLogTests: XCTestCase {
     /// The low-water mark is what stops the trim rewriting the file on every line.
     func testTrimTargetIsBelowMaxFileSize() {
         XCTAssertLessThan(PersistentLog.testableTrimTargetSize, PersistentLog.testableMaxFileSize)
-        XCTAssertEqual(PersistentLog.testableTrimTargetSize, 700_000)
+        XCTAssertEqual(PersistentLog.testableTrimTargetSize, 850_000)
     }
 
     func testShouldTrimReturnsFalseUnderLimit() {
@@ -72,7 +72,7 @@ final class PersistentLogTests: XCTestCase {
     }
 
     func testTrimBySizeKeepsSuffix() {
-        // Write ~1.5MB of numbered lines so we can verify the LAST ~700KB is kept
+        // Write ~1.5MB of numbered lines so we can verify the LAST ~850KB is kept
         var lines: [String] = []
         for i in 1...15000 {
             lines.append("line \(i) " + String(repeating: "X", count: 90))  // ~100 bytes each
@@ -84,9 +84,9 @@ final class PersistentLogTests: XCTestCase {
 
         let trimmed = (try? String(contentsOf: tempFileURL, encoding: .utf8)) ?? ""
         let resultSize = trimmed.utf8.count
-        // Should be roughly trimTargetSize (700KB), minus the dropped partial first line
-        XCTAssertLessThanOrEqual(resultSize, 700_000, "Trimmed file should be ~700KB or less")
-        XCTAssertGreaterThan(resultSize, 600_000, "Trimmed file should retain significant content")
+        // Should be roughly trimTargetSize (850KB), minus the dropped partial first line
+        XCTAssertLessThanOrEqual(resultSize, 850_000, "Trimmed file should be ~850KB or less")
+        XCTAssertGreaterThan(resultSize, 750_000, "Trimmed file should retain significant content")
         // Last line should be the very last line we wrote
         XCTAssertTrue(trimmed.contains("line 15000"), "Should keep the most recent (last) lines")
         // First lines should be gone
@@ -117,8 +117,8 @@ final class PersistentLogTests: XCTestCase {
     }
 
     /// Issue #255: once saturated, the old trim rewrote the whole file on every
-    /// single logged line. With a 70% low-water mark, a rewrite must cost at least
-    /// ~30% of the cap in freshly written bytes.
+    /// single logged line. With an 85% low-water mark, a rewrite must cost at least
+    /// ~15% of the cap in freshly written bytes.
     func testSaturatedFileRewritesOncePerLowWaterGap() {
         let line = String(repeating: "Z", count: 99) + "\n"  // 100 bytes
         // Start just over the cap so the very first append is already saturated.
@@ -135,13 +135,13 @@ final class PersistentLogTests: XCTestCase {
             }
         }
 
-        // 600KB written across a 300KB low-water gap: 2 rewrites, plus the initial
+        // 600KB written across a 150KB low-water gap: 4 rewrites, plus the initial
         // one that brings the pre-saturated file down. The point of the assertion is
         // the order of magnitude: it used to be one rewrite per line (6000).
-        XCTAssertLessThanOrEqual(rewrites, 4, "Expected a handful of rewrites, got \(rewrites)")
+        XCTAssertLessThanOrEqual(rewrites, 8, "Expected a handful of rewrites, got \(rewrites)")
         XCTAssertGreaterThan(rewrites, 0, "The file was saturated, it must have been trimmed")
         XCTAssertLessThan(
-            Double(rewrites) / Double(appendedLines), 0.001,
+            Double(rewrites) / Double(appendedLines), 0.005,
             "Rewrites per logged line must be near zero"
         )
     }

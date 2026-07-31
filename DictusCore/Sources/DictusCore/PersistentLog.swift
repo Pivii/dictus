@@ -70,7 +70,7 @@ public enum PersistentLog {
     /// the very process whose jetsam kills it exists to diagnose.
     static let maxFileSize: UInt64 = 1_000_000
 
-    /// Low-water mark the trim cuts down to: 70% of `maxFileSize`.
+    /// Low-water mark the trim cuts down to: 85% of `maxFileSize`.
     ///
     /// WHY a low-water mark at all (#255): the old trim kept exactly `maxFileSize`
     /// trailing bytes and then dropped the partial first line, leaving the file
@@ -78,9 +78,18 @@ public enum PersistentLog {
     /// once saturated — i.e. permanently — every logged line triggered a full file
     /// read plus a full atomic rewrite inside a cross-process `.forReplacing`
     /// coordination block, contended between DictusApp and DictusKeyboard.
-    /// Cutting back to 70% means a rewrite happens once per ~300KB written instead,
-    /// roughly once per 2000 lines.
-    static let trimTargetSize: UInt64 = 700_000
+    /// Cutting back to a low-water mark means a rewrite happens once per gap
+    /// written instead of once per line.
+    ///
+    /// WHY 85% rather than a deeper cut: the mark sets the *guaranteed* retention,
+    /// the span still on disk immediately after a trim. At 70% that floor was
+    /// ~20 minutes on a dense session, short of the 30 minutes #255 asks for. This
+    /// log is read while reproducing a bug, which is exactly when a session is
+    /// dense, so the floor is the case that matters rather than the rare one.
+    /// 85% raises the floor to ~24 minutes for a rewrite per ~150KB instead of
+    /// ~300KB — roughly once per 1000 lines, still three orders of magnitude
+    /// below the per-line rewriting this replaced.
+    static let trimTargetSize: UInt64 = 850_000
 
     /// Retention period in seconds (7 days).
     /// WHY 7 days: Keeps logs relevant for debugging recent issues while preventing
