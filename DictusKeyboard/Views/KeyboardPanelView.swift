@@ -118,9 +118,10 @@ struct KeyboardPanelView: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
-    /// Applies the language and leaves the panel open, so the checkmark visibly
-    /// moves — the checkmark is the confirmation, and closing instantly would
-    /// hide the proof that the right choice landed.
+    /// Applies the language. The parent closes the panel on this callback (#241
+    /// device feedback): the key grid changing layout underneath is a louder
+    /// confirmation than a checkmark, and staying open cost the user a second
+    /// trip to the close control before they could type.
     private func select(_ entry: SupportedLanguage) {
         // Re-selecting the active language would cost a full key-grid rebuild for
         // no visible change, so it is a no-op.

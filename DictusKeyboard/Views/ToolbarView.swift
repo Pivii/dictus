@@ -176,12 +176,9 @@ struct ToolbarView: View {
             HapticFeedback.keyTapped()
             onPanelToggle?()
         } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(Color(.label))
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+            barIcon(systemName: systemName, size: 17)
         }
+        .buttonStyle(GlassPressStyle())
         .accessibilityLabel(label)
     }
 
@@ -190,13 +187,33 @@ struct ToolbarView: View {
             HapticFeedback.keyTapped()
             onSettingsTap?()
         } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 19, weight: .medium))
-                .foregroundColor(Color(.label))
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
+            barIcon(systemName: "gearshape", size: 19)
         }
+        .buttonStyle(GlassPressStyle())
         .accessibilityLabel(Text("Open Dictus"))
+    }
+
+    /// Shared shape for the bar's icon buttons: a 36 pt glass circle inside a
+    /// 44 pt touch target.
+    ///
+    /// WHY the two frames differ (#241 device feedback): the visible control and
+    /// the tappable region are not the same thing. The glyph sat in a bare 32 pt
+    /// frame, under the 44 pt minimum, and closing the panel measured 10 to 22
+    /// seconds per attempt on device — taps aimed at the close control landed on
+    /// the 44 pt language rows below it instead. The outer frame is what a finger
+    /// hits; the inner one is what the eye sees, and 36 pt keeps the icons from
+    /// crowding a 52 pt bar.
+    ///
+    /// WHY glass rather than a bare glyph: against the mic's filled pill, an
+    /// unbacked icon read as unfinished rather than as a control.
+    private func barIcon(systemName: String, size: CGFloat) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .medium))
+            .foregroundColor(Color(.label))
+            .frame(width: 36, height: 36)
+            .dictusGlass(in: Circle())
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 
     /// White pill, gradient text, in both light and dark appearances (#241).
@@ -228,7 +245,12 @@ struct ToolbarView: View {
                     Capsule().fill(Color.white)
                 )
                 .shadow(color: .black.opacity(0.18), radius: 3, x: 0, y: 1)
+                // The pill stays 28 pt tall; only the touch target grows to 44.
+                // See `barIcon` for why the two are separated.
+                .frame(height: 44)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(GlassPressStyle())
         .accessibilityLabel(Text(verbatim: "Dictus Pro"))
     }
 }

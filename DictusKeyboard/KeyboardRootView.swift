@@ -116,11 +116,23 @@ struct KeyboardRootView: View {
             onSuggestionTap: { _ in },
             isPanelOpen: isPanelOpen,
             onPanelToggle: { togglePanel() },
-            onSettingsTap: { state.openDictusApp(intent: "settings") },
+            onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
             isProActive: isProActive,
-            onProTap: { state.openDictusApp(intent: "pro") }
+            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } }
         )
         .frame(height: toolbarHeight)
+    }
+
+    /// Close the panel, then run whatever takes the user out of the keyboard.
+    ///
+    /// WHY (#241 device feedback): the panel is a menu, not a place. Both entries
+    /// in its bar send the user to DictusApp, and coming back to a keyboard still
+    /// showing the menu they left is disorienting — the task that opened it is
+    /// over. Resetting before leaving also means the restore in
+    /// `KeyboardViewController.viewWillAppear` has nothing to put back.
+    private func leavePanel(_ action: @escaping () -> Void) {
+        state.presentAreaMode(.keys)
+        action()
     }
 
     /// Open or close the hamburger panel.
@@ -203,7 +215,15 @@ struct KeyboardRootView: View {
                             // height constraint has not landed yet, leaving
                             // geo.size.height at the 52 pt bar.
                             availableHeight: max(0, geo.size.height - toolbarHeight),
-                            onLanguageChanged: onLanguageChanged
+                            // Picking a language closes the panel (#241 device
+                            // feedback). The confirmation is the key grid changing
+                            // layout underneath, which is louder than a checkmark,
+                            // and leaving the panel up forced a second trip to the
+                            // close control to get back to typing.
+                            onLanguageChanged: { language in
+                                onLanguageChanged?(language)
+                                state.presentAreaMode(.keys)
+                            }
                         )
                     }
                 }
