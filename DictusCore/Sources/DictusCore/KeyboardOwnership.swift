@@ -11,24 +11,24 @@ import Foundation
 /// one that is: the recording overlay is drawn, and the hosting view expanded, by
 /// the owner and nobody else (#128, #116).
 ///
-/// Before #260 ownership was two independent properties, an optional controller id
-/// and a visibility flag, and "nobody owns the keyboard area" had exactly one
-/// spelling. That conflated two situations that call for opposite handling:
+/// Before #260 ownership was two independent properties — an optional controller
+/// id and a visibility flag — and once they were emptied there was no way back
+/// except a fresh controller registering. That is the bug: a controller that is
+/// *not* the keyboard on screen can empty them and leave the one that is unable
+/// to present anything.
 ///
-/// - the keyboard was **dismissed** — there is no keyboard on screen, and the next
-///   thing to happen is a fresh controller registering from scratch;
-/// - the owner was **deallocated mid-dictation while the keyboard stayed on
-///   screen** — iOS destroys every live controller before building the successor
-///   during an app switch, so for a moment a live recording session has no owner
-///   at all.
+/// It happens because ownership is last-writer-wins on appearance. Under churn the
+/// live keyboard's ownership is routinely overwritten by an instance iOS is about
+/// to throw away, and when that instance is deallocated it takes the area with it.
+/// The live controller is never asked again: its `viewWillAppear` already ran.
+/// Every status change is then dropped by the ownership guards and the keyboard
+/// stays in its typing layout while the app records behind it — 2.5 s in one
+/// capture, four seconds and a manual trip to DictusApp in another.
 ///
-/// In the second case every status change was dropped by the ownership guards and
-/// the keyboard stayed in its typing layout while the app recorded behind it,
-/// until iOS happened to build another controller — sometimes seconds later,
-/// sometimes only after the user went to the app and came back.
-///
-/// Naming the second case is what makes it fixable: it is the only state from
-/// which a live controller may take ownership it never registered for.
+/// The third state below is the way back. It says the last known owner is gone and
+/// nothing has registered since, which is the only situation where a controller
+/// may take ownership it never registered for — and it may only do so if it can
+/// show it is on screen.
 ///
 /// Lives in DictusCore rather than DictusKeyboard so the transitions below are
 /// unit-testable — the keyboard extension target has no test bundle. Same
@@ -41,14 +41,17 @@ public enum KeyboardOwnership: Equatable, Sendable {
     /// the recording overlay and size the keyboard area for it.
     case owned(controllerID: String)
 
-    /// The owner was deallocated while a dictation still owned the keyboard area,
-    /// and no successor has registered yet (#260).
+    /// The owner was deallocated and no successor has registered yet (#260).
     ///
     /// Reads exactly like `.none` to every consumer — `controllerID` is `nil` and
-    /// `isVisible` is `false`, so a dangling marker can never make a dismissed
-    /// keyboard look present. What it adds is the licence to reclaim: an attached
-    /// controller that finds the area in this state may adopt the session instead
-    /// of waiting for iOS to build a replacement.
+    /// `isVisible` is `false` — so relative to releasing ownership outright, which
+    /// is what the code did before, this changes nothing anyone can observe. A
+    /// dangling marker cannot make a dismissed keyboard look present, and it
+    /// cannot leave `isKeyboardVisible` stuck `true`.
+    ///
+    /// What it adds is a licence: a controller that is still on screen may claim
+    /// the area rather than wait for iOS to build a replacement. That is the whole
+    /// fix — the state itself is inert.
     case awaitingReclaim(previousControllerID: String)
 
     /// The owning controller, or `nil` when nobody owns the keyboard area.
@@ -104,40 +107,43 @@ public enum KeyboardOwnership: Equatable, Sendable {
 
     /// Ownership after the owning controller is deallocated.
     ///
-    /// `sessionOwnsKeyboardArea` is `DictationStatus.ownsKeyboardArea` at that
-    /// instant, and it is the whole decision: with a dictation in flight the
-    /// keyboard is still on screen and a successor is being built, so the area
-    /// stays reclaimable; without one, a deallocated owner means the keyboard is
-    /// gone and ownership is released outright.
-    public func deallocating(
-        controllerID: String,
-        sessionOwnsKeyboardArea: Bool
-    ) -> KeyboardOwnership {
+    /// WHY the dictation status is deliberately NOT consulted here: it says
+    /// nothing about whether the keyboard is still on screen. The first capture in
+    /// #260 has the owner deallocating a full second *before* the mic is tapped —
+    /// the ordinary cold-start shape, controller churn settling and then the user
+    /// starting a dictation — with another controller on screen the whole time.
+    /// Conditioning the marker on a session being in flight at this instant
+    /// therefore misses the dominant case entirely, and an earlier version of this
+    /// fix did exactly that.
+    ///
+    /// A deallocated owner means one thing on its own: the last controller known
+    /// to own the area is gone and nothing has registered since. Whether the
+    /// keyboard is still on screen is a question only a live controller can
+    /// answer, and it answers it in `claiming(controllerID:isOnScreen:)`.
+    public func deallocating(controllerID: String) -> KeyboardOwnership {
         guard self.controllerID == controllerID else { return self }
-        return sessionOwnsKeyboardArea ? .awaitingReclaim(previousControllerID: controllerID) : .none
+        return .awaitingReclaim(previousControllerID: controllerID)
     }
 
-    /// Ownership after an attached controller claims a reclaimable area, or `nil`
-    /// when there is nothing to claim.
+    /// Ownership after a controller claims a reclaimable area, or `nil` when it
+    /// may not have it.
+    ///
+    /// `isOnScreen` is the whole safety property, and it must be answered by the
+    /// caller from UIKit — window attachment, not bookkeeping. Every controller
+    /// that can reach this has appeared, been overwritten by a later appearance,
+    /// and not been told it disappeared; that description fits the live keyboard
+    /// whose ownership a dying controller took with it, and it equally fits the
+    /// cached instances iOS never notifies (#128). Only attachment separates them,
+    /// and getting it wrong the permissive way would let a stale controller
+    /// *acquire* the area instead of merely being skipped — strictly worse than
+    /// the bug being fixed. Answer it fail-closed.
     ///
     /// Single-shot by construction: the claim moves the state to `.owned`, so a
     /// second controller reacting to the same event finds nothing reclaimable and
     /// the ordinary ownership guards apply to it again.
-    public func reclaiming(controllerID: String) -> KeyboardOwnership? {
-        guard isReclaimable else { return nil }
+    public func claiming(controllerID: String, isOnScreen: Bool) -> KeyboardOwnership? {
+        guard isReclaimable, isOnScreen else { return nil }
         return .owned(controllerID: controllerID)
-    }
-
-    /// Ownership after a dictation status change.
-    ///
-    /// A reclaimable area is only reclaimable because a session was still in
-    /// flight. When that session ends with nobody having claimed it — a keyboard
-    /// genuinely dismissed mid-recording, where no successor controller ever
-    /// arrives — the marker has nothing left to license and is dropped, so the
-    /// state cannot be left dangling for the rest of the process's life.
-    public func resolving(sessionOwnsKeyboardArea: Bool) -> KeyboardOwnership {
-        guard isReclaimable, !sessionOwnsKeyboardArea else { return self }
-        return .none
     }
 
     /// Compact form for device logs: the ownership half of every probe line.
