@@ -108,9 +108,20 @@ struct RecordingOverlay: View {
     // MARK: - Top bar (varies by state)
 
     /// Top bar with recording control buttons.
+    ///
     /// WHY @ViewBuilder: Each state shows different buttons but reserves the same
-    /// vertical space (36pt pill + 6pt vertical padding = 48pt total), so the
-    /// BrandWaveform below never shifts vertically during state transitions.
+    /// vertical space (10pt + 36pt pill + 6pt = 52pt total), so the BrandWaveform
+    /// below never shifts vertically during state transitions.
+    ///
+    /// WHY 10pt on top and not 6 (#241 device feedback): this bar replaces
+    /// `ToolbarView`, which is 52pt tall with 4pt of top padding and centres its
+    /// pills — putting their top edge at y=10. At 6pt these pills sat 4pt higher,
+    /// so starting a recording made both of them visibly jump up a notch. The
+    /// asymmetric padding is what makes the two bars interchangeable.
+    ///
+    /// Horizontal alignment was already correct: the 17pt trailing inset offsets
+    /// the mic's 66pt ring around its 56pt pill, so the right-hand pill keeps the
+    /// same edge in both bars.
     @ViewBuilder
     private var topBar: some View {
         switch dictationStatus {
@@ -125,14 +136,16 @@ struct RecordingOverlay: View {
             }
             .padding(.leading, 12)
             .padding(.trailing, 17)
-            .padding(.vertical, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
 
         case .transcribing:
             // Reserve same height as button row so waveform doesn't shift
             Color.clear
                 .frame(height: 36)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
         default:
             // Cancel (left) and validate (right) -- pill-shaped Liquid Glass buttons
@@ -151,7 +164,8 @@ struct RecordingOverlay: View {
             }
             .padding(.leading, 12)
             .padding(.trailing, 17)
-            .padding(.vertical, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
         }
     }
 
