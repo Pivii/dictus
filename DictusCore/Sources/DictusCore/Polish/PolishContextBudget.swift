@@ -41,29 +41,36 @@ public struct PolishContextBudget: Sendable, Equatable {
     /// session prepends (role headers, BOS).
     public let scaffoldingTokens: Int
 
-    /// Output allowance, as a multiple of the estimated input size. Polish is a
-    /// rewrite, so the output is roughly as long as the input; the extra 10%
-    /// covers Repair mode, where reconstructing intent in another language
-    /// expands the text (EN→FR runs ~15% longer).
+    /// Output allowance, as a multiple of the estimated input size.
+    ///
+    /// This is the term that carries the uncertainty, and the one the
+    /// measurement reshaped. The overflow does not happen on prefill — it
+    /// happens **during generation**, fifteen to twenty seconds into the call.
+    /// On a successful call the model emits about 0.5 tokens per input token;
+    /// on a failing one it runs away and emits past 2.3×. Which of the two
+    /// happens is not knowable in advance, so the reserve is not "the expected
+    /// output" — it is the lever that sets where a call stops being worth
+    /// making. See `appleFoundationModels` for the data it was set from.
     public let outputReserveRatio: Double
 
     /// Multiplier applied to the whole estimate before comparing it to the
     /// window.
     ///
-    /// The constants below were measured on fluent, common-word prose (see
-    /// `latinCharsPerToken`). Real STT output is messier — proper nouns,
-    /// digits, mistranscribed fragments — and all of those tokenize less
-    /// efficiently than the sentences we measured. The margin covers that gap,
-    /// plus the fact that generated output length is not knowable in advance.
+    /// The character-per-token ratios below were measured on fluent,
+    /// common-word prose. Real STT output is messier — proper nouns, digits,
+    /// mistranscribed fragments — and all of those tokenize less efficiently
+    /// than the sentences we measured. This margin covers that gap and nothing
+    /// else; the generation-length uncertainty lives in `outputReserveRatio`,
+    /// where it belongs and where it can be retuned on its own.
     ///
-    /// WHY only 20%, when the brief is to err toward over-estimating: the two
-    /// errors are not symmetric, but neither is catastrophic. Under-estimating
-    /// lets the engine throw, which lands on exactly today's behaviour — the
-    /// user still receives the deterministic floor, we just lose the named
-    /// reason. Over-estimating refuses a call that would have worked, taking
-    /// polish away from a dictation that works today. So the margin is real but
-    /// deliberately modest: enough to absorb tokenizer variance, not enough to
-    /// halve the length a user may dictate.
+    /// WHY the two are kept separate and both modest: the errors are not
+    /// symmetric, but neither is catastrophic. Under-estimating lets the engine
+    /// throw, which lands on exactly today's behaviour — the user still gets
+    /// the deterministic floor, we just lose the named reason. Over-estimating
+    /// refuses a call that might have worked, taking polish away from a
+    /// dictation that works today. And no static estimate can eliminate the
+    /// throw: generation length is the model's choice, so the `.engineFailed`
+    /// path stays the backstop it always was.
     public let safetyMargin: Double
 
     public init(contextWindowTokens: Int,
@@ -92,13 +99,49 @@ public struct PolishContextBudget: Sendable, Equatable {
     /// cost 4800 characters of French input (~972 tokens). Instruction text and
     /// input text are interchangeable inside the window, one token for one
     /// token — which is why the estimate has to price the resolved prompt.
+    ///
+    /// A third run drove the real French Natural prompt through the real engine
+    /// at increasing input lengths, repeated per length, on varied French
+    /// dictation text. It found no clean threshold, and that result is the most
+    /// important thing on this page:
+    ///
+    ///     3 000 chars  ok / ok / ok
+    ///     3 600 chars  threw / ok / ok
+    ///     4 150 chars  ok / ok / ok / threw
+    ///     4 400 chars  ok / threw
+    ///     4 700 chars  ok / ok
+    ///     5 000 chars  threw / ok
+    ///     5 200 chars  threw / threw
+    ///
+    /// Two things follow, and both shape the numbers below.
+    ///
+    /// **The failure is probabilistic, not a cliff.** The same input can throw
+    /// on one call and succeed on the next, because the model sometimes runs
+    /// away during generation. Its probability climbs steeply with input length
+    /// but never becomes a clean line. So no static estimate can eliminate the
+    /// throw, and this guard does not pretend to: the `.engineFailed` path
+    /// stays exactly the backstop it always was, for the runaway that happens
+    /// under any threshold.
+    ///
+    /// **Above ~4 500 characters the call is not worth making anyway.** Every
+    /// successful run in the sweep returned about 2 300 characters regardless
+    /// of how much went in — the model truncates rather than polishing the
+    /// whole text. Against `PolishGuardrail`'s 0.5 length-ratio floor in
+    /// Natural mode, a 4 700-character input polished down to 2 300 is rejected
+    /// on arrival. Past that point the engine call costs ten seconds to produce
+    /// something the pipeline will throw away.
+    ///
+    /// The constants therefore put the refusal at ~4 160 characters for the
+    /// French Natural prompt (~690 words, ~4½ minutes of speech), which is
+    /// where the two curves meet: below it the call usually succeeds and the
+    /// output is usable, above it neither holds reliably.
     public static let appleFoundationModels = PolishContextBudget(
         contextWindowTokens: 4096,
         // The engine's wrapper ("Polish this text… Input: … Polished output:")
         // is ~25 tokens; the session's chat template adds a few dozen more.
         scaffoldingTokens: 64,
-        outputReserveRatio: 1.1,
-        safetyMargin: 1.2
+        outputReserveRatio: 1.8,
+        safetyMargin: 1.15
     )
 
     // MARK: - Fit

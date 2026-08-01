@@ -264,10 +264,11 @@ final class PolishContextBudgetTests: XCTestCase {
                           "the longest prompt must leave the least room for input")
     }
 
-    /// A regression guard on the constants, deliberately loose. The measured
-    /// ceiling for the French Natural prompt sits around 7 000 characters of
-    /// input; the estimate is meant to refuse somewhat earlier than that, not
-    /// at half of it and not past it.
+    /// A regression guard on the constants, deliberately loose. The sweep
+    /// recorded in `PolishContextBudget.appleFoundationModels` puts the useful
+    /// range for the French Natural prompt at roughly 4 000–4 500 characters of
+    /// input: below it the engine reliably succeeds with a usable output, above
+    /// it it truncates and increasingly often throws.
     func testFrenchNaturalPromptAcceptsARealisticDictationLength() throws {
         guard #available(iOS 26.0, macOS 26.0, *) else {
             throw XCTSkip("Apple Foundation Models prompts require the iOS/macOS 26 SDK")
@@ -277,10 +278,10 @@ final class PolishContextBudgetTests: XCTestCase {
         )
         let limit = largestAcceptedLength(budget: .appleFoundationModels,
                                           instructions: instructions)
-        XCTAssertGreaterThan(limit, 4000,
-                             "refusing under ~4 000 characters would take polish away from dictations that work today")
-        XCTAssertLessThan(limit, 7000,
-                          "accepting past ~7 000 characters would let the engine throw, which is what this guards against")
+        XCTAssertGreaterThan(limit, 3500,
+                             "refusing under ~3 500 characters would take polish away from dictations that measurably work today")
+        XCTAssertLessThan(limit, 4800,
+                          "accepting past ~4 800 characters buys output the guardrail rejects, when the engine does not throw first")
     }
 
     /// A one-line dictation must be nowhere near any ceiling, on every prompt.
