@@ -357,6 +357,17 @@ class KeyboardViewController: UIInputViewController {
         // displaced toolbar. This also restores a picker the user left open when
         // iOS hands the keyboard to a fresh controller.
         let statusBeforeHandle = KeyboardState.shared.dictationStatus.rawValue
+
+        // The hamburger panel does not survive leaving the keyboard (#241 device
+        // feedback). Switching away with the globe and coming back put the user
+        // straight back into the menu instead of the keys, which is not what
+        // returning to a keyboard should mean. The emoji picker deliberately keeps
+        // the old restore behaviour: browsing emoji is a task worth resuming,
+        // choosing a language is not.
+        if KeyboardState.shared.areaMode == .panel {
+            KeyboardState.shared.presentAreaMode(.keys)
+        }
+
         applyAreaMode(KeyboardState.shared.areaMode)
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",

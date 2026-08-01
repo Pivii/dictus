@@ -586,12 +586,28 @@ public enum LogEvent: Sendable {
     /// Produces the full formatted log line.
     /// Format: `[ISO8601timestamp] LEVEL  [subsystem] eventName param=value ...`
     public func formatted() -> String {
-        let timestamp = Self.isoFormatter.string(from: Date())
+        "[\(Self.timestamp())] " + payload()
+    }
+
+    /// The formatted line without its leading timestamp.
+    ///
+    /// WHY this is split out of `formatted()` (#255): PersistentLog collapses runs
+    /// of identical consecutive lines, and two occurrences of the same event a
+    /// second apart differ only by their timestamp. The timestamp-free part is
+    /// therefore the comparison key, and it has to be produced by the same code
+    /// path that produces the written line so the two can never drift.
+    func payload() -> String {
         let src = PersistentLog.source
         let params = message
         if params.isEmpty {
-            return "[\(timestamp)] \(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name)"
+            return "\(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name)"
         }
-        return "[\(timestamp)] \(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name) \(params)"
+        return "\(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name) \(params)"
+    }
+
+    /// ISO8601 timestamp for a log line, taken at the moment of the `log()` call
+    /// rather than at the moment of the write — the write is queued.
+    static func timestamp(for date: Date = Date()) -> String {
+        isoFormatter.string(from: date)
     }
 }
