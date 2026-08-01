@@ -55,8 +55,19 @@ To check locally before pushing:
 
 ```bash
 brew install swiftlint
-swiftlint lint
+swiftlint version   # must match the version pinned in .github/workflows/ci.yml
+swiftlint lint --strict
 ```
+
+Homebrew installs whatever is current, and CI pins its image, so the two drift
+apart over time. When they disagree, CI is the authority — a rule added in a
+newer release will fail your PR even though your local run was green.
+
+`--strict` is what CI runs, and it passes on a clean checkout with no exemption
+file. If you need a force unwrap, keep it and write a
+`// swiftlint:disable:next force_unwrapping` directive above it with a comment
+saying why the value cannot be nil — that is the project convention, not a
+workaround.
 
 The CI does **not** sign builds, run tests, or upload to TestFlight. Its only job is to catch broken compilations and obvious style regressions.
 

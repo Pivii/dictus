@@ -246,7 +246,10 @@ class TextPredictionEngine {
         //    where single-word "Pascal" is at ED 2 and split ED is 1.
         //
         // 3. No split → fall through to trie single-word correction.
-        let (splitResult, splitHasBoundary, splitHasBigram) = trySplitWithSignal(wordToCheck)
+        let evaluation = trySplitWithSignal(wordToCheck)
+        let splitResult = evaluation.split
+        let splitHasBoundary = evaluation.hasBoundarySignal
+        let splitHasBigram = evaluation.hasBigramEvidence
         if let split = splitResult {
             let useSplit: Bool
             if splitHasBigram {
@@ -415,7 +418,9 @@ class TextPredictionEngine {
             // Add close predictions (may introduce new candidates like "suis")
             let isCapitalized = word.first?.isUppercase == true
             for (prediction, score) in closePredictions {
-                let full = prefix != nil ? (prefix! + prediction) : prediction
+                // `prefix ?? ""` reproduces the nil branch exactly: prepending the
+                // empty string is the identity, which is what nil returned before.
+                let full = (prefix ?? "") + prediction
                 let display = isCapitalized ? full.capitalized : full
                 if let existing = candidateSet[display] {
                     candidateSet[display] = max(existing, score)
@@ -482,8 +487,8 @@ class TextPredictionEngine {
                 let afterScore = reranked[0].value
                 AutocorrectDebugLog.bigramRerank(
                     word: word, prevWord: prev,
-                    before: result.correction, after: newCorrection,
-                    beforeScore: beforeScore, afterScore: afterScore
+                    before: (result.correction, beforeScore),
+                    after: (newCorrection, afterScore)
                 )
             }
             #endif
@@ -614,6 +619,28 @@ class TextPredictionEngine {
         return isCapitalized ? (corrected.prefix(1).uppercased() + corrected.dropFirst()) : corrected
     }
 
+    /// The winning split plus the evidence backing it.
+    ///
+    /// WHY a struct and not a tuple: three labelled members is one past what the
+    /// project lints for, and a named type also stops the caller destructuring
+    /// three same-shaped values positionally.
+    private struct SplitEvaluation {
+        /// The winning "left right" split, or nil when nothing qualified.
+        let split: String?
+        /// The split used a spacebar-neighbor char — strong physical evidence.
+        let hasBoundarySignal: Bool
+        /// The pair (left, right) has a bigram score > 0 — linguistic evidence.
+        let hasBigramEvidence: Bool
+    }
+
+    /// A boundary-split candidate while the loop below is still looking for the
+    /// best one. Same reason as SplitEvaluation for being a struct.
+    private struct BoundaryCandidate {
+        let split: String
+        let score: UInt32
+        let hasBigram: Bool
+    }
+
     /// Wrapper around trySplit that returns the winning split plus flags
     /// describing the evidence backing it. Caller decides whether to accept.
     ///
@@ -628,21 +655,22 @@ class TextPredictionEngine {
     ///   with the single-word correction to decide.
     ///
     /// Boundary splits with bigram evidence win over those without.
-    private func trySplitWithSignal(_ word: String)
-        -> (split: String?, hasBoundarySignal: Bool, hasBigramEvidence: Bool) {
+    private func trySplitWithSignal(_ word: String) -> SplitEvaluation {
         let chars = Array(word)
         // Minimum absolute part length 2; each part must also pass isValidSplitPart
         // which requires either ≥3 chars or membership in the short-word allowlist.
         // This lets "tu peux" split from "tuboeux" while still blocking "ho ne"
         // from "honne" (since "ho" is not allowlisted).
         let minPartLength = 2
-        guard chars.count >= 4 else { return (nil, false, false) }
+        guard chars.count >= 4 else {
+            return SplitEvaluation(split: nil, hasBoundarySignal: false, hasBigramEvidence: false)
+        }
 
         let spacebarNeighbors = LayoutType.active == .azerty
             ? Self.azertySpacebarNeighbors
             : Self.qwertySpacebarNeighbors
 
-        var bestBoundary: (split: String, score: UInt32, hasBigram: Bool)?
+        var bestBoundary: BoundaryCandidate?
         var bestBigram: (split: String, score: UInt32)?
 
         /// Score a candidate pair. Returns (score, hasBigram).
@@ -657,6 +685,16 @@ class TextPredictionEngine {
             } else {
                 return (freqProduct, false)
             }
+        }
+
+        /// True when `score` should replace the current best, including the case
+        /// where there is no current best yet.
+        /// WHY not the shorter `score > (current ?? 0)`: a first candidate scoring
+        /// zero must still beat "no candidate at all", and that shorthand would
+        /// silently drop it.
+        func improves(_ score: UInt32, over current: UInt32?) -> Bool {
+            guard let current else { return true }
+            return score > current
         }
 
         for splitPos in minPartLength...(chars.count - minPartLength) {
@@ -676,8 +714,10 @@ class TextPredictionEngine {
                     // Case A: both halves valid as-is
                     if leftExists && aospTrieEngine.wordExists(rightAfter) {
                         let (s, hasBi) = scorePair(left: left, right: rightAfter)
-                        if bestBoundary == nil || s > bestBoundary!.score {
-                            bestBoundary = ("\(left) \(rightAfter)", s, hasBi)
+                        if improves(s, over: bestBoundary?.score) {
+                            bestBoundary = BoundaryCandidate(
+                                split: "\(left) \(rightAfter)", score: s, hasBigram: hasBi
+                            )
                         }
                     }
                     // Case B: right half needs spell correction (min 3 chars to avoid
@@ -685,8 +725,10 @@ class TextPredictionEngine {
                     if leftExists && !aospTrieEngine.wordExists(rightAfter) && rightAfter.count >= 3,
                        let c = aospTrieEngine.spellCheck(rightAfter) {
                         let (s, hasBi) = scorePair(left: left, right: c.correction)
-                        if bestBoundary == nil || s > bestBoundary!.score {
-                            bestBoundary = ("\(left) \(c.correction)", s, hasBi)
+                        if improves(s, over: bestBoundary?.score) {
+                            bestBoundary = BoundaryCandidate(
+                                split: "\(left) \(c.correction)", score: s, hasBigram: hasBi
+                            )
                         }
                     }
                 }
@@ -696,7 +738,7 @@ class TextPredictionEngine {
             guard Self.isValidSplitPart(right) else { continue }
             if leftExists && rightExists {
                 let (s, hasBi) = scorePair(left: left, right: right)
-                if hasBi, bestBigram == nil || s > bestBigram!.score {
+                if hasBi, improves(s, over: bestBigram?.score) {
                     bestBigram = ("\(left) \(right)", s)
                 }
             }
@@ -728,7 +770,9 @@ class TextPredictionEngine {
             )
         }
         #endif
-        return (winner, hasBoundary, hasBigramEv)
+        return SplitEvaluation(
+            split: winner, hasBoundarySignal: hasBoundary, hasBigramEvidence: hasBigramEv
+        )
     }
 
 }

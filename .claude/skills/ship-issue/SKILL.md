@@ -55,7 +55,7 @@ Spawn a `general-purpose` agent per issue, with the number and worktree path sub
 >
 > **Phase 3 — Implement.** Atomic commits referencing `(refs #N)`. Match the surrounding code — this codebase documents *why* extensively in comments, keep that. No TODOs, no stubs, no partial implementations.
 >
-> **Phase 4 — Verify.** Build all three targets (DictusApp, DictusKeyboard, DictusCore). A fresh worktree resolves packages from scratch, so run `./scripts/patch-fluidaudio-swift5.sh` before the first build or it will fail. Run the test suite and add tests where the change is testable. Run SwiftLint and keep the baseline stable; if it shifts, regenerate it in its own commit. Walk the acceptance criteria one by one and record evidence for each. You cannot validate on a physical device — do what the simulator allows, then list precisely what remains for the maintainer, with exact steps.
+> **Phase 4 — Verify.** Build all three targets (DictusApp, DictusKeyboard, DictusCore). A fresh worktree resolves packages from scratch, so run `./scripts/patch-fluidaudio-swift5.sh` before the first build or it will fail. Run the test suite and add tests where the change is testable. Run `swiftlint lint --strict` and leave it green — there is no baseline or exemption file, so any violation you introduce must be fixed or carry a `swiftlint:disable` directive with a written reason. Walk the acceptance criteria one by one and record evidence for each. You cannot validate on a physical device — do what the simulator allows, then list precisely what remains for the maintainer, with exact steps.
 >
 > **Never launch the simulator GUI.** The maintainer works on the same machine and every launch of Simulator.app steals their focus. Do not run `open -a Simulator`. `xcrun simctl boot <udid>` on its own is headless and fine; `xcodebuild test -destination 'platform=iOS Simulator,name=...'` is the way to run tests. If something opens a window anyway, use `open -g` so it does not come to the front. If a check genuinely needs the GUI, do not run it — add it to the maintainer's device-validation list instead.
 >
@@ -65,10 +65,11 @@ Spawn a `general-purpose` agent per issue, with the number and worktree path sub
 
 ## Running several at once
 
-Parallel agents are safe once each has its own worktree, with two things to expect:
+Parallel agents are safe once each has its own worktree, with one thing to expect:
 
-- **They will all regenerate the SwiftLint baseline.** The first PR merges cleanly; the later ones conflict on that file. Resolve by regenerating after the merge, not by hand-editing.
-- **Never run two issues that own the same file in parallel.** #146 (SwiftLint tightening) owns the baseline itself, so it fights every other agent — run it alone.
+- **Never run two issues that own the same file in parallel.** Agents conflict on shared files, not on their own code.
+
+The SwiftLint baseline used to be the worst of these shared files — every agent regenerated it and every PR but the first conflicted. It was deleted in #146; `swiftlint lint --strict` now passes on its own.
 
 ## Repo conventions the agent must not rediscover
 

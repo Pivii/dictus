@@ -155,11 +155,10 @@ class ModelManager: ObservableObject {
 
         // Resync modelStates with loaded downloadedModels so models downloaded
         // by onboarding's separate ModelManager instance show as .ready here.
-        for model in ModelInfo.allIncludingDeprecated {
-            if downloadedModels.contains(model.identifier) {
-                if modelStates[model.identifier] == nil || modelStates[model.identifier] == .notDownloaded {
-                    modelStates[model.identifier] = .ready
-                }
+        for model in ModelInfo.allIncludingDeprecated
+        where downloadedModels.contains(model.identifier) {
+            if modelStates[model.identifier] == nil || modelStates[model.identifier] == .notDownloaded {
+                modelStates[model.identifier] = .ready
             }
         }
     }

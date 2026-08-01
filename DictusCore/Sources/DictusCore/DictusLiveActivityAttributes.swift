@@ -15,6 +15,26 @@ import Foundation
 /// Dictus has no per-activity metadata — the same app, same branding, same behavior.
 /// All dynamic data lives in ContentState, updated via Activity.update().
 public struct DictusLiveActivityAttributes: ActivityAttributes {
+    /// Phase of the Live Activity, as displayed by ActivityKit.
+    ///
+    /// WHY a sibling of ContentState rather than nested inside it: two levels of
+    /// nesting is one more than the project lints for, and the type is the same
+    /// type either way. Unqualified `Phase` still resolves from inside
+    /// ContentState through the enclosing scope, and the raw values are unchanged,
+    /// so the Codable wire format ActivityKit persists is identical.
+    public enum Phase: String, Codable, Hashable {
+        /// App is in background, ready to record. Static "On" display.
+        case standby
+        /// Actively recording audio. Shows waveform + timer.
+        case recording
+        /// Processing audio through WhisperKit/Parakeet. Shows pulsing animation.
+        case transcribing
+        /// Transcription result available. Shows preview + checkmark.
+        case ready
+        /// An error occurred during recording or transcription.
+        case failed
+    }
+
     public struct ContentState: Codable, Hashable {
         /// Current phase of the Live Activity.
         public var phase: Phase
@@ -35,19 +55,6 @@ public struct DictusLiveActivityAttributes: ActivityAttributes {
         /// Short preview of the transcription result (~100 chars).
         /// nil except in .ready phase.
         public var transcriptionPreview: String?
-
-        public enum Phase: String, Codable, Hashable {
-            /// App is in background, ready to record. Static "On" display.
-            case standby
-            /// Actively recording audio. Shows waveform + timer.
-            case recording
-            /// Processing audio through WhisperKit/Parakeet. Shows pulsing animation.
-            case transcribing
-            /// Transcription result available. Shows preview + checkmark.
-            case ready
-            /// An error occurred during recording or transcription.
-            case failed
-        }
 
         public init(
             phase: Phase,
