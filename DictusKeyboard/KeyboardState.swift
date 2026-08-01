@@ -125,6 +125,9 @@ class KeyboardState: ObservableObject {
             guard oldValue != ownership else { return }
             activeControllerID = ownership.controllerID
             isKeyboardVisible = ownership.isVisible
+            if ownership.isReclaimable {
+                nudgeAttachedControllersToReclaim()
+            }
         }
     }
 
@@ -640,6 +643,36 @@ class KeyboardState: ObservableObject {
         )
         ownership = next
         return true
+    }
+
+    /// Ask the controllers still on screen to look at an area that just became
+    /// reclaimable, instead of waiting for the next dictation status change (#260).
+    ///
+    /// WHY this is needed at all: a controller adopts an ownerless session from
+    /// `applyAreaMode`, which only runs when the area mode is published — i.e. on a
+    /// status write. If the owner is deallocated in the middle of a recording, the
+    /// next write is the `transcribing` transition, so the keyboard would sit in
+    /// its typing layout for the rest of the utterance. Re-publishing the current
+    /// mode gives every attached controller the chance immediately.
+    ///
+    /// WHY asynchronously: this is reached from the owner's `deinit`, which then
+    /// goes on to tear down its hosting controller and view hierarchy. Applying
+    /// layout on a *different* controller from inside that stack is the kind of
+    /// re-entrancy this file has regressed on before (#142, #128, #166). One main
+    /// queue hop puts the work after the deallocation has finished.
+    ///
+    /// Re-publishing is cheap and idempotent by design — the mode is re-applied on
+    /// every status write already, which is how a keyboard returning from
+    /// suspension re-synchronises its geometry.
+    private func nudgeAttachedControllersToReclaim() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.ownership.isReclaimable else { return }
+            self.logProbe(
+                "reclaimNudge",
+                details: "ownership=\(self.ownership.logDescription) mode=\(self.areaMode.rawValue) \(self.sessionDetails())"
+            )
+            self.areaModeSubject.send(self.areaMode)
+        }
     }
 
     /// Drop a reclaim marker once the session that justified it is over (#260).
