@@ -25,8 +25,8 @@ class LiveActivityManager {
     // MARK: - State Machine
 
     /// Internal state machine for Live Activity lifecycle.
-    /// WHY separate from ContentState.Phase: This tracks the manager's own state,
-    /// including .idle (no activity exists). ContentState.Phase is the ActivityKit
+    /// WHY separate from DictusLiveActivityAttributes.Phase: This tracks the manager's own state,
+    /// including .idle (no activity exists). DictusLiveActivityAttributes.Phase is the ActivityKit
     /// display state sent to the widget. The state machine prevents Dynamic Island
     /// desync after chaining multiple recordings (#42).
     private enum LiveActivityPhase: String {
@@ -87,8 +87,8 @@ class LiveActivityManager {
         stateMachine.forcePhase(mapToStateMachinePhase(phase))
     }
 
-    /// Maps ContentState.Phase (ActivityKit display) to LiveActivityPhase (internal state machine).
-    private func mapContentPhase(_ phase: DictusLiveActivityAttributes.ContentState.Phase) -> LiveActivityPhase {
+    /// Maps DictusLiveActivityAttributes.Phase (ActivityKit display) to LiveActivityPhase (internal state machine).
+    private func mapContentPhase(_ phase: DictusLiveActivityAttributes.Phase) -> LiveActivityPhase {
         switch phase {
         case .standby: return .standby
         case .recording: return .recording
@@ -104,7 +104,7 @@ class LiveActivityManager {
     /// Tracks the current phase via a formal state machine with validated transitions.
     /// WHY: Even if DictationCoordinator guards its sinks, this provides a second
     /// barrier -- updateWaveform() is a no-op unless we're actually recording.
-    /// WHY LiveActivityPhase (not ContentState.Phase): Adds .idle state and transition
+    /// WHY LiveActivityPhase (not DictusLiveActivityAttributes.Phase): Adds .idle state and transition
     /// validation to prevent DI desync after chaining recordings (#42).
     private var currentPhase: LiveActivityPhase = .idle
 
