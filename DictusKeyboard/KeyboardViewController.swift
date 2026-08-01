@@ -103,12 +103,23 @@ class KeyboardViewController: UIInputViewController {
         viewIfLoaded?.window != nil || inputView?.window != nil
     }
 
+    /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
+    /// census, so `deinit` decrements exactly once and only for instances that
+    /// incremented. `deinit` runs for every instance, `viewDidLoad` only for those
+    /// whose view is loaded, and an uncounted decrement would drift `live=` — the
+    /// one number the next #281 capture is meant to be readable from. No such
+    /// instance appears in any of the four device logs analysed (52 controllers,
+    /// zero deinits without a viewDidLoad), so this guards a case that is possible
+    /// rather than one that is observed.
+    private var didCountIntoLiveCensus = false
+
     override func viewDidLoad() {
         super.viewDidLoad()
         PersistentLog.source = "KBD"
         let memEntry = MemoryFootprint.residentMB()
         // live= is the #281 headline probe: healthy cold starts peak at 2 live
         // controllers, both #281 occurrences peak at 3. See KeyboardLifecycleProbe.
+        didCountIntoLiveCensus = true
         let liveOnLoad = KeyboardLifecycleProbe.controllerDidLoad()
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
@@ -726,7 +737,9 @@ class KeyboardViewController: UIInputViewController {
 
         // live=0 on this line marks the exact moment the extension has no
         // controller left, which is the start of the #281 window (#281).
-        let liveAfter = KeyboardLifecycleProbe.controllerDidDeinit()
+        let liveAfter = didCountIntoLiveCensus
+            ? KeyboardLifecycleProbe.controllerDidDeinit()
+            : KeyboardLifecycleProbe.liveCount
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
