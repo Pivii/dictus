@@ -14,6 +14,16 @@ import XCTest
 /// KeyboardModeTests and SupportedLanguageActivationTests.
 final class UserDictionaryTests: XCTestCase {
 
+    /// WHY reset in setUp as well as tearDown: the singleton reads App Group
+    /// UserDefaults, which outlive the test process. A run that crashes or is
+    /// interrupted before tearDown leaves entries behind, and the next run's
+    /// first test then observes a word it never recorded. Resetting on both
+    /// edges makes each test independent of what ran before it.
+    override func setUp() {
+        super.setUp()
+        UserDictionary.shared.resetAll()
+    }
+
     override func tearDown() {
         UserDictionary.shared.resetAll()
         super.tearDown()
