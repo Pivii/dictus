@@ -85,6 +85,12 @@ struct KeyboardRootView: View {
     /// keyboard area for the whole #260 window instead of merely delaying an
     /// overlay.
     ///
+    /// That window is now closed from the other side: an area whose owner was
+    /// deallocated is marked reclaimable, and the controller that is actually in a
+    /// window claims it on the next status change (#260). This check is what makes
+    /// the claim visible — ownership moving to our controllerID is what flips this
+    /// from `.keys` to `.recording`.
+    ///
     /// The legacy `activeControllerID == nil` fallback that used to mask #128 is
     /// deliberately not reinstated: with #128 fixed, stale controllers are dormant.
     private var presentedMode: KeyboardAreaMode {

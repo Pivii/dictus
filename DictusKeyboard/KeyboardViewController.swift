@@ -66,6 +66,43 @@ class KeyboardViewController: UIInputViewController {
     /// area, displacing it to the middle of the screen.
     private var hasAppeared = false
 
+    /// Whether iOS currently has us on screen: set in viewWillAppear, cleared in
+    /// viewDidDisappear. Unlike `hasAppeared`, which latches, this tracks the
+    /// present tense.
+    ///
+    /// Half of the liveness test for claiming an ownerless keyboard area (#260);
+    /// `isOnScreen` below is the other half and the one that carries the weight.
+    private var isAttached = false
+
+    /// Whether our view hierarchy is actually in a window right now.
+    ///
+    /// This is the test that decides whether we may claim an ownerless keyboard
+    /// area (#260), and it is deliberately fail-closed. Every controller that can
+    /// reach a claim has appeared, had its ownership overwritten by a later
+    /// appearance, and not been told it disappeared — which describes the live
+    /// keyboard whose ownership a dying instance took with it, and equally the
+    /// cached instances iOS never notifies (#128). `isAttached` cannot tell them
+    /// apart, because it is only written in `viewWillAppear` and
+    /// `viewDidDisappear` and a stale controller never gets the latter. Window
+    /// attachment can: detaching is what removes the view from the window.
+    ///
+    /// If this were permissive, a stale controller would *acquire* the area rather
+    /// than merely be skipped — it would expand its own hosting to full height
+    /// while the on-screen tree still rendered the keys, and lock the live
+    /// controller out, since a claim is single-shot. That is the #116 shape, and
+    /// strictly worse than the bug being fixed. If it is instead too strict — if
+    /// iOS keeps no window on the controller we think is showing — the claim never
+    /// fires and behaviour is exactly what it was before #260. `hasWindow=` is
+    /// logged on every attempt so a device log settles which it is.
+    ///
+    /// Both `view` and `inputView` are checked because this controller assigns its
+    /// own `inputView`, and either may be the one iOS parents into the keyboard
+    /// window. `viewIfLoaded` rather than `view`: asking for the view would load
+    /// it, and a controller whose view was never loaded is not on screen anyway.
+    private var isOnScreen: Bool {
+        viewIfLoaded?.window != nil || inputView?.window != nil
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         PersistentLog.source = "KBD"
@@ -311,6 +348,7 @@ class KeyboardViewController: UIInputViewController {
         // Previously set from KeyboardRootView.onAppear, which held a strong ref → #134.
         KeyboardState.shared.controller = self
         hasAppeared = true
+        isAttached = true
 
         // 4.4.1 next-keyboard globe: the host connection now exists, so
         // needsInputModeSwitchKey is finally accurate. If viewDidLoad built the
@@ -538,6 +576,10 @@ class KeyboardViewController: UIInputViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
 
+        // We are off screen from here on, whether or not we keep ownership below
+        // (#260): a detached controller must not adopt an ownerless dictation.
+        isAttached = false
+
         // Restore system gesture recognizer delay (be a good citizen)
         restoreWindowGestureDelay()
 
@@ -568,9 +610,10 @@ class KeyboardViewController: UIInputViewController {
         // it on screen for the duration of the transition.
         //
         // The successor controller's registerControllerAppearance overwrites
-        // activeControllerID, so a clean handoff happens automatically. If
-        // the keyboard is truly dismissed during recording (no successor), the
-        // synchronous deinit safety net below catches it.
+        // activeControllerID, so a clean handoff happens automatically. If the
+        // keyboard is truly dismissed during recording (no successor), the area
+        // becomes ownerless when we are deallocated — see
+        // registerControllerDeallocation (#260).
         let status = KeyboardState.shared.dictationStatus
         if status.ownsKeyboardArea {
             PersistentLog.log(.diagnosticProbe(
@@ -622,16 +665,25 @@ class KeyboardViewController: UIInputViewController {
     }
 
     deinit {
-        // Issue #142 safety net: viewDidDisappear skips unregistration during
-        // an active dictation session to avoid a SwiftUI race that produces a
-        // centred-toolbar visual artefact during cold-start handoff. If iOS
-        // deallocates us while we still own activeControllerID (no successor
-        // controller registered, e.g. a truly dismissed keyboard during
-        // recording), unregister now — synchronous deinit is past any SwiftUI
-        // race window so it's safe.
-        if KeyboardState.shared.activeControllerID == controllerID {
-            KeyboardState.shared.registerControllerDisappearance(controllerID: controllerID)
-        }
+        // Issue #142 safety net, corrected by #260: viewDidDisappear skips
+        // unregistration during an active dictation session to avoid a SwiftUI
+        // race that produces a centred-toolbar artefact during cold-start
+        // handoff, so a dismissed keyboard would otherwise leave ownership
+        // pointing at a deallocated controller.
+        //
+        // This used to unregister outright whenever we still owned the area, on
+        // the assumption that "no successor has registered yet" meant "the
+        // keyboard was dismissed". That assumption is false under churn: ownership
+        // is last-writer-wins on appearance, so the instance holding it is often
+        // not the keyboard on screen, and releasing the area on its way out left
+        // the controller that *is* on screen unable to present anything — with no
+        // path back, since its viewWillAppear had already run.
+        //
+        // The area is marked reclaimable now. Every reader still sees an ownerless,
+        // invisible keyboard exactly as it did before, so nothing downstream
+        // changes; what the marker adds is that a controller still in a window may
+        // claim the area (see applyAreaMode).
+        KeyboardState.shared.registerControllerDeallocation(controllerID: controllerID)
 
         // Symmetric tear-down for the addChild()/didMove(toParent:) we did in viewDidLoad.
         // Without this, UIKit holds the hosting controller in `children` and SwiftUI may
@@ -746,6 +798,40 @@ class KeyboardViewController: UIInputViewController {
         // does not replay on subscribe, so nothing should reach this before
         // viewWillAppear — the guard stays as a cheap invariant on that ordering.
         guard hasAppeared else { return }
+
+        // #260: a dictation can be left with no owning controller at all.
+        // Ownership is last-writer-wins on appearance, so under churn an instance
+        // iOS is about to throw away can hold the area, and when it is deallocated
+        // the keyboard the user is looking at is left unable to present the
+        // overlay — ownership is what the guard below and
+        // KeyboardRootView.presentedMode both key on, and nothing re-registers us:
+        // viewWillAppear already ran.
+        //
+        // KeyboardState marks such an area reclaimable rather than released, so
+        // the controller iOS is showing can claim it here instead of waiting for
+        // iOS to build a replacement — which in the captures took 2.5 s, or four
+        // seconds and a manual trip to DictusApp.
+        //
+        // `isOnScreen` is what keeps this from being a licence for the stale
+        // controllers the guard below exists to exclude; see its declaration.
+        //
+        // Only for `.recording`, matching that guard: the pickers are opened by a
+        // key on the visible keyboard and are not gated on ownership.
+        if mode == .recording, isAttached, KeyboardState.shared.activeControllerID != controllerID {
+            let onScreen = isOnScreen
+            let claimed = KeyboardState.shared.claimOwnership(
+                controllerID: controllerID,
+                isOnScreen: onScreen
+            )
+            if claimed {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardViewController",
+                    instanceID: controllerID,
+                    action: "claimedOwnerlessArea",
+                    details: "status=\(status) mode=\(mode.rawValue) previousActiveID=\(activeID) hasWindow=\(onScreen)"
+                ))
+            }
+        }
 
         // Defense-in-depth for #128: iOS caches UIInputViewController and does not
         // reliably fire viewDidDisappear on stale instances (observed: controllers

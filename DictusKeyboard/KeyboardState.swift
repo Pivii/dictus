@@ -106,8 +106,35 @@ class KeyboardState: ObservableObject {
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
+    /// Which controller owns the keyboard area, and whether an ownerless area is
+    /// still reclaimable (#260). Single source of truth for the two published
+    /// properties below, which are what every consumer actually reads.
+    ///
+    /// WHY the two properties are kept rather than replaced: `activeControllerID`
+    /// and `isKeyboardVisible` are read from SwiftUI (`KeyboardRootView`), from the
+    /// view controller's layout guard and from half the device-log probes. Deriving
+    /// them here keeps all of that untouched — and keeps them impossible to write
+    /// out of step with each other, which is how the two-flag version drifted.
+    private(set) var ownership: KeyboardOwnership = .none {
+        didSet {
+            guard oldValue != ownership else { return }
+            activeControllerID = ownership.controllerID
+            isKeyboardVisible = ownership.isVisible
+            if ownership.isReclaimable {
+                nudgeAttachedControllersToReclaim()
+            }
+        }
+    }
+
     /// Tracks whether the keyboard extension is currently visible on screen.
+    ///
+    /// Derived from `ownership`: true only while a live controller owns the area.
+    /// An owner deallocated mid-dictation leaves this false — the pixels on screen
+    /// then belong to a controller nothing can talk to (#260).
     @Published private(set) var isKeyboardVisible: Bool = false
+
+    /// The controller allowed to present the recording overlay, or nil when the
+    /// keyboard area has no owner. Derived from `ownership`.
     @Published private(set) var activeControllerID: String?
 
     /// Reference to the keyboard controller for text insertion.
@@ -536,13 +563,17 @@ class KeyboardState: ObservableObject {
     // MARK: - Keyboard visibility tracking
 
     /// Called when a controller becomes the active visible keyboard owner.
+    ///
+    /// Unconditional: the controller iOS just brought on screen is the keyboard,
+    /// whatever came before. This is also what ends an awaiting-reclaim window in
+    /// the common case — the successor iOS builds after an app switch simply takes
+    /// the area over (#260).
     func registerControllerAppearance(controllerID: String) {
         logProbe(
             "registerControllerAppearance",
-            details: "controllerID=\(controllerID) previousOwner=\(activeControllerID ?? "none") wasVisible=\(isKeyboardVisible) \(sessionDetails())"
+            details: "controllerID=\(controllerID) previousOwner=\(activeControllerID ?? "none") ownership=\(ownership.logDescription) wasVisible=\(isKeyboardVisible) \(sessionDetails())"
         )
-        activeControllerID = controllerID
-        isKeyboardVisible = true
+        ownership = ownership.appearing(controllerID: controllerID)
 
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.
@@ -557,10 +588,122 @@ class KeyboardState: ObservableObject {
             details: "controllerID=\(controllerID) owner=\(activeControllerID ?? "none") ownsVisibility=\(ownsVisibility) wasVisible=\(isKeyboardVisible) \(sessionDetails())"
         )
 
-        guard ownsVisibility else { return }
+        ownership = ownership.disappearing(controllerID: controllerID)
+    }
 
-        isKeyboardVisible = false
-        activeControllerID = nil
+    /// Called when a controller is deallocated (#260).
+    ///
+    /// WHY this is not `registerControllerDisappearance`: a deallocation is not a
+    /// dismissal. Ownership is last-writer-wins on appearance, so under churn the
+    /// live keyboard's ownership is routinely overwritten by an instance iOS is
+    /// about to throw away — and when the old code let that instance release the
+    /// area on its way out, the keyboard the user was looking at was left unable
+    /// to present anything, with no path back: its `viewWillAppear` had already
+    /// run. That is `activeID=none`, and it lasted seconds.
+    ///
+    /// The area is marked reclaimable instead. That marker reads as ownerless and
+    /// invisible, exactly like the release it replaces, so nothing downstream
+    /// changes; what it adds is that a controller still on screen may claim the
+    /// area through `claimOwnership`.
+    ///
+    /// Logs only when ownership actually moves: `deinit` runs on every one of the
+    /// ~9 instances a churn cycle destroys, and the ids differ, so an
+    /// unconditional line would defeat `PersistentLog`'s duplicate collapsing and
+    /// spend the #255 budget on non-events.
+    func registerControllerDeallocation(controllerID: String) {
+        let next = ownership.deallocating(controllerID: controllerID)
+        guard next != ownership else { return }
+        logProbe(
+            "registerControllerDeallocation",
+            details: "controllerID=\(controllerID) ownership=\(ownership.logDescription) next=\(next.logDescription) \(sessionDetails())"
+        )
+        ownership = next
+    }
+
+    /// Let the controller iOS is showing claim an area whose owner was
+    /// deallocated (#260).
+    ///
+    /// `isOnScreen` must come from UIKit window attachment, not from bookkeeping:
+    /// it is the only thing separating the live keyboard from the cached instances
+    /// iOS never tells to disappear (#128), and both reach this on the same path.
+    /// Returns whether the caller now owns the keyboard area.
+    ///
+    /// WHY this deliberately does NOT call `refreshFromDefaults`: it is called from
+    /// inside the area-mode subscription, and refreshing writes `dictationStatus`,
+    /// whose `didSet` publishes the mode again — a re-entrant emission while the
+    /// first one is still applying its layout. The status is current anyway: the
+    /// emission that brought us here came from that very write.
+    @discardableResult
+    func claimOwnership(controllerID: String, isOnScreen: Bool) -> Bool {
+        guard let next = ownership.claiming(controllerID: controllerID, isOnScreen: isOnScreen) else {
+            logRefusedClaimOnce(controllerID: controllerID, isOnScreen: isOnScreen)
+            return false
+        }
+        logProbe(
+            "claimOwnership",
+            details: "controllerID=\(controllerID) previous=\(ownership.logDescription) \(sessionDetails())"
+        )
+        ownership = next
+        return true
+    }
+
+    /// The marker a refused claim was last logged against, so the line below is
+    /// written once per episode rather than once per controller.
+    private var loggedClaimRefusalFor: String?
+
+    /// Record that a reclaimable area went unclaimed because the controller asking
+    /// was not on screen (#260).
+    ///
+    /// This exists to make the fail-closed liveness test falsifiable on device. If
+    /// window attachment turns out to be unreliable for a `UIInputViewController`,
+    /// the symptom is this line with no `claimedOwnerlessArea` after it — an
+    /// explicit signal rather than an absence to be inferred.
+    ///
+    /// Once per marker: every one of the ~9 cached controllers reacts to the same
+    /// emission, and #255 exists because lines that multiply by instance count
+    /// make a log unreadable.
+    private func logRefusedClaimOnce(controllerID: String, isOnScreen: Bool) {
+        guard case .awaitingReclaim(let previous) = ownership,
+              loggedClaimRefusalFor != previous else { return }
+        loggedClaimRefusalFor = previous
+        logProbe(
+            "claimRefusedOffScreen",
+            details: "controllerID=\(controllerID) previousOwner=\(previous) hasWindow=\(isOnScreen) \(sessionDetails())"
+        )
+    }
+
+    /// Ask a controller still on screen to look at an area that just became
+    /// reclaimable, instead of waiting for the next dictation status change (#260).
+    ///
+    /// WHY this is needed at all: a controller claims an ownerless area from
+    /// `applyAreaMode`, which only runs when the area mode is published — i.e. on a
+    /// status write. If the owner is deallocated in the middle of a recording, the
+    /// next write is the `transcribing` transition, so the keyboard would sit in
+    /// its typing layout for the rest of the utterance.
+    ///
+    /// Only while a dictation owns the area: `.recording` is the one mode gated on
+    /// ownership, so re-publishing anything else would make every attached
+    /// controller redo its layout for no possible change.
+    ///
+    /// WHY asynchronously: this is reached from the outgoing owner's `deinit`,
+    /// which then goes on to tear down its hosting controller and view hierarchy.
+    /// Applying layout on a *different* controller from inside that stack is the
+    /// kind of re-entrancy this file has regressed on before (#142, #128, #166).
+    /// One main queue hop puts the work after the deallocation has finished.
+    ///
+    /// It does nothing when every controller has already been detached — the
+    /// subscription is cancelled in `viewDidDisappear`. Nothing can be done for the
+    /// keyboard then: there is no live controller left to draw with.
+    private func nudgeAttachedControllersToReclaim() {
+        guard areaMode == .recording else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.ownership.isReclaimable, self.areaMode == .recording else { return }
+            self.logProbe(
+                "reclaimNudge",
+                details: "ownership=\(self.ownership.logDescription) mode=\(self.areaMode.rawValue) \(self.sessionDetails())"
+            )
+            self.areaModeSubject.send(self.areaMode)
+        }
     }
 
     /// Timestamp of last mic tap — used for debouncing.
