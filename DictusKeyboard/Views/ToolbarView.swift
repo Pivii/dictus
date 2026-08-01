@@ -119,7 +119,11 @@ struct ToolbarView: View {
 
             Spacer()
 
-            if !isProActive {
+            // Same gate as every other Pro entry point (#236): while the paywall
+            // is hidden the product must look like it has no subscription at all,
+            // and a pill leading to an unreachable paywall is exactly the kind of
+            // dead end that gate exists to prevent.
+            if PremiumFlags.paywallVisible && !isProActive {
                 proEntry
             }
 
