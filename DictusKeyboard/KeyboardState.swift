@@ -514,24 +514,7 @@ class KeyboardState: ObservableObject {
             defaults.removeObject(forKey: SharedKeys.lastTranscription)
             defaults.synchronize()
 
-            controller?.textDocumentProxy.insertText(transcription)
-            PersistentLog.log(.keyboardTextInserted)
-            HapticFeedback.textInserted()
-            onTranscriptionInserted?()
-
-            // Reset state to idle.
-            // WHY explicit stopWatchdog: refreshFromDefaults() above may have read
-            // .transcribing from App Group (before .ready propagated), starting the
-            // watchdog. Setting dictationStatus = .idle here bypasses refreshFromDefaults
-            // so the watchdog wouldn't self-stop until its next 1s tick. Stopping
-            // explicitly prevents false-positive watchdog resets.
-            stopWatchdog()
-            dictationStatus = .idle
-            waveformEnergy = []
-            recordingElapsed = 0
-            statusMessage = nil
-            lastTranscription = nil
-            activeSessionID = nil
+            insertTranscription(transcription)
         } else {
             // Retry after 100ms — mitigates UserDefaults race condition.
             // Darwin notifications are posted immediately after synchronize(),
@@ -543,20 +526,232 @@ class KeyboardState: ObservableObject {
                     self.defaults.removeObject(forKey: SharedKeys.lastTranscription)
                     self.defaults.synchronize()
 
-                    self.controller?.textDocumentProxy.insertText(transcription)
-                    PersistentLog.log(.keyboardTextInserted)
-                    HapticFeedback.textInserted()
-                    self.onTranscriptionInserted?()
-
-                    self.stopWatchdog()
-                    self.dictationStatus = .idle
-                    self.waveformEnergy = []
-                    self.recordingElapsed = 0
-                    self.statusMessage = nil
-                    self.lastTranscription = nil
-                    self.activeSessionID = nil
+                    self.insertTranscription(transcription)
                 }
             }
+        }
+    }
+
+    /// Insert a transcription into the host field and return the keyboard to idle.
+    ///
+    /// WHY this is a single function called from two places: `handleTranscriptionReady`
+    /// has two insertion sites — the direct one and the 100 ms retry that absorbs the
+    /// App Group propagation race — and they used to hold two copies of this block.
+    /// Anything the keyboard has to remember about an insertion (#266: what it was, so
+    /// it can be undone) has to be remembered on both, and the retry path is the one
+    /// that loses the race, so a copy that forgets it would fail intermittently and
+    /// only on slow devices. One funnel, no copy to forget.
+    ///
+    /// The App Group key is deliberately NOT read here: the caller clears it before
+    /// calling, which is what stops a redelivered Darwin notification from inserting
+    /// the same text twice.
+    private func insertTranscription(_ transcription: String) {
+        controller?.textDocumentProxy.insertText(transcription)
+        PersistentLog.log(.keyboardTextInserted)
+        HapticFeedback.textInserted()
+        onTranscriptionInserted?()
+
+        // Reset state to idle.
+        // WHY explicit stopWatchdog: refreshFromDefaults() in the caller may have read
+        // .transcribing from App Group (before .ready propagated), starting the
+        // watchdog. Setting dictationStatus = .idle here bypasses refreshFromDefaults
+        // so the watchdog wouldn't self-stop until its next 1s tick. Stopping
+        // explicitly prevents false-positive watchdog resets.
+        stopWatchdog()
+        dictationStatus = .idle
+        waveformEnergy = []
+        recordingElapsed = 0
+        statusMessage = nil
+        lastTranscription = nil
+        activeSessionID = nil
+
+        // Offer the undo control for this insertion, and only this one. Armed after
+        // the idle reset above because that reset is what ends the dictation session
+        // the undo belongs to.
+        armDictationUndo(transcription)
+    }
+
+    // MARK: - Dictation undo (#266)
+
+    /// The exact string the last dictation inserted, while undoing it is still on
+    /// offer. Nil means there is nothing to undo.
+    ///
+    /// WHY it is held in memory here rather than re-read from the App Group: the
+    /// value is removed from shared storage *before* insertion, deliberately, so a
+    /// redelivered Darwin notification cannot insert it twice. By the time the user
+    /// could ask to undo, the only remaining copy of what was inserted is this one.
+    ///
+    /// WHY on the shared state object and not on a controller: iOS destroys and
+    /// rebuilds `UIInputViewController` instances constantly — around nine per
+    /// dictation (#281) — so a record held by a controller would vanish with it.
+    /// What that costs is the risk of a record outliving the field it belongs to,
+    /// which is what the invalidations below and the tail check exist to prevent.
+    private var dictationUndoText: String?
+
+    /// Whether the toolbar should offer the undo control.
+    ///
+    /// Set only after the insertion has been verified against the live document, so
+    /// a host that reports no usable context never shows a control that could not
+    /// act (fail closed).
+    @Published private(set) var dictationUndoAvailable = false
+
+    /// Expires the offer a few seconds after the insertion.
+    private var dictationUndoTimer: Timer?
+
+    /// True while a deletion burst is in flight. Blocks a new dictation from
+    /// starting into a field that is still being rewritten.
+    private var isUndoingDictation = false
+
+    /// Called after a dictation insertion has been undone, so the controller can
+    /// drop suggestions computed from text that no longer exists.
+    var onDictationUndone: (() -> Void)?
+
+    /// How long the offer stands.
+    ///
+    /// WHY 8 seconds: long enough to read a sentence and decide it is wrong, short
+    /// enough that the control is gone before the user has moved on and forgotten
+    /// what it refers to. The issue asks for "a few seconds"; this is a judgement
+    /// call, not a measurement.
+    private static let dictationUndoTimeout: TimeInterval = 8
+
+    /// `deleteBackward()` calls issued per main-queue turn.
+    ///
+    /// WHY chunked at all: every call is an IPC round trip to the host, and a
+    /// two-minute dictation is hundreds of them. Issued in one synchronous loop
+    /// they block the main thread long enough for a slow host to visibly freeze.
+    /// Yielding between chunks lets the host process what it has been given.
+    private static let dictationUndoChunkSize = 40
+
+    /// Offer to undo `transcription`, if the document still agrees it was inserted.
+    ///
+    /// WHY the first check is deferred by one main-queue turn: `insertText` and the
+    /// proxy's view of the document are not guaranteed to be in step within the same
+    /// turn, and a check that runs too early reads the field as it was *before* the
+    /// insertion and refuses. One hop costs a frame nobody sees.
+    private func armDictationUndo(_ transcription: String) {
+        dictationUndoText = transcription
+        dictationUndoAvailable = false
+        dictationUndoTimer?.invalidate()
+        dictationUndoTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.dictationUndoTimeout,
+            repeats: false
+        ) { [weak self] _ in
+            self?.invalidateDictationUndo(reason: "timeout")
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.dictationUndoText == transcription else { return }
+            switch DictationUndo.verify(
+                context: self.controller?.textDocumentProxy.documentContextBeforeInput,
+                insertedText: transcription
+            ) {
+            case .ok(let deleteCount, let verifiedCount, let windowTruncated):
+                self.dictationUndoAvailable = true
+                self.logProbe(
+                    "dictationUndoArmed",
+                    details: "deleteCount=\(deleteCount) verified=\(verifiedCount) truncated=\(windowTruncated)"
+                )
+            case .failed(let reason):
+                self.invalidateDictationUndo(reason: "arm-\(reason)")
+            }
+        }
+    }
+
+    /// Re-check the offer against the live document.
+    ///
+    /// WHY this re-verifies instead of clearing outright: the host reports a text
+    /// change for the keyboard's *own* insertion too, so a hook that cleared blindly
+    /// would cancel the offer in the same breath as making it — on some hosts, at
+    /// some speeds. Re-checking has the behaviour the issue asks for (the offer dies
+    /// on the first keystroke, a caret move or a host rewrite) without depending on
+    /// which changes a given host chooses to report.
+    ///
+    /// WHY it stands down until the offer is armed: the change reports triggered by
+    /// the insertion itself can arrive before the proxy's context catches up with
+    /// it, and a check run against that stale context refuses. Arming already
+    /// verifies, one main-queue turn after the insertion, and the user cannot type
+    /// inside that turn — so there is nothing for this to protect there.
+    func revalidateDictationUndo() {
+        guard dictationUndoAvailable, let transcription = dictationUndoText else { return }
+        if case .failed(let reason) = DictationUndo.verify(
+            context: controller?.textDocumentProxy.documentContextBeforeInput,
+            insertedText: transcription
+        ) {
+            invalidateDictationUndo(reason: "revalidate-\(reason)")
+        }
+    }
+
+    /// Drop the offer. The record is destroyed, not merely hidden: a hidden record
+    /// is one bug away from deleting text it no longer owns.
+    func invalidateDictationUndo(reason: String) {
+        guard dictationUndoText != nil else { return }
+        dictationUndoText = nil
+        dictationUndoAvailable = false
+        dictationUndoTimer?.invalidate()
+        dictationUndoTimer = nil
+        logProbe("dictationUndoInvalidated", details: "reason=\(reason)")
+    }
+
+    /// Remove the last dictation insertion from the host field.
+    ///
+    /// The check runs again here, against the document as it is at this instant.
+    /// The one performed when the control appeared proves nothing about now: a host
+    /// that rewrites text without reporting it leaves a stale offer on screen, and
+    /// this is where that is caught. A refusal deletes nothing.
+    func performDictationUndo() {
+        guard let transcription = dictationUndoText, !isUndoingDictation else { return }
+
+        switch DictationUndo.verify(
+            context: controller?.textDocumentProxy.documentContextBeforeInput,
+            insertedText: transcription
+        ) {
+        case .failed(let reason):
+            HapticFeedback.actionRefused()
+            invalidateDictationUndo(reason: "perform-\(reason)")
+        case .ok(let deleteCount, let verifiedCount, let windowTruncated):
+            logProbe(
+                "dictationUndoStarted",
+                details: "deleteCount=\(deleteCount) verified=\(verifiedCount) truncated=\(windowTruncated)"
+            )
+            isUndoingDictation = true
+            // The offer is spent the moment it is taken. Clearing first also means
+            // a second tap during the burst finds nothing to act on.
+            invalidateDictationUndo(reason: "performed")
+            deleteInsertedText(remaining: deleteCount)
+        }
+    }
+
+    /// Issue the deletion in chunks, yielding to the main queue between them.
+    ///
+    /// Aborts if a dictation has started in the meantime. `startRecording` refuses
+    /// to start one while a burst is in flight, so this is the second line of
+    /// defence rather than the first — but the app can also drive the status from
+    /// its own side, and a burst that kept deleting into a fresh recording would
+    /// eat text this undo never inserted.
+    private func deleteInsertedText(remaining: Int) {
+        guard remaining > 0 else {
+            isUndoingDictation = false
+            onDictationUndone?()
+            logProbe("dictationUndoCompleted")
+            return
+        }
+        guard dictationStatus == .idle, activeSessionID == nil else {
+            isUndoingDictation = false
+            logProbe(
+                "dictationUndoAborted",
+                details: "remaining=\(remaining) \(sessionDetails())"
+            )
+            return
+        }
+
+        let batch = min(remaining, Self.dictationUndoChunkSize)
+        for _ in 0..<batch {
+            controller?.textDocumentProxy.deleteBackward()
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.deleteInsertedText(remaining: remaining - batch)
         }
     }
 
@@ -587,6 +782,15 @@ class KeyboardState: ObservableObject {
             "registerControllerDisappearance",
             details: "controllerID=\(controllerID) owner=\(activeControllerID ?? "none") ownsVisibility=\(ownsVisibility) wasVisible=\(isKeyboardVisible) \(sessionDetails())"
         )
+
+        // The keyboard the insertion was made from is going away, so the field it
+        // was made into is no longer in front of the user (#266). Only the owner
+        // counts here: under churn, instances iOS is about to throw away report
+        // disappearing too, and letting one of those drop the record would make the
+        // offer vanish at random.
+        if ownsVisibility {
+            invalidateDictationUndo(reason: "keyboard-dismissed")
+        }
 
         ownership = ownership.disappearing(controllerID: controllerID)
     }
@@ -735,6 +939,19 @@ class KeyboardState: ObservableObject {
             return
         }
         lastMicTapDate = now
+
+        // An undo burst is still rewriting the field (#266). Starting a dictation
+        // now would have the two interleave: the burst deletes on every main-queue
+        // turn, and the transcription it would be deleting into is not the one it
+        // was verified against. The burst is short; the user taps again.
+        guard !isUndoingDictation else {
+            logProbe("micTapRejectedDuringUndo", details: sessionDetails())
+            HapticFeedback.actionRefused()
+            return
+        }
+
+        // A new dictation ends the previous one's undo offer, whatever comes of it.
+        invalidateDictationUndo(reason: "new-dictation")
 
         // Issue #262: a model load is now a prepare-only handoff. Opening Dictus
         // lets the app show truthful preparation feedback instead of leaving the

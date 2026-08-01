@@ -120,6 +120,11 @@ struct KeyboardRootView: View {
             suggestions: [],
             suggestionMode: .idle,
             onSuggestionTap: { _ in },
+            // Undo survives opening the emoji picker (#266): browsing emoji is not
+            // typing, and the insertion is still the tail of the field. The panel
+            // presentation ignores these — its bar has no centre slot.
+            showsDictationUndo: state.dictationUndoAvailable,
+            onDictationUndoTap: { state.performDictationUndo() },
             isPanelOpen: isPanelOpen,
             onPanelToggle: { togglePanel() },
             onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
@@ -245,6 +250,8 @@ struct KeyboardRootView: View {
                     onSuggestionTap: { index in
                         handleSuggestionTap(index: index)
                     },
+                    showsDictationUndo: state.dictationUndoAvailable,
+                    onDictationUndoTap: { state.performDictationUndo() },
                     onPanelToggle: { togglePanel() }
                 )
                 // No KeyboardView here -- it's UIKit, added directly by KeyboardViewController
