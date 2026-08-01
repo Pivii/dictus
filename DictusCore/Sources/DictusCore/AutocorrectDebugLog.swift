@@ -84,17 +84,19 @@ public enum AutocorrectDebugLog {
 
     /// N-gram rerank changed the correction.
     /// Useful to diagnose bigram-based overrides that surprise the user.
+    ///
+    /// WHY the candidates are passed as pairs: a correction and its bigram score
+    /// are one fact, never read apart, and pairing them keeps the signature at
+    /// four parameters instead of six.
     public static func bigramRerank(
         word: String,
         prevWord: String,
-        before: String,
-        after: String,
-        beforeScore: UInt16,
-        afterScore: UInt16
+        before: (correction: String, score: UInt16),
+        after: (correction: String, score: UInt16)
     ) {
         guard enabled else { return }
         write("BIGRAM-RERANK word=\"\(word)\" prev=\"\(prevWord)\" "
-            + "\"\(before)\"(\(beforeScore)) → \"\(after)\"(\(afterScore))")
+            + "\"\(before.correction)\"(\(before.score)) → \"\(after.correction)\"(\(after.score))")
     }
 
     /// Trie candidates returned by the spell check engine for a given word.

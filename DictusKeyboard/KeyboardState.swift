@@ -786,6 +786,10 @@ class KeyboardState: ObservableObject {
                 ))
                 self.logProbe("fallbackOpenURL", details: self.sessionDetails())
                 // App didn't respond — not running. Open URL to launch it.
+                // Force unwrap: the argument is a compile-time literal and a
+                // well-formed absolute URL, so the failable initializer cannot
+                // return nil. Nothing at runtime can change this string.
+                // swiftlint:disable:next force_unwrapping
                 let url = URL(string: "dictus://dictate?source=keyboard")!
                 self.openDictusURL(url)
             }

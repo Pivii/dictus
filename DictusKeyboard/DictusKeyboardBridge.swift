@@ -23,8 +23,7 @@ import DictusCore
 /// - Handles auto-full-stop (double-space -> period)
 final class DictusKeyboardBridge: NSObject,
     GiellaKeyboardViewDelegate,
-    GiellaKeyboardViewKeyboardKeyDelegate
-{
+    GiellaKeyboardViewKeyboardKeyDelegate {
     // MARK: - Dependencies
 
     /// Weak reference to the input view controller for textDocumentProxy access.
@@ -796,6 +795,10 @@ final class DictusKeyboardBridge: NSObject,
             } else {
                 let trimmed = beforeInput.trimmingCharacters(in: .whitespaces)
                 let lastChar = trimmed.last
+                // Force unwrap: `&&` short-circuits, so the unwrap is only
+                // evaluated once the `lastChar != nil` conjunct to its left has
+                // already succeeded.
+                // swiftlint:disable:next force_unwrapping
                 let endsWithSentencePunctuation = lastChar != nil && ".!?".contains(lastChar!)
                 let lastInputChar = beforeInput.last
 

@@ -134,11 +134,13 @@ final class AOSPTrieEngine {
 
         // Restore case and reassemble with prefix if present
         let isCapitalized = word.first?.isUppercase == true
-        let correction = prefix != nil ? (prefix! + result.correction) : result.correction
+        // `prefix ?? ""` reproduces the nil branch exactly: prepending the empty
+        // string is the identity, which is what the nil case returned before.
+        let correction = (prefix ?? "") + result.correction
         let fullCorrection = isCapitalized ? correction.capitalized : correction
 
         let alts = result.alternatives.prefix(2).map { alt -> String in
-            let full = prefix != nil ? (prefix! + alt) : alt
+            let full = (prefix ?? "") + alt
             return isCapitalized ? full.capitalized : full
         }
 
