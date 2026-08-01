@@ -180,7 +180,7 @@ struct ToolbarView: View {
             HapticFeedback.keyTapped()
             onPanelToggle?()
         } label: {
-            barIcon(systemName: systemName, size: 17)
+            barIcon(systemName: systemName, size: 17, width: Self.micPillWidth, shape: .capsule)
         }
         .buttonStyle(GlassPressStyle())
         .accessibilityLabel(label)
@@ -191,32 +191,54 @@ struct ToolbarView: View {
             HapticFeedback.keyTapped()
             onSettingsTap?()
         } label: {
-            barIcon(systemName: "gearshape", size: 19)
+            barIcon(systemName: "gearshape", size: 19, width: iconDiameter, shape: .circle)
         }
         .buttonStyle(GlassPressStyle())
         .accessibilityLabel(Text("Open Dictus"))
     }
 
-    /// Shared shape for the bar's icon buttons: a 36 pt glass circle inside a
-    /// 44 pt touch target.
+    /// Width and height of `AnimatedMicButton`'s pill body, mirrored here so the
+    /// panel toggle is the same object as the mic rather than a smaller cousin.
+    /// Kept in sync by hand: the mic owns these numbers, this is a deliberate
+    /// visual echo of them, not a shared constant to be refactored away.
+    private static let micPillWidth: CGFloat = 56
+
+    /// Diameter of the round icon buttons, and the height of every bar control.
+    private var iconDiameter: CGFloat { 36 }
+
+    /// Shape of a bar icon's glass backing.
+    private enum BarIconShape { case circle, capsule }
+
+    /// Shared geometry for the bar's icon buttons: a 36 pt-tall glass backing
+    /// inside a touch target at least 44 pt on each axis.
     ///
     /// WHY the two frames differ (#241 device feedback): the visible control and
     /// the tappable region are not the same thing. The glyph sat in a bare 32 pt
     /// frame, under the 44 pt minimum, and closing the panel measured 10 to 22
     /// seconds per attempt on device — taps aimed at the close control landed on
     /// the 44 pt language rows below it instead. The outer frame is what a finger
-    /// hits; the inner one is what the eye sees, and 36 pt keeps the icons from
-    /// crowding a 52 pt bar.
+    /// hits; the inner one is what the eye sees.
     ///
     /// WHY glass rather than a bare glyph: against the mic's filled pill, an
     /// unbacked icon read as unfinished rather than as a control.
-    private func barIcon(systemName: String, size: CGFloat) -> some View {
+    ///
+    /// WHY the panel toggle is a capsule and the gear a circle: the toggle sits
+    /// opposite the mic and is the only thing balancing it, so it takes the mic's
+    /// pill footprint. The gear never faces the mic — it appears only in the panel
+    /// bar, where a second wide pill would compete with the toggle rather than
+    /// balance anything.
+    private func barIcon(
+        systemName: String,
+        size: CGFloat,
+        width: CGFloat,
+        shape: BarIconShape
+    ) -> some View {
         Image(systemName: systemName)
             .font(.system(size: size, weight: .medium))
             .foregroundColor(Color(.label))
-            .frame(width: 36, height: 36)
-            .dictusGlass(in: Circle())
-            .frame(width: 44, height: 44)
+            .frame(width: width, height: iconDiameter)
+            .dictusGlass(in: shape == .capsule ? AnyShape(Capsule()) : AnyShape(Circle()))
+            .frame(width: max(width, 44), height: 44)
             .contentShape(Rectangle())
     }
 
