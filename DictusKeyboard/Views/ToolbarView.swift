@@ -235,7 +235,7 @@ struct ToolbarView: View {
     ) -> some View {
         Image(systemName: systemName)
             .font(.system(size: size, weight: .medium))
-            .foregroundColor(Color(.label))
+            .foregroundColor(.dictusPillIconSecondary)
             .frame(width: width, height: iconDiameter)
             .dictusGlass(in: shape == .capsule ? AnyShape(Capsule()) : AnyShape(Circle()))
             .frame(width: max(width, 44), height: 44)

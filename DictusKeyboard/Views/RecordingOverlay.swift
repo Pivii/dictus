@@ -42,9 +42,9 @@ struct RecordingOverlay: View {
         colorScheme == .dark ? .white : Color(white: 0.15)
     }
 
-    private var secondaryForeground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.5) : Color(white: 0.15).opacity(0.5)
-    }
+    /// Shared with `ToolbarView`'s pill icons so the two bars stay one system
+    /// (#241). Same values as the local definition it replaces.
+    private var secondaryForeground: Color { .dictusPillIconSecondary }
 
     var body: some View {
         VStack(spacing: 0) {
