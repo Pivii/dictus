@@ -58,34 +58,37 @@ enum KeyboardLifecycleProbe {
 
 extension UIInputViewController {
 
-    /// Identity of the text field this controller is editing, plus the traits that
-    /// would change if iOS re-parented it into a different one.
+    /// The input traits of the text field this controller is editing.
     ///
-    /// `UITextDocumentProxy.documentIdentifier` is per-document: it holds steady
-    /// while the user keeps editing one field and changes when the first responder
-    /// changes. That is precisely the observation the current log cannot make, and
-    /// it separates the two readings of the #281 teardown:
+    /// `kbAppear` is the surviving test of the #281 style-flip marker: both
+    /// occurrences show the keyboard's `userInterfaceStyle` flipping to dark (2) on
+    /// a device in light mode shortly before the teardown, which is what a text
+    /// field requesting `UIKeyboardAppearance.dark` would produce. If `kbAppear`
+    /// reads dark on the controller that flips, the flip is the input context; if
+    /// it reads `.default` throughout, the flip comes from somewhere else.
     ///
-    /// - **same `docID` across both replacement controllers** → iOS rebuilt the
-    ///   input view for the *same* text field, so the teardown is a transition
-    ///   artefact and the host app's first responder never moved;
-    /// - **different `docID`** → the host app moved first responder mid-transition,
-    ///   which would make the teardown legitimate and the missing rebuild the bug.
+    /// **Do not add `UITextDocumentProxy.documentIdentifier` here.** It is the
+    /// obvious probe — per-document identity would say directly whether the two
+    /// replacement controllers edit the same text field — and it crashed the
+    /// extension on every launch (PR #282, first device build). `UIInputViewController.h`
+    /// declares it `NSUUID *` with **no nullability annotation** and the header has
+    /// no `NS_ASSUME_NONNULL_BEGIN`, so Swift imports it as a non-optional `UUID`
+    /// while ObjC is free to return nil. It does return nil before the host input
+    /// session is established, and the bridge traps. The compiler cannot help:
+    /// optional chaining on it is a *compile error*, so there is no way to guard the
+    /// read in Swift. Recovering this probe needs an ObjC shim re-declaring the
+    /// property `nullable` behind a bridging header — a deliberate decision, not a
+    /// drive-by addition.
     ///
-    /// `kbAppear` is logged with it because the two #281 captures both show the
-    /// keyboard's `userInterfaceStyle` flipping to dark (2) on a device in light
-    /// mode, which is what a text field requesting `UIKeyboardAppearance.dark`
-    /// would produce. If `kbAppear` changes in step with `docID`, the flip and the
-    /// context switch are one event; if `kbAppear` changes while `docID` holds,
-    /// they are not.
+    /// Every read below is verified to import as an Optional or a plain `Bool`, so
+    /// none of them can trap on a nil host connection.
     ///
     /// Cost: reading the proxy is a synchronous round trip to the host app, so this
     /// is deliberately kept off `viewWillAppear` — the critical path of keyboard
     /// presentation, and a path whose timing #281 may be sensitive to.
     var inputContextProbeDetails: String {
-        let docID = textDocumentProxy.documentIdentifier.uuidString.prefix(8)
         let appearance = textDocumentProxy.keyboardAppearance?.rawValue ?? -1
-        return "docID=\(docID) fullAccess=\(hasFullAccess) kbAppear=\(appearance)"
+        return "fullAccess=\(hasFullAccess) kbAppear=\(appearance)"
     }
 
     /// Why UIKit is taking this controller off screen.

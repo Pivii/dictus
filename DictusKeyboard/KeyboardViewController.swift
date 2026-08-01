@@ -686,10 +686,15 @@ class KeyboardViewController: UIInputViewController {
             details: "prevStyle=\(previousTraitCollection?.userInterfaceStyle.rawValue ?? -1) newStyle=\(traitCollection.userInterfaceStyle.rawValue) hadColorChange=\(hadColorChange)"
                 // #281: both occurrences show the style flipping to dark (2) on a
                 // device in light mode, seconds before the teardown, and 15 clean
-                // cold starts show no flip at all. If the flip is a different text
-                // field arriving, docID changes with it; if it is the same field
-                // re-rendered, docID holds. Bounded at 2-3 lines per controller.
-                + " docID=\(textDocumentProxy.documentIdentifier.uuidString.prefix(8))"
+                // cold starts show no flip at all. hasWindow says whether the flip
+                // lands on an attached controller or a detached one.
+                //
+                // Deliberately reads no textDocumentProxy property here. This
+                // callback fires before viewWillAppear — see the host-connection
+                // note at the needsInputModeSwitchKey read in viewDidLoad — so there
+                // is no input session yet, and that is exactly where the
+                // documentIdentifier read crashed the extension on every launch.
+                // Bounded at 2-3 lines per controller.
                 + " hasWindow=\(viewIfLoaded?.window != nil || inputView?.window != nil)"
         ))
         // Update keyboard theme when dark/light mode changes while keyboard is visible.
