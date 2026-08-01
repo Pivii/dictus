@@ -1026,6 +1026,11 @@ private extension DictationCoordinator {
     }
 
     /// Initialize Parakeet engine (iOS 17+ only).
+    ///
+    /// Loads strictly from the local FluidAudio cache (issue #252). This path used to call
+    /// `AsrModels.downloadAndLoad`, which starts a HuggingFace download when the cache is
+    /// absent — during dictation, with no progress and no way to cancel. That is the
+    /// asymmetry issue #249 removed for Whisper; downloading stays the model manager's job.
     func ensureParakeetReady(modelName: String) async throws {
         if currentModelName == modelName, whisperKit == nil {
             return
@@ -1045,6 +1050,27 @@ private extension DictationCoordinator {
                 }
                 return
             }
+
+            // Fail fast, before any task is created, when the cache is absent or partial —
+            // mirrors the WhisperKit guard above. `SharedKeys.modelReady` only reflects App
+            // Group bookkeeping; this checks the bundles FluidAudio will actually read.
+            guard let cacheDirectory = ParakeetEngine.installedModelCacheDirectory() else {
+                let error = SpeechModelError.modelNotInstalled(identifier: modelName)
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ParakeetLoad",
+                    instanceID: modelName,
+                    action: "localModelMissing",
+                    details: error.diagnosticDescription
+                ))
+                throw error
+            }
+
+            PersistentLog.log(.diagnosticProbe(
+                component: "ParakeetLoad",
+                instanceID: modelName,
+                action: "localModelResolved",
+                details: "folder=\(cacheDirectory.lastPathComponent) download=false"
+            ))
 
             let task = Task<Void, Error> {
                 if #available(iOS 14.0, *) {
