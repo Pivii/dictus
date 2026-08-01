@@ -186,6 +186,8 @@ struct DictusLiveActivity: Widget {
                 .buttonStyle(.plain)
 
                 // Record button
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://dictate")!) {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -196,6 +198,8 @@ struct DictusLiveActivity: Widget {
                 }
             case .recording:
                 // Stop button (left side)
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://stop")!) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 12, weight: .semibold))
@@ -307,6 +311,8 @@ struct DictusLiveActivity: Widget {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                    // swiftlint:disable:next force_unwrapping
                     Link(destination: URL(string: "dictus://dictate")!) {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 14, weight: .semibold))
@@ -317,6 +323,8 @@ struct DictusLiveActivity: Widget {
                     }
                 }
             case .recording:
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://stop")!) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 14, weight: .semibold))

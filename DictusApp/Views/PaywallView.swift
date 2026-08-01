@@ -374,7 +374,9 @@ struct PaywallView: View {
     // Apple requires functional Terms of Use and Privacy Policy links for
     // auto-renewable subscriptions (guideline 3.1.2). Force unwrap is safe:
     // compile-time constant URLs that cannot be malformed.
+    // swiftlint:disable:next force_unwrapping
     private static let termsURL = URL(string: "https://getdictus.com/terms")!
+    // swiftlint:disable:next force_unwrapping
     private static let privacyURL = URL(string: "https://getdictus.com/privacy")!
 
     private var bottomLinks: some View {

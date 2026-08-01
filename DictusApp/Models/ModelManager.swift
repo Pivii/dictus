@@ -652,6 +652,11 @@ func withPrewarmTimeout<T: Sendable>(
             throw ModelManagerError.prewarmTimeout(seconds: seconds)
         }
         // First to finish wins. Cancel the other before returning.
+        //
+        // WHY the force unwrap cannot trap: `next()` returns nil only when the
+        // group has no unfinished child tasks. Two were just added above and
+        // none has been awaited yet, so there is always one result to take.
+        // swiftlint:disable:next force_unwrapping
         let result = try await group.next()!
         group.cancelAll()
         return result

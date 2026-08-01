@@ -101,11 +101,17 @@ class UnifiedAudioEngine: ObservableObject {
     private nonisolated(unsafe) var converter: AVAudioConverter?
 
     /// Target format: 16kHz mono Float32 — what WhisperKit and Parakeet expect.
+    ///
+    /// WHY the force unwrap cannot trap: this initializer only returns nil for a
+    /// format/rate/channel combination Core Audio cannot represent. All four
+    /// arguments are compile-time constants, and 16 kHz mono non-interleaved
+    /// Float32 is a canonical PCM format supported on every device iOS 17 runs on.
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
         sampleRate: 16000,
         channels: 1,
         interleaved: false
+        // swiftlint:disable:next force_unwrapping
     )!
 
     /// Whether the audio session has been configured at least once.
