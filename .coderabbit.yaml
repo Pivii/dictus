@@ -16,7 +16,6 @@ reviews:
     # Generated / mechanical files: no review value, lots of noise.
     - "!Dictus.xcodeproj/**"
     - "!**/*.xcstrings"
-    - "!.swiftlint-baseline.json"
   path_instructions:
     - path: "DictusKeyboard/**"
       instructions: |

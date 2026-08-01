@@ -55,8 +55,14 @@ To check locally before pushing:
 
 ```bash
 brew install swiftlint
-swiftlint lint
+swiftlint lint --strict
 ```
+
+`--strict` is what CI runs, and it passes on a clean checkout with no exemption
+file. If you need a force unwrap, keep it and write a
+`// swiftlint:disable:next force_unwrapping` directive above it with a comment
+saying why the value cannot be nil — that is the project convention, not a
+workaround.
 
 The CI does **not** sign builds, run tests, or upload to TestFlight. Its only job is to catch broken compilations and obvious style regressions.
 
