@@ -4,24 +4,9 @@ import Foundation
 import StoreKit
 import DictusCore
 
-/// Compile-time visibility flags for premium UI (issue #236).
-///
-/// WHY a compile-time constant instead of remote config:
-/// No Pro feature exists yet (#79) and App Store Connect setup is pending (#215),
-/// so the paywall would render with empty prices. A single `static let` is enough
-/// to hide every entry point (Home banner, Settings Pro section, locked rows)
-/// while keeping all subscription code compiled and intact.
-///
-/// Re-enable: flip `paywallVisible` to `true` in the PR that ships the first
-/// real Pro feature, once #215 (ASC setup) is done. See #79/#215/#216.
-///
-/// WHY an enum with no cases: a caseless enum can never be instantiated,
-/// making it a pure namespace for static constants (common Swift pattern).
-enum PremiumFlags {
-    /// Controls whether users can see and reach the paywall.
-    /// `false` = the app looks like there is no subscription at all.
-    static let paywallVisible = false
-}
+// `PremiumFlags` moved to DictusCore so DictusKeyboard can read the same flag
+// (#241): the keyboard panel has a Pro entry point too, and an app-target
+// constant is invisible to the extension.
 
 /// Manages all StoreKit 2 interactions for the Dictus Pro subscription.
 ///

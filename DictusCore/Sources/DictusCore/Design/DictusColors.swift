@@ -43,6 +43,26 @@ public extension Color {
         Color(light: Color(hex: 0xFFFFFF), dark: Color(hex: 0x161C2C))
     }
 
+    // MARK: - Keyboard pill controls
+
+    /// Icon tint for a secondary pill control in the keyboard area: the panel
+    /// toggle and gear in `ToolbarView`, the cancel button in `RecordingOverlay`.
+    ///
+    /// WHY it is shared (#241): those pills sit in the same 52pt bar and swap
+    /// places as the keyboard changes state, so a control that is black in one
+    /// bar and grey in the next reads as two different systems. One token keeps
+    /// them from drifting apart the next time either file is edited.
+    ///
+    /// WHY 50% rather than full strength: the glass pill is the affordance; the
+    /// glyph only labels it. Full-strength icons compete with the mic and the
+    /// validate button, which are the primary actions in their respective bars.
+    static var dictusPillIconSecondary: Color {
+        Color(
+            light: Color(white: 0.15).opacity(0.5),
+            dark: Color.white.opacity(0.5)
+        )
+    }
+
     // MARK: - Gradient Colors (for BrandWaveform)
 
     /// Gradient start for center bar (#6BA3FF)

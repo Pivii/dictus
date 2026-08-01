@@ -320,6 +320,31 @@ class KeyboardState: ObservableObject {
         presentAreaMode(areaMode == .emoji ? .keys : .emoji)
     }
 
+    /// Show or hide the hamburger panel (#241). Called by the bar's left slot,
+    /// which is the hamburger when closed and the ✕ when open.
+    func togglePanelPresentation() {
+        presentAreaMode(areaMode == .panel ? .keys : .panel)
+    }
+
+    // MARK: - Opening DictusApp from the panel
+
+    /// Open DictusApp from the hamburger panel (#241).
+    ///
+    /// `intent` travels in the URL so DictusApp can route to a specific screen
+    /// later. It has no route for `open` today, so the app simply comes to the
+    /// foreground — which is what both the gear and the Pro entry need now.
+    ///
+    /// Goes through `openDictusURL`, i.e. `extensionContext` first: that is the
+    /// documented path for an app extension, and SwiftUI's `openURL` has no
+    /// success result and can fail silently in a keyboard extension.
+    func openDictusApp(intent: String) {
+        guard let url = URL(string: "dictus://open?source=keyboard&intent=\(intent)") else {
+            return
+        }
+        logProbe("openDictusApp", details: "intent=\(intent)")
+        openDictusURL(url)
+    }
+
     // MARK: - Recording commands (keyboard -> app)
 
     /// Request DictusApp to stop recording and begin transcription.
