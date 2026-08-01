@@ -174,6 +174,97 @@ final class DictationUndoTests: XCTestCase {
         XCTAssertTrue(windowTruncated)
     }
 
+    // MARK: - The chunked deletion the caller performs
+    //
+    // `KeyboardState.deleteInsertedText` deletes in chunks and re-verifies the part
+    // still to go between them, which is what completes the proof a truncated
+    // window cannot give on its own. These simulate that loop against a document
+    // whose window is smaller than the insertion.
+
+    /// Mirrors `KeyboardState.deleteInsertedText`: delete a chunk no longer than
+    /// the last check could see, then re-prove what is left before continuing.
+    ///
+    /// Returns the document as the loop leaves it and how much of the insertion it
+    /// gave up on — zero when the undo completed.
+    private func runUndoLoop(
+        document: String,
+        insertion: String,
+        windowSize: Int,
+        chunkSize: Int = 40
+    ) -> (document: String, abandoned: Int) {
+        var document = document
+        // The bounded context a proxy would report for the current document.
+        func context() -> String { String(document.suffix(windowSize)) }
+
+        var remaining = insertion.count
+        var proven: Int
+        switch DictationUndo.verify(context: context(), insertedText: insertion) {
+        case .ok(_, let verifiedCount, _):
+            proven = verifiedCount
+        case .failed:
+            return (document, remaining)
+        }
+
+        while remaining > 0 {
+            let batch = min(remaining, chunkSize, max(proven, 1))
+            document = String(document.dropLast(batch))
+            remaining -= batch
+            guard remaining > 0 else { break }
+
+            switch DictationUndo.verify(
+                context: context(),
+                insertedText: String(insertion.prefix(remaining))
+            ) {
+            case .ok(_, let verifiedCount, _):
+                proven = verifiedCount
+            case .failed:
+                return (document, remaining)
+            }
+        }
+        return (document, 0)
+    }
+
+    func testALongUndoCompletesThroughAWindowFarSmallerThanTheInsertion() {
+        let existing = "A note the user wrote earlier. "
+        let result = runUndoLoop(
+            document: existing + longInsertion,
+            insertion: longInsertion,
+            windowSize: 50
+        )
+        XCTAssertEqual(result.abandoned, 0, "the whole insertion should be removable")
+        XCTAssertEqual(result.document, existing, "and the undo must land exactly on the earlier text")
+    }
+
+    func testNoChunkDeletesMoreThanTheLastCheckCouldSee() {
+        // A window barely above the floor: the loop must step in small chunks
+        // rather than take the full recorded count on a 24-grapheme proof.
+        let existing = "A note the user wrote earlier. "
+        let result = runUndoLoop(
+            document: existing + longInsertion,
+            insertion: longInsertion,
+            windowSize: DictationUndo.minimumTruncatedMatch
+        )
+        XCTAssertEqual(result.abandoned, 0)
+        XCTAssertEqual(result.document, existing)
+    }
+
+    func testTheLoopStopsBeforeEatingTextItNeverInserted() {
+        // The host truncated the insertion: only its first 50 graphemes ever
+        // reached the field. The recorded count is larger than what is there, so a
+        // caller that trusted that count alone would delete into `existing`.
+        let existing = "A note the user wrote earlier. "
+        let result = runUndoLoop(
+            document: existing + String(longInsertion.prefix(50)),
+            insertion: longInsertion,
+            windowSize: 50
+        )
+        XCTAssertGreaterThan(result.abandoned, 0, "the loop must give up rather than delete on")
+        XCTAssertTrue(
+            result.document.hasPrefix(existing),
+            "text written before the dictation must survive the abandoned undo"
+        )
+    }
+
     func testFloorDoesNotApplyToAFullMatch() {
         // A short insertion fully visible in the window is fully verified — the
         // floor exists only to make a PARTIAL match trustworthy.

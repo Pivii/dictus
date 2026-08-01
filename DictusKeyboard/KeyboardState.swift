@@ -700,9 +700,13 @@ class KeyboardState: ObservableObject {
     /// this is where that is caught. A refusal deletes nothing.
     func performDictationUndo() {
         guard let transcription = dictationUndoText, !isUndoingDictation else { return }
+        guard let proxy = controller?.textDocumentProxy else {
+            invalidateDictationUndo(reason: "perform-no-proxy")
+            return
+        }
 
         switch DictationUndo.verify(
-            context: controller?.textDocumentProxy.documentContextBeforeInput,
+            context: proxy.documentContextBeforeInput,
             insertedText: transcription
         ) {
         case .failed(let reason):
@@ -717,18 +721,53 @@ class KeyboardState: ObservableObject {
             // The offer is spent the moment it is taken. Clearing first also means
             // a second tap during the burst finds nothing to act on.
             invalidateDictationUndo(reason: "performed")
-            deleteInsertedText(remaining: deleteCount)
+            deleteInsertedText(
+                transcription,
+                remaining: deleteCount,
+                proven: verifiedCount,
+                proxy: proxy
+            )
         }
     }
 
     /// Issue the deletion in chunks, yielding to the main queue between them.
+    ///
+    /// WHY the remainder is re-proved between chunks: the check that started the
+    /// burst could only see as far back as the proxy's window, so on a long
+    /// dictation most of what is about to be deleted was never shown to us. As the
+    /// deletion eats into the field the window slides back over text that was out
+    /// of reach a moment ago, and each chunk pays for the next one by proving the
+    /// part it is about to remove is still the tail. What that buys is the one
+    /// guarantee this feature is for: no character is deleted that has not been
+    /// seen to belong to the insertion.
+    ///
+    /// `proven` is what makes that literal rather than approximate: it is how many
+    /// graphemes the last check actually matched, and no chunk may be longer. A
+    /// truncated window proves 24 or more, never all 600, so a fixed chunk size on
+    /// its own would step past the proof on the very first pass.
+    ///
+    /// It cuts the other way too. If a host reports its context late, a chunk can
+    /// fail to prove a remainder that is in fact still there, and the undo stops
+    /// with text left behind. That is the deliberate side to fail on — leftover
+    /// text is visible and can be deleted by hand, text eaten out of the middle of
+    /// someone's message is neither. The abort is logged with what was left.
+    ///
+    /// The proxy is captured once, at the start. iOS can attach a new controller
+    /// mid-burst, and `controller` is a shared reference that the new one takes
+    /// over; re-reading it each turn would redirect the rest of the deletion at
+    /// whatever field that controller is looking at.
     ///
     /// Aborts if a dictation has started in the meantime. `startRecording` refuses
     /// to start one while a burst is in flight, so this is the second line of
     /// defence rather than the first — but the app can also drive the status from
     /// its own side, and a burst that kept deleting into a fresh recording would
     /// eat text this undo never inserted.
-    private func deleteInsertedText(remaining: Int) {
+    private func deleteInsertedText(
+        _ insertedText: String,
+        remaining: Int,
+        proven: Int,
+        proxy: UITextDocumentProxy
+    ) {
         guard remaining > 0 else {
             isUndoingDictation = false
             onDictationUndone?()
@@ -739,19 +778,41 @@ class KeyboardState: ObservableObject {
             isUndoingDictation = false
             logProbe(
                 "dictationUndoAborted",
-                details: "remaining=\(remaining) \(sessionDetails())"
+                details: "reason=dictation-started remaining=\(remaining) \(sessionDetails())"
             )
             return
         }
 
-        let batch = min(remaining, Self.dictationUndoChunkSize)
+        let batch = min(remaining, Self.dictationUndoChunkSize, max(proven, 1))
         for _ in 0..<batch {
-            controller?.textDocumentProxy.deleteBackward()
+            proxy.deleteBackward()
         }
+        let left = remaining - batch
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.deleteInsertedText(remaining: remaining - batch)
+            guard left > 0 else {
+                self.deleteInsertedText(insertedText, remaining: 0, proven: 0, proxy: proxy)
+                return
+            }
+            switch DictationUndo.verify(
+                context: proxy.documentContextBeforeInput,
+                insertedText: String(insertedText.prefix(left))
+            ) {
+            case .ok(_, let verifiedCount, _):
+                self.deleteInsertedText(
+                    insertedText,
+                    remaining: left,
+                    proven: verifiedCount,
+                    proxy: proxy
+                )
+            case .failed(let reason):
+                self.isUndoingDictation = false
+                self.logProbe(
+                    "dictationUndoAborted",
+                    details: "reason=\(reason) remaining=\(left)"
+                )
+            }
         }
     }
 

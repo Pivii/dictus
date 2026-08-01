@@ -75,7 +75,9 @@ final class DictusKeyboardBridge: NSObject,
         // proxy's view of the document can lag the keystroke by an event, and an
         // offer that is still on screen for that one event is an offer that can be
         // tapped. Ending it at the source does not depend on the host's timing.
-        KeyboardState.shared.invalidateDictationUndo(reason: "keystroke")
+        if Self.editsDocument(key) {
+            KeyboardState.shared.invalidateDictationUndo(reason: "keystroke")
+        }
 
         switch key.type {
         case .input(let character, let alternate):
@@ -132,6 +134,27 @@ final class DictusKeyboardBridge: NSObject,
         }
     }
 
+    /// Whether triggering `key` changes the document, as opposed to changing only
+    /// what the keyboard itself is showing.
+    ///
+    /// Used by the dictation undo offer (#266): shift, the symbol layers, the globe
+    /// and the emoji key leave the field exactly as the dictation left it, so the
+    /// offer survives them. Switching to the symbol layer to type a character does
+    /// end the offer — on the character, not on the layer switch.
+    ///
+    /// The emoji key is an `.input` key carrying the smiley glyph rather than a
+    /// type of its own; `didTriggerKey` tells the two apart the same way.
+    private static func editsDocument(_ key: KeyDefinition) -> Bool {
+        switch key.type {
+        case .input(let character, _):
+            return character != "\u{1F600}"
+        case .backspace, .spacebar, .returnkey, .comma, .fullStop, .tab:
+            return true
+        default:
+            return false
+        }
+    }
+
     func didTriggerDoubleTap(forKey key: KeyDefinition) {
         switch key.type {
         case .shift:
@@ -157,7 +180,9 @@ final class DictusKeyboardBridge: NSObject,
     func didTriggerHoldKey(_ key: KeyDefinition) {
         // Held backspace does not pass through didTriggerKey, and it is the very
         // key someone reaches for when they want the dictation gone (#266).
-        KeyboardState.shared.invalidateDictationUndo(reason: "keystroke-hold")
+        if Self.editsDocument(key) {
+            KeyboardState.shared.invalidateDictationUndo(reason: "keystroke-hold")
+        }
 
         switch key.type {
         case .backspace:

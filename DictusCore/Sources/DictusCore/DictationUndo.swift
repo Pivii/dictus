@@ -23,6 +23,20 @@
 // visible window must be a suffix of what was inserted. The result says which
 // of the two guarantees was obtained, so a partial verification is never
 // silently mistaken for a full one.
+//
+// WHAT THE TRUNCATED BRANCH DOES NOT PROVE, AND WHO FINISHES THE PROOF:
+// It says the tail of the field is the tail of the insertion. It says nothing
+// about the characters further back, which are exactly the ones a
+// `deleteCount` of the full insertion would go on to delete. On its own that
+// permits over-deletion: a field ending in text that merely resembles the
+// insertion's tail would authorise deleting a length that reaches past it.
+// The count returned here is therefore an intention, not a licence. The caller
+// (`KeyboardState.deleteInsertedText`) deletes in chunks and calls back here
+// between them with the part still to go, and the proxy's window slides back
+// over that text as the deletion proceeds — so every character removed has been
+// seen, at some point, at the tail of the field. A caller that deletes the
+// whole count in one go on the strength of a truncated verification is using
+// this wrongly.
 
 import Foundation
 
