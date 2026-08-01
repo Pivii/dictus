@@ -103,15 +103,29 @@ class KeyboardViewController: UIInputViewController {
         viewIfLoaded?.window != nil || inputView?.window != nil
     }
 
+    /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
+    /// census, so `deinit` decrements exactly once and only for instances that
+    /// incremented. `deinit` runs for every instance, `viewDidLoad` only for those
+    /// whose view is loaded, and an uncounted decrement would drift `live=` — the
+    /// one number the next #281 capture is meant to be readable from. No such
+    /// instance appears in any of the four device logs analysed (52 controllers,
+    /// zero deinits without a viewDidLoad), so this guards a case that is possible
+    /// rather than one that is observed.
+    private var didCountIntoLiveCensus = false
+
     override func viewDidLoad() {
         super.viewDidLoad()
         PersistentLog.source = "KBD"
         let memEntry = MemoryFootprint.residentMB()
+        // live= is the #281 headline probe: healthy cold starts peak at 2 live
+        // controllers, both #281 occurrences peak at 3. See KeyboardLifecycleProbe.
+        didCountIntoLiveCensus = true
+        let liveOnLoad = KeyboardLifecycleProbe.controllerDidLoad()
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "viewDidLoad",
-            details: "controllerClass=\(String(describing: type(of: self))) memMB=\(memEntry)"
+            details: "controllerClass=\(String(describing: type(of: self))) memMB=\(memEntry) live=\(liveOnLoad)"
         ))
 
         #if DEBUG
@@ -490,6 +504,18 @@ class KeyboardViewController: UIInputViewController {
         // where iOS imposed a different height than we asked for.
         logLayoutSnapshot(action: "viewDidAppear_settled")
 
+        // #281: record which text field we settled into. Emitted here rather than
+        // from viewWillAppear because reading the proxy costs a synchronous round
+        // trip to the host app, and viewWillAppear is the timing-sensitive path the
+        // failure sits on. Both #281 captures show every doomed controller reaching
+        // viewDidAppear, so this loses no occurrence. One line per controller.
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "inputContext_settled",
+            details: "\(inputContextProbeDetails) live=\(KeyboardLifecycleProbe.liveCount)"
+        ))
+
         // Issue #129 investigation: viewDidAppear fires BEFORE iOS finishes the
         // keyboard entry animation, so bounds captured here may still be
         // transient. Schedule deferred snapshots to confirm whether 504pt is
@@ -588,6 +614,8 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "viewDidDisappear",
             details: "animated=\(animated) memMB=\(MemoryFootprint.residentMB())"
+                + " live=\(KeyboardLifecycleProbe.liveCount)"
+                + " \(dismissalProbeDetails) \(inputContextProbeDetails)"
         ))
         PersistentLog.log(.keyboardDidDisappear)
 
@@ -656,6 +684,18 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "traitCollectionDidChange",
             details: "prevStyle=\(previousTraitCollection?.userInterfaceStyle.rawValue ?? -1) newStyle=\(traitCollection.userInterfaceStyle.rawValue) hadColorChange=\(hadColorChange)"
+                // #281: both occurrences show the style flipping to dark (2) on a
+                // device in light mode, seconds before the teardown, and 15 clean
+                // cold starts show no flip at all. hasWindow says whether the flip
+                // lands on an attached controller or a detached one.
+                //
+                // Deliberately reads no textDocumentProxy property here. This
+                // callback fires before viewWillAppear — see the host-connection
+                // note at the needsInputModeSwitchKey read in viewDidLoad — so there
+                // is no input session yet, and that is exactly where the
+                // documentIdentifier read crashed the extension on every launch.
+                // Bounded at 2-3 lines per controller.
+                + " hasWindow=\(viewIfLoaded?.window != nil || inputView?.window != nil)"
         ))
         // Update keyboard theme when dark/light mode changes while keyboard is visible.
         if hadColorChange {
@@ -700,11 +740,16 @@ class KeyboardViewController: UIInputViewController {
 
         bridge = nil
 
+        // live=0 on this line marks the exact moment the extension has no
+        // controller left, which is the start of the #281 window (#281).
+        let liveAfter = didCountIntoLiveCensus
+            ? KeyboardLifecycleProbe.controllerDidDeinit()
+            : KeyboardLifecycleProbe.liveCount
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "deinit",
-            details: "memMB=\(MemoryFootprint.residentMB())"
+            details: "memMB=\(MemoryFootprint.residentMB()) live=\(liveAfter)"
         ))
     }
 
