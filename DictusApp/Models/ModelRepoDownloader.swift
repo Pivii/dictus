@@ -24,8 +24,9 @@ import FluidAudio
 ///
 /// Parity contracts to re-check on dependency bumps:
 /// - FluidAudio 0.12.4 `DownloadUtils.downloadRepo` (file selection + layout) so that
-///   `AsrModels.downloadAndLoad` finds the cached files and skips straight to CoreML
-///   compilation.
+///   `AsrModels.load` finds the cached files and goes straight to CoreML compilation.
+///   Since issue #252 nothing downloads Parakeet on the load path, so a file this
+///   downloader misses is a hard failure rather than a silent second download.
 /// - WhisperKit `WhisperKit.download` / HubApi snapshot layout
 ///   (`Documents/huggingface/models/{repo}/{variant}`) so that
 ///   `WhisperKitConfig(modelFolder:)` and `ModelManager.deleteModel` keep working.
