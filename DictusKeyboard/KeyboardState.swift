@@ -993,6 +993,22 @@ class KeyboardState: ObservableObject {
     /// This means: after the first launch, subsequent recordings happen without
     /// switching apps. The user stays in their current app the entire time.
     func startRecording() {
+        // An undo burst is still rewriting the field (#266). Starting a dictation
+        // now would have the two interleave: the burst deletes on every main-queue
+        // turn, and the transcription it would be deleting into is not the one it
+        // was verified against. The burst is short; the user taps again.
+        //
+        // WHY this comes before the debounce: a refused tap must not count as a
+        // tap. Charging it to the debounce window would make the mic dead for
+        // 1.5 s after a burst that lasted a fraction of that, and the second tap —
+        // the one this refusal is telling the user to make — would be the one
+        // rejected.
+        guard !isUndoingDictation else {
+            logProbe("micTapRejectedDuringUndo", details: sessionDetails())
+            HapticFeedback.actionRefused()
+            return
+        }
+
         // Debounce: reject taps within 1.5s of the last tap.
         let now = Date()
         guard now.timeIntervalSince(lastMicTapDate) >= 1.5 else {
@@ -1000,16 +1016,6 @@ class KeyboardState: ObservableObject {
             return
         }
         lastMicTapDate = now
-
-        // An undo burst is still rewriting the field (#266). Starting a dictation
-        // now would have the two interleave: the burst deletes on every main-queue
-        // turn, and the transcription it would be deleting into is not the one it
-        // was verified against. The burst is short; the user taps again.
-        guard !isUndoingDictation else {
-            logProbe("micTapRejectedDuringUndo", details: sessionDetails())
-            HapticFeedback.actionRefused()
-            return
-        }
 
         // A new dictation ends the previous one's undo offer, whatever comes of it.
         invalidateDictationUndo(reason: "new-dictation")

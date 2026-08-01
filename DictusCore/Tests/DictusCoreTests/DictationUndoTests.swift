@@ -153,6 +153,19 @@ final class DictationUndoTests: XCTestCase {
         )
     }
 
+    func testPartiallyDeletedLongInsertionIsRefused() {
+        // The user backspaced five characters off the end of a long dictation. The
+        // window still shows text that came from the insertion, but it no longer
+        // ENDS where the insertion ends, so it is not a suffix of it and the check
+        // refuses. This is the case a truncated window is most often accused of
+        // getting wrong; it does not reach the accepted-bound branch at all.
+        let afterBackspaces = String(longInsertion.dropLast(5))
+        XCTAssertEqual(
+            DictationUndo.verify(context: String(afterBackspaces.suffix(60)), insertedText: longInsertion),
+            .failed(reason: "truncated-mismatch")
+        )
+    }
+
     func testShortWindowIsRefusedEvenWhenItMatches() {
         // 12 graphemes of match is too little to distinguish "our insertion" from
         // "a field that happens to end the same way".
@@ -262,6 +275,20 @@ final class DictationUndoTests: XCTestCase {
         XCTAssertTrue(
             result.document.hasPrefix(existing),
             "text written before the dictation must survive the abandoned undo"
+        )
+    }
+
+    func testFloorIsHonouredWhenTheCallerSuppliesOne() {
+        // The floor is injectable so a caller with a different tolerance can set
+        // one; the same window must be refused below it and accepted at it.
+        let window = String(longInsertion.suffix(30))
+        XCTAssertEqual(
+            DictationUndo.verify(context: window, insertedText: longInsertion, minimumTruncatedMatch: 31),
+            .failed(reason: "window-too-short")
+        )
+        XCTAssertEqual(
+            DictationUndo.verify(context: window, insertedText: longInsertion, minimumTruncatedMatch: 30),
+            .ok(deleteCount: longInsertion.count, verifiedCount: 30, windowTruncated: true)
         )
     }
 
