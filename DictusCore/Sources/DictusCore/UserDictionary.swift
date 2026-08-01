@@ -89,18 +89,19 @@ public final class UserDictionary {
         guard !key.isEmpty, key.count > 1 else { return false }
 
         // Already learned — just bump usage count
-        if learnedWords[key] != nil {
-            learnedWords[key]! += 1
+        if let learnedCount = learnedWords[key] {
+            learnedWords[key] = learnedCount + 1
             saveToDefaults()
             return false
         }
 
-        // Increment pending counter
-        pendingWords[key, default: 0] += 1
+        // Increment pending counter, keeping the new value to decide below.
+        let pendingCount = (pendingWords[key] ?? 0) + 1
+        pendingWords[key] = pendingCount
 
-        if pendingWords[key]! >= Self.repetitionThreshold {
+        if pendingCount >= Self.repetitionThreshold {
             // Threshold reached — promote to learned
-            learnedWords[key] = pendingWords[key]!
+            learnedWords[key] = pendingCount
             pendingWords.removeValue(forKey: key)
             saveToDefaults()
             print("[UserDictionary] Learned '\(key)' after \(Self.repetitionThreshold) uses")

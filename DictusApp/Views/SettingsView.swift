@@ -310,6 +310,8 @@ struct SettingsView: View {
                 // in a List with .scrollContentBackground(.hidden). Using Button
                 // with UIApplication.shared.open gives native row press feedback.
                 Button {
+                    // Force unwrap is safe: compile-time constant URL that cannot be malformed.
+                    // swiftlint:disable:next force_unwrapping
                     UIApplication.shared.open(URL(string: "https://github.com/Pivii/dictus")!)
                 } label: {
                     HStack {
