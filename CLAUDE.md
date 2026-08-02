@@ -34,6 +34,32 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 - Pas d'UIApplication.shared dans l'extension keyboard
 - Toutes les données partagées passent par App Group
 - RequestsOpenAccess = true dans Info.plist de l'extension (pour le micro)
+- L'extension keyboard atteint l'app via `extensionContext`
+- La contrainte de hauteur **déclarée** du clavier est une zone interdite (#166, et trois régressions depuis)
+
+## Git et releases
+
+- Le travail part de `develop`, les PR ciblent `develop`. `main` est ce qui est sur l'App Store.
+- `Closes #N` **n'auto-ferme pas** sur un merge dans `develop` : écrire `refs #N` et fermer l'issue à la main.
+- Merge, jamais squash.
+- Les trois targets partagent un numéro de version et de build. Ne jamais les bumper hors d'une coupe TestFlight (`scripts/cut-testflight.sh`).
+- Une PR n'est pas validée par une CI verte : elle passe par une relecture indépendante et un test sur device avant merge.
+
+## Build, test, lint
+
+- Trois targets à construire : `DictusApp`, `DictusKeyboard`, `DictusCore`.
+- Un worktree neuf — comme tout "Reset Package Caches" — résout les packages de zéro et exige `./scripts/patch-fluidaudio-swift5.sh` avant le premier build, sinon il échoue.
+- Lint : `swiftlint lint --strict`. Pas de baseline ni de fichier d'exemptions (la baseline a été supprimée en #146), donc toute violation introduite se corrige ou porte un `swiftlint:disable` avec sa raison écrite.
+- Xcode régénère `Localizable.xcstrings` au build (état d'extraction `stale`, newline finale perdue). C'est du bruit de build : le jeter, jamais le committer.
+
+### Rester headless
+
+Pierre travaille sur cette machine : toute fenêtre qui s'ouvre lui vole le focus.
+
+- `xcrun simctl boot <udid>` est headless, donc autorisé.
+- `xcodebuild test -destination 'platform=iOS Simulator,name=...'` est la façon de lancer les tests.
+- Ne pas lancer `open -a Simulator`. Si un outil ouvre une fenêtre malgré tout, `open -g` pour qu'elle ne passe pas au premier plan.
+- Un agent ne peut pas valider sur device physique : ce qui l'exige part dans la liste de validation manuelle, avec les étapes exactes.
 
 ## Contexte utilisateur
 
