@@ -12,7 +12,8 @@ public enum PolishPipeline {
     /// Outcome of one engine-facing transform. Mirrors what `PolishCoordinator`
     /// records in metrics. `engineOutput` is the decoded polished text — present
     /// even when the guardrail rejected it (so callers can inspect what was
-    /// rejected), `nil` only when the engine threw or was cancelled.
+    /// rejected), `nil` when the engine threw, was cancelled, or was never
+    /// called at all (`.exceededContextBudget`).
     public struct Result: Sendable {
         public let engineOutput: String?
         public let outcome: PolishMetrics.Outcome
@@ -49,6 +50,22 @@ public enum PolishPipeline {
         // ", " + capital — see `PolishPostpass`. Sub-millisecond, kept out of the
         // engine timing below.
         let engineInput = PolishPostpass.encodeForEngine(preprocessed)
+        // Context guard (#270). The backend answers whether this exact input,
+        // with the instructions it will resolve for `(mode, target)`, fits its
+        // window. Engines with no ceiling answer `.fits` by default, so this is
+        // a no-op for them. Deliberately placed BEFORE `engineStart`: it costs
+        // a single pass over the strings (tens of microseconds), and folding it
+        // into `engineMs` would pollute the one number that measures the LLM.
+        if case .exceeds(let estimated, let budget) = engine.contextFit(
+            input: engineInput, targetLanguage: target, mode: mode
+        ) {
+            // The engine is NOT called. `resolvedOutput` returns the
+            // deterministic floor for this outcome exactly as it does for an
+            // engine failure — the user's text is never at risk here, only
+            // the polish is.
+            PolishMetrics.logContextOverflow(estimatedTokens: estimated, budgetTokens: budget, mode: mode)
+            return Result(engineOutput: nil, outcome: .exceededContextBudget, engineMs: 0, postprocessMs: 0)
+        }
         let engineStart = Date()
         do {
             let polishedRaw = try await engine.polish(
@@ -109,8 +126,9 @@ public enum PolishPipeline {
     /// The string the user actually receives, given a transform `Result` and the
     /// deterministic pre-pass output. On `.success` it's the accepted engine
     /// output; on EVERY other outcome (gibberish-skip, engine failure, guardrail
-    /// rejection, cancellation) it's the deterministic floor — the pre-pass text
-    /// with newline markers decoded and target-language typography applied.
+    /// rejection, cancellation, context overflow) it's the deterministic floor —
+    /// the pre-pass text with newline markers decoded and target-language
+    /// typography applied.
     ///
     /// Crucially it is NEVER the literal `raw`: a non-success must not throw away
     /// the free, deterministic verbal-punctuation work (otherwise the user sees

@@ -20,6 +20,25 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Return false so SwiftUI onOpenURL still handles the URL
         return false
     }
+
+    /// Installs `DictusSceneDelegate` so the launch URL can be read at scene connection.
+    ///
+    /// WHY here rather than in Info.plist: the app has no `UISceneConfigurations` entry,
+    /// and UIKit asks the app delegate first. Returning a configuration with our delegate
+    /// class is the least invasive way to get `UIScene.ConnectionOptions` — the only API
+    /// that exposes the launch URL before SwiftUI evaluates its first body (issue #264).
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(
+            name: nil,
+            sessionRole: connectingSceneSession.role
+        )
+        configuration.delegateClass = DictusSceneDelegate.self
+        return configuration
+    }
 }
 
 @main
@@ -184,15 +203,11 @@ struct DictusApp: App {
 
         switch url.host {
         case "dictate":
-            let isFromKeyboard = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .first(where: { $0.name == "source" })?
-                .value == "keyboard"
-            let isPrepareOnly = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .contains(where: { $0.name == "intent" && $0.value == "prepare" }) ?? false
+            // Single source of truth for what the keyboard is asking (issue #264).
+            let keyboardIntent = KeyboardDictationURL.intent(from: url)
+            let isFromKeyboard = keyboardIntent != nil
 
-            if isFromKeyboard && isPrepareOnly {
+            if keyboardIntent == .prepare {
                 DictusLogger.app.info("Keyboard requested model preparation without recording")
                 PersistentLog.log(.dictationDeferred(reason: "keyboard prepare-only URL"))
                 NotificationCenter.default.post(

@@ -106,6 +106,31 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         session.prewarm()
     }
 
+    // MARK: - Context ceiling (#270)
+
+    /// The window this engine has to fit into. See `PolishContextBudget` for
+    /// how the numbers were measured; the ceiling itself is the same 4096-token
+    /// one the session lifecycle above already had to work around.
+    public static let contextBudget = PolishContextBudget.appleFoundationModels
+
+    /// Price the call before making it: the RESOLVED instructions for
+    /// `(mode, targetLanguage)` — which is what the session was or will be
+    /// created with, including any harness override — plus the input, plus a
+    /// reserve for the generated output. Instruction length varies by a factor
+    /// of two across the prompt set, and the measurement showed instructions
+    /// and input trade one-for-one inside the window, so a fixed instruction
+    /// allowance would under-estimate exactly where it matters most.
+    /// The arguments below are the ones `polish()` itself passes to
+    /// `resolvedInstructions`, so what is priced is exactly what is sent.
+    public func contextFit(input: String,
+                           targetLanguage: SupportedLanguage,
+                           mode: PolishMode) -> PolishContextFit {
+        Self.contextBudget.fit(
+            instructions: resolvedInstructions(mode: mode, language: targetLanguage),
+            input: input
+        )
+    }
+
     // MARK: - Instruction routing
 
     /// Returns the system prompt for `(mode, language)`. All four supported

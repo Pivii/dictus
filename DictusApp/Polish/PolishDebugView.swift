@@ -286,7 +286,8 @@ private struct PolishExportShareSheet: UIViewControllerRepresentable {
 
 private extension PolishMetrics.Outcome {
     static var allDisplayCases: [PolishMetrics.Outcome] {
-        [.success, .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode, .cancelled, .engineFailed]
+        [.success, .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
+         .cancelled, .engineFailed, .exceededContextBudget]
     }
 
     var shortLabel: String {
@@ -298,13 +299,17 @@ private extension PolishMetrics.Outcome {
         case .skippedAutoMode: return "auto"
         case .cancelled: return "cancelled"
         case .engineFailed: return "failed"
+        case .exceededContextBudget: return "too long"
         }
     }
 
     var tintColor: Color {
         switch self {
         case .success: return .green
-        case .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode: return .orange
+        // Orange, not red: an overflow is a refusal, not a breakage — the
+        // engine was never called and the user still got their text (#270).
+        case .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
+             .exceededContextBudget: return .orange
         case .cancelled, .engineFailed: return .red
         }
     }
