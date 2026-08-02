@@ -99,8 +99,12 @@ class KeyboardViewController: UIInputViewController {
     /// own `inputView`, and either may be the one iOS parents into the keyboard
     /// window. `viewIfLoaded` rather than `view`: asking for the view would load
     /// it, and a controller whose view was never loaded is not on screen anyway.
+    /// The two halves are named in `KeyboardLifecycleProbe`'s
+    /// `UIInputViewController` extension so the probes that report them cannot
+    /// drift from the predicate that acts on them; this line is the only place
+    /// they are composed.
     private var isOnScreen: Bool {
-        viewIfLoaded?.window != nil || inputView?.window != nil
+        isViewInWindow || isInputViewInWindow
     }
 
     /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
@@ -597,6 +601,16 @@ class KeyboardViewController: UIInputViewController {
 
     /// Emits the same layout snapshot we log in `viewDidAppear_settled`,
     /// reusable from deferred blocks to compare mid- vs post-animation sizes.
+    ///
+    /// It also carries the #260 claim predicate. That issue turns on one boolean —
+    /// is `isOnScreen` true for the controller iOS is actually showing? — and the
+    /// only path that answers it in code, `claimedOwnerlessArea`, needs the rare
+    /// ownership race to fire before it logs anything. This line does not: it runs
+    /// four times per controller on every recording, so an ordinary dictation
+    /// settles the question with no race to reproduce. `onScreen=` is the predicate
+    /// itself, read through `isOnScreen`; `hasWindow=` / `hasInputWindow=` say which
+    /// of the two attachments iOS kept, which is what a redesign would need if the
+    /// answer turns out to be `false`.
     private func logLayoutSnapshot(action: String) {
         let inputBounds = inputView?.bounds.size ?? .zero
         let keyboardFrame = giellaKeyboard?.frame.size ?? .zero
@@ -606,7 +620,7 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: action,
-            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) memMB=\(MemoryFootprint.residentMB())"
+            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) onScreen=\(isOnScreen) \(windowAttachmentProbeDetails) memMB=\(MemoryFootprint.residentMB())"
         ))
     }
 
@@ -627,6 +641,14 @@ class KeyboardViewController: UIInputViewController {
             details: "animated=\(animated) memMB=\(MemoryFootprint.residentMB())"
                 + " live=\(KeyboardLifecycleProbe.liveCount)"
                 + " \(dismissalProbeDetails) \(inputContextProbeDetails)"
+                // #281: whether DictusApp had already backgrounded when iOS tore
+                // this controller down. The log's one-second resolution and its
+                // interleaving of two processes make that ordering unrecoverable by
+                // comparing timestamps, and it is the one thing the surviving
+                // hypothesis — the swipe-back landing before iOS rotates in a
+                // successor — needs to be true. Read from the App Group, so no IPC
+                // round trip to the host app on a teardown path.
+                + " \(AppScenePhaseProbe.describe())"
         ))
         PersistentLog.log(.keyboardDidDisappear)
 
@@ -697,8 +719,13 @@ class KeyboardViewController: UIInputViewController {
             details: "prevStyle=\(previousTraitCollection?.userInterfaceStyle.rawValue ?? -1) newStyle=\(traitCollection.userInterfaceStyle.rawValue) hadColorChange=\(hadColorChange)"
                 // #281: both occurrences show the style flipping to dark (2) on a
                 // device in light mode, seconds before the teardown, and 15 clean
-                // cold starts show no flip at all. hasWindow says whether the flip
+                // cold starts show no flip at all. onScreen says whether the flip
                 // lands on an attached controller or a detached one.
+                //
+                // Named `onScreen=` since #260 because that is what it has always
+                // been — the composed predicate, not the `view`-only half that
+                // `hasWindow=` denotes on every other line. Captures from builds
+                // before this one spell the same value `hasWindow=` here.
                 //
                 // Deliberately reads no textDocumentProxy property here. This
                 // callback fires before viewWillAppear — see the host-connection
@@ -706,7 +733,7 @@ class KeyboardViewController: UIInputViewController {
                 // is no input session yet, and that is exactly where the
                 // documentIdentifier read crashed the extension on every launch.
                 // Bounded at 2-3 lines per controller.
-                + " hasWindow=\(viewIfLoaded?.window != nil || inputView?.window != nil)"
+                + " onScreen=\(isOnScreen)"
         ))
         // Update keyboard theme when dark/light mode changes while keyboard is visible.
         if hadColorChange {

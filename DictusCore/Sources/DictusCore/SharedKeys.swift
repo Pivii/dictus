@@ -103,6 +103,16 @@ public enum SharedKeys {
     /// Used by auto-return logic to navigate back to the correct app after dictation.
     public static let sourceAppScheme = "dictus.sourceAppScheme"
 
+    // Keyboard teardown diagnostics (issue #281)
+    /// String: DictusApp's last reported scene phase, one of `AppScenePhaseMarker`.
+    /// Written by the app on every scene phase change, read by the keyboard extension
+    /// when its controllers are torn down. Observation only — nothing branches on it.
+    public static let appScenePhase = "dictus.appScenePhase"
+    /// Double (timeIntervalSince1970): when `appScenePhase` was written. The pair is
+    /// only meaningful together: the keys outlive the app process, so the age is what
+    /// separates "the app is in the background right now" from a stale leftover.
+    public static let appScenePhaseTimestamp = "dictus.appScenePhaseTimestamp"
+
     // MARK: - Sound Feedback
     /// Whether sound feedback is enabled for recording events, default true
     public static let soundFeedbackEnabled = "dictus.soundFeedbackEnabled"

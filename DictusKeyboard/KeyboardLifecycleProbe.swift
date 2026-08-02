@@ -58,6 +58,34 @@ enum KeyboardLifecycleProbe {
 
 extension UIInputViewController {
 
+    /// Whether this controller's own view is in a window right now.
+    ///
+    /// One half of the #260 claim predicate; see `KeyboardViewController.isOnScreen`,
+    /// which is defined as this OR `isInputViewInWindow` and is the only place that
+    /// composition is written down. Both halves live here so that every probe that
+    /// reports window attachment and the predicate that acts on it read the same
+    /// expression — a probe that could disagree with the code it observes is worth
+    /// less than no probe, and #260's open question is precisely whether this
+    /// predicate is true for the controller iOS is showing.
+    var isViewInWindow: Bool { viewIfLoaded?.window != nil }
+
+    /// Whether the `inputView` this controller assigns itself is in a window right now.
+    ///
+    /// The other half of the #260 claim predicate. It is checked separately because
+    /// a `UIInputViewController` that supplies its own `inputView` may have that view
+    /// parented into the keyboard window while `view` never is, so the two halves can
+    /// genuinely disagree — which is the whole reason `isOnScreen` tests both.
+    var isInputViewInWindow: Bool { inputView?.window != nil }
+
+    /// Both halves of the #260 claim predicate, in the shared key=value format.
+    ///
+    /// The predicate itself is `hasWindow || hasInputWindow`. Read them together:
+    /// `hasWindow=false` alone does **not** mean the controller failed the liveness
+    /// test. The lines that carry the composed answer log it as `onScreen=`.
+    var windowAttachmentProbeDetails: String {
+        "hasWindow=\(isViewInWindow) hasInputWindow=\(isInputViewInWindow)"
+    }
+
     /// The input traits of the text field this controller is editing.
     ///
     /// `kbAppear` is the surviving test of the #281 style-flip marker: both
@@ -105,9 +133,7 @@ extension UIInputViewController {
     ///
     /// No IPC: every read is local UIKit state.
     var dismissalProbeDetails: String {
-        let hasWindow = viewIfLoaded?.window != nil
-        let hasInputWindow = inputView?.window != nil
-        return "beingDismissed=\(isBeingDismissed) movingFromParent=\(isMovingFromParent)"
-            + " hasParent=\(parent != nil) hasWindow=\(hasWindow) hasInputWindow=\(hasInputWindow)"
+        "beingDismissed=\(isBeingDismissed) movingFromParent=\(isMovingFromParent)"
+            + " hasParent=\(parent != nil) \(windowAttachmentProbeDetails)"
     }
 }
