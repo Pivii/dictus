@@ -22,6 +22,14 @@ import DictusCore
 /// the dictation, writes the App Group flag and flips the "has handled a URL in this
 /// process" flags. Marking the URL handled here would flip those flags early and make a
 /// later engine-dead restart look like a warm start.
+///
+/// THREADING: main thread only, by construction. The three call sites are
+/// `scene(_:willConnectTo:options:)`, `MainTabView.init` and the view's
+/// `scenePhase` handler, all of which UIKit and SwiftUI run on the main thread.
+/// The target builds in Swift 5 language mode, so the invariant is documented
+/// rather than annotated: marking the enum `@MainActor` would make it
+/// unreachable from `MainTabView.init`, which is nonisolated. Enforcing it
+/// belongs to a Swift 6 migration, not here.
 enum ColdStartLaunch {
     /// The intent carried by the launch URL. `nil` for every other launch path
     /// (Home screen, notification, widget), which is what keeps the normal launch
