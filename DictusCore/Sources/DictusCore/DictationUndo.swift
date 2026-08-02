@@ -24,19 +24,31 @@
 // of the two guarantees was obtained, so a partial verification is never
 // silently mistaken for a full one.
 //
-// WHAT THE TRUNCATED BRANCH DOES NOT PROVE, AND WHO FINISHES THE PROOF:
+// WHAT THE TRUNCATED BRANCH DOES NOT PROVE:
 // It says the tail of the field is the tail of the insertion. It says nothing
-// about the characters further back, which are exactly the ones a
-// `deleteCount` of the full insertion would go on to delete. On its own that
-// permits over-deletion: a field ending in text that merely resembles the
-// insertion's tail would authorise deleting a length that reaches past it.
-// The count returned here is therefore an intention, not a licence. The caller
-// (`KeyboardState.deleteInsertedText`) deletes in chunks and calls back here
-// between them with the part still to go, and the proxy's window slides back
-// over that text as the deletion proceeds — so every character removed has been
-// seen, at some point, at the tail of the field. A caller that deletes the
-// whole count in one go on the strength of a truncated verification is using
-// this wrongly.
+// about the characters further back, which are exactly the ones a `deleteCount`
+// of the full insertion goes on to delete.
+//
+// The first design answered that by re-proving the remainder between deletion
+// chunks, on the assumption that the proxy's window slides back over the
+// document as the deletion consumes it. Three device captures in Notes
+// (2026-08-02) disproved the assumption arithmetically: the window measured
+// 491, 496 and 490 graphemes when each burst started and 11, 16 and 10 when it
+// stopped — the starting window minus the 480 removed, exactly. That host
+// serves one cached window and trims it; it never refetches, and a caret round
+// trip did not make it. So the requirement was unmeetable there, and its price
+// was the feature: a 4752-grapheme undo removed 480 and left 4272 behind.
+//
+// The caller now stops only on a refusal that PROVES the field changed
+// (`suffix-mismatch`, `truncated-mismatch`) and continues through refusals that
+// merely mean the document could not be read (`no-context`, `window-too-short`).
+// The residual exposure is a host that silently accepted less text than it was
+// handed — a length-limited field — where the recorded count reaches past what
+// actually arrived.
+//
+// The hard bound is the count itself: it is the length of the string the
+// keyboard handed to `insertText`, so a burst cannot remove more than one
+// dictation put there, whatever the window did or did not show.
 
 import Foundation
 
@@ -71,6 +83,22 @@ public enum DictationUndo {
     /// This only ever applies to the truncated branch. A full match of a
     /// three-character insertion is still a full match.
     public static let minimumTruncatedMatch = 24
+
+    /// Whether a `.failed` reason is evidence that the field stopped being ours, as
+    /// opposed to evidence that it could not be read.
+    ///
+    /// `suffix-mismatch` and `truncated-mismatch` are proof: the document was
+    /// legible and what it holds is not what we inserted. `no-context` and
+    /// `window-too-short` are absence of proof — a detached or unsettled proxy, a
+    /// secure field, a host whose cached window has run dry mid-deletion.
+    ///
+    /// Callers that are deciding whether to STOP something already in flight — the
+    /// deletion burst, the offer on screen — must branch on this rather than on
+    /// `.failed` alone. Callers deciding whether to START deleting must not: there,
+    /// anything short of a pass fails closed.
+    public static func provesTheFieldChanged(_ reason: String) -> Bool {
+        reason == "suffix-mismatch" || reason == "truncated-mismatch"
+    }
 
     /// Validates that `insertedText` is still the tail of the field.
     ///

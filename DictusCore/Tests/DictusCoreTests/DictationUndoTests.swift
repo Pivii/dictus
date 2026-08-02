@@ -189,91 +189,142 @@ final class DictationUndoTests: XCTestCase {
 
     // MARK: - The chunked deletion the caller performs
     //
-    // `KeyboardState.deleteInsertedText` deletes in chunks and re-verifies the part
-    // still to go between them, which is what completes the proof a truncated
-    // window cannot give on its own. These simulate that loop against a document
-    // whose window is smaller than the insertion.
+    // `KeyboardState.deleteInsertedText` deletes in chunks and re-checks the part
+    // still to go between them, stopping only on a refusal that PROVES the field
+    // changed. These simulate that loop against both of the window behaviours a
+    // host can have.
 
-    /// Mirrors `KeyboardState.deleteInsertedText`: delete a chunk no longer than
-    /// the last check could see, then re-prove what is left before continuing.
+    /// How a host answers `documentContextBeforeInput` while text is deleted.
+    private enum WindowBehaviour {
+        /// The window slides back over the document, revealing text that was out of
+        /// reach a moment ago. What the first design assumed of every host.
+        case sliding(Int)
+        /// The window is fetched once and merely trimmed as deletions consume it,
+        /// so it runs dry and never refills. Measured in Notes on 2026-08-02: 491
+        /// graphemes at the start of a burst, 11 after 480 were removed.
+        case trimmedOnce(Int)
+    }
+
+    /// Mirrors `KeyboardState.deleteInsertedText`: delete a fixed chunk, then look
+    /// at what is left and stop only if the document proves it is no longer ours.
     ///
     /// Returns the document as the loop leaves it and how much of the insertion it
     /// gave up on — zero when the undo completed.
     private func runUndoLoop(
-        document: String,
+        document startingDocument: String,
         insertion: String,
-        windowSize: Int,
+        behaviour: WindowBehaviour,
         chunkSize: Int = 40
     ) -> (document: String, abandoned: Int) {
-        var document = document
-        // The bounded context a proxy would report for the current document.
-        func context() -> String { String(document.suffix(windowSize)) }
+        var document = startingDocument
+        var deleted = 0
+        let firstWindow: Int
+        switch behaviour {
+        case .sliding(let size), .trimmedOnce(let size):
+            firstWindow = min(size, startingDocument.count)
+        }
+
+        func context() -> String {
+            switch behaviour {
+            case .sliding(let size):
+                return String(document.suffix(size))
+            case .trimmedOnce:
+                return String(document.suffix(max(0, firstWindow - deleted)))
+            }
+        }
 
         var remaining = insertion.count
-        var proven: Int
-        switch DictationUndo.verify(context: context(), insertedText: insertion) {
-        case .ok(_, let verifiedCount, _):
-            proven = verifiedCount
-        case .failed:
+        // The check at the tap, which fails closed on anything short of a pass.
+        guard case .ok = DictationUndo.verify(context: context(), insertedText: insertion) else {
             return (document, remaining)
         }
 
         while remaining > 0 {
-            let batch = min(remaining, chunkSize, max(proven, 1))
+            let batch = min(remaining, chunkSize)
             document = String(document.dropLast(batch))
             remaining -= batch
+            deleted += batch
             guard remaining > 0 else { break }
 
-            switch DictationUndo.verify(
+            if case .failed(let reason) = DictationUndo.verify(
                 context: context(),
                 insertedText: String(insertion.prefix(remaining))
-            ) {
-            case .ok(_, let verifiedCount, _):
-                proven = verifiedCount
-            case .failed:
+            ), DictationUndo.provesTheFieldChanged(reason) {
                 return (document, remaining)
             }
         }
         return (document, 0)
     }
 
-    func testALongUndoCompletesThroughAWindowFarSmallerThanTheInsertion() {
+    func testALongUndoCompletesThroughASlidingWindow() {
         let existing = "A note the user wrote earlier. "
         let result = runUndoLoop(
             document: existing + longInsertion,
             insertion: longInsertion,
-            windowSize: 50
+            behaviour: .sliding(50)
         )
         XCTAssertEqual(result.abandoned, 0, "the whole insertion should be removable")
         XCTAssertEqual(result.document, existing, "and the undo must land exactly on the earlier text")
     }
 
-    func testNoChunkDeletesMoreThanTheLastCheckCouldSee() {
-        // A window barely above the floor: the loop must step in small chunks
-        // rather than take the full recorded count on a 24-grapheme proof.
+    func testALongUndoCompletesThroughAWindowTheHostNeverRefills() {
+        // The device case. Requiring a fresh proof before each chunk made this stop
+        // one window in, leaving most of the dictation in the field: 4752 graphemes
+        // recorded, 480 removed, 4272 left. Absence of proof must not stop the burst.
         let existing = "A note the user wrote earlier. "
         let result = runUndoLoop(
             document: existing + longInsertion,
             insertion: longInsertion,
-            windowSize: DictationUndo.minimumTruncatedMatch
+            behaviour: .trimmedOnce(50)
         )
-        XCTAssertEqual(result.abandoned, 0)
+        XCTAssertEqual(result.abandoned, 0, "a host that stops answering must not strand the undo")
         XCTAssertEqual(result.document, existing)
     }
 
-    func testTheLoopStopsBeforeEatingTextItNeverInserted() {
-        // The host truncated the insertion: only its first 50 graphemes ever
-        // reached the field. The recorded count is larger than what is there, so a
-        // caller that trusted that count alone would delete into `existing`.
+    func testTheOfferIsRefusedWhenTheHostTruncatedTheInsertion() {
+        // The host accepted only the first 50 graphemes of what it was handed, so
+        // the recorded count reaches past what is actually in the field. The tail is
+        // then the insertion's HEAD, which is not its tail, so the check at the tap
+        // refuses and nothing is deleted at all.
         let existing = "A note the user wrote earlier. "
         let result = runUndoLoop(
             document: existing + String(longInsertion.prefix(50)),
             insertion: longInsertion,
-            windowSize: 50
+            behaviour: .sliding(50)
         )
-        XCTAssertGreaterThan(result.abandoned, 0, "the loop must give up rather than delete on")
+        XCTAssertEqual(result.abandoned, longInsertion.count, "nothing may be deleted")
+        XCTAssertEqual(result.document, existing + String(longInsertion.prefix(50)))
+    }
+
+    func testTheBurstStopsWhenTheDocumentIsLegibleAndNoLongerOurs() {
+        // A host that rewrites the field mid-burst. The window still answers, and
+        // what it answers is not the remainder — that is proof, and proof stops the
+        // deletion with the earlier text intact.
+        let existing = "A note the user wrote earlier. "
+        var document = existing + longInsertion
+        var remaining = longInsertion.count
+        var stopped = false
+
+        while remaining > 0 {
+            let batch = min(remaining, 40)
+            document = String(document.dropLast(batch))
+            remaining -= batch
+            guard remaining > 0 else { break }
+            // After the first chunk the host replaces the tail with foreign text.
+            document = String(document.dropLast(30)) + "-- pasted by another app --"
+
+            if case .failed(let reason) = DictationUndo.verify(
+                context: String(document.suffix(50)),
+                insertedText: String(longInsertion.prefix(remaining))
+            ), DictationUndo.provesTheFieldChanged(reason) {
+                stopped = true
+                break
+            }
+        }
+
+        XCTAssertTrue(stopped, "a legible mismatch must stop the burst")
         XCTAssertTrue(
-            result.document.hasPrefix(existing),
+            document.hasPrefix(existing),
             "text written before the dictation must survive the abandoned undo"
         )
     }

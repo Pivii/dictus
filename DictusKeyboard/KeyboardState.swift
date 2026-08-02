@@ -692,21 +692,9 @@ class KeyboardState: ObservableObject {
         if case .failed(let reason) = DictationUndo.verify(
             context: controller?.textDocumentProxy.documentContextBeforeInput,
             insertedText: transcription
-        ), Self.provesTheFieldChanged(reason) {
+        ), DictationUndo.provesTheFieldChanged(reason) {
             invalidateDictationUndo(reason: "revalidate-\(reason)")
         }
-    }
-
-    /// Whether a `DictationUndo` refusal is evidence that the field stopped being
-    /// ours, as opposed to evidence that we could not read it.
-    ///
-    /// `suffix-mismatch` and `truncated-mismatch` are proof: the document was
-    /// legible and what it holds is not what we inserted. `no-context` and
-    /// `window-too-short` are absence of proof — a detached or unsettled proxy, a
-    /// secure field, a host that reports its context late. `empty-insertion`
-    /// cannot occur here, since arming refuses an empty string.
-    private static func provesTheFieldChanged(_ reason: String) -> Bool {
-        reason == "suffix-mismatch" || reason == "truncated-mismatch"
     }
 
     /// Drop the offer. The record is destroyed, not merely hidden: a hidden record
@@ -749,36 +737,41 @@ class KeyboardState: ObservableObject {
             // The offer is spent the moment it is taken. Clearing first also means
             // a second tap during the burst finds nothing to act on.
             invalidateDictationUndo(reason: "performed")
-            deleteInsertedText(
-                transcription,
-                remaining: deleteCount,
-                proven: verifiedCount,
-                proxy: proxy
-            )
+            deleteInsertedText(transcription, remaining: deleteCount, proxy: proxy)
         }
     }
 
     /// Issue the deletion in chunks, yielding to the main queue between them.
     ///
-    /// WHY the remainder is re-proved between chunks: the check that started the
-    /// burst could only see as far back as the proxy's window, so on a long
-    /// dictation most of what is about to be deleted was never shown to us. As the
-    /// deletion eats into the field the window slides back over text that was out
-    /// of reach a moment ago, and each chunk pays for the next one by proving the
-    /// part it is about to remove is still the tail. What that buys is the one
-    /// guarantee this feature is for: no character is deleted that has not been
-    /// seen to belong to the insertion.
+    /// WHY the remainder is still checked between chunks, but no longer *required*:
     ///
-    /// `proven` is what makes that literal rather than approximate: it is how many
-    /// graphemes the last check actually matched, and no chunk may be longer. A
-    /// truncated window proves 24 or more, never all 600, so a fixed chunk size on
-    /// its own would step past the proof on the very first pass.
+    /// The first design re-proved the remainder before every chunk and stopped when
+    /// it could not, on the assumption that the proxy's window slides back over the
+    /// document as the deletion consumes it. Three device captures in Notes
+    /// (2026-08-02) disproved that assumption arithmetically. The window measured
+    /// 491, 496 and 490 graphemes when each burst started, and 11, 16 and 10 when it
+    /// stopped — in each case exactly the starting window minus the 480 graphemes
+    /// removed. The host serves one cached window and trims it; it never refetches.
+    /// A caret round trip, tried as a way to invalidate that cache, changed nothing.
     ///
-    /// It cuts the other way too. If a host reports its context late, a chunk can
-    /// fail to prove a remainder that is in fact still there, and the undo stops
-    /// with text left behind. That is the deliberate side to fail on — leftover
-    /// text is visible and can be deleted by hand, text eaten out of the middle of
-    /// someone's message is neither. The abort is logged with what was left.
+    /// So the requirement could not be met by any host that behaves this way, and
+    /// its cost was the feature itself: a 4752-grapheme undo removed 480 and left
+    /// 4272 behind, on precisely the length that makes holding backspace painful.
+    ///
+    /// What remains is the distinction that actually carries the safety, the same
+    /// one `revalidateDictationUndo` draws. A refusal that PROVES the field changed
+    /// — the document was legible and does not end with the remainder — stops the
+    /// burst. A refusal that only means the document could not be read does not:
+    /// absence of proof is not evidence, and treating it as such is what broke the
+    /// long case. The remaining exposure is a host that silently accepted less text
+    /// than it was handed, e.g. a length-limited field, where the recorded count
+    /// then reaches past what was inserted. Narrow, visible when it happens, and
+    /// weighed against a feature that otherwise does not work at all past ~500
+    /// characters.
+    ///
+    /// The count itself is the hard bound and always was: it is the length of the
+    /// string this keyboard handed to `insertText`, never a guess, so the burst
+    /// cannot delete more than one dictation put there.
     ///
     /// The proxy is captured once, at the start. iOS can attach a new controller
     /// mid-burst, and `controller` is a shared reference that the new one takes
@@ -793,7 +786,6 @@ class KeyboardState: ObservableObject {
     private func deleteInsertedText(
         _ insertedText: String,
         remaining: Int,
-        proven: Int,
         proxy: UITextDocumentProxy
     ) {
         guard remaining > 0 else {
@@ -811,70 +803,35 @@ class KeyboardState: ObservableObject {
             return
         }
 
-        let batch = min(remaining, Self.dictationUndoChunkSize, max(proven, 1))
+        let batch = min(remaining, Self.dictationUndoChunkSize)
         for _ in 0..<batch {
             proxy.deleteBackward()
         }
         let left = remaining - batch
-        if left > 0 {
-            Self.nudgeProxyToRefetchContext(proxy)
-        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             guard left > 0 else {
-                self.deleteInsertedText(insertedText, remaining: 0, proven: 0, proxy: proxy)
+                self.deleteInsertedText(insertedText, remaining: 0, proxy: proxy)
                 return
             }
             let context = proxy.documentContextBeforeInput
-            switch DictationUndo.verify(
+            if case .failed(let reason) = DictationUndo.verify(
                 context: context,
                 insertedText: String(insertedText.prefix(left))
-            ) {
-            case .ok(_, let verifiedCount, _):
-                self.deleteInsertedText(
-                    insertedText,
-                    remaining: left,
-                    proven: verifiedCount,
-                    proxy: proxy
-                )
-            case .failed(let reason):
+            ), DictationUndo.provesTheFieldChanged(reason) {
                 self.isUndoingDictation = false
-                // `context` is what decides whether the nudge above works. A refusal
-                // with a context far shorter than the chunk just deleted means the
-                // host trimmed its cached window instead of refetching, which is the
-                // case that cannot be fixed from here (#266 device capture).
+                // `context` says how much the host was willing to show at the moment
+                // it stopped us, which is what tells a genuine rewrite apart from a
+                // window that had run dry (#266 device captures).
                 self.logProbe(
                     "dictationUndoAborted",
                     details: "reason=\(reason) remaining=\(left) context=\(context?.count ?? -1)"
                 )
+                return
             }
+            self.deleteInsertedText(insertedText, remaining: left, proxy: proxy)
         }
-    }
-
-    /// Ask the host to refetch the text behind the caret, before we read it again.
-    ///
-    /// WHY (device capture, 2026-08-02, Notes): a 1077-grapheme undo stopped after
-    /// 480 with `window-too-short`. The context window measured 498 when the burst
-    /// started and 18 when it stopped — 498 minus the 480 removed. The host had not
-    /// been serving a *sliding* window over the document at all; it was serving one
-    /// cached window and trimming it as the deletions consumed it. The per-chunk
-    /// re-proof assumed the former, so past the first window there was nothing left
-    /// to prove the remainder against, and the guard did what it is meant to do.
-    ///
-    /// A caret movement is the only lever a keyboard extension has here: there is no
-    /// API to request more context, but moving the insertion point invalidates what
-    /// the proxy holds. One step back and one step forward leaves the caret exactly
-    /// where it was, in the same run-loop turn, before the read on the next one.
-    ///
-    /// Deliberately best-effort. If the host ignores it, or applies only one of the
-    /// two steps, the verification on the next turn sees a tail that is not the
-    /// remainder and refuses — the burst stops with text left in the field, which is
-    /// the direction this feature fails in by design. It cannot make the undo delete
-    /// something it has not proved.
-    private static func nudgeProxyToRefetchContext(_ proxy: UITextDocumentProxy) {
-        proxy.adjustTextPosition(byCharacterOffset: -1)
-        proxy.adjustTextPosition(byCharacterOffset: 1)
     }
 
     // MARK: - Keyboard visibility tracking
