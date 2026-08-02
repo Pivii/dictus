@@ -641,6 +641,14 @@ class KeyboardViewController: UIInputViewController {
             details: "animated=\(animated) memMB=\(MemoryFootprint.residentMB())"
                 + " live=\(KeyboardLifecycleProbe.liveCount)"
                 + " \(dismissalProbeDetails) \(inputContextProbeDetails)"
+                // #281: whether DictusApp had already backgrounded when iOS tore
+                // this controller down. The log's one-second resolution and its
+                // interleaving of two processes make that ordering unrecoverable by
+                // comparing timestamps, and it is the one thing the surviving
+                // hypothesis — the swipe-back landing before iOS rotates in a
+                // successor — needs to be true. Read from the App Group, so no IPC
+                // round trip to the host app on a teardown path.
+                + " \(AppScenePhaseProbe.describe())"
         ))
         PersistentLog.log(.keyboardDidDisappear)
 

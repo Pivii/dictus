@@ -123,6 +123,13 @@ struct DictusApp: App {
                     handleIncomingURL(url)
                 }
                 .onChange(of: scenePhase) { phase in
+                    // #281 probe: publish the phase before anything else in this
+                    // closure, so the keyboard extension reads a value that is at
+                    // worst microseconds behind the transition it describes. It is
+                    // written from the same callback that logs the lifecycle line
+                    // below, which is what lets the two be compared at all.
+                    AppScenePhaseProbe.record(phase.sceneMarker)
+
                     switch phase {
                     case .active:
                         PersistentLog.log(.appDidBecomeActive)
@@ -254,6 +261,24 @@ struct DictusApp: App {
             coordinator.stopDictation()
         default:
             break
+        }
+    }
+}
+
+extension ScenePhase {
+    /// This phase as the App Group marker the keyboard extension reads (#281).
+    ///
+    /// `ScenePhase` is a SwiftUI type and the keyboard has no business linking SwiftUI
+    /// for a log field, so the crossing happens here, on the app side, and only the
+    /// `String` raw value travels between the processes.
+    var sceneMarker: AppScenePhaseMarker {
+        switch self {
+        case .active: return .active
+        case .inactive: return .inactive
+        case .background: return .background
+        // A phase SwiftUI adds after this was written is reported honestly rather
+        // than guessed at: the probe's value comes from being trustworthy.
+        @unknown default: return .unknown
         }
     }
 }
