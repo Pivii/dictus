@@ -816,6 +816,9 @@ class KeyboardState: ObservableObject {
             proxy.deleteBackward()
         }
         let left = remaining - batch
+        if left > 0 {
+            Self.nudgeProxyToRefetchContext(proxy)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -823,8 +826,9 @@ class KeyboardState: ObservableObject {
                 self.deleteInsertedText(insertedText, remaining: 0, proven: 0, proxy: proxy)
                 return
             }
+            let context = proxy.documentContextBeforeInput
             switch DictationUndo.verify(
-                context: proxy.documentContextBeforeInput,
+                context: context,
                 insertedText: String(insertedText.prefix(left))
             ) {
             case .ok(_, let verifiedCount, _):
@@ -836,12 +840,41 @@ class KeyboardState: ObservableObject {
                 )
             case .failed(let reason):
                 self.isUndoingDictation = false
+                // `context` is what decides whether the nudge above works. A refusal
+                // with a context far shorter than the chunk just deleted means the
+                // host trimmed its cached window instead of refetching, which is the
+                // case that cannot be fixed from here (#266 device capture).
                 self.logProbe(
                     "dictationUndoAborted",
-                    details: "reason=\(reason) remaining=\(left)"
+                    details: "reason=\(reason) remaining=\(left) context=\(context?.count ?? -1)"
                 )
             }
         }
+    }
+
+    /// Ask the host to refetch the text behind the caret, before we read it again.
+    ///
+    /// WHY (device capture, 2026-08-02, Notes): a 1077-grapheme undo stopped after
+    /// 480 with `window-too-short`. The context window measured 498 when the burst
+    /// started and 18 when it stopped — 498 minus the 480 removed. The host had not
+    /// been serving a *sliding* window over the document at all; it was serving one
+    /// cached window and trimming it as the deletions consumed it. The per-chunk
+    /// re-proof assumed the former, so past the first window there was nothing left
+    /// to prove the remainder against, and the guard did what it is meant to do.
+    ///
+    /// A caret movement is the only lever a keyboard extension has here: there is no
+    /// API to request more context, but moving the insertion point invalidates what
+    /// the proxy holds. One step back and one step forward leaves the caret exactly
+    /// where it was, in the same run-loop turn, before the read on the next one.
+    ///
+    /// Deliberately best-effort. If the host ignores it, or applies only one of the
+    /// two steps, the verification on the next turn sees a tail that is not the
+    /// remainder and refuses — the burst stops with text left in the field, which is
+    /// the direction this feature fails in by design. It cannot make the undo delete
+    /// something it has not proved.
+    private static func nudgeProxyToRefetchContext(_ proxy: UITextDocumentProxy) {
+        proxy.adjustTextPosition(byCharacterOffset: -1)
+        proxy.adjustTextPosition(byCharacterOffset: 1)
     }
 
     // MARK: - Keyboard visibility tracking
