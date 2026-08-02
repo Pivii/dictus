@@ -161,6 +161,28 @@
           }
         }
       }
+    },
+    "Undo" : {
+      "comment" : "Toolbar control that removes the dictation text just inserted.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        }
+      }
+    },
+    "Undo dictation insertion" : {
+      "comment" : "Accessibility label for the toolbar control that removes the dictation text just inserted.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler l'insertion de la dictée"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

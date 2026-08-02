@@ -32,6 +32,14 @@ struct ToolbarView: View {
     var suggestionMode: SuggestionMode = .idle
     var onSuggestionTap: ((Int) -> Void)?
 
+    /// Whether the last dictation insertion can still be undone (#266).
+    /// Transient by construction: it is set for a few seconds after an insertion
+    /// and only while the inserted text is verifiably still the tail of the field.
+    var showsDictationUndo: Bool = false
+
+    /// Removes the last dictation insertion. Re-checks the field before deleting.
+    var onDictationUndoTap: (() -> Void)?
+
     /// Whether the hamburger panel currently fills the keyboard area (#241).
     /// Drives which of the two presentations above the bar renders.
     var isPanelOpen: Bool = false
@@ -83,6 +91,13 @@ struct ToolbarView: View {
     /// hamburger inherits that arbitration from the language switcher it replaced,
     /// at the same 32 pt cost. Accepted consequence (#241): the keyboard language
     /// cannot be changed mid-word.
+    ///
+    /// WHY undo sits between the error message and the suggestions (#266):
+    /// an error means the dictation failed, so there is nothing to undo and the
+    /// error wins. Suggestions lose because immediately after an insertion the user
+    /// has typed nothing, so whatever the bar is showing was predicted from text
+    /// that was just dictated — worth little, and worth less than a control that
+    /// expires in seconds and is the only alternative to holding backspace.
     private var dictationBar: some View {
         HStack {
             if let message = statusMessage {
@@ -91,6 +106,10 @@ struct ToolbarView: View {
                     .foregroundColor(.red)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
+            } else if showsDictationUndo {
+                dictationUndoButton
+
+                Spacer()
             } else if suggestions.isEmpty {
                 hamburgerButton
 
@@ -164,6 +183,45 @@ struct ToolbarView: View {
             systemName: "line.3.horizontal",
             label: Text("Keyboard menu")
         )
+    }
+
+    /// Removes the dictation that was just inserted (#266).
+    ///
+    /// WHY it borrows the look of the autocorrect undo chip in `SuggestionBarView`
+    /// — accent tint, uturn arrow: the two controls do the same thing to different
+    /// text, and they appear in the same strip of the same bar seconds apart. A
+    /// user who has learned that a tinted uturn arrow reverts what just happened
+    /// should not have to learn it twice.
+    ///
+    /// It does NOT pulse the way the autocorrect chip does. That pulse exists
+    /// because an autocorrection is silent; a dictation insertion is not — the
+    /// recording overlay has just closed and the text has just appeared.
+    private var dictationUndoButton: some View {
+        Button {
+            HapticFeedback.keyTapped()
+            onDictationUndoTap?()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Undo")
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundColor(.dictusAccent)
+            .padding(.horizontal, 14)
+            .frame(height: iconDiameter)
+            .background(
+                Capsule().fill(Color.dictusAccent.opacity(0.12))
+            )
+            // Same split as `barIcon`: the capsule is what the eye sees, the 44 pt
+            // frame is what a finger hits.
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(Text("Undo dictation insertion"))
     }
 
     private var closeButton: some View {

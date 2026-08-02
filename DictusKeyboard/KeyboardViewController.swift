@@ -321,6 +321,17 @@ class KeyboardViewController: UIInputViewController {
             self.bridge?.updateCapitalization()
         }
 
+        // --- 8. Wire post-undo cleanup (#266) ---
+        // The suggestions on screen were computed from the last word of a
+        // transcription that no longer exists, so they are emptied rather than
+        // recomputed: after an undo the caret is back where it was before the
+        // dictation, with nothing half-typed to suggest for.
+        KeyboardState.shared.onDictationUndone = { [weak self] in
+            guard let self = self else { return }
+            self.suggestionState.clear()
+            self.bridge?.updateCapitalization()
+        }
+
         // Memory after all viewDidLoad allocations — delta vs entry tells us
         // per-controller allocation cost (UIHostingController + GiellaKeyboardView
         // + SuggestionState + DictusKeyboardBridge + constraints).
@@ -975,6 +986,11 @@ class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        // Re-check the dictation undo offer against the changed document (#266).
+        // Deliberately a re-check and not a clear: the keyboard's own insertion is
+        // itself a text change, so clearing here would cancel the offer at the
+        // moment it is made.
+        KeyboardState.shared.revalidateDictationUndo()
         // Invalidate autocorrect undo on external text changes (paste, cursor tap, host autocorrect).
         bridge?.suggestionState?.pendingUndo = nil
         // When text changes externally (paste, cursor move, autocorrect by host app),
@@ -988,6 +1004,8 @@ class KeyboardViewController: UIInputViewController {
 
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
+        // A caret the user moved is a caret the insertion is no longer behind (#266).
+        KeyboardState.shared.revalidateDictationUndo()
         // Some hosts move focus between fields without emitting textDidChange.
         // Re-read the field's input traits so the autocorrect/suggestions policy
         // matches the newly-focused field (#200).
