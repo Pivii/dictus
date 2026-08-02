@@ -671,14 +671,42 @@ class KeyboardState: ObservableObject {
     /// it, and a check run against that stale context refuses. Arming already
     /// verifies, one main-queue turn after the insertion, and the user cannot type
     /// inside that turn — so there is nothing for this to protect there.
+    ///
+    /// WHY only a proven mismatch drops the offer, and not every refusal:
+    /// "the field is no longer ours" and "nothing could be read just now" are
+    /// different facts, and only the first is evidence. Device capture in Messages
+    /// (2026-08-02) showed the second killing a valid offer two seconds after it
+    /// was armed: iOS had just swapped controllers, the freshly attached one had
+    /// not settled, and its proxy returned no context yet — so `no-context`
+    /// invalidated an offer nothing had invalidated. Controller churn is routine
+    /// here (#281), so this was not a one-off.
+    ///
+    /// Keeping the offer alive on an unreadable document costs nothing, because
+    /// this is not the check that authorises a deletion: `performDictationUndo`
+    /// re-verifies at the instant of the tap and fails closed on exactly these
+    /// reasons. The worst case is a button that stays on screen for its few
+    /// seconds and refuses when tapped, which is the behaviour a host that lies
+    /// about its context earns anyway.
     func revalidateDictationUndo() {
         guard dictationUndoAvailable, let transcription = dictationUndoText else { return }
         if case .failed(let reason) = DictationUndo.verify(
             context: controller?.textDocumentProxy.documentContextBeforeInput,
             insertedText: transcription
-        ) {
+        ), Self.provesTheFieldChanged(reason) {
             invalidateDictationUndo(reason: "revalidate-\(reason)")
         }
+    }
+
+    /// Whether a `DictationUndo` refusal is evidence that the field stopped being
+    /// ours, as opposed to evidence that we could not read it.
+    ///
+    /// `suffix-mismatch` and `truncated-mismatch` are proof: the document was
+    /// legible and what it holds is not what we inserted. `no-context` and
+    /// `window-too-short` are absence of proof — a detached or unsettled proxy, a
+    /// secure field, a host that reports its context late. `empty-insertion`
+    /// cannot occur here, since arming refuses an empty string.
+    private static func provesTheFieldChanged(_ reason: String) -> Bool {
+        reason == "suffix-mismatch" || reason == "truncated-mismatch"
     }
 
     /// Drop the offer. The record is destroyed, not merely hidden: a hidden record
