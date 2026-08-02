@@ -45,6 +45,11 @@ public enum AppScenePhaseProbe {
     ///
     /// `synchronize()` because the reader is another process that may look microseconds
     /// later — the same reason the cold-start flag is synchronized on this path.
+    ///
+    /// `.unknown` is written like any other marker rather than clearing the keys. The
+    /// app only produces it from `@unknown default`, and "the app transitioned to a
+    /// phase this build cannot name, just now" is a stronger statement than the silence
+    /// that clearing would leave — which would also discard the last phase we did know.
     public static func record(
         _ marker: AppScenePhaseMarker,
         at date: Date = Date(),
@@ -58,9 +63,12 @@ public enum AppScenePhaseProbe {
     /// The app's phase, its age in milliseconds, and the cold-start flag, in the
     /// shared key=value format. Called from the keyboard only.
     ///
-    /// `appPhaseAgeMs=-1` means no phase has ever been published, in which case
-    /// `appPhase` reads `unknown`; the two always agree, so a negative age is never
-    /// ambiguous with a real measurement.
+    /// `appPhaseAgeMs=-1` means nothing readable is stored, and `appPhase` then reads
+    /// `unknown`. The converse does not hold: `unknown` with a real age is the app
+    /// having reported a phase this build has no name for, which is a live signal and
+    /// deliberately not collapsed into the -1 case. Read the age to tell them apart —
+    /// "the app never published" and "the app moved somewhere unnamed 30 ms ago" are
+    /// very different facts about an ordering question.
     ///
     /// `coldStart` rides along because the #281 window only ever opens during a
     /// cold-start handoff, and reading it here costs one more lookup on `defaults`

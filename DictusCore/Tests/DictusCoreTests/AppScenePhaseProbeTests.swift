@@ -92,6 +92,22 @@ final class AppScenePhaseProbeTests: XCTestCase {
         )
     }
 
+    /// An `unknown` the app actually reported keeps its age, and must not be collapsed
+    /// into the never-published case: "the app moved to a phase this build cannot name,
+    /// 500 ms ago" and "the app has never published anything" are different answers to
+    /// the ordering question the probe exists to settle.
+    func testReportedUnknownKeepsItsAge() {
+        AppScenePhaseProbe.record(.unknown, at: Date(timeIntervalSince1970: 1_000), into: defaults)
+
+        let description = AppScenePhaseProbe.describe(
+            at: Date(timeIntervalSince1970: 1_000.5),
+            from: defaults
+        )
+
+        XCTAssertTrue(description.contains("appPhase=unknown"), description)
+        XCTAssertTrue(description.contains("appPhaseAgeMs=500"), description)
+    }
+
     /// A phase with no timestamp cannot be aged, so it cannot be trusted, so it is
     /// unknown — and the sentinel age keeps that unambiguous with a real measurement.
     func testPhaseWithoutTimestampReadsUnknown() {
