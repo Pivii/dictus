@@ -24,8 +24,31 @@ public protocol PolishEngineProtocol: Sendable {
     /// (#239). Default implementation is a no-op for engines that have
     /// nothing to warm.
     func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async
+
+    /// Whether a `polish(raw:targetLanguage:mode:)` call with this exact input
+    /// would fit inside the backend's context window (#270).
+    ///
+    /// Asked by `PolishPipeline` immediately before the call, so an overflow is
+    /// an explicit, named refusal instead of a mid-call throw the pipeline can
+    /// only record as a generic engine failure. The engine answers because the
+    /// ceiling is a property of the backend — its window size, its system
+    /// prompt for `(mode, targetLanguage)`, its prompt scaffolding. No caller
+    /// hardcodes a number.
+    ///
+    /// `input` is the string that will be passed as `raw`, i.e. already through
+    /// the newline-marker encode — the markers cost tokens too.
+    ///
+    /// Default implementation returns `.fits`: an engine with no ceiling is
+    /// valid and stays unaffected.
+    func contextFit(input: String,
+                    targetLanguage: SupportedLanguage,
+                    mode: PolishMode) -> PolishContextFit
 }
 
 public extension PolishEngineProtocol {
     func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async {}
+
+    func contextFit(input: String,
+                    targetLanguage: SupportedLanguage,
+                    mode: PolishMode) -> PolishContextFit { .fits }
 }

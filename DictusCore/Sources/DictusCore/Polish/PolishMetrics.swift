@@ -46,6 +46,14 @@ public struct PolishMetrics: Sendable, Codable {
         case skippedAutoMode
         case cancelled
         case engineFailed
+        /// Refused BEFORE the engine call (#270): the estimated token cost of
+        /// the resolved instructions + input + output reserve exceeds the
+        /// backend's context window. Deliberately distinct from
+        /// `engineFailed` — nothing failed and nothing was attempted, the input
+        /// simply does not fit. Keeping the two apart is what lets a caller say
+        /// "that was too long" instead of "something went wrong", and what lets
+        /// the metrics tell a length problem from a backend problem.
+        case exceededContextBudget
     }
 
     public let engine: String              // polish engine id, e.g. "apple-fm"
@@ -91,6 +99,20 @@ public struct PolishMetrics: Sendable, Codable {
         self.sttEngine = sttEngine
         self.sttModelID = sttModelID
         self.timings = timings
+    }
+
+    /// Emit one line for a pre-call context refusal (#270). The metrics event
+    /// that follows records the outcome but not the arithmetic behind it, and
+    /// the arithmetic is what tells "one genuinely enormous dictation" apart
+    /// from "our safety margin is mis-tuned" when reading a debug log.
+    public static func logContextOverflow(estimatedTokens: Int,
+                                          budgetTokens: Int,
+                                          mode: PolishMode) {
+        if #available(iOS 14.0, macOS 11.0, *) {
+            PolishLog.logger.info(
+                "📊 polish context-overflow mode=\(mode.rawValue, privacy: .public) estimatedTokens=\(estimatedTokens, privacy: .public) budgetTokens=\(budgetTokens, privacy: .public) — engine not called"
+            )
+        }
     }
 
     /// Emit one line to the `polish` os_log category. Prefixed with `📊 polish`
