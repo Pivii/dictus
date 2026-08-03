@@ -49,9 +49,26 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
+# An empty path is not a request for the default: it is `$SOME_VAR` expanding to
+# nothing in the caller's command line. Falling back to Xcode's shared location
+# there would sweep stale checkouts and exit 0 for a build that asked about its
+# own — exactly the silent success this script exists to prevent (issue #285).
+# Hence ${DERIVED_DATA_PATH+set}, which tells "unset" from "set to nothing".
+if [ "$#" -eq 1 ] && [ -z "$1" ]; then
+  echo "error: derived data path is empty (an unset variable in the caller?)." >&2
+  usage >&2
+  exit 2
+fi
+if [ "$#" -eq 0 ] && [ -n "${DERIVED_DATA_PATH+set}" ] && [ -z "$DERIVED_DATA_PATH" ]; then
+  echo "error: DERIVED_DATA_PATH is set but empty." >&2
+  usage >&2
+  exit 2
+fi
+
 # Explicit mode = the caller named the derived data path of the build it is
 # about to run, so the script reports on THAT checkout and nothing else.
-# Default mode = Xcode's shared location, the pre-#285 behaviour.
+# Default mode = no argument and no DERIVED_DATA_PATH, i.e. Xcode's shared
+# location, the pre-#285 behaviour.
 REQUESTED="${1:-${DERIVED_DATA_PATH:-}}"
 if [ -n "$REQUESTED" ]; then
   EXPLICIT=1
