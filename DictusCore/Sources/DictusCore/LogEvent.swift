@@ -93,6 +93,17 @@ public enum LogEvent: Sendable {
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
 
+    // MARK: Keyboard status message (#261)
+    /// The toolbar message was assigned. `reason` names what asked for it.
+    case dictationMessageSet(reason: String, owner: String, visible: Bool)
+    /// A live view put that message on screen. One line per view that rendered it,
+    /// which is the whole point: iOS keeps several controllers alive, and whether
+    /// the one the user is looking at was among them is exactly the open question.
+    case dictationMessageDisplayed(rootView: String, controller: String, owner: String, visible: Bool)
+    /// The message ended. `displayedCount` is how many views had reported rendering
+    /// it over its life, so a single line answers whether anybody could have read it.
+    case dictationMessageCleared(reason: String, displayedCount: Int)
+
     // MARK: Animation
     case overlayShown(status: String)
     case overlayHidden(status: String)
@@ -197,6 +208,7 @@ public enum LogEvent: Sendable {
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .overlayShown, .overlayHidden, .rapidTapRejected,
+             .dictationMessageSet, .dictationMessageDisplayed, .dictationMessageCleared,
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
              .waveformRefreshIDChanged, .waveformEnergyTransition, .waveformTimelineNotFiring,
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
@@ -233,6 +245,11 @@ public enum LogEvent: Sendable {
     /// stops/internal state = debug.
     public var level: LogLevel {
         switch self {
+        // A message nobody rendered is the failure this instrumentation exists to
+        // catch (#261), so it is findable by level and not only by reading the count.
+        case .dictationMessageCleared(_, let displayedCount):
+            return displayedCount == 0 ? .warning : .info
+
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
@@ -260,6 +277,7 @@ public enum LogEvent: Sendable {
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
+             .dictationMessageSet, .dictationMessageDisplayed,
              .appLaunched, .appWhisperKitLoaded, .logExportCompleted,
              .deviceCapabilitySnapshot,
              .liveActivityStarted, .liveActivityTransition, .liveActivityEnded,
@@ -323,6 +341,9 @@ public enum LogEvent: Sendable {
         case .keyboardDidAppear: return "keyboardDidAppear"
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
+        case .dictationMessageSet: return "dictationMessageSet"
+        case .dictationMessageDisplayed: return "dictationMessageDisplayed"
+        case .dictationMessageCleared: return "dictationMessageCleared"
         case .keyboardTextInserted: return "keyboardTextInserted"
         case .engineWarmUpAttempt: return "engineWarmUpAttempt"
         case .engineWarmUpSuccess: return "engineWarmUpSuccess"
@@ -514,6 +535,13 @@ public enum LogEvent: Sendable {
             return "model=\(modelName)"
 
         // Animation
+        case .dictationMessageSet(let reason, let owner, let visible):
+            return "reason=\(reason) owner=\(owner) visible=\(visible)"
+        case .dictationMessageDisplayed(let rootView, let controller, let owner, let visible):
+            return "rootView=\(rootView) controller=\(controller) owner=\(owner) visible=\(visible)"
+        case .dictationMessageCleared(let reason, let displayedCount):
+            return "reason=\(reason) displayedCount=\(displayedCount)"
+
         case .overlayShown(let status):
             return "status=\(status)"
         case .overlayHidden(let status):
