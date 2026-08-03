@@ -48,6 +48,7 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 ## Build, test, lint
 
 - Trois targets à construire : `DictusApp`, `DictusKeyboard`, `DictusCore`.
+- Tests : `cd DictusCore && swift test`. C'est la seule suite du dépôt, et elle tourne sur le Mac, pas sur un simulateur. Ne pas la lancer avec une destination iOS Simulator : le schéma `DictusCore-Package` construit aussi `polish-harness`, un outil macOS, et aucun test n'est réservé à iOS, donc la destination iOS coûte des minutes sans rien couvrir de plus (#301).
 - Un worktree neuf — comme tout "Reset Package Caches" — résout les packages de zéro et exige `./scripts/patch-fluidaudio-swift5.sh` avant le premier build, sinon il échoue. Le script prend le chemin de derived data du build à venir : `./scripts/patch-fluidaudio-swift5.sh build/DerivedData` pour un build en ligne de commande avec `-derivedDataPath`, sans argument pour un build Xcode. Sans argument il ne patche que la derived data partagée d'Xcode, ce qui ne dit rien du checkout d'un worktree (#285). Il sort en erreur quand il ne trouve aucun checkout sous le chemin demandé.
 - Lint : `swiftlint lint --strict`. Pas de baseline ni de fichier d'exemptions (la baseline a été supprimée en #146), donc toute violation introduite se corrige ou porte un `swiftlint:disable` avec sa raison écrite.
 - Xcode régénère `Localizable.xcstrings` au build (état d'extraction `stale`, newline finale perdue). C'est du bruit de build : le jeter, jamais le committer.
@@ -57,7 +58,7 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 Pierre travaille sur cette machine : toute fenêtre qui s'ouvre lui vole le focus.
 
 - `xcrun simctl boot <udid>` est headless, donc autorisé.
-- `xcodebuild test -destination 'platform=iOS Simulator,name=...'` est la façon de lancer les tests.
+- La suite de tests n'a besoin d'aucun simulateur (`cd DictusCore && swift test`). Seuls les builds d'app en demandent un.
 - Ne pas lancer `open -a Simulator`. Si un outil ouvre une fenêtre malgré tout, `open -g` pour qu'elle ne passe pas au premier plan.
 - Un agent ne peut pas valider sur device physique : ce qui l'exige part dans la liste de validation manuelle, avec les étapes exactes.
 - La recette complète (boot, build, install, launch, capture, et ce que le simulateur ne peut pas montrer) est dans `docs/agents/simulator.md`.

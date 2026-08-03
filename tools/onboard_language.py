@@ -28,8 +28,9 @@ should report "already present" rather than break):
         DictusKeyboard target's resource build phase.
 
     verify <code>
-        Runs DictusCore tests on the iPhone 17 Pro simulator and a
-        DictusApp build to make sure the keyboard appex still links.
+        Runs the DictusCore tests on the host Mac and a DictusApp build on
+        the iPhone 17 Pro simulator to make sure the keyboard appex still
+        links.
 
 Usage examples:
 
@@ -60,6 +61,8 @@ TOOLS = REPO_ROOT / "tools"
 
 # Verified during German onboarding 2026-05-05; keep in sync with
 # Pierre's local sim setup (see memory: "iPhone 17 Pro simulator").
+# Used by the DictusApp build only — the DictusCore suite runs on the host
+# Mac via `swift test` (#301).
 SIMULATOR_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2"
 
 
@@ -370,13 +373,9 @@ def cmd_wire_xcode(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Runs DictusCore tests + a DictusApp Debug build."""
-    print(f"=== xcodebuild test (DictusCore) ===")
+    print(f"=== swift test (DictusCore) ===")
     rc = subprocess.call(
-        [
-            "xcodebuild", "test",
-            "-scheme", "DictusCore-Package",
-            "-destination", SIMULATOR_DESTINATION,
-        ],
+        ["swift", "test"],
         cwd=REPO_ROOT / "DictusCore",
     )
     if rc != 0:
