@@ -116,6 +116,7 @@
 		EE0DE001 /* de_spellcheck.dict in Resources */ = {isa = PBXBuildFile; fileRef = EE1DE001 /* de_spellcheck.dict */; };
 		EE0DE002 /* de_ngrams.dict in Resources */ = {isa = PBXBuildFile; fileRef = EE1DE002 /* de_ngrams.dict */; };
 		CC000030 /* KeyboardMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100030 /* KeyboardMetrics.swift */; };
+		CC000050 /* KeySoundPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100050 /* KeySoundPolicy.swift */; };
 		CC000010 /* KeyboardLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100010 /* KeyboardLayouts.swift */; };
 		CC000001 /* GiellaUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100001 /* GiellaUtils.swift */; };
 		CC000002 /* KeyDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC100002 /* KeyDefinition.swift */; };
@@ -267,6 +268,7 @@
 		BB100005 /* StopStandbyIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopStandbyIntent.swift; sourceTree = "<group>"; };
 		BB200001 /* DictusWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DictusWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC100030 /* KeyboardMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMetrics.swift; sourceTree = "<group>"; };
+		CC100050 /* KeySoundPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySoundPolicy.swift; sourceTree = "<group>"; };
 		CC100010 /* KeyboardLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayouts.swift; sourceTree = "<group>"; };
 		CC100020 /* DictusKeyboardBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictusKeyboardBridge.swift; sourceTree = "<group>"; };
 		CC100040 /* HostInputTraits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostInputTraits.swift; sourceTree = "<group>"; };
@@ -389,6 +391,7 @@
 				AA1000F6 /* KeyboardLifecycleProbe.swift */,
 				AA100030 /* InputView.swift */,
 				CC100030 /* KeyboardMetrics.swift */,
+				CC100050 /* KeySoundPolicy.swift */,
 				CC100010 /* KeyboardLayouts.swift */,
 				CC100020 /* DictusKeyboardBridge.swift */,
 				CC100040 /* HostInputTraits.swift */,
@@ -1005,6 +1008,7 @@
 				AA0000D4 /* SuggestionBarView.swift in Sources */,
 				AA0000G0 /* KeyTapSignposter.swift in Sources */,
 				CC000030 /* KeyboardMetrics.swift in Sources */,
+				CC000050 /* KeySoundPolicy.swift in Sources */,
 				CC000010 /* KeyboardLayouts.swift in Sources */,
 				CC000020 /* DictusKeyboardBridge.swift in Sources */,
 				CC000040 /* HostInputTraits.swift in Sources */,

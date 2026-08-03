@@ -3,6 +3,7 @@
 // Stripped: No external dependencies to remove (no Sentry in this file)
 
 import UIKit
+import AudioToolbox
 import DictusCore
 
 protocol GiellaKeyboardViewDelegate: AnyObject {
@@ -561,6 +562,8 @@ final internal class GiellaKeyboardView: UIView,
         // Fire haptic on touchDown for ALL keys (not just triggersOnTouchDown).
         // The delegate's didTriggerKey() may fire on touchUp for input keys,
         // but the user should FEEL the tap immediately on finger contact.
+        // The matching click is played in handleTouches below, as soon as the touch
+        // resolves to a key — it needs the key to pick a category, the haptic does not (#286).
         hapticFeedback.prepare()
         HapticFeedback.keyTapped()
 
@@ -581,11 +584,25 @@ final internal class GiellaKeyboardView: UIView,
         handleTouches(touches)
     }
 
+    /// Play `key`'s click, if it has one. Silent keys (spacer, caps) play nothing.
+    private func playSound(for key: KeyDefinition) {
+        guard let category = KeySound.category(for: key) else { return }
+        AudioServicesPlaySystemSound(category.systemSoundID)
+    }
+
     private func handleTouches(_ touches: Set<UITouch>) {
         for touch in touches {
             let touchPoint = clampedPoint(touch.location(in: collectionView))
             if let indexPath = collectionView.indexPathForItem(at: touchPoint) {
                 let key = currentPage[indexPath.section][indexPath.row]
+
+                // Click on finger contact, in step with the haptic fired above (#286).
+                // This is the only point where a touch resolves to a key, so it is also
+                // the only place the click is emitted — the bridge handlers no longer
+                // play one, which is what keeps touchDown keys from clicking twice.
+                // Placed before the double-tap branch below: that branch returns early,
+                // and a double-tapped shift must still click exactly once.
+                playSound(for: key)
 
                 if key.type.supportsDoubleTap {
                     let timeInterval = Date.timeIntervalSinceReferenceDate
@@ -801,6 +818,10 @@ final internal class GiellaKeyboardView: UIView,
 
             // Haptic feedback on each deletion
             HapticFeedback.keyTapped()
+            // ...and its click. Each repeat tick used to click from inside the bridge's
+            // delete handlers; emitting it here keeps a held backspace at exactly one
+            // click per deletion now that those handlers are silent (#286).
+            playSound(for: activeKey.key)
 
             increaseKeyRepeatRateIfNeeded()
         }
