@@ -14,6 +14,16 @@ final class LiveActivityStateMachineTests: XCTestCase {
         XCTAssertEqual(sm.currentPhase, .standby)
     }
 
+    func testIdleToFailedSucceeds() {
+        // Issue #261: the app relaunches after being terminated mid-recording,
+        // receives the stop the keyboard sent into the void, collects zero samples
+        // and reports a failure from `.idle`. Rejecting it left the Dynamic Island
+        // unable to show an error in the one situation the user most needs one.
+        var sm = LiveActivityStateMachine()
+        XCTAssertTrue(sm.transition(to: .failed))
+        XCTAssertEqual(sm.currentPhase, .failed)
+    }
+
     func testStandbyToRecordingSucceeds() {
         var sm = LiveActivityStateMachine()
         sm.transition(to: .standby)
