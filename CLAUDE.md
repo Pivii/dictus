@@ -48,7 +48,7 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 ## Build, test, lint
 
 - Trois targets à construire : `DictusApp`, `DictusKeyboard`, `DictusCore`.
-- Un worktree neuf — comme tout "Reset Package Caches" — résout les packages de zéro et exige `./scripts/patch-fluidaudio-swift5.sh` avant le premier build, sinon il échoue.
+- Un worktree neuf — comme tout "Reset Package Caches" — résout les packages de zéro et exige `./scripts/patch-fluidaudio-swift5.sh` avant le premier build, sinon il échoue. Le script prend le chemin de derived data du build à venir : `./scripts/patch-fluidaudio-swift5.sh build/DerivedData` pour un build en ligne de commande avec `-derivedDataPath`, sans argument pour un build Xcode. Sans argument il ne patche que la derived data partagée d'Xcode, ce qui ne dit rien du checkout d'un worktree (#285). Il sort en erreur quand il ne trouve aucun checkout sous le chemin demandé.
 - Lint : `swiftlint lint --strict`. Pas de baseline ni de fichier d'exemptions (la baseline a été supprimée en #146), donc toute violation introduite se corrige ou porte un `swiftlint:disable` avec sa raison écrite.
 - Xcode régénère `Localizable.xcstrings` au build (état d'extraction `stale`, newline finale perdue). C'est du bruit de build : le jeter, jamais le committer.
 
