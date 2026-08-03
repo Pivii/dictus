@@ -731,11 +731,19 @@ class DictationCoordinator: ObservableObject {
     /// `didBecomeActive`, which proceeds only while the stored status is still
     /// `requested`.
     ///
-    /// WHY this writes `.failed` rather than `.idle`: the keyboard's existing failure
-    /// path reads `lastError` and shows it, so the user is told the recording was
-    /// interrupted instead of watching the overlay vanish. WHY it does NOT go through
-    /// `updateStatus`: this process is not failing anything. It is auditing state a
-    /// dead one left behind, and `status` is correctly `.idle` here.
+    /// WHY it writes `.idle` and no `lastError`: this audit is hygiene, not speech.
+    /// The first version wrote `.failed` plus a localised error so the keyboard's
+    /// failure path would show it, which had two problems. By the time the app
+    /// relaunches the moment has passed — the keyboard reconciles in-process, within
+    /// seconds, and that is the surface that tells the user. And `failed` has no
+    /// expiry in the App Group: `KeyboardState.refreshFromDefaults` adopts a stored
+    /// `failed` and shows its `lastError` whenever the extension is next loaded,
+    /// however old it is. That is pre-existing behaviour, but writing `failed` here
+    /// on every reconciliation would have made a stale error message a routine sight.
+    ///
+    /// WHY it does NOT go through `updateStatus`: this process is not failing
+    /// anything. It is auditing state a dead one left behind, and `status` is
+    /// correctly `.idle` here.
     private func reconcileOrphanedDictationState() {
         guard let raw = defaults.string(forKey: SharedKeys.dictationStatus),
               let stored = DictationStatus(rawValue: raw),
@@ -746,13 +754,11 @@ class DictationCoordinator: ObservableObject {
             staleStatus: raw,
             heartbeatAgeMs: -1
         ))
-        defaults.set(
-            String(localized: "Recording interrupted. Please try again."),
-            forKey: SharedKeys.lastError
-        )
-        defaults.set(DictationStatus.failed.rawValue, forKey: SharedKeys.dictationStatus)
+        defaults.set(DictationStatus.idle.rawValue, forKey: SharedKeys.dictationStatus)
         // Clears the heartbeat, the waveform keys and the pending stop/cancel flags
-        // the dead process never got to clean up, and synchronizes.
+        // the dead process never got to clean up, and synchronizes. Dropping the
+        // heartbeat matters most: one that outlives its session is what the keyboard
+        // would otherwise judge the *next* session by (#261).
         cleanupRecordingKeys()
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
     }

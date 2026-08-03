@@ -1709,17 +1709,6 @@
         }
       }
     },
-    "Recording interrupted. Please try again." : {
-      "comment" : "Shown when a dictation is cleared because the app that was recording it is gone (issue #261).",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enregistrement interrompu. Réessayez."
-          }
-        }
-      }
-    },
     "Reformulate your text with on-device AI" : {
       "extractionState" : "stale",
       "localizations" : {
