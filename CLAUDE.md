@@ -60,6 +60,7 @@ Pierre travaille sur cette machine : toute fenêtre qui s'ouvre lui vole le focu
 - `xcodebuild test -destination 'platform=iOS Simulator,name=...'` est la façon de lancer les tests.
 - Ne pas lancer `open -a Simulator`. Si un outil ouvre une fenêtre malgré tout, `open -g` pour qu'elle ne passe pas au premier plan.
 - Un agent ne peut pas valider sur device physique : ce qui l'exige part dans la liste de validation manuelle, avec les étapes exactes.
+- La recette complète (boot, build, install, launch, capture, et ce que le simulateur ne peut pas montrer) est dans `docs/agents/simulator.md`.
 
 ## Contexte utilisateur
 
@@ -109,3 +110,7 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context — `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
+
+### Headless simulator
+
+Boot, build, install, launch, capture, and what a simulator cannot show. See `docs/agents/simulator.md`.

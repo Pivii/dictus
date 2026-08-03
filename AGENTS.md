@@ -83,3 +83,7 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context — `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
+
+### Headless simulator
+
+Boot, build, install, launch, capture, and what a simulator cannot show. See `docs/agents/simulator.md`.
