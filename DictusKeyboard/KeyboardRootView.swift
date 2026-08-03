@@ -117,6 +117,8 @@ struct KeyboardRootView: View {
             dictationStatus: state.dictationStatus,
             onMicTap: { state.startRecording() },
             statusMessage: state.statusMessage,
+            messageProbeRootViewID: instanceID,
+            messageProbeControllerID: controllerID,
             suggestions: [],
             suggestionMode: .idle,
             onSuggestionTap: { _ in },
@@ -245,6 +247,8 @@ struct KeyboardRootView: View {
                     dictationStatus: state.dictationStatus,
                     onMicTap: { state.startRecording() },
                     statusMessage: state.statusMessage,
+                    messageProbeRootViewID: instanceID,
+                    messageProbeControllerID: controllerID,
                     suggestions: suggestionState.suggestions,
                     suggestionMode: suggestionState.mode,
                     onSuggestionTap: { index in

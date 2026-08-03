@@ -67,6 +67,82 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .dictation)
     }
 
+    func testDictationStateReconciledIsWarningDictation() {
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-refresh",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .dictation)
+    }
+
+    func testDictationStateReconciledIsGreppableWithItsEvidence() {
+        // Issue #261 acceptance criterion 4: the exported log must carry an explicit
+        // event for the reconciliation, so this failure is self-diagnosing without a
+        // rebuild — the same rationale as `localModelResolved` for #249. The name and
+        // the heartbeat age are what a reader greps for, so both are pinned here.
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-watchdog",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.name, "dictationStateReconciled")
+        XCTAssertEqual(
+            event.message,
+            "source=keyboard-watchdog staleStatus=recording heartbeatAgeMs=23000"
+        )
+    }
+
+    func testDictationStateReconciledReportsAnAbsentHeartbeatAsMinusOne() {
+        // The app-side launch audit reaches its verdict from the fact that a fresh
+        // process owns no session, so it has no heartbeat to report.
+        let event = LogEvent.dictationStateReconciled(
+            source: "app-launch",
+            staleStatus: "transcribing",
+            heartbeatAgeMs: -1
+        )
+        XCTAssertEqual(event.message, "source=app-launch staleStatus=transcribing heartbeatAgeMs=-1")
+    }
+
+    // MARK: - Keyboard status message trail (#261)
+
+    func testDictationMessageSetIsGreppableWithItsOwner() {
+        // The device test script tells the maintainer to grep these exact names, so
+        // the names and the field order are a contract, not an implementation detail.
+        let event = LogEvent.dictationMessageSet(reason: "reconciled-keyboard-refresh", owner: "9DF73D57", visible: true)
+        XCTAssertEqual(event.name, "dictationMessageSet")
+        XCTAssertEqual(event.message, "reason=reconciled-keyboard-refresh owner=9DF73D57 visible=true")
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
+    func testDictationMessageDisplayedCarriesBothIdentities() {
+        // `rootView` and `controller` against `owner` is what tests the hypothesis
+        // that a message renders into a tree the user is not looking at.
+        let event = LogEvent.dictationMessageDisplayed(
+            rootView: "D67967A0",
+            controller: "9DF73D57",
+            owner: "9DF73D57",
+            visible: true
+        )
+        XCTAssertEqual(event.name, "dictationMessageDisplayed")
+        XCTAssertEqual(event.message, "rootView=D67967A0 controller=9DF73D57 owner=9DF73D57 visible=true")
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
+    func testDictationMessageClearedWarnsWhenNobodyRenderedIt() {
+        // The whole point of counting: `displayedCount=0` is "the user was never
+        // told", and it is findable by level as well as by reading the number.
+        let unseen = LogEvent.dictationMessageCleared(reason: "reconciled-timeout", displayedCount: 0)
+        XCTAssertEqual(unseen.name, "dictationMessageCleared")
+        XCTAssertEqual(unseen.message, "reason=reconciled-timeout displayedCount=0")
+        XCTAssertEqual(unseen.level, .warning)
+
+        let seen = LogEvent.dictationMessageCleared(reason: "reconciled-timeout", displayedCount: 2)
+        XCTAssertEqual(seen.level, .info)
+    }
+
     // MARK: - Audio events
 
     func testAudioEngineStartedIsInfoAudio() {

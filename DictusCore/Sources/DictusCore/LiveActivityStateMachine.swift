@@ -36,8 +36,17 @@ public struct LiveActivityStateMachine {
     /// Allowed transitions for each phase.
     /// WHY a stored property (not computed): The map is constant and small (6 entries).
     /// Storing it avoids re-creating the dictionary on every transition call.
+    ///
+    /// WHY `.idle -> .failed` is allowed (issue #261): a dictation can fail while the
+    /// manager sits at `.idle` -- the app relaunches after being terminated
+    /// mid-recording, receives the stop the keyboard sent into the void, collects zero
+    /// samples and reports a failure. Rejecting that transition left the Dynamic Island
+    /// unable to show an error in exactly the situation where the user most needs one,
+    /// and produced `liveActivityFailed context=rejectedTransition error=idle->failed`
+    /// instead. `endWithFailure()` still returns early when no activity is held, so
+    /// allowing this creates no pill out of nothing.
     private let validTransitions: [Phase: Set<Phase>] = [
-        .idle: [.standby],
+        .idle: [.standby, .failed],
         .standby: [.recording, .idle],
         .recording: [.transcribing, .standby],
         .transcribing: [.ready, .failed],

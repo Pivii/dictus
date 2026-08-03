@@ -122,6 +122,17 @@
         }
       }
     },
+    "Recording interrupted. Please try again." : {
+      "comment" : "Toolbar message shown when the keyboard clears a recording whose app was terminated (issue #261).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement interrompu. Réessayez."
+          }
+        }
+      }
+    },
     "Search Emoji" : {
       "localizations" : {
         "fr" : {

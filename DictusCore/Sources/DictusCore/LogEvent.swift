@@ -44,6 +44,12 @@ public enum LogEvent: Sendable {
     case dictationCompleted(durationMs: Int)
     case dictationFailed(error: String)
     case dictationDeferred(reason: String)
+    /// Issue #261: an active dictation status was found in the App Group with no
+    /// live process behind it, and was cleared. `heartbeatAgeMs` is -1 when the
+    /// heartbeat key was absent, which is how the app-side launch audit reports it
+    /// (a fresh process owns no session by construction, so it needs no heartbeat
+    /// to reach its verdict).
+    case dictationStateReconciled(source: String, staleStatus: String, heartbeatAgeMs: Int)
 
     // MARK: Audio
     case audioEngineStarted
@@ -86,6 +92,17 @@ public enum LogEvent: Sendable {
     case keyboardDidDisappear
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
+
+    // MARK: Keyboard status message (#261)
+    /// The toolbar message was assigned. `reason` names what asked for it.
+    case dictationMessageSet(reason: String, owner: String, visible: Bool)
+    /// A live view put that message on screen. One line per view that rendered it,
+    /// which is the whole point: iOS keeps several controllers alive, and whether
+    /// the one the user is looking at was among them is exactly the open question.
+    case dictationMessageDisplayed(rootView: String, controller: String, owner: String, visible: Bool)
+    /// The message ended. `displayedCount` is how many views had reported rendering
+    /// it over its life, so a single line answers whether anybody could have read it.
+    case dictationMessageCleared(reason: String, displayedCount: Int)
 
     // MARK: Animation
     case overlayShown(status: String)
@@ -173,7 +190,8 @@ public enum LogEvent: Sendable {
     /// The subsystem this event belongs to, derived from the case.
     public var subsystem: Subsystem {
         switch self {
-        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred:
+        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred,
+             .dictationStateReconciled:
             return .dictation
         case .audioEngineStarted, .audioEngineStopped, .audioSessionConfigured, .audioSessionFailed,
              .audioInterruptionBegan, .audioInterruptionEnded, .audioRouteChanged,
@@ -190,6 +208,7 @@ public enum LogEvent: Sendable {
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .overlayShown, .overlayHidden, .rapidTapRejected,
+             .dictationMessageSet, .dictationMessageDisplayed, .dictationMessageCleared,
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
              .waveformRefreshIDChanged, .waveformEnergyTransition, .waveformTimelineNotFiring,
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
@@ -226,6 +245,11 @@ public enum LogEvent: Sendable {
     /// stops/internal state = debug.
     public var level: LogLevel {
         switch self {
+        // A message nobody rendered is the failure this instrumentation exists to
+        // catch (#261), so it is findable by level and not only by reading the count.
+        case .dictationMessageCleared(_, let displayedCount):
+            return displayedCount == 0 ? .warning : .info
+
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
@@ -233,7 +257,8 @@ public enum LogEvent: Sendable {
             return .error
 
         // Warnings
-        case .dictationDeferred, .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
+        case .dictationDeferred, .dictationStateReconciled,
+             .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
@@ -252,6 +277,7 @@ public enum LogEvent: Sendable {
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
+             .dictationMessageSet, .dictationMessageDisplayed,
              .appLaunched, .appWhisperKitLoaded, .logExportCompleted,
              .deviceCapabilitySnapshot,
              .liveActivityStarted, .liveActivityTransition, .liveActivityEnded,
@@ -287,6 +313,7 @@ public enum LogEvent: Sendable {
         case .dictationCompleted: return "dictationCompleted"
         case .dictationFailed: return "dictationFailed"
         case .dictationDeferred: return "dictationDeferred"
+        case .dictationStateReconciled: return "dictationStateReconciled"
         case .audioEngineStarted: return "audioEngineStarted"
         case .audioEngineStopped: return "audioEngineStopped"
         case .audioSessionConfigured: return "audioSessionConfigured"
@@ -314,6 +341,9 @@ public enum LogEvent: Sendable {
         case .keyboardDidAppear: return "keyboardDidAppear"
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
+        case .dictationMessageSet: return "dictationMessageSet"
+        case .dictationMessageDisplayed: return "dictationMessageDisplayed"
+        case .dictationMessageCleared: return "dictationMessageCleared"
         case .keyboardTextInserted: return "keyboardTextInserted"
         case .engineWarmUpAttempt: return "engineWarmUpAttempt"
         case .engineWarmUpSuccess: return "engineWarmUpSuccess"
@@ -387,6 +417,8 @@ public enum LogEvent: Sendable {
             return "error=\(error)"
         case .dictationDeferred(let reason):
             return "reason=\(reason)"
+        case .dictationStateReconciled(let source, let staleStatus, let heartbeatAgeMs):
+            return "source=\(source) staleStatus=\(staleStatus) heartbeatAgeMs=\(heartbeatAgeMs)"
 
         // Audio
         case .audioEngineStarted, .audioEngineStopped:
@@ -503,6 +535,13 @@ public enum LogEvent: Sendable {
             return "model=\(modelName)"
 
         // Animation
+        case .dictationMessageSet(let reason, let owner, let visible):
+            return "reason=\(reason) owner=\(owner) visible=\(visible)"
+        case .dictationMessageDisplayed(let rootView, let controller, let owner, let visible):
+            return "rootView=\(rootView) controller=\(controller) owner=\(owner) visible=\(visible)"
+        case .dictationMessageCleared(let reason, let displayedCount):
+            return "reason=\(reason) displayedCount=\(displayedCount)"
+
         case .overlayShown(let status):
             return "status=\(status)"
         case .overlayHidden(let status):
