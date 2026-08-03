@@ -53,7 +53,8 @@ final class ProcessingWaveformTests: XCTestCase {
             )
 
             let sweepLevels = (0..<barCount).map { transcriptionSweepLevel(at: $0, phase: phase) }
-            let flatUnderSweep = sweepLevels.filter { abs($0 - sweepLevels.min()!) < 0.0001 }.count
+            let sweepFloor = sweepLevels.min() ?? 0
+            let flatUnderSweep = sweepLevels.filter { abs($0 - sweepFloor) < 0.0001 }.count
             XCTAssertLessThanOrEqual(
                 flatUnderSweep, 2,
                 "phase \(phase): the sine is supposed to have no flat run, it has \(flatUnderSweep)"

@@ -328,6 +328,14 @@ struct KeyboardRootView: View {
         .onChange(of: state.isKeyboardVisible) { _, _ in
             syncWaveformDriver()
         }
+        // The driver holds its own copy of the setting and decides from it whether
+        // to run a display link at all, so a toggle that arrives while the overlay
+        // is already up has to be pushed to it. Without this, turning Reduce Motion
+        // on mid-dictation leaves the peak sweeping, and turning it off leaves the
+        // bars frozen until the next status change.
+        .onChange(of: reduceMotion) { _, _ in
+            syncWaveformDriver()
+        }
         .onAppear {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardRootView",
