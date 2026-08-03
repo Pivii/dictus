@@ -122,7 +122,39 @@ class KeyboardState: ObservableObject {
     }
 
     @Published var lastTranscription: String?
-    @Published var statusMessage: String?
+
+    /// The red line the toolbar shows above the keys: a dictation error from the app,
+    /// or the interruption notice the keyboard raises itself (#261).
+    ///
+    /// WHY the `didSet` and not a log line at each write site: this is assigned from
+    /// seven places across three lifecycles, and the open question about it is
+    /// whether the user ever *saw* one — an answer that cannot be assembled from
+    /// call sites that each report only themselves. The same funnel argument as
+    /// `dictationStatus` and `ownership` above: a property observer is the only path
+    /// none of them can bypass. Writers go through `assignStatusMessage(_:reason:)`
+    /// so the observer has a reason to record; a write that skipped it would still be
+    /// logged, as `reason=unspecified`, rather than silently inheriting the last one.
+    ///
+    /// The observer only logs. Nothing here changes when a message is set, how long
+    /// it lives, or what it says.
+    @Published var statusMessage: String? {
+        didSet {
+            guard oldValue != statusMessage else { return }
+            logStatusMessageTransition(from: oldValue)
+            statusMessageReason = Self.unspecifiedMessageReason
+        }
+    }
+
+    /// What asked for the pending `statusMessage` write. Read and reset by the
+    /// observer above.
+    private var statusMessageReason = KeyboardState.unspecifiedMessageReason
+    private static let unspecifiedMessageReason = "unspecified"
+
+    /// How many live views have reported putting the current message on screen.
+    /// Reset when a message is assigned, reported when it ends: `displayedCount=0`
+    /// on a `dictationMessageCleared` line means nobody could have read it.
+    private var statusMessageDisplayCount = 0
+
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
@@ -290,7 +322,7 @@ class KeyboardState: ObservableObject {
         dictationStatus = .idle
         waveformEnergy = []
         recordingElapsed = 0
-        statusMessage = nil
+        assignStatusMessage(nil, reason: "forceResetToIdle")
         activeSessionID = nil
         // Write to App Group so app side sees the reset
         defaults.set(DictationStatus.idle.rawValue, forKey: SharedKeys.dictationStatus)
@@ -481,7 +513,7 @@ class KeyboardState: ObservableObject {
         dictationStatus = .idle
         waveformEnergy = []
         recordingElapsed = 0
-        statusMessage = nil
+        assignStatusMessage(nil, reason: "requestCancel")
         activeSessionID = nil
     }
 
@@ -535,11 +567,11 @@ class KeyboardState: ObservableObject {
                     activeSessionID = nil
                     // Read and display error message from App Group
                     if status == .failed, let errorMsg = defaults.string(forKey: SharedKeys.lastError) {
-                        statusMessage = errorMsg
+                        assignStatusMessage(errorMsg, reason: "appError")
                         defaults.removeObject(forKey: SharedKeys.lastError)
                         defaults.synchronize()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                            self?.statusMessage = nil
+                            self?.assignStatusMessage(nil, reason: "appError-timeout")
                         }
                     }
                 }
@@ -652,7 +684,7 @@ class KeyboardState: ObservableObject {
         dictationStatus = .idle
         waveformEnergy = []
         recordingElapsed = 0
-        statusMessage = nil
+        assignStatusMessage(nil, reason: "textInserted")
         lastTranscription = nil
         activeSessionID = nil
 
@@ -1400,9 +1432,92 @@ private extension KeyboardState {
         // wording is "interrupted", not "crashed": from the user's side that is both
         // truer and less alarming, and it is what they need to know -- the recording
         // is gone and the next tap starts fresh.
-        statusMessage = String(localized: "Recording interrupted. Please try again.")
+        assignStatusMessage(
+            String(localized: "Recording interrupted. Please try again."),
+            reason: "reconciled-\(source)"
+        )
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.interruptedMessageDuration) { [weak self] in
-            self?.statusMessage = nil
+            self?.assignStatusMessage(nil, reason: "reconciled-timeout")
         }
+    }
+}
+
+// MARK: - Status message trail (#261)
+
+/// Instrumentation for the toolbar message's whole life: set, displayed, ended.
+///
+/// WHY it exists: the sharpened acceptance criterion for #261 is "stop the recording
+/// *and say something*", and until now nothing in the exported log recorded whether
+/// anything was said. The message is assigned on a singleton, but iOS keeps several
+/// `KeyboardViewController` instances alive at once (~9 during a dictation, #281), so
+/// "assigned" and "on screen in front of the user" are different facts and only the
+/// first one was observable. A single "I set the message" line would reproduce that
+/// ambiguity exactly, which is why set and displayed are separate events.
+///
+/// Cost: one line when a message is assigned, one per view that renders it, one when
+/// it ends. The message changes a handful of times per session, so this is
+/// proportional to the message and not to the render loop — nothing here fires per
+/// frame or per render tick.
+extension KeyboardState {
+
+    /// Assign the toolbar message and name what asked for it.
+    ///
+    /// The reason travels in a property rather than a parameter because the observer
+    /// that logs it is on `statusMessage` itself, which is what makes it impossible
+    /// for a writer to escape the trail.
+    func assignStatusMessage(_ message: String?, reason: String) {
+        statusMessageReason = reason
+        statusMessage = message
+    }
+
+    /// Record a message assignment or its end. Called only from `statusMessage`'s
+    /// observer, so every write reaches it.
+    ///
+    /// A message replacing another emits both lines, so `set` and `cleared` always
+    /// pair up and a reader can bracket each message's life without inference.
+    func logStatusMessageTransition(from oldValue: String?) {
+        let reason = statusMessageReason
+        if oldValue != nil {
+            PersistentLog.log(.dictationMessageCleared(
+                reason: statusMessage == nil ? reason : "replaced",
+                displayedCount: statusMessageDisplayCount
+            ))
+        }
+        statusMessageDisplayCount = 0
+        guard statusMessage != nil else { return }
+        PersistentLog.log(.dictationMessageSet(
+            reason: reason,
+            owner: activeControllerID ?? "none",
+            visible: isKeyboardVisible
+        ))
+    }
+
+    /// Called by the toolbar when the message enters the view hierarchy.
+    ///
+    /// This is the line that answers "was the user told". Compare its `rootView` and
+    /// `controller` against `owner`: a view that rendered the message while it did not
+    /// own the keyboard area drew into a tree nobody was looking at, which is the
+    /// maintainer's hypothesis stated as a grep.
+    func noteStatusMessageDisplayed(rootView: String, controller: String) {
+        statusMessageDisplayCount += 1
+        PersistentLog.log(.dictationMessageDisplayed(
+            rootView: rootView,
+            controller: controller,
+            owner: activeControllerID ?? "none",
+            visible: isKeyboardVisible
+        ))
+    }
+
+    /// Called by the toolbar when the message leaves the view hierarchy.
+    ///
+    /// Fine grain, so a probe rather than an event: this fires when the message is
+    /// cleared and also when the toolbar itself goes away (a controller torn down, or
+    /// the recording overlay taking the area), and the surrounding lines are what
+    /// tell those apart.
+    func noteStatusMessageHidden(rootView: String, controller: String) {
+        logProbe(
+            "statusMessageHidden",
+            details: "rootView=\(rootView) controllerID=\(controller) owner=\(activeControllerID ?? "none") visible=\(isKeyboardVisible)"
+        )
     }
 }

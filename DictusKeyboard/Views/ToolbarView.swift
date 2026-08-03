@@ -28,6 +28,12 @@ struct ToolbarView: View {
 
     // Suggestion bar integration parameters (default to idle/empty)
     var statusMessage: String?
+
+    /// Identity carried purely so the status message's rendering can be attributed
+    /// to a view and a controller in the exported log (#261). Defaulted, so a call
+    /// site that does not care is unaffected; both current call sites supply them.
+    var messageProbeRootViewID: String = "unknown"
+    var messageProbeControllerID: String = "unknown"
     var suggestions: [String] = []
     var suggestionMode: SuggestionMode = .idle
     var onSuggestionTap: ((Int) -> Void)?
@@ -106,6 +112,24 @@ struct ToolbarView: View {
                     .foregroundColor(.red)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
+                    // Instrumentation only (#261). "The message was assigned" and
+                    // "a live view put it on screen" are different facts, and only
+                    // the first was observable — iOS keeps several controllers
+                    // alive, so a message can be set and rendered into a tree the
+                    // user is not looking at. This is the second fact, reported
+                    // from the one place that can actually attest to it.
+                    .onAppear {
+                        KeyboardState.shared.noteStatusMessageDisplayed(
+                            rootView: messageProbeRootViewID,
+                            controller: messageProbeControllerID
+                        )
+                    }
+                    .onDisappear {
+                        KeyboardState.shared.noteStatusMessageHidden(
+                            rootView: messageProbeRootViewID,
+                            controller: messageProbeControllerID
+                        )
+                    }
             } else if showsDictationUndo {
                 dictationUndoButton
 
