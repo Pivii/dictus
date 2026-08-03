@@ -67,6 +67,44 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .dictation)
     }
 
+    func testDictationStateReconciledIsWarningDictation() {
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-refresh",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .dictation)
+    }
+
+    func testDictationStateReconciledIsGreppableWithItsEvidence() {
+        // Issue #261 acceptance criterion 4: the exported log must carry an explicit
+        // event for the reconciliation, so this failure is self-diagnosing without a
+        // rebuild — the same rationale as `localModelResolved` for #249. The name and
+        // the heartbeat age are what a reader greps for, so both are pinned here.
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-watchdog",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.name, "dictationStateReconciled")
+        XCTAssertEqual(
+            event.message,
+            "source=keyboard-watchdog staleStatus=recording heartbeatAgeMs=23000"
+        )
+    }
+
+    func testDictationStateReconciledReportsAnAbsentHeartbeatAsMinusOne() {
+        // The app-side launch audit reaches its verdict from the fact that a fresh
+        // process owns no session, so it has no heartbeat to report.
+        let event = LogEvent.dictationStateReconciled(
+            source: "app-launch",
+            staleStatus: "transcribing",
+            heartbeatAgeMs: -1
+        )
+        XCTAssertEqual(event.message, "source=app-launch staleStatus=transcribing heartbeatAgeMs=-1")
+    }
+
     // MARK: - Audio events
 
     func testAudioEngineStartedIsInfoAudio() {

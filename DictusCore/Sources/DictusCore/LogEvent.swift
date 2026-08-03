@@ -44,6 +44,12 @@ public enum LogEvent: Sendable {
     case dictationCompleted(durationMs: Int)
     case dictationFailed(error: String)
     case dictationDeferred(reason: String)
+    /// Issue #261: an active dictation status was found in the App Group with no
+    /// live process behind it, and was cleared. `heartbeatAgeMs` is -1 when the
+    /// heartbeat key was absent, which is how the app-side launch audit reports it
+    /// (a fresh process owns no session by construction, so it needs no heartbeat
+    /// to reach its verdict).
+    case dictationStateReconciled(source: String, staleStatus: String, heartbeatAgeMs: Int)
 
     // MARK: Audio
     case audioEngineStarted
@@ -173,7 +179,8 @@ public enum LogEvent: Sendable {
     /// The subsystem this event belongs to, derived from the case.
     public var subsystem: Subsystem {
         switch self {
-        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred:
+        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred,
+             .dictationStateReconciled:
             return .dictation
         case .audioEngineStarted, .audioEngineStopped, .audioSessionConfigured, .audioSessionFailed,
              .audioInterruptionBegan, .audioInterruptionEnded, .audioRouteChanged,
@@ -233,7 +240,8 @@ public enum LogEvent: Sendable {
             return .error
 
         // Warnings
-        case .dictationDeferred, .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
+        case .dictationDeferred, .dictationStateReconciled,
+             .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
@@ -287,6 +295,7 @@ public enum LogEvent: Sendable {
         case .dictationCompleted: return "dictationCompleted"
         case .dictationFailed: return "dictationFailed"
         case .dictationDeferred: return "dictationDeferred"
+        case .dictationStateReconciled: return "dictationStateReconciled"
         case .audioEngineStarted: return "audioEngineStarted"
         case .audioEngineStopped: return "audioEngineStopped"
         case .audioSessionConfigured: return "audioSessionConfigured"
@@ -387,6 +396,8 @@ public enum LogEvent: Sendable {
             return "error=\(error)"
         case .dictationDeferred(let reason):
             return "reason=\(reason)"
+        case .dictationStateReconciled(let source, let staleStatus, let heartbeatAgeMs):
+            return "source=\(source) staleStatus=\(staleStatus) heartbeatAgeMs=\(heartbeatAgeMs)"
 
         // Audio
         case .audioEngineStarted, .audioEngineStopped:
