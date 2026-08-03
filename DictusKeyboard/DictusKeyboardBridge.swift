@@ -1,10 +1,10 @@
 // DictusKeyboard/DictusKeyboardBridge.swift
 // Delegate bridge from giellakbd-ios GiellaKeyboardView key events to Dictus text actions.
 // Created for Phase 18 Plan 02 -- wires the vendored UICollectionView keyboard
-// to textDocumentProxy operations with haptic feedback and 3-category key sounds.
+// to textDocumentProxy operations. Haptic and key sound both fire on touchDown in
+// GiellaKeyboardView, not here (#286).
 
 import UIKit
-import AudioToolbox
 import DictusCore
 
 /// Adapts GiellaKeyboardView delegate callbacks into Dictus keyboard actions.
@@ -17,10 +17,15 @@ import DictusCore
 ///
 /// The bridge receives key events from the UICollectionView keyboard and:
 /// - Inserts/deletes text via textDocumentProxy
-/// - Plays haptic feedback via DictusCore's HapticFeedback
-/// - Plays 3-category key sounds via AudioServicesPlaySystemSound
 /// - Manages shift/capslock page state on the keyboard view
 /// - Handles auto-full-stop (double-space -> period)
+///
+/// It emits no key click. The click and the key-tap haptic both fire on touchDown in
+/// GiellaKeyboardView, the only layer that knows when a finger lands. The bridge hears
+/// about a key once its action is due, and for every letter that is on touchUp —
+/// sounding the click from here is what made typing feel out of sync with the
+/// haptic (#286). The haptics that remain here are the ones with no touchDown to
+/// attach to: the cursor-movement tick, and the emoji toggle's own feedback.
 final class DictusKeyboardBridge: NSObject,
     GiellaKeyboardViewDelegate,
     GiellaKeyboardViewKeyboardKeyDelegate {
@@ -83,7 +88,7 @@ final class DictusKeyboardBridge: NSObject,
         case .input(let character, let alternate):
             if alternate == "accent" {
                 handleAdaptiveAccentKey()
-            } else if character == "\u{1F600}" {
+            } else if character == KeyboardLayouts.emojiKeyGlyph {
                 // Emoji button: identified by the emoji glyph on the key.
                 // No alternate text so the key shows only the smiley icon.
                 handleEmojiToggle()
@@ -120,13 +125,13 @@ final class DictusKeyboardBridge: NSObject,
 
         case .keyboard:
             // Globe/next keyboard button -- advance to next input method
-            AudioServicesPlaySystemSound(KeySound.modifier)
             controller?.advanceToNextInputMode()
 
         case .keyboardMode, .splitKeyboard, .normalKeyboard,
              .sideKeyboardLeft, .sideKeyboardRight:
-            // iPad keyboard mode keys -- not supported on iPhone, no-op
-            AudioServicesPlaySystemSound(KeySound.modifier)
+            // iPad keyboard mode keys -- not supported on iPhone, no-op.
+            // The click still plays on touchDown, from KeySound.category(for:).
+            break
 
         case .spacer, .caps:
             // Spacer is a layout element, caps is handled by double-tap shift
@@ -147,7 +152,7 @@ final class DictusKeyboardBridge: NSObject,
     private static func editsDocument(_ key: KeyDefinition) -> Bool {
         switch key.type {
         case .input(let character, _):
-            return character != "\u{1F600}"
+            return character != KeyboardLayouts.emojiKeyGlyph
         case .backspace, .spacebar, .returnkey, .comma, .fullStop, .tab:
             return true
         default:
@@ -158,9 +163,8 @@ final class DictusKeyboardBridge: NSObject,
     func didTriggerDoubleTap(forKey key: KeyDefinition) {
         switch key.type {
         case .shift:
-            // Double-tap shift activates caps lock
-            // Haptic already fired in touchesBegan
-            AudioServicesPlaySystemSound(KeySound.modifier)
+            // Double-tap shift activates caps lock.
+            // Haptic and click already fired in touchesBegan.
             keyboardView?.page = .capslock
             lastShiftTapTime = 0 // Reset to prevent triple-tap confusion
             isManualShift = false // Caps lock is its own mode, not "manual shift"
@@ -246,16 +250,15 @@ final class DictusKeyboardBridge: NSObject,
     // MARK: - Key Action Handlers
 
     /// Handle character input (letters, numbers, punctuation).
-    /// Inserts the character, plays letter sound, auto-unshifts after one letter,
-    /// then rechecks autocapitalization (e.g., typing "." may prepare shift for next char).
-    /// NOTE: Haptic fires in GiellaKeyboardView.touchesBegan() for ALL keys on touchDown.
+    /// Inserts the character, auto-unshifts after one letter, then rechecks
+    /// autocapitalization (e.g., typing "." may prepare shift for next char).
+    /// NOTE: Haptic and click fire in GiellaKeyboardView.touchesBegan() for ALL keys
+    /// on touchDown, so neither is emitted here.
     private func handleInputKey(_ character: String) {
         // Clear rejected words when starting a new word
         if suggestionState?.currentWord.isEmpty == true {
             suggestionState?.rejectedWords.removeAll()
         }
-
-        AudioServicesPlaySystemSound(KeySound.letter)
 
         // Insert the character. When on shifted/capslock page, the key definition
         // already contains the uppercase character, so we insert as-is.
@@ -284,8 +287,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle backspace/delete key. Always deletes one character.
     /// Autocorrect undo is handled by tapping the suggestion bar, not backspace.
     private func handleBackspace() {
-        AudioServicesPlaySystemSound(KeySound.delete)
-
         controller?.textDocumentProxy.deleteBackward()
         secondToLastInsertedCharacter = nil
         lastInsertedCharacter = nil
@@ -315,7 +316,6 @@ final class DictusKeyboardBridge: NSObject,
     /// The algorithm: trim trailing spaces, find the previous word boundary (last space),
     /// delete everything from cursor back to that boundary.
     private func handleWordDelete() {
-        AudioServicesPlaySystemSound(KeySound.delete)
         suggestionState?.pendingUndo = nil
         guard let proxy = controller?.textDocumentProxy,
               let before = proxy.documentContextBeforeInput, !before.isEmpty else {
@@ -362,7 +362,6 @@ final class DictusKeyboardBridge: NSObject,
     /// behavior -- corrections appear only when the user finishes the word (space/return).
     /// Correcting mid-word would be disorienting as the text changes while typing.
     private func handleSpace() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         secondToLastInsertedCharacter = lastInsertedCharacter
 
         // Next space after autocorrect = undo window closes
@@ -529,7 +528,6 @@ final class DictusKeyboardBridge: NSObject,
     /// After inserting newline, recheck autocapitalization -- many apps use
     /// .sentences autocap which should capitalize after a newline.
     private func handleReturn() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         suggestionState?.pendingUndo = nil
         controller?.textDocumentProxy.insertText("\n")
         secondToLastInsertedCharacter = lastInsertedCharacter
@@ -570,8 +568,6 @@ final class DictusKeyboardBridge: NSObject,
     /// previous character with the accented version is how iOS native French keyboards
     /// handle accent insertion as well.
     private func handleAdaptiveAccentKey() {
-        AudioServicesPlaySystemSound(KeySound.letter)
-
         let label = FrenchAdaptiveKey.label(
             afterTyping: lastInsertedCharacter,
             precedingChar: secondToLastInsertedCharacter
@@ -603,7 +599,6 @@ final class DictusKeyboardBridge: NSObject,
 
     /// Handle emoji button tap: triggers the emoji picker toggle.
     private func handleEmojiToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         HapticFeedback.keyTapped()
         onEmojiToggle?()
     }
@@ -627,8 +622,6 @@ final class DictusKeyboardBridge: NSObject,
     /// but we also detect it here as a fallback because the timing can differ between
     /// the gesture recognizer and our manual tracking. Both paths lead to .capslock.
     private func handleShift() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         let now = Date.timeIntervalSinceReferenceDate
@@ -664,8 +657,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle 123/ABC layer switch.
     /// Toggles between letter pages (normal/shifted/capslock) and symbols1.
     private func handleSymbolsToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         switch kbView.page {
@@ -679,8 +670,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle #+=/123 toggle on symbols pages.
     /// Toggles between symbols1 and symbols2.
     private func handleShiftSymbolsToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         switch kbView.page {
