@@ -40,11 +40,17 @@ class DictationCoordinator: ObservableObject {
     /// Used by DictusApp to detect "warm but engine-dead" state after Power button stop.
     var isEngineRunning: Bool { audioEngine.isEngineRunning }
 
-    /// Transcription timeout watchdog: fires after 30s in .transcribing state.
-    /// WHY 30s: WhisperKit transcription of a typical dictation (<60s audio) should
-    /// complete in under 10s even on older devices. 30s provides generous margin
-    /// while still catching genuinely stuck transcriptions.
-    private var transcriptionWatchdog: Timer?
+    /// Timeout watchdog for whichever post-recording stage is running.
+    ///
+    /// WHY one timer for two stages (#267): they are mutually exclusive and the
+    /// failure it catches is the same one -- a stage that never hands over, leaving
+    /// the keyboard's overlay up with nothing behind it. What differs is only how
+    /// long is too long, which `stageWatchdogTimeout(for:)` answers.
+    ///
+    /// The status it was armed for is captured by the timer's own closure, which
+    /// re-checks it before firing -- a stage that has handed over to the next one
+    /// must not be torn down by the previous one's timer.
+    private var stageWatchdog: Timer?
 
     private var whisperKit: WhisperKit?
     private var currentModelName: String?
@@ -533,10 +539,20 @@ class DictationCoordinator: ObservableObject {
 
                 // Polish layer (#141) — passes raw through when toggle off, when language
                 // detection skips, when the engine throws/cancels, or when the guardrail rejects.
+                //
+                // The status moves to `.processing` from inside the call rather than
+                // before it (#267): every one of those pass-through paths returns in
+                // about a millisecond, and announcing a stage for them would flash a
+                // label and a new animation for a single frame. `onEngineWillRun`
+                // fires only once an engine worth waiting for is about to run.
                 let text = await PolishCoordinator.shared.polish(
                     raw: rawText,
                     languagePolicy: languagePolicy,
-                    recordingDuration: audioDuration
+                    recordingDuration: audioDuration,
+                    onEngineWillRun: { [weak self] in
+                        self?.updateStatus(.processing)
+                        LiveActivityManager.shared.transitionToProcessing()
+                    }
                 )
 
                 // Append trailing separator so chained dictations don't stick together.
@@ -587,7 +603,7 @@ class DictationCoordinator: ObservableObject {
         dictationTask = nil
         // Reset the transcribe re-entry flag so the next stop/cancel cycle can proceed.
         isTranscribingInFlight = false
-        stopTranscriptionWatchdog()
+        stopStageWatchdog()
 
         // Discard samples but keep engine alive for next recording
         _ = audioEngine.collectSamples()
@@ -613,8 +629,14 @@ class DictationCoordinator: ObservableObject {
     /// Issue #60: a UI-only reset while the pipeline is active orphans the audio
     /// engine (keeps capturing) and the Live Activity (stuck on REC), so an active
     /// session must go through the real teardown instead.
+    ///
+    /// WHY the shared predicate and not a list of cases spelled out here (#267):
+    /// this asks "is a dictation in flight", which is the exact question
+    /// `isActive` answers over an exhaustive switch. A hand-written list is a list
+    /// the next status case can be left out of, silently, and this one guards a
+    /// teardown -- the same shape of omission #260 and #261 were made of.
     func resetStatus() {
-        if status == .recording || status == .transcribing || status == .requested {
+        if DictationSessionLivenessPolicy.isActive(status) {
             cancelDictation()
             return
         }
@@ -631,7 +653,8 @@ class DictationCoordinator: ObservableObject {
     /// Activity (LiveActivityManager handles its own end via the same notification).
     /// Issue #106.
     private func handleAudioInterruptionDuringDictation() {
-        let wasActive = (status == .recording || status == .requested || status == .transcribing)
+        // Same predicate as `resetStatus` and for the same reason (#267).
+        let wasActive = DictationSessionLivenessPolicy.isActive(status)
         guard wasActive else {
             // Engine died while idle — nothing to roll back. The standby DI is
             // dismissed by LiveActivityManager via the same notification.
@@ -641,7 +664,7 @@ class DictationCoordinator: ObservableObject {
         dictationTask?.cancel()
         dictationTask = nil
         isTranscribingInFlight = false
-        stopTranscriptionWatchdog()
+        stopStageWatchdog()
 
         bufferEnergy = []
         bufferSeconds = 0
@@ -745,9 +768,15 @@ class DictationCoordinator: ObservableObject {
     /// anything. It is auditing state a dead one left behind, and `status` is
     /// correctly `.idle` here.
     private func reconcileOrphanedDictationState() {
+        // WHY the cases are spelled out here and not asked of `isActive` (#267):
+        // this list is deliberately narrower. `.requested` is active but is written
+        // by the keyboard moments before it launches this app, so reconciling it at
+        // launch would kill every cold-start dictation. `.processing` belongs with
+        // `.recording` and `.transcribing`: the app that wrote it is the app that
+        // just died, so a launch finding it is finding a corpse.
         guard let raw = defaults.string(forKey: SharedKeys.dictationStatus),
               let stored = DictationStatus(rawValue: raw),
-              stored == .recording || stored == .transcribing else { return }
+              stored == .recording || stored == .transcribing || stored == .processing else { return }
 
         PersistentLog.log(.dictationStateReconciled(
             source: "app-launch",
@@ -791,23 +820,56 @@ class DictationCoordinator: ObservableObject {
         return models
     }
 
-    // MARK: - Transcription Watchdog
+    // MARK: - Stage Watchdog
 
-    private func startTranscriptionWatchdog() {
-        stopTranscriptionWatchdog()
-        transcriptionWatchdog = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+    /// How long a post-recording stage may run before it is declared stuck.
+    /// Nil for statuses no stage watchdog covers.
+    ///
+    /// WHY 30s for transcription: WhisperKit transcription of a typical dictation
+    /// (<60s audio) should complete in under 10s even on older devices. 30s provides
+    /// generous margin while still catching genuinely stuck transcriptions.
+    ///
+    /// WHY 60s for the LLM stage (#267) and not the same 30s: generation time scales
+    /// with the output, which is exactly why this stage was split out, and the cost
+    /// of firing early is higher here than during transcription -- the transcript
+    /// already exists and the recovery below throws it away with the rest of the
+    /// session. The number is a last-resort unfreeze, not a latency budget.
+    private func stageWatchdogTimeout(for status: DictationStatus) -> TimeInterval? {
+        switch status {
+        case .transcribing:
+            return 30
+        case .processing:
+            return 60
+        case .idle, .requested, .recording, .ready, .failed:
+            return nil
+        }
+    }
+
+    /// Log source for a fired stage watchdog. `appTranscription` is unchanged from
+    /// before #267 so log lines written by older builds keep meaning what they meant.
+    private func stageWatchdogSource(for status: DictationStatus) -> String {
+        status == .processing ? "appProcessing" : "appTranscription"
+    }
+
+    private func startStageWatchdog(for status: DictationStatus) {
+        stopStageWatchdog()
+        guard let timeout = stageWatchdogTimeout(for: status) else { return }
+        stageWatchdog = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                guard self.status == .transcribing else { return }
-                PersistentLog.log(.watchdogReset(source: "appTranscription", staleState: "transcribing"))
+                guard self.status == status else { return }
+                PersistentLog.log(.watchdogReset(
+                    source: self.stageWatchdogSource(for: status),
+                    staleState: status.rawValue
+                ))
                 self.cancelDictation()
             }
         }
     }
 
-    private func stopTranscriptionWatchdog() {
-        transcriptionWatchdog?.invalidate()
-        transcriptionWatchdog = nil
+    private func stopStageWatchdog() {
+        stageWatchdog?.invalidate()
+        stageWatchdog = nil
     }
 
     /// Write dictation status to App Group so the keyboard can observe it.
@@ -836,10 +898,14 @@ class DictationCoordinator: ObservableObject {
         defaults.set(newStatus.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
 
-        if newStatus == .transcribing {
-            startTranscriptionWatchdog()
-        } else if oldStatus == .transcribing {
-            stopTranscriptionWatchdog()
+        // Re-arm on every stage the watchdog covers, disarm on everything else.
+        // The `.transcribing -> .processing` hand-over is the case that makes the
+        // second branch matter: leaving the transcription timer armed would let it
+        // fire 30s into a stage it knows nothing about (#267).
+        if stageWatchdogTimeout(for: newStatus) != nil {
+            startStageWatchdog(for: newStatus)
+        } else if stageWatchdogTimeout(for: oldStatus) != nil {
+            stopStageWatchdog()
         }
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)

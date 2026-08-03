@@ -129,9 +129,18 @@ public final class PolishCoordinator {
     /// re-reading App Group state here guarantees polish targets the same
     /// language the STT engine was given, even if the user changed the
     /// keyboard language while transcription was running.
+    ///
+    /// `onEngineWillRun` fires at most once, immediately before the engine call,
+    /// and only for engines that declare the wait worth announcing (#267). It is
+    /// how `DictationCoordinator` knows to move the dictation status to
+    /// `.processing`: every gate that can skip the model -- the toggle above, the
+    /// duration gate, the gibberish gate, a passthrough backend -- has been
+    /// cleared by the time it fires, so the state marks a wait that is really
+    /// happening rather than one that might.
     public func polish(raw: String,
                        languagePolicy: TranscriptionLanguagePolicy,
-                       recordingDuration: TimeInterval) async -> String {
+                       recordingDuration: TimeInterval,
+                       onEngineWillRun: (() -> Void)? = nil) async -> String {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
             return raw
         }
@@ -149,11 +158,13 @@ public final class PolishCoordinator {
         case .language(let target):
             return await polishTargeted(
                 raw: raw, target: target,
-                languagePolicy: languagePolicy, recordingDuration: recordingDuration
+                languagePolicy: languagePolicy, recordingDuration: recordingDuration,
+                onEngineWillRun: onEngineWillRun
             )
         case .autoDetected:
             return await polishAutoDetected(
-                raw: raw, languagePolicy: languagePolicy, recordingDuration: recordingDuration
+                raw: raw, languagePolicy: languagePolicy, recordingDuration: recordingDuration,
+                onEngineWillRun: onEngineWillRun
             )
         }
     }
@@ -166,7 +177,8 @@ public final class PolishCoordinator {
     private func polishTargeted(raw: String,
                                 target: SupportedLanguage,
                                 languagePolicy: TranscriptionLanguagePolicy,
-                                recordingDuration: TimeInterval) async -> String {
+                                recordingDuration: TimeInterval,
+                                onEngineWillRun: (() -> Void)?) async -> String {
         let sttEngine = languagePolicy.engine
         let sttModelID = languagePolicy.modelIdentifier
 
@@ -244,6 +256,7 @@ public final class PolishCoordinator {
         let currentEngine = activeEngine
 
         inflight?.cancel()
+        announceEngineStage(currentEngine, to: onEngineWillRun)
         // Everything above (pre-pass + detection + mode) is the preprocess cost;
         // the engine-facing transform (encode → engine → decode → guardrail) is
         // delegated to `PolishPipeline` so the eval harness runs identical code.
@@ -313,7 +326,8 @@ public final class PolishCoordinator {
     /// runs are identified by `mode == .auto` in the debug export.
     private func polishAutoDetected(raw: String,
                                     languagePolicy: TranscriptionLanguagePolicy,
-                                    recordingDuration: TimeInterval) async -> String {
+                                    recordingDuration: TimeInterval,
+                                    onEngineWillRun: (() -> Void)?) async -> String {
         let methodStart = Date()
         // Engine-API placeholder in auto mode — never used for typography or
         // guardrails (see PolishPipeline); doubles as the metrics context.
@@ -358,6 +372,7 @@ public final class PolishCoordinator {
 
         let currentEngine = activeEngine
         inflight?.cancel()
+        announceEngineStage(currentEngine, to: onEngineWillRun)
         // Pre-engine work in auto mode: detection + detected-language pre-pass.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let task = Task {
@@ -413,6 +428,15 @@ public final class PolishCoordinator {
             sttModelID: languagePolicy.modelIdentifier,
             timings: timings
         )
+    }
+
+    /// Tell the caller the LLM stage is starting, if this engine's wait is one
+    /// worth announcing (#267). Both polish paths reach the engine by different
+    /// routes and each has to make this call; the check lives here so neither can
+    /// make it differently.
+    private func announceEngineStage(_ engine: PolishEngineProtocol, to callback: (() -> Void)?) {
+        guard engine.announcesProcessingStage else { return }
+        callback?()
     }
 
     /// Log one metrics event and append it to the debug ring.

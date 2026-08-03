@@ -8,6 +8,10 @@ import Foundation
 public final class PassthroughPolishEngine: PolishEngineProtocol {
     public let identifier = "passthrough"
 
+    /// 100 ms is below the threshold at which a state change reads as a state and
+    /// not as a glitch, and there is no model behind it to wait for anyway (#267).
+    public let announcesProcessingStage = false
+
     public init() {}
 
     public func polish(raw: String,

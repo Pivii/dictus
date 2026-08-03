@@ -186,11 +186,23 @@ struct RecordingView: View {
                 ? coordinator.bufferEnergy
                 : Array(repeating: Float(0), count: 30),
             maxHeight: 120,
-            isProcessing: coordinator.status == .transcribing,
-            isActive: coordinator.status == .recording || coordinator.status == .transcribing
+            isProcessing: isPostRecordingStage,
+            isActive: coordinator.status == .recording || isPostRecordingStage
         )
         .opacity(coordinator.status == .recording ? 0.5 :
-                 coordinator.status == .transcribing ? 0.3 : 0.15)
+                 isPostRecordingStage ? 0.3 : 0.15)
+    }
+
+    /// Whether the pipeline is past the microphone and working on the audio or the
+    /// transcript.
+    ///
+    /// WHY this screen renders both stages the same (#267): the two animations that
+    /// tell them apart live in the keyboard overlay and the Dynamic Island, which is
+    /// where the user actually is while waiting -- this screen is DictusApp in the
+    /// foreground, which during a keyboard dictation it is not. Splitting it here
+    /// would be a third design to maintain for a view nobody is looking at.
+    private var isPostRecordingStage: Bool {
+        coordinator.status == .transcribing || coordinator.status == .processing
     }
 
     // MARK: - Status Text
@@ -201,7 +213,7 @@ struct RecordingView: View {
             Text(formattedTime)
                 .font(.system(size: 20, weight: .light, design: .monospaced))
                 .foregroundStyle(.secondary)
-        } else if coordinator.status == .transcribing {
+        } else if isPostRecordingStage {
             Text("Transcribing...")
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
@@ -246,9 +258,11 @@ struct RecordingView: View {
             }
             .buttonStyle(GlassPressStyle(pressedScale: 0.88))
             .accessibilityLabel("Stop recording")
-        } else if coordinator.status == .transcribing {
-            // Shimmer mic during processing (disabled)
-            AnimatedMicButton(status: .transcribing) {}
+        } else if isPostRecordingStage {
+            // Shimmer mic during processing (disabled). The status is passed
+            // through rather than pinned to `.transcribing` so the button reflects
+            // the stage it is actually in (#267); the shimmer is the same for both.
+            AnimatedMicButton(status: coordinator.status) {}
                 .disabled(true)
         } else {
             // Idle / result state: mic button ready for (new) recording
