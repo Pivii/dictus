@@ -266,6 +266,98 @@ class KeyboardState: ObservableObject {
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
     }
 
+    // MARK: - Orphaned dictation reconciliation (#261)
+
+    /// How long the "the recording was interrupted" message stays on the toolbar.
+    /// Matches the existing `.failed` message lifetime below, deliberately: this is
+    /// the same failure UX, reached from a different direction.
+    private static let interruptedMessageDuration: TimeInterval = 3
+
+    /// What the App Group says about the dictation, and what that means.
+    private struct DictationLivenessReading {
+        let verdict: DictationSessionLiveness
+        let status: DictationStatus?
+        /// Age of the heartbeat in milliseconds, or -1 when there was none to read.
+        let heartbeatAgeMs: Int
+    }
+
+    /// Ask the shared state whether a live process is still behind it.
+    ///
+    /// Reads the App Group directly rather than `dictationStatus`, because the point
+    /// is to audit what was *written* -- a keyboard rebuilt after the app died has no
+    /// in-memory status of its own yet.
+    private func dictationLiveness() -> DictationLivenessReading {
+        let status = defaults.string(forKey: SharedKeys.dictationStatus)
+            .flatMap(DictationStatus.init(rawValue:))
+        let raw = defaults.double(forKey: SharedKeys.recordingHeartbeat)
+        let heartbeat: TimeInterval? = raw > 0 ? raw : nil
+        let now = Date().timeIntervalSince1970
+        return DictationLivenessReading(
+            verdict: DictationSessionLivenessPolicy.evaluate(
+                status: status,
+                heartbeat: heartbeat,
+                now: now
+            ),
+            status: status,
+            heartbeatAgeMs: heartbeat.map { Int((now - $0) * 1000) } ?? -1
+        )
+    }
+
+    /// Clear a dictation whose owning process is gone, and tell the user (#261).
+    ///
+    /// WHY the keyboard does this itself rather than waiting: when iOS terminates
+    /// DictusApp mid-dictation, nothing relaunches it. The overlay would keep
+    /// pretending to record until the watchdog's 5 s -- or 15 s during a cold start --
+    /// expired, and it would then reset in silence, which is what left the user tapping
+    /// a stop button that did nothing and losing a long voice note without explanation.
+    ///
+    /// WHY it still posts a stop first: the verdict rests on a cross-process
+    /// `UserDefaults` read. If that read were ever wrong, resetting alone would leave a
+    /// live engine capturing with nobody watching -- the #60 failure. A stop costs
+    /// nothing when nobody is listening, and salvages the recording when someone is:
+    /// the transcription is inserted irrespective of the keyboard's local status.
+    ///
+    /// Returns whether it acted, so callers can skip the work they were about to do.
+    @discardableResult
+    private func reconcileOrphanedDictation(source: String) -> Bool {
+        let reading = dictationLiveness()
+        guard reading.verdict == .orphaned, let status = reading.status else { return false }
+
+        PersistentLog.log(.dictationStateReconciled(
+            source: source,
+            staleStatus: status.rawValue,
+            heartbeatAgeMs: reading.heartbeatAgeMs
+        ))
+
+        defaults.set(true, forKey: SharedKeys.stopRequested)
+        defaults.synchronize()
+        DarwinNotificationCenter.post(DarwinNotificationName.stopRecording)
+
+        // Clears the local status, the session id and the message, writes `idle` to
+        // the App Group and posts `statusChanged` -- so the overlay is gone on the
+        // next run loop pass rather than on the next watchdog tick.
+        forceResetToIdle()
+
+        // The recording keys the dead process never got to clean up. Leaving the
+        // heartbeat behind would make the next evaluation read a session that no
+        // longer exists.
+        defaults.removeObject(forKey: SharedKeys.recordingHeartbeat)
+        defaults.removeObject(forKey: SharedKeys.waveformEnergy)
+        defaults.removeObject(forKey: SharedKeys.recordingElapsedSeconds)
+        defaults.set(false, forKey: SharedKeys.coldStartActive)
+        defaults.synchronize()
+
+        // Said after the reset, because `forceResetToIdle` clears the message. The
+        // wording is "interrupted", not "crashed": from the user's side that is both
+        // truer and less alarming, and it is what they need to know -- the recording
+        // is gone and the next tap starts fresh.
+        statusMessage = String(localized: "Recording interrupted. Please try again.")
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.interruptedMessageDuration) { [weak self] in
+            self?.statusMessage = nil
+        }
+        return true
+    }
+
     /// Start a repeating 1s timer that checks for stale active states.
     /// WHY 5s threshold: Waveform updates arrive at ~5Hz during recording.
     /// If 5 seconds pass without any update while status is still active,
@@ -281,6 +373,14 @@ class KeyboardState: ObservableObject {
                 self.stopWatchdog()
                 return
             }
+            // A heartbeat that stopped is positive evidence that the app is gone, and
+            // it outranks both thresholds below (#261). The 15 s cold-start grace was
+            // written for an app that is slow to start posting waveform data, not for
+            // one that has died; waiting it out is what let a phantom session run for
+            // ~34 s. Reconciling tells the user and resets, where the watchdog reset
+            // below only resets.
+            if self.reconcileOrphanedDictation(source: "keyboard-watchdog") { return }
+
             // During cold start, the app transitions foreground→background while
             // setting up audio. Waveform data may not flow for ~10s. Use 15s threshold.
             let inGracePeriod = self.coldStartGraceEnd.map { Date() < $0 } ?? false
@@ -379,6 +479,24 @@ class KeyboardState: ObservableObject {
     /// then post the notification so the app reads the flag when it handles the notification.
     func requestStop() {
         logProbe("requestStop", details: sessionDetails())
+
+        // A stop tapped by a keyboard that never started this dictation (#261). The
+        // line is written whatever comes next, because two taps used to produce
+        // nothing at all -- neither on screen nor in the log -- and that silence is
+        // what made the reported incident unreadable.
+        if activeSessionID == nil {
+            let reading = dictationLiveness()
+            logProbe(
+                "requestStopWithoutSession",
+                details: "storedStatus=\(reading.status?.rawValue ?? "nil") liveness=\(reading.verdict.rawValue)"
+            )
+            // Reset locally only on the evidence, not on the missing id alone: iOS
+            // rebuilds this extension routinely, and a keyboard rebuilt mid-dictation
+            // has no session id while the app records perfectly happily. Dropping the
+            // overlay there would abandon a live transcription.
+            if reconcileOrphanedDictation(source: "keyboard-stop") { return }
+        }
+
         defaults.set(true, forKey: SharedKeys.stopRequested)
         defaults.synchronize()
         DarwinNotificationCenter.post(DarwinNotificationName.stopRecording)
@@ -408,6 +526,14 @@ class KeyboardState: ObservableObject {
     /// Starts/stops the watchdog timer based on the new status.
     func refreshFromDefaults() {
         logProbe("refreshFromDefaults", details: "storedStatus=\(defaults.string(forKey: SharedKeys.dictationStatus) ?? "nil") visible=\(isKeyboardVisible) \(sessionDetails())")
+
+        // Before adopting what the App Group says, check that somebody is still
+        // writing it (#261). This is the read a rebuilt extension performs from its
+        // own `init`, so an app terminated mid-dictation is caught here -- at the
+        // first read, not after a watchdog grace. Reconciling already wrote `idle`,
+        // so there is nothing left to adopt.
+        if reconcileOrphanedDictation(source: "keyboard-refresh") { return }
+
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
             let oldStatus = dictationStatus
