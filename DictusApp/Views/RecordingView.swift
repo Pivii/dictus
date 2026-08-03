@@ -196,11 +196,15 @@ struct RecordingView: View {
     /// Whether the pipeline is past the microphone and working on the audio or the
     /// transcript.
     ///
-    /// WHY this screen renders both stages the same (#267): the two animations that
-    /// tell them apart live in the keyboard overlay and the Dynamic Island, which is
-    /// where the user actually is while waiting -- this screen is DictusApp in the
-    /// foreground, which during a keyboard dictation it is not. Splitting it here
-    /// would be a third design to maintain for a view nobody is looking at.
+    /// WHY this screen shares one *animation* across both stages (#267): the two
+    /// animations that tell them apart live in the keyboard overlay and the Dynamic
+    /// Island, which is where the user actually is while waiting. A third motion
+    /// design for this screen would be one more thing to keep in step.
+    ///
+    /// The *label* is not shared -- see `statusText`. Sharing the shimmer costs the
+    /// user nothing; telling them "Transcribing..." for six seconds of language
+    /// model is the whole complaint this issue is about, and it lands the same way
+    /// whichever screen it is read on.
     private var isPostRecordingStage: Bool {
         coordinator.status == .transcribing || coordinator.status == .processing
     }
@@ -213,8 +217,16 @@ struct RecordingView: View {
             Text(formattedTime)
                 .font(.system(size: 20, weight: .light, design: .monospaced))
                 .foregroundStyle(.secondary)
-        } else if isPostRecordingStage {
+        } else if coordinator.status == .transcribing {
             Text("Transcribing...")
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
+        } else if coordinator.status == .processing {
+            // The waveform is shared between the two stages here, but the label is
+            // not: naming the wrong stage is the complaint #267 exists to fix, and
+            // it costs a user dictating inside DictusApp the same six seconds of
+            // wondering whether the app has hung.
+            Text("Processing...")
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
         } else if showCopiedFeedback {
