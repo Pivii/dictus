@@ -66,6 +66,12 @@ struct KeyboardRootView: View {
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
+    /// Forwarded to the waveform driver so it can drop the travelling-peak
+    /// animation's motion (#267). Read here rather than in `KeyboardWaveformView`
+    /// because the driver decides whether to run a display link at all, and a
+    /// setting only the view knows about cannot stop one from starting.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// Fixed toolbar height, matching `KeyboardViewController.toolbarHeight`.
     private let toolbarHeight: CGFloat = 52
 
@@ -366,7 +372,8 @@ struct KeyboardRootView: View {
             presenterID: controllerID,
             status: state.dictationStatus,
             energyLevels: state.waveformEnergy,
-            isVisible: !forceHidden && presentedMode == .recording
+            isVisible: !forceHidden && presentedMode == .recording,
+            reduceMotion: reduceMotion
         )
     }
 

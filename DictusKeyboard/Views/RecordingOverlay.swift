@@ -6,7 +6,8 @@ import DictusCore
 /// Shows different visual states based on DictationStatus:
 /// - .requested: flat waveform bars, "Démarrage..." text, cancel-only button
 /// - .recording: live waveform, elapsed timer, cancel + stop buttons
-/// - .transcribing: shimmer waveform, "Transcription..." text
+/// - .transcribing: sine-sweep waveform, "Transcription..." text
+/// - .processing: travelling-peak waveform, "Traitement..." text (#267)
 ///
 /// WHY this replaces the keyboard:
 /// Wispr Flow-inspired design -- when recording, the keyboard area transforms into
@@ -139,8 +140,10 @@ struct RecordingOverlay: View {
             .padding(.top, 10)
             .padding(.bottom, 6)
 
-        case .transcribing:
-            // Reserve same height as button row so waveform doesn't shift
+        case .transcribing, .processing:
+            // Reserve same height as button row so waveform doesn't shift.
+            // The LLM stage is not cancellable (#267), so it shows the same empty
+            // bar as transcription rather than a button that would do nothing.
             Color.clear
                 .frame(height: 36)
                 .padding(.horizontal, 12)
@@ -196,6 +199,23 @@ struct RecordingOverlay: View {
                 .padding(.bottom, 4)
 
             Text("Transcribing...")
+                .font(.dictusCaption)
+                .foregroundColor(secondaryForeground)
+                .padding(.bottom, 8)
+
+        case .processing:
+            // Same two lines, same heights, same paddings as every other state --
+            // only the caption differs. Naming the stage is half of #267: the
+            // animation says "something else is happening", the label says what.
+            Color.clear
+                .frame(height: timerFontSize)
+                .padding(.bottom, 4)
+
+            // #79 will want the armed Smart Mode's name here instead of the generic
+            // stage name. There is no armed mode to read today -- `ProFeature`
+            // .smartMode is a paywall flag, not a selection -- so this stays one
+            // string until that state exists.
+            Text("Processing...")
                 .font(.dictusCaption)
                 .foregroundColor(secondaryForeground)
                 .padding(.bottom, 8)
