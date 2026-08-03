@@ -615,6 +615,13 @@ class DictationCoordinator: ObservableObject {
         SoundFeedbackService.playRecordCancel()
         // Return Dynamic Island to standby (cancel = no transcription, go back to "On")
         Task { await LiveActivityManager.shared.returnToStandby() }
+        // `returnToStandby` only comes back from .recording/.ready/.failed, and the
+        // recording watchdog below only unsticks .recording -- so a dictation
+        // abandoned inside a post-recording stage had no path home at all, and the
+        // pill stayed on that stage and rejected the next dictation (#267 review).
+        // The two calls are mutually exclusive by their own guards, so the order
+        // between them does not matter.
+        LiveActivityManager.shared.recoverFromAbandonedStage()
         // Arm watchdog: safety net if returnToStandby's guard rejects.
         LiveActivityManager.shared.startRecordingWatchdog()
         updateStatus(.idle)

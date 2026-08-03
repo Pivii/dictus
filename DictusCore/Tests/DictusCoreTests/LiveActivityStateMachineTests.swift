@@ -119,6 +119,72 @@ final class LiveActivityStateMachineTests: XCTestCase {
         XCTAssertEqual(sm.currentPhase, .ready)
     }
 
+    // MARK: - A dictation abandoned inside a stage (#267 review)
+
+    /// The property the whole recovery rests on. Before this edge existed, a
+    /// dictation abandoned during transcription left the machine parked there, and
+    /// the pill could never be walked back.
+    func testAnAbandonedTranscriptionCanReturnToStandby() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        XCTAssertTrue(sm.transition(to: .standby))
+        XCTAssertEqual(sm.currentPhase, .standby)
+    }
+
+    func testAnAbandonedProcessingStageCanReturnToStandby() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        sm.transition(to: .processing)
+        XCTAssertTrue(sm.transition(to: .standby))
+        XCTAssertEqual(sm.currentPhase, .standby)
+    }
+
+    /// The user-visible consequence, and the reason the edge above is not a
+    /// cosmetic tidy-up: the next dictation has to be able to record.
+    ///
+    /// Without the recovery, the machine sat on the abandoned stage and this
+    /// `.recording` transition was rejected -- so the Dynamic Island kept showing
+    /// the stage of a dictation that had ended, while a new one recorded
+    /// underneath it. That is the #42 / #257 desync, reached through the watchdog.
+    func testTheNextDictationCanRecordAfterAnAbandonedStage() {
+        for abandoned in [LiveActivityStateMachine.Phase.transcribing, .processing] {
+            var sm = LiveActivityStateMachine()
+            sm.transition(to: .standby)
+            sm.transition(to: .recording)
+            sm.transition(to: .transcribing)
+            if abandoned == .processing {
+                sm.transition(to: .processing)
+            }
+            XCTAssertEqual(sm.currentPhase, abandoned)
+
+            XCTAssertTrue(
+                sm.transition(to: .standby),
+                "a dictation abandoned in \(abandoned.rawValue) must be able to come home"
+            )
+            XCTAssertTrue(
+                sm.transition(to: .recording),
+                "the dictation after one abandoned in \(abandoned.rawValue) must be able to record"
+            )
+        }
+    }
+
+    /// The recovery must not become a way for a finished dictation to reopen the
+    /// wait: standby still leads forward, never back into a stage.
+    func testRecoveringToStandbyDoesNotReopenAStage() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        sm.transition(to: .standby)
+        XCTAssertFalse(sm.transition(to: .transcribing))
+        XCTAssertFalse(sm.transition(to: .processing))
+        XCTAssertEqual(sm.currentPhase, .standby)
+    }
+
     func testTranscribingToFailedSucceeds() {
         var sm = LiveActivityStateMachine()
         sm.transition(to: .standby)

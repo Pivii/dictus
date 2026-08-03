@@ -898,6 +898,53 @@ class LiveActivityManager {
         DictusLogger.app.info("Live Activity -> standby (auto-return)")
     }
 
+    /// Bring the pill home after a dictation was abandoned inside a post-recording
+    /// stage -- the stage watchdog fired, or the user cancelled while the LLM ran.
+    ///
+    /// WHY this is not just a wider guard on `returnToStandby` (#267 review): that
+    /// guard is #42's, and it is what stops a stale auto-dismiss task from a
+    /// finished dictation from stamping `.standby` over a live one. Widening it
+    /// would hand that power to every caller. This path is entered only by the
+    /// deliberate teardown in `DictationCoordinator.cancelDictation`, and it
+    /// refuses every phase except the two it exists for.
+    ///
+    /// WHY it matters that the state machine comes back too, not just the pill: a
+    /// machine left parked on `.transcribing` or `.processing` rejects the next
+    /// dictation's transition to `.recording`, so the Dynamic Island would go on
+    /// showing the stage of a dictation that ended while a new one recorded
+    /// underneath it. The visible symptom is #42 / #257; the cause here is that
+    /// nothing walked the machine back.
+    ///
+    /// This hole predates #267: on `develop` the 30 s transcription watchdog
+    /// reached the same dead end, because `returnToStandby` refused
+    /// `.transcribing` there too and no other path recovered it.
+    func recoverFromAbandonedStage() {
+        guard isEnabled else { return }
+        guard currentPhase == .transcribing || currentPhase == .processing else { return }
+
+        let abandoned = currentPhase
+
+        guard let activity = currentActivity else {
+            // No pill to drive, but the machine must not stay parked on a stage no
+            // dictation is in -- that is the half of the failure that poisons the
+            // *next* dictation, and it happens with or without an activity.
+            PersistentLog.log(.liveActivityTransition(from: abandoned.rawValue, to: "idle-abandoned"))
+            currentPhase = .idle
+            syncStateMachine(to: .idle)
+            return
+        }
+
+        guard validateTransition(to: .standby) else { return }
+
+        PersistentLog.log(.liveActivityTransition(from: abandoned.rawValue, to: "standby-abandoned"))
+        currentPhase = .standby  // Update BEFORE async work to prevent races (#49)
+        Task {
+            let state = DictusLiveActivityAttributes.ContentState(phase: .standby)
+            await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(self.staleInterval)))
+            DictusLogger.app.info("Live Activity -> standby (abandoned \(abandoned.rawValue, privacy: .public))")
+        }
+    }
+
     /// Clean up stale Live Activities from previous app launches.
     /// Called at app startup to prevent zombie activities from persisting
     /// after a crash or force-quit.
