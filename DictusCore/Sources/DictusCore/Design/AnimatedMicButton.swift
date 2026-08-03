@@ -13,9 +13,11 @@ import SwiftUI
 /// State machine:
 /// - idle/ready: soft blue glow pulsing at 2s interval
 /// - recording: red pulse ring scaling 1.0-1.3 at 0.8s interval
-/// - transcribing: blue shimmer sweep moving left-to-right at 1.5s
+/// - transcribing/processing: blue shimmer sweep moving left-to-right at 1.5s
+///   (this button is the main app's; the two stages are told apart in the keyboard
+///   overlay and the Dynamic Island, which is where the user waits -- see #267)
 /// - failed: same as idle (reset to inviting state)
-/// - Transition from transcribing to ready: brief green flash (0.3s fade)
+/// - Transition from either post-recording stage to ready: brief green flash (0.3s fade)
 public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
@@ -78,8 +80,8 @@ public struct AnimatedMicButton: View {
                     .fill(buttonFillColor)
                     .frame(width: buttonWidth, height: buttonHeight)
 
-                // Shimmer overlay for transcribing state
-                if status == .transcribing {
+                // Shimmer overlay for the two post-recording stages
+                if status == .transcribing || status == .processing {
                     shimmerOverlay
                 }
 
@@ -138,8 +140,8 @@ public struct AnimatedMicButton: View {
                 )
                 .scaleEffect(pulseScale)
 
-        case .transcribing, .requested:
-            // Static glass ring during transcription
+        case .transcribing, .processing, .requested:
+            // Static glass ring during transcription and the LLM stage
             mainShape()
                 .fill(Color.clear)
                 .frame(width: ringWidth, height: ringHeight)
@@ -181,7 +183,7 @@ public struct AnimatedMicButton: View {
         switch status {
         case .recording:
             return .dictusRecording
-        case .transcribing:
+        case .transcribing, .processing:
             return .dictusAccentHighlight.opacity(0.5)
         default:
             return .dictusAccent
@@ -211,7 +213,7 @@ public struct AnimatedMicButton: View {
         // Success flash when transitioning from transcribing to ready.
         // WHY withAnimation instead of asyncAfter: SwiftUI animates the transition
         // from true to false over 0.3s, eliminating the timer race condition.
-        if oldStatus == .transcribing && newStatus == .ready {
+        if (oldStatus == .transcribing || oldStatus == .processing) && newStatus == .ready {
             showSuccessFlash = true
             withAnimation(.easeOut(duration: 0.3)) {
                 showSuccessFlash = false
@@ -223,7 +225,7 @@ public struct AnimatedMicButton: View {
             startIdleAnimation()
         case .recording:
             startRecordingAnimation()
-        case .transcribing:
+        case .transcribing, .processing:
             startTranscribingAnimation()
         case .requested:
             // Static state -- no animations. Button is disabled via isTappable.
