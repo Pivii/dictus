@@ -15,6 +15,14 @@ import DictusCore
 /// Globe key is provided by iOS below third-party keyboards -- not part of our layout.
 enum KeyboardLayouts {
 
+    /// Glyph carried by the emoji-picker toggle key.
+    ///
+    /// The toggle has no `KeyType` of its own — it is an `.input` key whose character is
+    /// the smiley, and everything downstream tells it apart from a typed character by
+    /// comparing against this glyph. Naming it once keeps those comparisons in step
+    /// (`DictusKeyboardBridge.didTriggerKey`, `editsDocument`, `KeySound.category(for:)`).
+    static let emojiKeyGlyph = "\u{1F600}"
+
     // MARK: - Public API
 
     /// AZERTY layout (default for French).
@@ -211,7 +219,7 @@ enum KeyboardLayouts {
         var row: [KeyDefinition] = needsGlobe ? [globeKey()] : []
         row.append(contentsOf: [
             KeyDefinition(type: .symbols, size: CGSize(width: 1.5, height: 1)),
-            KeyDefinition(type: .input(key: "\u{1F600}", alternate: nil), size: CGSize(width: 1.5, height: 1)),
+            KeyDefinition(type: .input(key: emojiKeyGlyph, alternate: nil), size: CGSize(width: 1.5, height: 1)),
             KeyDefinition(type: .spacebar(name: lang.spaceName), size: CGSize(width: needsGlobe ? 4.0 : 5.0, height: 1)),
             KeyDefinition(type: .returnkey(name: lang.returnName), size: CGSize(width: 2.0, height: 1))
         ])
