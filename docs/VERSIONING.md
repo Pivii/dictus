@@ -12,7 +12,45 @@ How we number releases and tags. Complements [GIT_WORKFLOW.md](GIT_WORKFLOW.md).
 - **A release is pinned to a commit, never to "develop's current tip."** We promote the exact commit that produced the tested TestFlight build (its `build/N` tag), even if develop has moved on since.
 - Two scripts make it deterministic: [`scripts/cut-testflight.sh`](../scripts/cut-testflight.sh) and [`scripts/promote-to-appstore.sh`](../scripts/promote-to-appstore.sh).
 
-## When to bump each digit
+## WHEN the marketing version changes — read this before the table below
+
+This is the question that has been got wrong more than once, so it is answered first and without judgement calls.
+
+**The marketing version names a release, not a build.** It is chosen **once**, at the moment the previous version leaves for the App Store, and it then stays **frozen** across every TestFlight build of that cycle.
+
+```
+v1.7.2 promoted to the App Store
+        │
+        └── develop opens the next cycle → version becomes 1.8.0
+                 TestFlight build 21 → 1.8.0 (21)
+                 TestFlight build 23 → 1.8.0 (23)   same version, more builds
+                 TestFlight build 24 → 1.8.0 (24)
+                 TestFlight build 25 → 1.8.0 (25)   ← still 1.8.0, however much lands
+                          │
+                          └── one of them is promoted → App Store 1.8.0
+                                   │
+                                   └── only NOW does the next cycle open → 1.9.0
+```
+
+### The decision rule, in one line
+
+> **Is the current marketing version already on the App Store?**
+> **No → do not touch it.** Cut the build, bump the build number only.
+> **Yes → this is a new cycle.** Pick the next version with the table below, comparing against that shipped version.
+
+Check it, never remember it: `git show origin/main:DictusApp/Info.plist | grep -A1 CFBundleShortVersionString`. `main` is the App Store. If `develop` already reads higher, the cycle is open and the version is settled.
+
+### Why it is not "bump whenever a feature lands"
+
+Because the version is what a **user** sees, and a TestFlight tester is not a new user of a new version — they are trying out the version that is being built. Ten TestFlight builds of `1.8.0` are ten attempts at one release. Bumping on every feature would ship `1.8.0`, `1.9.0`, `1.10.0` to testers and never to anyone else, and the App Store would jump from `1.7.2` to `1.14.0` with nothing in between. The version line would stop meaning anything.
+
+It is also what App Store Connect models: a *version* is a container, and builds attach to it. Several builds under one version is the normal shape.
+
+**So a feature landing on `develop` never, on its own, changes the version.** It changes the *content* of the version already in flight. Which digit that version got was decided when the cycle opened.
+
+## Which digit, once a cycle actually opens
+
+Only ever asked at promotion time, and always against **the version just shipped**.
 
 | Bump | When | Example |
 | --- | --- | --- |
@@ -22,7 +60,15 @@ How we number releases and tags. Complements [GIT_WORKFLOW.md](GIT_WORKFLOW.md).
 
 Rule of thumb: **ask "does a returning user notice something new?"** — if yes → MINOR at least. If they just notice things work better → PATCH.
 
+Judge the **whole cycle**, not the last thing merged. A cycle that accumulated one new feature and nine fixes is a MINOR, because the feature is in it.
+
+A cycle can also be re-judged at promotion: if `1.8.0` was opened expecting a feature that got cut, and only fixes shipped, promote it as `1.7.3` instead. The version is only binding once it is on the App Store.
+
 > Note: the **first App Store release is not automatically a MAJOR**. We shipped `v1.x` on TestFlight for a long time; the first public App Store submission keeps the normal `1.Y.Z` line (it's the same product, same version line — just a new distribution channel).
+
+### Emergency exception: a hotfix while a cycle is open
+
+A production crash is fixed on a branch off `main`, not off `develop`, and it gets a PATCH on the **shipped** line — `1.7.2 → 1.7.3` — regardless of what `develop` is carrying. It never borrows the open cycle's number. Cherry-pick the fix back into `develop` afterwards; the open cycle keeps its own version.
 
 ## Build numbers vs. version — the two-axis model
 
@@ -68,9 +114,12 @@ main ◄──(promote-to-appstore.sh N, pins commit build/N)── tag vX.Y.Z +
 ### Cut a TestFlight build (from `develop`)
 
 ```sh
-scripts/cut-testflight.sh          # build-number bump only (another beta of the same version)
-scripts/cut-testflight.sh 1.8.0    # also set the marketing version to 1.8.0
+scripts/cut-testflight.sh          # ← the normal case, and the one you want almost every time
+scripts/cut-testflight.sh 1.9.0    # ← only when opening a new cycle, i.e. the current version already shipped
 ```
+
+**The bare form is the default.** Passing a version is the exception, not a step to remember: it belongs at exactly one moment, the first cut after a promotion. If the version on `develop` is not yet on the App Store, the cycle is already open and passing a version would rename a release in flight.
+
 Then: Xcode → Product ▸ Archive (scheme DictusApp, from develop) → upload. That's it — no tag to remember, the script made `build/N`.
 
 ### Promote a TestFlight build to the App Store
