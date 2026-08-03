@@ -10,6 +10,11 @@ import Foundation
 /// 2. Repetition learning: user types an unknown word multiple times → after
 ///    `repetitionThreshold` occurrences, the word is learned.
 ///
+/// HOW WORDS ARE FORGOTTEN:
+/// The dictionary is capped at `maxLearnedWords`. Past the cap the
+/// least-recently-used entries are dropped — see `shouldEvictFirst()` for why
+/// recency and not usage count.
+///
 /// WHY App Group UserDefaults:
 /// The dictionary must be shared between DictusApp and DictusKeyboard extension.
 /// UserDefaults via App Group is the simplest cross-process storage on iOS.
@@ -26,25 +31,52 @@ public final class UserDictionary {
 
     /// Key in App Group UserDefaults for the learned words dictionary.
     /// Stored as [String: Int] where key = lowercase word, value = usage count.
-    private static let storageKey = "dictus.userDictionary"
+    ///
+    /// WHY the keys are internal rather than private: the tests seed a store
+    /// through this exact key to reproduce a dictionary written by an earlier
+    /// build. Doing it that way exercises the real load path instead of adding
+    /// a test-only entry point to the production API.
+    static let storageKey = "dictus.userDictionary"
 
     /// Key for the repetition counter (words being "observed" before learning).
     /// Stored as [String: Int] where key = lowercase word, value = times typed.
-    private static let pendingKey = "dictus.userDictionary.pending"
+    static let pendingKey = "dictus.userDictionary.pending"
+
+    /// Key for the per-entry last-used timestamps.
+    /// Stored as [String: Int] where key = lowercase word, value = seconds
+    /// since 1970.
+    ///
+    /// WHY a parallel key instead of a richer value inside `storageKey`:
+    /// `storageKey` has to keep its exact [String: Int] shape. #103's iCloud
+    /// key-value merge strategy reads it as word → count and resolves conflicts
+    /// with max(count), and an older build of the app or the extension must
+    /// still decode the store it finds. Splitting recency into its own key
+    /// leaves both of those working unchanged — a reader that knows nothing
+    /// about recency simply ignores this key. It is also the cheapest shape to
+    /// serialise, which matters because `saveToDefaults()` runs on every word
+    /// boundary.
+    static let lastUsedKey = "dictus.userDictionary.lastUsed"
 
     /// Number of times an unknown word must be typed/rejected before it's learned.
     /// 1 = learn immediately. Safe now that autocorrect undo requires an intentional
     /// tap in the suggestion bar (no more accidental backspace-undo learning).
     public static let repetitionThreshold = 1
 
-    /// Maximum number of learned words. When exceeded, the least-used words
-    /// are dropped. 1000 words ≈ 30 KB in UserDefaults — negligible for memory.
+    /// Maximum number of learned words. When exceeded, the least-recently-used
+    /// words are dropped — see `shouldEvictFirst()`.
+    /// 1000 words ≈ 30 KB in UserDefaults — negligible for memory.
     /// Generous cap for personal vocabulary (names, slang, jargon, brands).
     /// Prevents unbounded growth from accidental learning over months/years.
     public static let maxLearnedWords = 1000
 
     /// In-memory cache of learned words. Synced to UserDefaults on mutation.
     private var learnedWords: [String: Int] = [:]
+
+    /// Last-used timestamp per learned word, in seconds since 1970.
+    ///
+    /// INVARIANT: every key of `learnedWords` has an entry here. The invariant
+    /// is repaired on load rather than assumed — see `stampEntriesMissingATimestamp()`.
+    private var lastUsed: [String: Int] = [:]
 
     /// Temporary counter for words being observed (not yet learned).
     private var pendingWords: [String: Int] = [:]
@@ -75,6 +107,7 @@ public final class UserDictionary {
         let key = word.lowercased()
         guard !key.isEmpty, key.count > 1 else { return }
         learnedWords[key, default: 0] += 1
+        lastUsed[key] = Self.nowStamp()
         // Remove from pending if it was being tracked
         pendingWords.removeValue(forKey: key)
         saveToDefaults()
@@ -91,6 +124,7 @@ public final class UserDictionary {
         // Already learned — just bump usage count
         if let learnedCount = learnedWords[key] {
             learnedWords[key] = learnedCount + 1
+            lastUsed[key] = Self.nowStamp()
             saveToDefaults()
             return false
         }
@@ -102,6 +136,7 @@ public final class UserDictionary {
         if pendingCount >= Self.repetitionThreshold {
             // Threshold reached — promote to learned
             learnedWords[key] = pendingCount
+            lastUsed[key] = Self.nowStamp()
             pendingWords.removeValue(forKey: key)
             saveToDefaults()
             print("[UserDictionary] Learned '\(key)' after \(Self.repetitionThreshold) uses")
@@ -116,6 +151,7 @@ public final class UserDictionary {
     public func forget(_ word: String) {
         let key = word.lowercased()
         learnedWords.removeValue(forKey: key)
+        lastUsed.removeValue(forKey: key)
         pendingWords.removeValue(forKey: key)
         saveToDefaults()
     }
@@ -124,6 +160,7 @@ public final class UserDictionary {
     /// Useful for a "Reset keyboard dictionary" option in settings.
     public func resetAll() {
         learnedWords.removeAll()
+        lastUsed.removeAll()
         pendingWords.removeAll()
         saveToDefaults()
         print("[UserDictionary] Reset — all learned words cleared")
@@ -136,27 +173,143 @@ public final class UserDictionary {
 
     // MARK: - Persistence
 
+    /// Current time as stored in `lastUsed`. Second resolution: the eviction
+    /// order only needs to tell days apart, and same-second ties have a defined
+    /// tiebreak anyway.
+    private static func nowStamp() -> Int {
+        Int(Date().timeIntervalSince1970)
+    }
+
     private func loadFromDefaults() {
         let defaults = AppGroup.defaults
         learnedWords = defaults.dictionary(forKey: Self.storageKey) as? [String: Int] ?? [:]
         pendingWords = defaults.dictionary(forKey: Self.pendingKey) as? [String: Int] ?? [:]
+        lastUsed = defaults.dictionary(forKey: Self.lastUsedKey) as? [String: Int] ?? [:]
+        stampEntriesMissingATimestamp()
+    }
+
+    /// MIGRATION RULE for entries written before recency existed: a learned word
+    /// found without a timestamp is stamped with the moment the gap was noticed,
+    /// and that stamp is persisted. In other words, **the update itself counts as
+    /// their last use.**
+    ///
+    /// WHY not "maximally old", the obvious alternative: it would put the user's
+    /// entire existing dictionary at the front of the eviction queue, so the
+    /// first overflow after shipping this change would delete their personal
+    /// vocabulary wholesale — the exact damage this change exists to stop.
+    ///
+    /// WHY the migrated cohort is still safe when it eventually gets cut: every
+    /// legacy entry shares one timestamp, so they are all ties, and ties break by
+    /// descending usage count (see `shouldEvictFirst()`). The first legacy entries
+    /// to go are therefore the most-typed ones — ordinary words the trie already
+    /// knows — and the low-count names and jargon are the last of the cohort to
+    /// go. Anything the user types after the update gets a fresh stamp and leaves
+    /// the cohort entirely.
+    ///
+    /// WHY the stamp is persisted rather than recomputed on each load: a stamp
+    /// recomputed as "now" every time would keep legacy entries permanently
+    /// fresh, so they would never age out and newer words would be evicted
+    /// instead — the policy inverted.
+    ///
+    /// WHY this runs on every load and not behind a one-shot migration flag: it
+    /// is an invariant repair, not a version step. It also covers an entry
+    /// written by an older build of the other process, which knows nothing about
+    /// `lastUsedKey`.
+    private func stampEntriesMissingATimestamp() {
+        let before = lastUsed
+        let stamp = Self.nowStamp()
+        for word in learnedWords.keys where lastUsed[word] == nil {
+            lastUsed[word] = stamp
+        }
+        // Drop stamps whose word is no longer learned, so this map cannot
+        // outgrow the dictionary it describes.
+        lastUsed = lastUsed.filter { learnedWords[$0.key] != nil }
+
+        guard lastUsed != before else { return }
+        AppGroup.defaults.set(lastUsed, forKey: Self.lastUsedKey)
+    }
+
+    /// One entry as the eviction order sees it. Materialised once per eviction so
+    /// the comparison below reads plain fields instead of hashing a string into
+    /// two dictionaries every time it runs.
+    private struct EvictionEntry {
+        let word: String
+        let count: Int
+        let used: Int
+    }
+
+    /// Whether `lhs` should be evicted before `rhs`.
+    ///
+    /// WHY recency first, not usage count: the dictionary exists to hold words
+    /// the base lexicon does not know — a colleague's name, a project name, a
+    /// technical term. Those are typed a handful of times and sit at a count of
+    /// 2 or 3, while every correctly-spelled word the user types is also learned
+    /// and climbs into the hundreds. Evicting by lowest count therefore deleted
+    /// exactly the vocabulary the feature protects and kept the words that never
+    /// needed protecting (#304). Recency is what AOSP LatinIME protects too
+    /// (`EntryInfoToTurncate::Comparator`).
+    ///
+    /// WHY the count tiebreak runs DESCENDING, the opposite of AOSP's: a learned
+    /// word's only effect here is that autocorrect leaves it alone
+    /// (`TextPredictionEngine.spellCheck`, the single read site of `isLearned`).
+    /// A word with a high count is almost certainly an ordinary word the trie
+    /// already knows, so dropping it changes nothing the user can observe — the
+    /// trie still spells it and autocorrect still leaves it alone. Dropping a
+    /// name typed twice is what the user notices. Between two entries of equal
+    /// recency, the most-typed one is the cheapest to lose.
+    ///
+    /// The final comparison on the word itself only makes the order total, so
+    /// the same dictionary always evicts the same entry.
+    private static func shouldEvictFirst(_ lhs: EvictionEntry, _ rhs: EvictionEntry) -> Bool {
+        if lhs.used != rhs.used { return lhs.used < rhs.used }
+        if lhs.count != rhs.count { return lhs.count > rhs.count }
+        return lhs.word < rhs.word
+    }
+
+    /// The `limit` words that should be evicted first.
+    ///
+    /// WHY repeated minimum scans and not a sort: `saveToDefaults()` runs on
+    /// every word boundary, and the dictionary overflows one word at a time, so
+    /// `limit` is 1 in normal use. That makes this a single O(n) pass over the
+    /// entries, where sorting the whole dictionary to read one element off the
+    /// front is O(n log n). A larger `limit` only happens if something dumps many
+    /// entries at once, and O(n · limit) is still acceptable there.
+    private func evictionCandidates(limit: Int) -> [String] {
+        // `?? 0` is unreachable by construction: every learned word is stamped on
+        // load and on every mutation. Treating an unstamped entry as the oldest
+        // possible is the safe reading if that ever breaks — it only affects
+        // which word is dropped, never correctness.
+        var remaining = learnedWords.map {
+            EvictionEntry(word: $0.key, count: $0.value, used: lastUsed[$0.key] ?? 0)
+        }
+        var candidates: [String] = []
+        while candidates.count < limit, !remaining.isEmpty {
+            var worstIndex = 0
+            for index in 1..<remaining.count where Self.shouldEvictFirst(remaining[index], remaining[worstIndex]) {
+                worstIndex = index
+            }
+            candidates.append(remaining[worstIndex].word)
+            remaining.remove(at: worstIndex)
+        }
+        return candidates
     }
 
     private func saveToDefaults() {
-        // Evict least-used words if we exceed the cap.
+        // Evict least-recently-used words if we exceed the cap.
         // Keeps the dictionary bounded so it can't grow indefinitely from
-        // accidental learning. Drops the words with the lowest usage count.
+        // accidental learning.
         if learnedWords.count > Self.maxLearnedWords {
-            let sorted = learnedWords.sorted { $0.value < $1.value }
             let toRemove = learnedWords.count - Self.maxLearnedWords
-            for (key, _) in sorted.prefix(toRemove) {
+            for key in evictionCandidates(limit: toRemove) {
                 learnedWords.removeValue(forKey: key)
+                lastUsed.removeValue(forKey: key)
             }
-            print("[UserDictionary] Evicted \(toRemove) least-used words (cap: \(Self.maxLearnedWords))")
+            print("[UserDictionary] Evicted \(toRemove) least-recently-used words (cap: \(Self.maxLearnedWords))")
         }
 
         let defaults = AppGroup.defaults
         defaults.set(learnedWords, forKey: Self.storageKey)
+        defaults.set(lastUsed, forKey: Self.lastUsedKey)
         defaults.set(pendingWords, forKey: Self.pendingKey)
     }
 
