@@ -89,7 +89,9 @@ codesign -d --entitlements - build/DerivedData/Build/Products/Debug-iphonesimula
 Executable=/Users/…/DictusApp.app/DictusApp
 ```
 
-and it gets no App Group container on the device, so `dictus_debug.log` is never written and nothing that crosses the App Group behaves as it does on device. The same build without those flags is ad-hoc signed and does get the container. Drop the flags.
+With that build, `AppGroup.containerURL` comes back nil on the device, so `dictus_debug.log` is never written and nothing crossing the App Group can be observed. Built without those flags, the app is ad-hoc signed and the container resolves. Drop the flags.
+
+Do not read a mechanism into that. The ad-hoc signed build carries an *empty* entitlements dictionary — no `application-groups` key — and its container resolves anyway, so the simulator is not gating on the entitlement the way a device does. Signed-versus-unsigned is what was observed to matter here, not why.
 
 ## 3. Install and launch
 
