@@ -56,6 +56,69 @@ final class LiveActivityStateMachineTests: XCTestCase {
         XCTAssertEqual(sm.currentPhase, .ready)
     }
 
+    // MARK: - The LLM stage (#267)
+
+    func testTranscribingToProcessingSucceeds() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        XCTAssertTrue(sm.transition(to: .processing))
+        XCTAssertEqual(sm.currentPhase, .processing)
+    }
+
+    func testProcessingToReadySucceeds() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        sm.transition(to: .processing)
+        XCTAssertTrue(sm.transition(to: .ready))
+        XCTAssertEqual(sm.currentPhase, .ready)
+    }
+
+    func testProcessingToFailedSucceeds() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        sm.transition(to: .processing)
+        XCTAssertTrue(sm.transition(to: .failed))
+        XCTAssertEqual(sm.currentPhase, .failed)
+    }
+
+    /// The LLM stage is skipped on most dictations -- the polish toggle is off by
+    /// default, the duration gate drops flash clips, and a device without Apple
+    /// Foundation Models never reaches an engine worth announcing. Straight to
+    /// `.ready` has to stay a first-class path, not a rejected transition.
+    func testTranscribingStillGoesStraightToReadyWhenTheLLMStageIsSkipped() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        XCTAssertTrue(sm.transition(to: .ready))
+    }
+
+    /// The LLM stage runs on a transcript, so it can only follow transcription.
+    func testRecordingToProcessingFails() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        XCTAssertFalse(sm.transition(to: .processing))
+        XCTAssertEqual(sm.currentPhase, .recording)
+    }
+
+    /// A finished dictation must not be able to reopen the wait.
+    func testProcessingCannotFollowReady() {
+        var sm = LiveActivityStateMachine()
+        sm.transition(to: .standby)
+        sm.transition(to: .recording)
+        sm.transition(to: .transcribing)
+        sm.transition(to: .ready)
+        XCTAssertFalse(sm.transition(to: .processing))
+        XCTAssertEqual(sm.currentPhase, .ready)
+    }
+
     func testTranscribingToFailedSucceeds() {
         var sm = LiveActivityStateMachine()
         sm.transition(to: .standby)

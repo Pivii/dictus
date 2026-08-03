@@ -20,7 +20,7 @@ public struct LiveActivityStateMachine {
     /// Phases of the Live Activity lifecycle.
     /// Maps 1:1 to the private LiveActivityPhase enum in LiveActivityManager.
     public enum Phase: String, Sendable {
-        case idle, standby, recording, transcribing, ready, failed
+        case idle, standby, recording, transcribing, processing, ready, failed
     }
 
     /// The current phase. Read-only from outside; mutated only via transition(to:) or reset().
@@ -45,11 +45,19 @@ public struct LiveActivityStateMachine {
     /// and produced `liveActivityFailed context=rejectedTransition error=idle->failed`
     /// instead. `endWithFailure()` still returns early when no activity is held, so
     /// allowing this creates no pill out of nothing.
+    ///
+    /// WHY `.transcribing -> .ready` survives the arrival of `.processing` (#267):
+    /// the LLM stage is skipped on most dictations -- the polish toggle is off by
+    /// default, the duration gate drops flash clips, and devices without Apple
+    /// Foundation Models never reach an engine worth announcing. A pipeline that
+    /// went straight from transcription to a result is the common case, not a
+    /// degraded one.
     private let validTransitions: [Phase: Set<Phase>] = [
         .idle: [.standby, .failed],
         .standby: [.recording, .idle],
         .recording: [.transcribing, .standby],
-        .transcribing: [.ready, .failed],
+        .transcribing: [.processing, .ready, .failed],
+        .processing: [.ready, .failed],
         .ready: [.standby, .recording],
         .failed: [.standby, .recording, .idle]
     ]

@@ -34,6 +34,7 @@ class LiveActivityManager {
         case standby    // Activity exists, waiting for user
         case recording  // Active recording
         case transcribing // Processing audio
+        case processing // Running the LLM stage on the transcript (#267)
         case ready      // Showing result (auto-dismiss pending)
         case failed     // Showing error (auto-dismiss pending)
     }
@@ -75,6 +76,7 @@ class LiveActivityManager {
         case .standby: return .standby
         case .recording: return .recording
         case .transcribing: return .transcribing
+        case .processing: return .processing
         case .ready: return .ready
         case .failed: return .failed
         }
@@ -93,6 +95,7 @@ class LiveActivityManager {
         case .standby: return .standby
         case .recording: return .recording
         case .transcribing: return .transcribing
+        case .processing: return .processing
         case .ready: return .ready
         case .failed: return .failed
         }
@@ -586,6 +589,30 @@ class LiveActivityManager {
         }
     }
 
+    /// Transition from transcribing to the LLM stage (#267).
+    ///
+    /// Called from inside `PolishCoordinator`'s engine callback, so it fires only
+    /// when a model is really about to run -- most dictations never reach it and go
+    /// straight from `.transcribing` to `.ready`, which the state machine allows.
+    func transitionToProcessing() {
+        guard isEnabled else { return }
+
+        guard validateTransition(to: .processing) else { return }
+
+        guard let activity = currentActivity else { return }
+
+        PersistentLog.log(.liveActivityTransition(from: "transcribing", to: "processing"))
+        currentPhase = .processing  // Update BEFORE async work to prevent races (#49)
+        Task {
+            let state = DictusLiveActivityAttributes.ContentState(
+                phase: .processing,
+                waveformLevels: [0.2, 0.5, 0.8, 0.5, 0.2]
+            )
+            await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(self.staleInterval)))
+            DictusLogger.app.info("Live Activity -> processing")
+        }
+    }
+
     /// Show transcription result, then return to standby after 1 second.
     ///
     /// WHY return to standby instead of ending:
@@ -602,7 +629,11 @@ class LiveActivityManager {
 
         autoDismissTask?.cancel()
 
-        PersistentLog.log(.liveActivityTransition(from: "transcribing", to: "ready"))
+        // `from` is read off the current phase rather than assumed to be
+        // "transcribing": since #267 the result can arrive from either
+        // post-recording stage, and a log line that says otherwise would misreport
+        // which one the wait was spent in.
+        PersistentLog.log(.liveActivityTransition(from: currentPhase.rawValue, to: "ready"))
         currentPhase = .ready  // Update BEFORE async work to prevent races (#49)
         Task {
             let truncatedPreview = preview.map { String($0.prefix(100)) }
