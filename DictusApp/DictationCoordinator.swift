@@ -402,15 +402,26 @@ class DictationCoordinator: ObservableObject {
         // Configure audio session NOW while we're in the foreground.
         try? audioEngine.configureAudioSession()
 
+        // The session these start paths belong to. `ensureMicrophonePermission` is
+        // an await even when permission is already granted, so a cancel queued on
+        // the main actor can land between here and the first write below (#267).
+        let session = sessionGeneration.current
+
         if audioEngine.isEngineRunning {
             // WARM START: engine already running → purge + record (instant)
             dictationTask = Task {
                 do {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
+                        guard mayReport(session, "permission denial") else { return }
                         handleError("Microphone permission denied")
                         return
                     }
+                    // Before `startRecording`, not merely before the status write:
+                    // a cancelled start that reached the engine would leave the mic
+                    // capturing for a dictation the user called off -- the orphaned
+                    // engine of #60, arrived at from the other end.
+                    guard mayReport(session, "warm start") else { return }
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
                     try audioEngine.startRecording()
@@ -419,6 +430,7 @@ class DictationCoordinator: ObservableObject {
                     await verifyAudioFlow()
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
+                    guard mayReport(session, "warm start failure") else { return }
                     handleError(error.localizedDescription)
                 }
             }
@@ -440,9 +452,11 @@ class DictationCoordinator: ObservableObject {
                 do {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
+                        guard mayReport(session, "permission denial") else { return }
                         handleError("Microphone permission denied")
                         return
                     }
+                    guard mayReport(session, "cold start") else { return }
                     try audioEngine.startRecording()
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
@@ -458,7 +472,13 @@ class DictationCoordinator: ObservableObject {
                     self.setModelLoadState(.ready, reason: "cold-start-success")
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Cold start engine load: \(error.localizedDescription)"))
+                    // The model load runs inside this task and takes seconds on a
+                    // cold start, so this is the widest window in the app for a
+                    // cancel to arrive mid-flight. `setModelLoadState` stays ungated
+                    // on purpose: it describes the model, which outlives any one
+                    // dictation, and the next session needs it to be accurate.
                     self.setModelLoadState(.idle, reason: "cold-start-failed")
+                    guard self.mayReport(session, "cold start failure") else { return }
                     self.handleError(error.localizedDescription)
                 }
             }
@@ -559,8 +579,14 @@ class DictationCoordinator: ObservableObject {
                     raw: rawText,
                     languagePolicy: languagePolicy,
                     recordingDuration: audioDuration,
+                    // Gated like every other write this task makes: the callback
+                    // fires from inside `polish`, which a cancel does not interrupt,
+                    // so an abandoned dictation would otherwise reopen the keyboard
+                    // overlay on "Traitement..." and drive the Live Activity into a
+                    // stage it had already left (#267).
                     onEngineWillRun: { [weak self] in
-                        self?.updateStatus(.processing)
+                        guard let self, self.mayReport(session, "processing stage") else { return }
+                        self.updateStatus(.processing)
                         LiveActivityManager.shared.transitionToProcessing()
                     }
                 )
@@ -870,6 +896,25 @@ class DictationCoordinator: ObservableObject {
     /// otherwise, and the device log is how this class of bug gets diagnosed here.
     /// The signature to look for afterwards is the absence of rejected Live Activity
     /// transitions following a clean abandon.
+    ///
+    /// ### What is deliberately NOT gated, and why
+    ///
+    /// Every `await` in a session-owned task is a place a cancel can land, but not
+    /// every continuation past one publishes session state. These were each checked
+    /// rather than gated by reflex:
+    ///
+    /// - `verifyAudioFlow()` already opens with `guard status == .recording`, and an
+    ///   abandoned session is `.idle` by then. Its engine restart is unreachable
+    ///   after a cancel.
+    /// - `setModelLoadState(...)` describes the *model*, which outlives any one
+    ///   dictation. Suppressing it would leave the next session reading a load state
+    ///   that never happened.
+    /// - `schedulePolishPrewarm()` warms a model and publishes nothing.
+    /// - The stage watchdog re-checks `self.status` against the status it was armed
+    ///   for before it fires.
+    /// - `pendingColdStartDictation` is retried from `didBecomeActive` only when the
+    ///   App Group still reads `.requested`; a cancel writes `.idle` first, so the
+    ///   deferred start does not resurrect.
     private func mayReport(_ session: Int, _ what: String) -> Bool {
         guard sessionGeneration.mayReport(from: session) else {
             PersistentLog.log(.dictationDeferred(

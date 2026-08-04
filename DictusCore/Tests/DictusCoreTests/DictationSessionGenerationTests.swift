@@ -96,6 +96,23 @@ final class DictationSessionGenerationTests: XCTestCase {
         XCTAssertFalse(generation.mayReport(from: transcriptionTask), "late success inserted text")
     }
 
+    /// The start paths matter as much as the stop path, and the cold one matters
+    /// most: the model load runs inside the same task and takes seconds, so a
+    /// cancel arriving mid-flight is ordinary rather than exotic. Work captured at
+    /// *start* has to be invalidated by the same abandon.
+    func testWorkCapturedWhenADictationStartsIsAlsoInvalidatedByAnAbandon() {
+        var generation = DictationSessionGeneration()
+        generation.beginSession()
+        let startTask = generation.current
+
+        generation.abandonSession()
+
+        XCTAssertFalse(
+            generation.mayReport(from: startTask),
+            "a cancelled start must not go on to open the microphone or publish .recording"
+        )
+    }
+
     /// Abandoning twice must not resurrect anything -- the watchdog and the user
     /// can both tear the same session down.
     func testAbandoningTwiceKeepsOutstandingWorkInvalid() {
