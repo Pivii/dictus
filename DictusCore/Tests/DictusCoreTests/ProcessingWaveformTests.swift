@@ -120,10 +120,14 @@ final class ProcessingWaveformTests: XCTestCase {
         XCTAssertGreaterThan(shortlyAfter, start)
     }
 
-    /// The reduced-motion fallback freezes the phase rather than flattening the
-    /// bars, so the frozen pose has to be the centred one -- a peak parked against
-    /// an edge would read as a rendering fault.
-    func testTheFrozenReducedMotionPoseIsCentred() {
+    /// Each stage starts from `centredPhase`, so the peak has to enter from the
+    /// middle rather than appear mid-travel against an edge.
+    ///
+    /// This assertion outlived the reduced-motion fallback it was first written
+    /// for: that freeze was removed by maintainer decision after device testing
+    /// (see `KeyboardWaveformDriver.needsDisplayLink`). The starting pose is still
+    /// worth pinning.
+    func testTheStartingPoseIsCentred() {
         XCTAssertEqual(
             ProcessingWaveform.peakPosition(phase: ProcessingWaveform.centredPhase),
             centre,
@@ -131,10 +135,34 @@ final class ProcessingWaveformTests: XCTestCase {
         )
     }
 
-    /// 0.7 Hz means a round trip in about 1.4 s, so a 3 s wait -- the short end of
-    /// today's polish -- shows two full sweeps.
-    func testACycleFitsTwiceIntoTheShortestExpectedWait() {
-        let cycleSeconds = 1 / ProcessingWaveform.phaseRate
-        XCTAssertLessThan(cycleSeconds * 2, 3.0)
+    /// The tempo is set by contrast with the animation it follows, not in the
+    /// abstract. The peak crosses the row in half a cycle; the sine crosses it in
+    /// one phase unit. Shipping 0.7 Hz made the peak 2.8x faster than the sine,
+    /// which read as rushed on device -- 0.5 Hz makes it exactly twice.
+    func testThePeakCrossesTheRowTwiceAsFastAsTheTranscriptionSweep() {
+        XCTAssertEqual(peakCrossingSeconds, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(transcriptionSweepCrossingSeconds, 2.0, accuracy: 0.0001)
+        XCTAssertEqual(
+            transcriptionSweepCrossingSeconds / peakCrossingSeconds, 2, accuracy: 0.0001
+        )
+    }
+
+    /// The shortest LLM stage measured on device ran 1 s. It has to show a whole
+    /// crossing, or the animation reads as a twitch and says nothing.
+    func testTheShortestMeasuredStageStillShowsAWholeCrossing() {
+        XCTAssertLessThanOrEqual(peakCrossingSeconds, 1.0)
+    }
+
+    /// Seconds for the peak to travel from one edge to the other: half a cycle,
+    /// since a full cycle is out and back.
+    private var peakCrossingSeconds: Double {
+        1 / (2 * ProcessingWaveform.phaseRate)
+    }
+
+    /// Seconds for the transcription sine's pattern to cross the row. Its phase
+    /// advances by `link.duration / 2` per frame, i.e. 0.5 per second, and the
+    /// pattern translates by one full row per unit of phase.
+    private var transcriptionSweepCrossingSeconds: Double {
+        1 / 0.5
     }
 }

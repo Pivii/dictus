@@ -47,11 +47,21 @@ public enum ProcessingWaveform {
     /// transcription sine's crest.
     public static let crest: Float = 0.7
 
-    /// Sweeps per second. One cycle carries the peak right and back again.
+    /// Sweeps per second. One cycle carries the peak right and back again, so a
+    /// single edge-to-edge crossing takes half of it.
     ///
-    /// WHY 0.7 Hz: slow enough that the eye follows the peak rather than seeing
-    /// a blur, fast enough that a glance during a 3 s wait catches it moving.
-    public static let phaseRate: Double = 0.7
+    /// WHY 0.5 Hz, and why the number is set by contrast rather than in the
+    /// abstract (device feedback, 2026-08-04): the transcription sine advances its
+    /// phase by 0.5 per second, so its pattern crosses the row in 2.00 s. At the
+    /// 0.7 Hz this first shipped with, the peak crossed in 0.71 s -- 2.8x faster,
+    /// which read as rushed rather than as a different tempo. At 0.5 Hz a crossing
+    /// takes exactly 1.00 s, twice the sine's speed. The tempo contrast is
+    /// deliberate and stays; it was the ratio that was wrong.
+    ///
+    /// The floor under this number is the shortest stage worth animating: measured
+    /// LLM stages ran 1 s and 3 s, and at 0.5 Hz even the 1 s one shows a whole
+    /// crossing rather than a twitch.
+    public static let phaseRate: Double = 0.5
 
     /// Where the peak sits, in bar units, at `phase` (in cycles).
     ///
@@ -84,11 +94,12 @@ public enum ProcessingWaveform {
         return baseline + (crest - baseline) * Float(bump)
     }
 
-    /// The phase whose peak sits at the centre of the row -- the shape the
-    /// reduced-motion fallback freezes on.
+    /// The phase whose peak sits at the centre of the row. Where each stage starts,
+    /// so the peak enters from the middle and sweeps out rather than appearing
+    /// mid-travel.
     ///
     /// WHY zero and not a computed value: `sin(0) == 0` already puts the peak at
-    /// `(barCount - 1) / 2`. Naming it stops the fallback from looking like it
+    /// `(barCount - 1) / 2`. Naming it stops the phase reset from looking like it
     /// forgot to initialise something.
     public static let centredPhase: Double = 0
 }
