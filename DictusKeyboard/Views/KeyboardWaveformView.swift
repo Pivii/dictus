@@ -2,30 +2,13 @@ import SwiftUI
 import QuartzCore
 import DictusCore
 
-/// Which of the overlay's three animations the bars are drawing (#267).
-///
-/// WHY a mode and not two booleans: the three are mutually exclusive, and the
-/// pre-#267 code already carried one boolean (`isProcessing`) that the view read
-/// to pick between two of them. A second boolean would have made "both true"
-/// expressible, which is the shape of bug this repo has paid for elsewhere.
-enum KeyboardWaveformAnimation {
-    /// Bar heights follow the microphone's energy. `.recording`.
-    case micLevels
-    /// Continuous sine sweep. `.transcribing`.
-    case sweep
-    /// Travelling peak scanning back and forth. `.processing`.
-    case travellingPeak
-    /// Nothing is animating -- flat bars.
-    case still
-}
-
 @MainActor
 final class KeyboardWaveformDriver: ObservableObject {
     static let shared = KeyboardWaveformDriver()
     private let instanceID = String(UUID().uuidString.prefix(8))
 
     @Published private(set) var displayLevels: [Float] = Array(repeating: 0, count: 30)
-    @Published private(set) var animation: KeyboardWaveformAnimation = .still
+    @Published private(set) var animation: WaveformAnimation = .still
     @Published private(set) var processingPhase: Double = 0
     @Published private(set) var renderTick: Int = 0
 
@@ -36,7 +19,6 @@ final class KeyboardWaveformDriver: ObservableObject {
     private var status: DictationStatus = .idle
     private var energyLevels: [Float] = []
     private var isVisible = false
-    private var reduceMotion = false
     private var activePresenterID: String?
     private var displayLink: CADisplayLink?
     private var lastTickTime: CFTimeInterval?
@@ -54,8 +36,7 @@ final class KeyboardWaveformDriver: ObservableObject {
         presenterID: String,
         status: DictationStatus,
         energyLevels: [Float],
-        isVisible: Bool,
-        reduceMotion: Bool
+        isVisible: Bool
     ) {
         let ownsPresentation = activePresenterID == presenterID
         if !isVisible && !ownsPresentation && activePresenterID != nil {
@@ -72,16 +53,15 @@ final class KeyboardWaveformDriver: ObservableObject {
         self.status = status
         self.energyLevels = energyLevels
         self.isVisible = isVisible
-        self.reduceMotion = reduceMotion
         animation = resolvedAnimation(for: status)
 
         // One phase drives both the transcription sine and the travelling peak, so
         // it restarts on every status change rather than only on the way out of an
         // animated state: `.transcribing -> .processing` (#267) hands the phase from
         // one curve to the other, and inheriting the sine's phase would drop the peak
-        // at an arbitrary point of its travel. Zero is also the pose the
-        // reduced-motion fallback freezes on -- `sin(0) == 0` puts the peak at the
-        // centre of the row (`ProcessingWaveform.centredPhase`).
+        // at an arbitrary point of its travel. `ProcessingWaveform.centredPhase` is
+        // zero, which starts the peak at the centre of the row and lets it sweep
+        // out from there.
         if status != previousStatus {
             processingPhase = ProcessingWaveform.centredPhase
         }
@@ -99,7 +79,7 @@ final class KeyboardWaveformDriver: ObservableObject {
     }
 
     /// Which animation `status` calls for.
-    private func resolvedAnimation(for status: DictationStatus) -> KeyboardWaveformAnimation {
+    private func resolvedAnimation(for status: DictationStatus) -> WaveformAnimation {
         switch status {
         case .recording:
             return .micLevels
@@ -114,22 +94,20 @@ final class KeyboardWaveformDriver: ObservableObject {
 
     /// Whether the current animation has to be redrawn every frame.
     ///
-    /// WHY reduced motion answers "no" for the travelling peak rather than the
-    /// driver picking a different shape (#267): the shape is fine -- it is the
-    /// travel that has to go. Freezing the phase leaves the peak parked at the
-    /// centre of the row (`ProcessingWaveform.centredPhase`), which is a
-    /// deliberate-looking pose rather than the blank strip a flat fallback gives,
-    /// and it costs no display link at all. The footer still names the stage, so
-    /// the still bars are never the only thing telling the user what is happening.
+    /// **There is deliberately no reduced-motion branch here.** An earlier round of
+    /// #267 froze the travelling peak at the centre of the row when Reduce Motion
+    /// was on. The maintainer tested it on device and removed it: the peak moves
+    /// identically whether or not the setting is on.
     ///
-    /// Recording and transcription are untouched: changing them is out of scope for
-    /// #267, and the mic-driven bars are feedback, not decoration.
+    /// That is a decision, not an oversight, and it was taken with the argument
+    /// against it stated -- the setting exists for people for whom a localized
+    /// object crossing the screen is costly, and dropping the fallback gives up
+    /// acceptance criterion 7 of the issue. To be revisited only if a user reports
+    /// it. Do not reinstate the freeze as a tidy-up.
     private var needsDisplayLink: Bool {
         switch animation {
-        case .micLevels, .sweep:
+        case .micLevels, .sweep, .travellingPeak:
             return true
-        case .travellingPeak:
-            return !reduceMotion
         case .still:
             return false
         }
@@ -158,7 +136,7 @@ final class KeyboardWaveformDriver: ObservableObject {
         // reads off `status=` on the probe line below.
         PersistentLog.log(.waveformAppeared(
             refreshID: renderTick,
-            isProcessing: animation == .sweep || animation == .travellingPeak,
+            isProcessing: animation.isSelfDriven,
             energyCount: energyLevels.count,
             killedState: false
         ))

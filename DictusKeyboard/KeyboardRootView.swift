@@ -66,12 +66,6 @@ struct KeyboardRootView: View {
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
-    /// Forwarded to the waveform driver so it can drop the travelling-peak
-    /// animation's motion (#267). Read here rather than in `KeyboardWaveformView`
-    /// because the driver decides whether to run a display link at all, and a
-    /// setting only the view knows about cannot stop one from starting.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     /// Fixed toolbar height, matching `KeyboardViewController.toolbarHeight`.
     private let toolbarHeight: CGFloat = 52
 
@@ -328,14 +322,6 @@ struct KeyboardRootView: View {
         .onChange(of: state.isKeyboardVisible) { _, _ in
             syncWaveformDriver()
         }
-        // The driver holds its own copy of the setting and decides from it whether
-        // to run a display link at all, so a toggle that arrives while the overlay
-        // is already up has to be pushed to it. Without this, turning Reduce Motion
-        // on mid-dictation leaves the peak sweeping, and turning it off leaves the
-        // bars frozen until the next status change.
-        .onChange(of: reduceMotion) { _, _ in
-            syncWaveformDriver()
-        }
         .onAppear {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardRootView",
@@ -380,8 +366,7 @@ struct KeyboardRootView: View {
             presenterID: controllerID,
             status: state.dictationStatus,
             energyLevels: state.waveformEnergy,
-            isVisible: !forceHidden && presentedMode == .recording,
-            reduceMotion: reduceMotion
+            isVisible: !forceHidden && presentedMode == .recording
         )
     }
 
