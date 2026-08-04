@@ -75,7 +75,75 @@ class KeyboardState: ObservableObject {
                     PersistentLog.log(.overlayHidden(status: dictationStatus.rawValue))
                 }
             }
+            // Third thing the funnel carries (#309): the stage the overlay draws.
+            // Unconditional, because the hold below is what decides whether a write
+            // that changed nothing is worth acting on -- and because a re-adoption of
+            // the same status is exactly what must not restart a floor already running.
+            advanceDisplayedStatus(to: dictationStatus)
         }
+    }
+
+    // MARK: - What the overlay draws (#309)
+
+    /// The dictation stage the recording overlay is drawing.
+    ///
+    /// Equal to `dictationStatus` except for up to
+    /// `TranscribingStageHold.minimumDisplayDuration` after a transcription that
+    /// returned faster than the eye can read it. Read by the overlay's label and by
+    /// the waveform driver, and by nothing else: the area mode, the watchdog, the
+    /// liveness predicate and every ownership decision keep reading the real status,
+    /// so a held stage can never delay the overlay appearing or disappearing.
+    ///
+    /// WHY the hold is owned here and not by `KeyboardRootView`: iOS keeps around nine
+    /// of those alive at once (#255, #281). One timer per view would mean nine timers
+    /// racing on one transition, and the eight views that are not the owner draw
+    /// nothing anyway. One per process, in the object that already owns the status, is
+    /// also what makes a single derived value feed both the label and the animation --
+    /// split them and the sine ends up under a "Traitement..." label, which is worse
+    /// than the flash this fixes.
+    @Published private(set) var displayedDictationStatus: DictationStatus = .idle
+
+    /// The rule. Pure and tested in DictusCore; the timer below is this surface's.
+    private var transcribingHold = TranscribingStageHold()
+
+    /// Fires when a held stage becomes drawable. At most one is ever in flight.
+    private var transcribingHoldTimer: Timer?
+
+    /// Move `displayedDictationStatus` toward `status`, honouring the floor.
+    private func advanceDisplayedStatus(to status: DictationStatus) {
+        switch transcribingHold.apply(status, now: Date()) {
+        case .unchanged:
+            break
+        case .draw(let drawn):
+            cancelTranscribingHoldTimer()
+            displayedDictationStatus = drawn
+        case .hold(let held, let interval):
+            cancelTranscribingHoldTimer()
+            logProbe(
+                "transcribingHoldArmed",
+                details: "pending=\(held.rawValue) holdMs=\(Int(interval * 1000))"
+            )
+            transcribingHoldTimer = Timer.scheduledTimer(
+                withTimeInterval: interval,
+                repeats: false
+            ) { [weak self] _ in
+                self?.releaseTranscribingHold()
+            }
+        }
+    }
+
+    /// The floor has elapsed. Draws whatever was waiting, and nothing at all if a
+    /// terminal status preempted it in the meantime.
+    private func releaseTranscribingHold() {
+        transcribingHoldTimer = nil
+        guard case .draw(let drawn) = transcribingHold.release(now: Date()) else { return }
+        logProbe("transcribingHoldReleased", details: "drawn=\(drawn.rawValue)")
+        displayedDictationStatus = drawn
+    }
+
+    private func cancelTranscribingHoldTimer() {
+        transcribingHoldTimer?.invalidate()
+        transcribingHoldTimer = nil
     }
 
     /// What the keyboard area is presenting: the key grid, a full-area picker or
@@ -284,6 +352,7 @@ class KeyboardState: ObservableObject {
     deinit {
         logProbe("deinit")
         stopWatchdog()
+        transcribingHoldTimer?.invalidate()
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.statusChanged)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.transcriptionReady)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.waveformUpdate)

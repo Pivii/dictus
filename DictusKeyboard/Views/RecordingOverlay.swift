@@ -20,6 +20,14 @@ import DictusCore
 /// driver that starts and stops with the overlay lifecycle, while this view stays a thin
 /// container around rendering and controls.
 struct RecordingOverlay: View {
+    /// The stage to draw — `KeyboardState.displayedDictationStatus`, not the raw
+    /// dictation status (#309). The two differ for at most half a second, while a
+    /// transcription that returned faster than the eye can read it is held on screen.
+    ///
+    /// The probes below therefore report what was *drawn*, which is what they are for.
+    /// The pipeline's own transitions are logged unchanged by `KeyboardState`, and the
+    /// hold itself by its `transcribingHoldArmed` / `transcribingHoldReleased` probes,
+    /// so a log still says both what happened and what the user saw.
     let dictationStatus: DictationStatus
     let waveformEnergy: [Float]
     let elapsedSeconds: Double
