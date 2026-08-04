@@ -138,10 +138,28 @@ struct DictusApp: App {
                     case .background:
                         PersistentLog.log(.appDidEnterBackground)
 
+                        // A cold start parked waiting for `.active` gets its last
+                        // chance here (#311), because `.active` is not coming — the
+                        // user swiped back before the app settled. Called from this
+                        // handler rather than from a `didEnterBackground` observer of
+                        // its own so the recovery and the `appDidEnterBackground` line
+                        // the regression grep pivots on come from one event and cannot
+                        // drift apart.
+                        let resumedColdStart = coordinator.resolvePendingColdStartOnBackground()
+
                         // Exhaustive by construction (#267): a status added later
                         // cannot be left out of this list and silently clear the
                         // cold-start flag mid-dictation.
-                        let isRecordingActive = DictationSessionLivenessPolicy.isActive(coordinator.status)
+                        //
+                        // A cold start resumed one line above counts as recording even
+                        // though `status` has not moved yet — it starts inside a Task.
+                        // Without the first clause, the two decisions below would clear
+                        // `coldStartActive` out from under it (killing the keyboard's
+                        // 15 s watchdog grace) and race a standby activity against the
+                        // recording one, both of which the comments below already warn
+                        // against for the healthy cold start.
+                        let isRecordingActive = resumedColdStart
+                            || DictationSessionLivenessPolicy.isActive(coordinator.status)
 
                         // Only clear cold start state if NOT recording.
                         // During cold start, the app transitions to background while recording
