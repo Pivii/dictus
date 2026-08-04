@@ -20,6 +20,14 @@ import DictusCore
 import FoundationModels
 #endif
 
+// Everything below is macOS-only. The guard is not about Apple Intelligence —
+// that is checked at runtime further down — it is about the entry point. The
+// `DictusCore-Package` scheme builds every target in the package, so pointing it
+// at an iOS destination compiles this harness too, and its `@available(macOS
+// 26.0, *)` uses are errors there. An executable still needs a `main` on every
+// platform it is built for, hence the `#else` stub rather than an empty file. (#301)
+#if os(macOS)
+
 // MARK: - Arg parsing
 
 func optionValue(_ name: String, in args: [String]) -> String? {
@@ -196,3 +204,10 @@ func runHarness() async {
 }
 
 await runHarness()
+
+#else
+
+print("error: polish-harness runs on macOS only (it drives Apple Foundation Models on a Mac).")
+exit(1)
+
+#endif

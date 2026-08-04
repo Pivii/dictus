@@ -73,11 +73,11 @@ Four sections of the pbxproj need updates: `PBXBuildFile`, `PBXFileReference`, `
 Runs:
 
 ```
-xcodebuild test -scheme DictusCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
+cd DictusCore && swift test
 xcodebuild build -project Dictus.xcodeproj -scheme DictusApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -configuration Debug
 ```
 
-`swift test` doesn't work on the DictusCore package because the package targets iOS 17 (some types pull in `SwiftUI` symbols not available on macOS). Use the iOS simulator destination.
+The DictusCore suite runs on the host Mac, not on a simulator. The package builds for macOS on purpose — that is what the `#if canImport(UIKit)` guards scattered through the library are for — and no test in the suite is gated to iOS, so a simulator destination costs minutes and buys no coverage. The app build below it is the part that needs a simulator.
 
 ## Curated decisions (no automation can guess these)
 
