@@ -61,11 +61,14 @@ class DictationCoordinator: ObservableObject {
     /// `schedulePolishPrewarm()`.
     private var polishPrewarmTask: Task<Void, Never>?
 
-    /// Incremented each time a new dictation actually starts (issue #60).
-    /// Delayed UI closures (RecordingView dismiss/auto-advance) capture the current
-    /// value and bail out if a newer session started before they fire, so a stale
-    /// reset can never tear down a fresh recording.
-    private(set) var dictationGeneration = 0
+    /// Which dictation the app is currently in. Moves when one starts and when one
+    /// is abandoned -- see `DictationSessionGeneration` for why both matter.
+    private var sessionGeneration = DictationSessionGeneration()
+
+    /// The generation delayed UI closures capture (issue #60). RecordingView's
+    /// dismiss and onboarding auto-advance bail out when it has moved on, so a
+    /// stale reset can never tear down a fresh recording.
+    var dictationGeneration: Int { sessionGeneration.current }
 
     /// Set when cold start dictation is deferred because the app is .inactive.
     /// Cleared in didBecomeActive when the retry happens.
@@ -338,8 +341,9 @@ class DictationCoordinator: ObservableObject {
             return
         }
 
-        // New session supersedes any pending delayed reset (issue #60).
-        dictationGeneration += 1
+        // New session supersedes any pending delayed reset (issue #60) and any
+        // outstanding work from the previous one (#267).
+        sessionGeneration.beginSession()
 
         // WHY this early return (only for Darwin notification path, NOT URL scheme):
         // iOS forbids starting an audio engine from background. If the engine isn't
@@ -490,12 +494,17 @@ class DictationCoordinator: ObservableObject {
         // The recording is ending; the prewarm (if it hasn't fired) is moot.
         polishPrewarmTask?.cancel()
 
+        // The session this run belongs to. Every write it makes below is gated on
+        // still being that session (#267) -- see `mayReport`.
+        let session = sessionGeneration.current
+
         dictationTask = Task {
             defer { self.isTranscribingInFlight = false }
             do {
                 let samples = audioEngine.collectSamples()
 
                 guard !samples.isEmpty else {
+                    guard mayReport(session, "empty recording") else { return }
                     handleError("No audio recorded")
                     return
                 }
@@ -504,6 +513,7 @@ class DictationCoordinator: ObservableObject {
 
                 guard audioDuration >= minimumRecordingDuration else {
                     PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
+                    guard mayReport(session, "short recording") else { return }
                     handleError("Recording too short")
                     return
                 }
@@ -570,6 +580,13 @@ class DictationCoordinator: ObservableObject {
                     finalText = text + ". "
                 }
 
+                // The gate that matters most. Everything below is irreversible from
+                // the user's point of view: it writes the transcription to the App
+                // Group and posts `transcriptionReady`, which is what makes the
+                // keyboard type it into their document. A dictation the user
+                // cancelled must not insert text a few seconds later (#267).
+                guard mayReport(session, "transcription result") else { return }
+
                 // Write result to App Group
                 lastResult = finalText
                 status = .ready
@@ -591,6 +608,11 @@ class DictationCoordinator: ObservableObject {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
                 }
+                // A cancelled task lands here, and so does one that failed for its
+                // own reasons after the session ended. Either way the failure
+                // belongs to a dictation that is over: writing `.failed` re-presents
+                // the recording screen the user just dismissed (#267).
+                guard mayReport(session, "transcription failure") else { return }
                 handleError(error.localizedDescription)
             }
         }
@@ -599,6 +621,12 @@ class DictationCoordinator: ObservableObject {
     /// Cancel the current dictation without transcribing.
     /// Called when the keyboard sends a cancel signal via Darwin notification.
     func cancelDictation() {
+        // FIRST, before anything is cancelled: from here on, the transcription task
+        // is working for a session that no longer exists and may not report (#267).
+        // `Task.cancel()` below is only a request -- neither WhisperKit nor Apple FM
+        // promises to return promptly -- so the task can still finish seconds from
+        // now, and this is what makes its outcome land nowhere.
+        sessionGeneration.abandonSession()
         dictationTask?.cancel()
         dictationTask = nil
         // Reset the transcribe re-entry flag so the next stop/cancel cycle can proceed.
@@ -668,6 +696,10 @@ class DictationCoordinator: ObservableObject {
             return
         }
 
+        // Same reasoning as `cancelDictation`: this teardown ends the session, so
+        // the task must not report into it afterwards (#267). The `.failed` written
+        // below is this handler speaking, not the task, and is not gated.
+        sessionGeneration.abandonSession()
         dictationTask?.cancel()
         dictationTask = nil
         isTranscribingInFlight = false
@@ -825,6 +857,27 @@ class DictationCoordinator: ObservableObject {
             return []
         }
         return models
+    }
+
+    /// Whether the transcription task started under `session` may still report.
+    ///
+    /// A dictation that was abandoned -- cancelled, watchdog-reset, interrupted --
+    /// moves the generation, so work started before it silently stops here instead
+    /// of writing status, inserting text or driving the Live Activity into a session
+    /// that no longer exists (#267).
+    ///
+    /// WHY it logs rather than returning quietly: a dropped outcome is invisible
+    /// otherwise, and the device log is how this class of bug gets diagnosed here.
+    /// The signature to look for afterwards is the absence of rejected Live Activity
+    /// transitions following a clean abandon.
+    private func mayReport(_ session: Int, _ what: String) -> Bool {
+        guard sessionGeneration.mayReport(from: session) else {
+            PersistentLog.log(.dictationDeferred(
+                reason: "abandoned session dropped \(what) (gen \(session) != \(sessionGeneration.current))"
+            ))
+            return false
+        }
+        return true
     }
 
     // MARK: - Stage Watchdog
