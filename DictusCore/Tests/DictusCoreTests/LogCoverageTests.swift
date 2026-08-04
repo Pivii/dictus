@@ -33,6 +33,7 @@ final class LogCoverageTests: XCTestCase {
             .coldStartFlagSet(active: true, context: "handleIncomingURL"),
             .coldStartRetry(keyboardStatus: "requested"),
             .coldStartDarwinFallback(elapsedMs: 510, status: "requested"),
+            .coldStartStranded(keyboardStatus: "requested", action: "retry"),
             .logExportCompleted(durationMs: 150, sizeBytes: 50000),
             .subscriptionError(action: "purchase", error: "productNotFound"),
             .appLaunched(version: "1.2"),
