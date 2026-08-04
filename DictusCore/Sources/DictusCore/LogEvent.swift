@@ -172,10 +172,11 @@ public enum LogEvent: Sendable {
     case coldStartDarwinFallback(elapsedMs: Int, status: String)
     /// A cold start was still parked when the app left the foreground, so
     /// `didBecomeActive` was never going to arrive (#311). `action` is the
-    /// `ColdStartResolution` that was applied: `dropped`, `report` or `retry`.
-    /// This is the line that makes the failure self-diagnosing — before it, a
-    /// stranded dictation left no trace at all beyond a `dictationDeferred`
-    /// followed by silence.
+    /// `ColdStartResolution` that was applied — `dropped`, `report` or `retry` —
+    /// or `expired`, which is the background assertion running out with the
+    /// request still unresolved. This is the line that makes the failure
+    /// self-diagnosing: before it, a stranded dictation left no trace at all
+    /// beyond a `dictationDeferred` followed by silence.
     case coldStartStranded(keyboardStatus: String, action: String)
 
     // MARK: Subscription

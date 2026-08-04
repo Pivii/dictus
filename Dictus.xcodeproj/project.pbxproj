@@ -21,6 +21,7 @@
 		AA000004 /* KeyboardRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100004 /* KeyboardRootView.swift */; };
 		AA000005 /* DictationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* DictationCoordinator.swift */; };
 		AA000264 /* ColdStartLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100264 /* ColdStartLaunch.swift */; };
+		AA000311 /* ColdStartResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100311 /* ColdStartResolution.swift */; };
 		AA000006 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000A /* DictationView.swift */; };
 		AA000007 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000B /* KeyboardState.swift */; };
 		AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F6 /* KeyboardLifecycleProbe.swift */; };
@@ -183,6 +184,7 @@
 		AA100008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA100009 /* DictationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinator.swift; sourceTree = "<group>"; };
 		AA100264 /* ColdStartLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartLaunch.swift; sourceTree = "<group>"; };
+		AA100311 /* ColdStartResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartResolution.swift; sourceTree = "<group>"; };
 		AA10000A /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		AA10000B /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
 		AA1000F6 /* KeyboardLifecycleProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLifecycleProbe.swift; sourceTree = "<group>"; };
@@ -360,6 +362,7 @@
 				AA100002 /* ContentView.swift */,
 				AA100009 /* DictationCoordinator.swift */,
 				AA100264 /* ColdStartLaunch.swift */,
+				AA100311 /* ColdStartResolution.swift */,
 				AA10000A /* DictationView.swift */,
 				AA1000F5 /* LiveActivityManager.swift */,
 				SS400001 /* Subscription */,
@@ -934,6 +937,7 @@
 				AA000002 /* ContentView.swift in Sources */,
 				AA000005 /* DictationCoordinator.swift in Sources */,
 				AA000264 /* ColdStartLaunch.swift in Sources */,
+				AA000311 /* ColdStartResolution.swift in Sources */,
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
 				AA00P201 /* PolishAvailability.swift in Sources */,

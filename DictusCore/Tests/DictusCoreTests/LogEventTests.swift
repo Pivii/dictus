@@ -126,6 +126,15 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.message, "keyboardStatus=idle action=dropped")
     }
 
+    func testColdStartStrandedReportsAnExpiredAssertion() {
+        // `expired` is the fourth vocabulary value and the only one that is not a
+        // `ColdStartResolution`: the background assertion ran out with the request
+        // still unresolved, which is a stranded start by definition.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "requested", action: "expired")
+        XCTAssertEqual(event.message, "keyboardStatus=requested action=expired")
+        XCTAssertEqual(event.level, .warning)
+    }
+
     // MARK: - Keyboard status message trail (#261)
 
     func testDictationMessageSetIsGreppableWithItsOwner() {
