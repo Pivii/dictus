@@ -9,7 +9,7 @@ final class BrandWaveformDriver: ObservableObject {
     @Published private(set) var displayLevels: [Float] = Array(repeating: 0, count: 30)
     @Published private(set) var processingPhase: Double = 0
     @Published private(set) var renderTick: Int = 0
-    @Published private(set) var isProcessing = false
+    @Published private(set) var animation: WaveformAnimation = .micLevels
 
     private let barCount = 30
     private let smoothingFactor: Float = 0.3
@@ -25,13 +25,17 @@ final class BrandWaveformDriver: ObservableObject {
         displayLink?.invalidate()
     }
 
-    func update(energyLevels: [Float], isProcessing: Bool, isActive: Bool) {
+    func update(energyLevels: [Float], animation: WaveformAnimation, isActive: Bool) {
+        let previousAnimation = self.animation
         self.energyLevels = energyLevels
-        self.isProcessing = isProcessing
+        self.animation = animation
         self.isActive = isActive
 
-        if !isProcessing {
-            processingPhase = 0
+        // Restart the phase whenever the animation changes rather than only on the
+        // way out of a self-driven one: the sine and the travelling peak share it,
+        // and handing the peak the sine's phase would drop it mid-travel (#267).
+        if animation != previousAnimation {
+            processingPhase = ProcessingWaveform.centredPhase
         }
 
         if !isActive {
@@ -45,8 +49,22 @@ final class BrandWaveformDriver: ObservableObject {
         stopLoop()
     }
 
+    /// Whether the current animation has to be redrawn every frame.
+    ///
+    /// `.still` draws a fixed picture, and `Canvas` re-renders on `renderTick`, so
+    /// without this a still waveform would repaint at display rate for as long as
+    /// its host kept `isActive` true.
+    private var needsDisplayLink: Bool {
+        switch animation {
+        case .micLevels, .sweep, .travellingPeak:
+            return true
+        case .still:
+            return false
+        }
+    }
+
     private func updateLoopState() {
-        if isActive {
+        if isActive && needsDisplayLink {
             startLoopIfNeeded()
         } else {
             stopLoop()
@@ -64,7 +82,7 @@ final class BrandWaveformDriver: ObservableObject {
 
         PersistentLog.log(.waveformAppeared(
             refreshID: renderTick,
-            isProcessing: isProcessing,
+            isProcessing: animation.isSelfDriven,
             energyCount: energyLevels.count,
             killedState: false
         ))
@@ -98,16 +116,19 @@ final class BrandWaveformDriver: ObservableObject {
         }
         lastRenderTime = now
 
-        if isProcessing {
-            processingPhase += link.duration / 2.0
-        } else {
+        switch animation {
+        case .micLevels:
             tickLevels()
+        case .sweep:
+            processingPhase += link.duration / 2.0
+        case .travellingPeak:
+            processingPhase += link.duration * ProcessingWaveform.phaseRate
+        case .still:
+            break
         }
 
         if now.timeIntervalSince(lastHeartbeatTime) >= 2.0 {
-            let sourceLevels: [Float] = isProcessing
-                ? (0..<barCount).map { processingEnergy(at: $0, phase: processingPhase) }
-                : displayLevels
+            let sourceLevels: [Float] = levels(for: animation)
             let avg = sourceLevels.isEmpty ? Float(0) : sourceLevels.reduce(0, +) / Float(sourceLevels.count)
             PersistentLog.log(.waveformHeartbeat(
                 renderTick: renderTick,
@@ -146,6 +167,18 @@ final class BrandWaveformDriver: ObservableObject {
         let normalizedIndex = Double(index) / Double(max(barCount - 1, 1))
         let sineValue = sin(2 * .pi * (normalizedIndex + phase))
         return Float(0.2 + 0.25 * (sineValue + 1.0))
+    }
+
+    /// The bar heights the current animation is drawing, for the heartbeat log.
+    private func levels(for animation: WaveformAnimation) -> [Float] {
+        switch animation {
+        case .sweep:
+            return (0..<barCount).map { processingEnergy(at: $0, phase: processingPhase) }
+        case .travellingPeak:
+            return ProcessingWaveform.levels(phase: processingPhase)
+        case .micLevels, .still:
+            return displayLevels
+        }
     }
 
     private func targetLevels() -> [Float] {
@@ -190,11 +223,14 @@ public struct BrandWaveform: View {
     /// Fixed height of the waveform container. Bars grow within this space.
     public var maxHeight: CGFloat = 80
 
-    /// When true, generates a synthetic sinusoidal wave pattern instead of using energyLevels.
-    /// WHY: During transcription processing, the audio engine is idle but we want continuous
-    /// visual feedback. A traveling sine wave maintains waveform continuity from the recording
-    /// state while indicating "processing" rather than "recording".
-    public var isProcessing: Bool = false
+    /// Which animation the bars draw.
+    ///
+    /// WHY the two synthetic ones exist at all: after the microphone stops, the
+    /// audio engine is idle but the wait is not over, and bars frozen at their last
+    /// levels read as a hang. `.sweep` carries continuity from the recording state
+    /// through transcription; `.travellingPeak` says the language model is running,
+    /// which is a different and much longer wait (#267).
+    public var animation: WaveformAnimation = .micLevels
 
     /// When false, pauses the TimelineView animation schedule (stops CADisplayLink).
     /// WHY: Some hosts need a hard kill switch when the view is still structurally
@@ -203,10 +239,10 @@ public struct BrandWaveform: View {
     public var isActive: Bool = true
 
     public init(energyLevels: [Float] = [], maxHeight: CGFloat = 80,
-                isProcessing: Bool = false, isActive: Bool = true) {
+                animation: WaveformAnimation = .micLevels, isActive: Bool = true) {
         self.energyLevels = energyLevels
         self.maxHeight = maxHeight
-        self.isProcessing = isProcessing
+        self.animation = animation
         self.isActive = isActive
     }
 
@@ -223,7 +259,7 @@ public struct BrandWaveform: View {
             .onAppear {
                 driver.update(
                     energyLevels: energyLevels,
-                    isProcessing: isProcessing,
+                    animation: animation,
                     isActive: isActive
                 )
             }
@@ -233,21 +269,21 @@ public struct BrandWaveform: View {
             .onChange(of: energyLevels) { _, newLevels in
                 driver.update(
                     energyLevels: newLevels,
-                    isProcessing: isProcessing,
+                    animation: animation,
                     isActive: isActive
                 )
             }
-            .onChange(of: isProcessing) { _, newValue in
+            .onChange(of: animation) { _, newValue in
                 driver.update(
                     energyLevels: energyLevels,
-                    isProcessing: newValue,
+                    animation: newValue,
                     isActive: isActive
                 )
             }
             .onChange(of: isActive) { _, newValue in
                 driver.update(
                     energyLevels: energyLevels,
-                    isProcessing: isProcessing,
+                    animation: animation,
                     isActive: newValue
                 )
             }
@@ -272,16 +308,25 @@ public struct BrandWaveform: View {
 
             for index in 0..<barCount {
                 let energy: Float
-                if driver.isProcessing {
+                switch driver.animation {
+                case .sweep:
                     energy = driver.processingEnergy(at: index, phase: driver.processingPhase)
-                } else {
+                case .travellingPeak:
+                    energy = ProcessingWaveform.level(
+                        at: index,
+                        peakPosition: ProcessingWaveform.peakPosition(phase: driver.processingPhase)
+                    )
+                case .micLevels, .still:
                     energy = index < driver.displayLevels.count ? driver.displayLevels[index] : 0
                 }
 
                 // Minimum bar height so the waveform baseline is always visible,
                 // even in complete silence. 2pt = thin line, enough to see the
                 // colored bar pattern (blue center, gray edges) without looking "active".
-                let minHeight: CGFloat = driver.isProcessing ? 4 : 2
+                // The self-driven animations sit on the taller floor: the travelling
+                // peak leaves most of its bars at a 0.05 baseline, so without it the
+                // row all but disappears between crossings.
+                let minHeight: CGFloat = driver.animation.isSelfDriven ? 4 : 2
                 let height = max(minHeight + CGFloat(energy) * (maxHeight - minHeight), minHeight)
 
                 let x = CGFloat(index) * (barWidth + barSpacing)
@@ -339,7 +384,7 @@ public struct BrandWaveform: View {
 #Preview("Processing") {
     ZStack {
         Color(hex: 0x0A1628).ignoresSafeArea()
-        BrandWaveform(maxHeight: 120, isProcessing: true)
+        BrandWaveform(maxHeight: 120, animation: .sweep)
             .opacity(0.3)
             .padding(.horizontal)
     }

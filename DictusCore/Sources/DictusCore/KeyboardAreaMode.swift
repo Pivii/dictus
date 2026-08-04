@@ -54,11 +54,16 @@ public extension DictationStatus {
     /// whether the recording overlay should be filling it.
     ///
     /// WHY an exhaustive switch and not a `Set` membership test: adding a case to
-    /// `DictationStatus` (`processing`, #267) must not silently fall through to
-    /// "does not own the area". The compiler stops on this function instead.
+    /// `DictationStatus` must not silently fall through to "does not own the area".
+    /// The compiler stops on this function instead, which is how `processing`
+    /// (#267) got here.
+    ///
+    /// `processing` owning the area is what keeps the overlay on screen through the
+    /// LLM stage: it resolves to the same `.recording` mode every other in-flight
+    /// status does, so the view controller sees no new mode and no new height.
     var ownsKeyboardArea: Bool {
         switch self {
-        case .requested, .recording, .transcribing:
+        case .requested, .recording, .transcribing, .processing:
             return true
         case .idle, .ready, .failed:
             return false

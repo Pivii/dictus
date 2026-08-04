@@ -138,9 +138,10 @@ struct DictusApp: App {
                     case .background:
                         PersistentLog.log(.appDidEnterBackground)
 
-                        let isRecordingActive = coordinator.status == .recording
-                            || coordinator.status == .requested
-                            || coordinator.status == .transcribing
+                        // Exhaustive by construction (#267): a status added later
+                        // cannot be left out of this list and silently clear the
+                        // cold-start flag mid-dictation.
+                        let isRecordingActive = DictationSessionLivenessPolicy.isActive(coordinator.status)
 
                         // Only clear cold start state if NOT recording.
                         // During cold start, the app transitions to background while recording

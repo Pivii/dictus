@@ -8,7 +8,7 @@ final class KeyboardWaveformDriver: ObservableObject {
     private let instanceID = String(UUID().uuidString.prefix(8))
 
     @Published private(set) var displayLevels: [Float] = Array(repeating: 0, count: 30)
-    @Published private(set) var isProcessing = false
+    @Published private(set) var animation: WaveformAnimation = .still
     @Published private(set) var processingPhase: Double = 0
     @Published private(set) var renderTick: Int = 0
 
@@ -32,7 +32,12 @@ final class KeyboardWaveformDriver: ObservableObject {
         displayLink?.invalidate()
     }
 
-    func sync(presenterID: String, status: DictationStatus, energyLevels: [Float], isVisible: Bool) {
+    func sync(
+        presenterID: String,
+        status: DictationStatus,
+        energyLevels: [Float],
+        isVisible: Bool
+    ) {
         let ownsPresentation = activePresenterID == presenterID
         if !isVisible && !ownsPresentation && activePresenterID != nil {
             return
@@ -44,13 +49,21 @@ final class KeyboardWaveformDriver: ObservableObject {
             activePresenterID = nil
         }
 
+        let previousStatus = self.status
         self.status = status
         self.energyLevels = energyLevels
         self.isVisible = isVisible
-        isProcessing = status == .transcribing
+        animation = resolvedAnimation(for: status)
 
-        if status != .transcribing {
-            processingPhase = 0
+        // One phase drives both the transcription sine and the travelling peak, so
+        // it restarts on every status change rather than only on the way out of an
+        // animated state: `.transcribing -> .processing` (#267) hands the phase from
+        // one curve to the other, and inheriting the sine's phase would drop the peak
+        // at an arbitrary point of its travel. `ProcessingWaveform.centredPhase` is
+        // zero, which starts the peak at the centre of the row and lets it sweep
+        // out from there.
+        if status != previousStatus {
+            processingPhase = ProcessingWaveform.centredPhase
         }
 
         if status == .requested || status == .idle || status == .ready {
@@ -65,8 +78,43 @@ final class KeyboardWaveformDriver: ObservableObject {
         updateDisplayLinkState()
     }
 
+    /// Which animation `status` calls for.
+    private func resolvedAnimation(for status: DictationStatus) -> WaveformAnimation {
+        switch status {
+        case .recording:
+            return .micLevels
+        case .transcribing:
+            return .sweep
+        case .processing:
+            return .travellingPeak
+        case .idle, .requested, .ready, .failed:
+            return .still
+        }
+    }
+
+    /// Whether the current animation has to be redrawn every frame.
+    ///
+    /// **There is deliberately no reduced-motion branch here.** An earlier round of
+    /// #267 froze the travelling peak at the centre of the row when Reduce Motion
+    /// was on. The maintainer tested it on device and removed it: the peak moves
+    /// identically whether or not the setting is on.
+    ///
+    /// That is a decision, not an oversight, and it was taken with the argument
+    /// against it stated -- the setting exists for people for whom a localized
+    /// object crossing the screen is costly, and dropping the fallback gives up
+    /// acceptance criterion 7 of the issue. To be revisited only if a user reports
+    /// it. Do not reinstate the freeze as a tidy-up.
+    private var needsDisplayLink: Bool {
+        switch animation {
+        case .micLevels, .sweep, .travellingPeak:
+            return true
+        case .still:
+            return false
+        }
+    }
+
     private func updateDisplayLinkState() {
-        let shouldRun = isVisible && (status == .recording || status == .transcribing)
+        let shouldRun = isVisible && needsDisplayLink
 
         if shouldRun {
             startDisplayLinkIfNeeded()
@@ -82,9 +130,13 @@ final class KeyboardWaveformDriver: ObservableObject {
         link.add(to: .main, forMode: .common)
         displayLink = link
 
+        // `isProcessing` keeps its pre-#267 meaning here -- "the bars are drawing
+        // themselves rather than following the mic" -- so log lines from older
+        // builds stay comparable. Which of the two self-driven animations it is
+        // reads off `status=` on the probe line below.
         PersistentLog.log(.waveformAppeared(
             refreshID: renderTick,
-            isProcessing: status == .transcribing,
+            isProcessing: animation.isSelfDriven,
             energyCount: energyLevels.count,
             killedState: false
         ))
@@ -122,12 +174,14 @@ final class KeyboardWaveformDriver: ObservableObject {
             }
         }
 
-        switch status {
-        case .recording:
+        switch animation {
+        case .micLevels:
             tickRecording()
-        case .transcribing:
+        case .sweep:
             processingPhase += link.duration / 2.0
-        default:
+        case .travellingPeak:
+            processingPhase += link.duration * ProcessingWaveform.phaseRate
+        case .still:
             break
         }
 
@@ -164,9 +218,12 @@ final class KeyboardWaveformDriver: ObservableObject {
         let targets = targetLevels()
 
         let sourceLevels: [Float]
-        if status == .transcribing {
+        switch animation {
+        case .sweep:
             sourceLevels = (0..<barCount).map { processingEnergy(at: $0, phase: processingPhase) }
-        } else {
+        case .travellingPeak:
+            sourceLevels = ProcessingWaveform.levels(phase: processingPhase)
+        case .micLevels, .still:
             sourceLevels = displayLevels
         }
 
@@ -176,7 +233,7 @@ final class KeyboardWaveformDriver: ObservableObject {
             avgLevel: average,
             energyCount: energyLevels.count
         ))
-        if status == .recording {
+        if animation == .micLevels {
             logProbe(
                 "waveformShape",
                 details: "target{\(waveformStatsDetails(targets))} display{\(waveformStatsDetails(displayLevels))}"
@@ -255,12 +312,7 @@ struct KeyboardWaveformView: View {
     var body: some View {
         HStack(spacing: barSpacing) {
             ForEach(0..<barCount, id: \.self) { index in
-                let energy: Float = driver.isProcessing
-                    ? driver.processingEnergy(at: index, phase: driver.processingPhase)
-                    : (index < driver.displayLevels.count ? driver.displayLevels[index] : 0)
-
-                let minHeight: CGFloat = driver.isProcessing ? 4 : 2
-                let height = max(minHeight + CGFloat(energy) * (maxHeight - minHeight), minHeight)
+                let height = barHeight(at: index)
 
                 Capsule()
                     .fill(resolvedBarColor(at: index))
@@ -268,6 +320,34 @@ struct KeyboardWaveformView: View {
             }
         }
         .frame(height: maxHeight)
+    }
+
+    /// Height of one bar under whichever animation is running.
+    ///
+    /// The two self-driven animations share the 4 pt floor: it is what keeps the
+    /// row reading as a waveform at rest rather than as a blank strip. The
+    /// travelling peak needs it more than the sine does -- its baseline is 0.05,
+    /// so most of its bars sit on that floor at any instant (#267).
+    private func barHeight(at index: Int) -> CGFloat {
+        let energy: Float
+        let minHeight: CGFloat
+
+        switch driver.animation {
+        case .sweep:
+            energy = driver.processingEnergy(at: index, phase: driver.processingPhase)
+            minHeight = 4
+        case .travellingPeak:
+            energy = ProcessingWaveform.level(
+                at: index,
+                peakPosition: ProcessingWaveform.peakPosition(phase: driver.processingPhase)
+            )
+            minHeight = 4
+        case .micLevels, .still:
+            energy = index < driver.displayLevels.count ? driver.displayLevels[index] : 0
+            minHeight = 2
+        }
+
+        return max(minHeight + CGFloat(energy) * (maxHeight - minHeight), minHeight)
     }
 
     private func resolvedBarColor(at index: Int) -> Color {

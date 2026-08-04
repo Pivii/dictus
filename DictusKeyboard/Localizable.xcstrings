@@ -122,6 +122,17 @@
         }
       }
     },
+    "Processing..." : {
+      "comment" : "Recording overlay caption while the LLM stage runs on the transcript (issue #267).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traitement..."
+          }
+        }
+      }
+    },
     "Recording interrupted. Please try again." : {
       "comment" : "Toolbar message shown when the keyboard clears a recording whose app was terminated (issue #261).",
       "localizations" : {

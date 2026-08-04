@@ -40,11 +40,17 @@ class DictationCoordinator: ObservableObject {
     /// Used by DictusApp to detect "warm but engine-dead" state after Power button stop.
     var isEngineRunning: Bool { audioEngine.isEngineRunning }
 
-    /// Transcription timeout watchdog: fires after 30s in .transcribing state.
-    /// WHY 30s: WhisperKit transcription of a typical dictation (<60s audio) should
-    /// complete in under 10s even on older devices. 30s provides generous margin
-    /// while still catching genuinely stuck transcriptions.
-    private var transcriptionWatchdog: Timer?
+    /// Timeout watchdog for whichever post-recording stage is running.
+    ///
+    /// WHY one timer for two stages (#267): they are mutually exclusive and the
+    /// failure it catches is the same one -- a stage that never hands over, leaving
+    /// the keyboard's overlay up with nothing behind it. What differs is only how
+    /// long is too long, which `stageWatchdogTimeout(for:)` answers.
+    ///
+    /// The status it was armed for is captured by the timer's own closure, which
+    /// re-checks it before firing -- a stage that has handed over to the next one
+    /// must not be torn down by the previous one's timer.
+    private var stageWatchdog: Timer?
 
     private var whisperKit: WhisperKit?
     private var currentModelName: String?
@@ -55,11 +61,14 @@ class DictationCoordinator: ObservableObject {
     /// `schedulePolishPrewarm()`.
     private var polishPrewarmTask: Task<Void, Never>?
 
-    /// Incremented each time a new dictation actually starts (issue #60).
-    /// Delayed UI closures (RecordingView dismiss/auto-advance) capture the current
-    /// value and bail out if a newer session started before they fire, so a stale
-    /// reset can never tear down a fresh recording.
-    private(set) var dictationGeneration = 0
+    /// Which dictation the app is currently in. Moves when one starts and when one
+    /// is abandoned -- see `DictationSessionGeneration` for why both matter.
+    private var sessionGeneration = DictationSessionGeneration()
+
+    /// The generation delayed UI closures capture (issue #60). RecordingView's
+    /// dismiss and onboarding auto-advance bail out when it has moved on, so a
+    /// stale reset can never tear down a fresh recording.
+    var dictationGeneration: Int { sessionGeneration.current }
 
     /// Set when cold start dictation is deferred because the app is .inactive.
     /// Cleared in didBecomeActive when the retry happens.
@@ -332,8 +341,9 @@ class DictationCoordinator: ObservableObject {
             return
         }
 
-        // New session supersedes any pending delayed reset (issue #60).
-        dictationGeneration += 1
+        // New session supersedes any pending delayed reset (issue #60) and any
+        // outstanding work from the previous one (#267).
+        sessionGeneration.beginSession()
 
         // WHY this early return (only for Darwin notification path, NOT URL scheme):
         // iOS forbids starting an audio engine from background. If the engine isn't
@@ -392,15 +402,26 @@ class DictationCoordinator: ObservableObject {
         // Configure audio session NOW while we're in the foreground.
         try? audioEngine.configureAudioSession()
 
+        // The session these start paths belong to. `ensureMicrophonePermission` is
+        // an await even when permission is already granted, so a cancel queued on
+        // the main actor can land between here and the first write below (#267).
+        let session = sessionGeneration.current
+
         if audioEngine.isEngineRunning {
             // WARM START: engine already running → purge + record (instant)
             dictationTask = Task {
                 do {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
+                        guard mayReport(session, "permission denial") else { return }
                         handleError("Microphone permission denied")
                         return
                     }
+                    // Before `startRecording`, not merely before the status write:
+                    // a cancelled start that reached the engine would leave the mic
+                    // capturing for a dictation the user called off -- the orphaned
+                    // engine of #60, arrived at from the other end.
+                    guard mayReport(session, "warm start") else { return }
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
                     try audioEngine.startRecording()
@@ -409,6 +430,7 @@ class DictationCoordinator: ObservableObject {
                     await verifyAudioFlow()
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
+                    guard mayReport(session, "warm start failure") else { return }
                     handleError(error.localizedDescription)
                 }
             }
@@ -430,9 +452,11 @@ class DictationCoordinator: ObservableObject {
                 do {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
+                        guard mayReport(session, "permission denial") else { return }
                         handleError("Microphone permission denied")
                         return
                     }
+                    guard mayReport(session, "cold start") else { return }
                     try audioEngine.startRecording()
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
@@ -448,7 +472,13 @@ class DictationCoordinator: ObservableObject {
                     self.setModelLoadState(.ready, reason: "cold-start-success")
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Cold start engine load: \(error.localizedDescription)"))
+                    // The model load runs inside this task and takes seconds on a
+                    // cold start, so this is the widest window in the app for a
+                    // cancel to arrive mid-flight. `setModelLoadState` stays ungated
+                    // on purpose: it describes the model, which outlives any one
+                    // dictation, and the next session needs it to be accurate.
                     self.setModelLoadState(.idle, reason: "cold-start-failed")
+                    guard self.mayReport(session, "cold start failure") else { return }
                     self.handleError(error.localizedDescription)
                 }
             }
@@ -484,12 +514,17 @@ class DictationCoordinator: ObservableObject {
         // The recording is ending; the prewarm (if it hasn't fired) is moot.
         polishPrewarmTask?.cancel()
 
+        // The session this run belongs to. Every write it makes below is gated on
+        // still being that session (#267) -- see `mayReport`.
+        let session = sessionGeneration.current
+
         dictationTask = Task {
             defer { self.isTranscribingInFlight = false }
             do {
                 let samples = audioEngine.collectSamples()
 
                 guard !samples.isEmpty else {
+                    guard mayReport(session, "empty recording") else { return }
                     handleError("No audio recorded")
                     return
                 }
@@ -498,6 +533,7 @@ class DictationCoordinator: ObservableObject {
 
                 guard audioDuration >= minimumRecordingDuration else {
                     PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
+                    guard mayReport(session, "short recording") else { return }
                     handleError("Recording too short")
                     return
                 }
@@ -533,10 +569,26 @@ class DictationCoordinator: ObservableObject {
 
                 // Polish layer (#141) — passes raw through when toggle off, when language
                 // detection skips, when the engine throws/cancels, or when the guardrail rejects.
+                //
+                // The status moves to `.processing` from inside the call rather than
+                // before it (#267): every one of those pass-through paths returns in
+                // about a millisecond, and announcing a stage for them would flash a
+                // label and a new animation for a single frame. `onEngineWillRun`
+                // fires only once an engine worth waiting for is about to run.
                 let text = await PolishCoordinator.shared.polish(
                     raw: rawText,
                     languagePolicy: languagePolicy,
-                    recordingDuration: audioDuration
+                    recordingDuration: audioDuration,
+                    // Gated like every other write this task makes: the callback
+                    // fires from inside `polish`, which a cancel does not interrupt,
+                    // so an abandoned dictation would otherwise reopen the keyboard
+                    // overlay on "Traitement..." and drive the Live Activity into a
+                    // stage it had already left (#267).
+                    onEngineWillRun: { [weak self] in
+                        guard let self, self.mayReport(session, "processing stage") else { return }
+                        self.updateStatus(.processing)
+                        LiveActivityManager.shared.transitionToProcessing()
+                    }
                 )
 
                 // Append trailing separator so chained dictations don't stick together.
@@ -553,6 +605,13 @@ class DictationCoordinator: ObservableObject {
                 } else {
                     finalText = text + ". "
                 }
+
+                // The gate that matters most. Everything below is irreversible from
+                // the user's point of view: it writes the transcription to the App
+                // Group and posts `transcriptionReady`, which is what makes the
+                // keyboard type it into their document. A dictation the user
+                // cancelled must not insert text a few seconds later (#267).
+                guard mayReport(session, "transcription result") else { return }
 
                 // Write result to App Group
                 lastResult = finalText
@@ -575,6 +634,11 @@ class DictationCoordinator: ObservableObject {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
                 }
+                // A cancelled task lands here, and so does one that failed for its
+                // own reasons after the session ended. Either way the failure
+                // belongs to a dictation that is over: writing `.failed` re-presents
+                // the recording screen the user just dismissed (#267).
+                guard mayReport(session, "transcription failure") else { return }
                 handleError(error.localizedDescription)
             }
         }
@@ -583,11 +647,17 @@ class DictationCoordinator: ObservableObject {
     /// Cancel the current dictation without transcribing.
     /// Called when the keyboard sends a cancel signal via Darwin notification.
     func cancelDictation() {
+        // FIRST, before anything is cancelled: from here on, the transcription task
+        // is working for a session that no longer exists and may not report (#267).
+        // `Task.cancel()` below is only a request -- neither WhisperKit nor Apple FM
+        // promises to return promptly -- so the task can still finish seconds from
+        // now, and this is what makes its outcome land nowhere.
+        sessionGeneration.abandonSession()
         dictationTask?.cancel()
         dictationTask = nil
         // Reset the transcribe re-entry flag so the next stop/cancel cycle can proceed.
         isTranscribingInFlight = false
-        stopTranscriptionWatchdog()
+        stopStageWatchdog()
 
         // Discard samples but keep engine alive for next recording
         _ = audioEngine.collectSamples()
@@ -599,6 +669,13 @@ class DictationCoordinator: ObservableObject {
         SoundFeedbackService.playRecordCancel()
         // Return Dynamic Island to standby (cancel = no transcription, go back to "On")
         Task { await LiveActivityManager.shared.returnToStandby() }
+        // `returnToStandby` only comes back from .recording/.ready/.failed, and the
+        // recording watchdog below only unsticks .recording -- so a dictation
+        // abandoned inside a post-recording stage had no path home at all, and the
+        // pill stayed on that stage and rejected the next dictation (#267 review).
+        // The two calls are mutually exclusive by their own guards, so the order
+        // between them does not matter.
+        LiveActivityManager.shared.recoverFromAbandonedStage()
         // Arm watchdog: safety net if returnToStandby's guard rejects.
         LiveActivityManager.shared.startRecordingWatchdog()
         updateStatus(.idle)
@@ -613,8 +690,14 @@ class DictationCoordinator: ObservableObject {
     /// Issue #60: a UI-only reset while the pipeline is active orphans the audio
     /// engine (keeps capturing) and the Live Activity (stuck on REC), so an active
     /// session must go through the real teardown instead.
+    ///
+    /// WHY the shared predicate and not a list of cases spelled out here (#267):
+    /// this asks "is a dictation in flight", which is the exact question
+    /// `isActive` answers over an exhaustive switch. A hand-written list is a list
+    /// the next status case can be left out of, silently, and this one guards a
+    /// teardown -- the same shape of omission #260 and #261 were made of.
     func resetStatus() {
-        if status == .recording || status == .transcribing || status == .requested {
+        if DictationSessionLivenessPolicy.isActive(status) {
             cancelDictation()
             return
         }
@@ -631,17 +714,22 @@ class DictationCoordinator: ObservableObject {
     /// Activity (LiveActivityManager handles its own end via the same notification).
     /// Issue #106.
     private func handleAudioInterruptionDuringDictation() {
-        let wasActive = (status == .recording || status == .requested || status == .transcribing)
+        // Same predicate as `resetStatus` and for the same reason (#267).
+        let wasActive = DictationSessionLivenessPolicy.isActive(status)
         guard wasActive else {
             // Engine died while idle — nothing to roll back. The standby DI is
             // dismissed by LiveActivityManager via the same notification.
             return
         }
 
+        // Same reasoning as `cancelDictation`: this teardown ends the session, so
+        // the task must not report into it afterwards (#267). The `.failed` written
+        // below is this handler speaking, not the task, and is not gated.
+        sessionGeneration.abandonSession()
         dictationTask?.cancel()
         dictationTask = nil
         isTranscribingInFlight = false
-        stopTranscriptionWatchdog()
+        stopStageWatchdog()
 
         bufferEnergy = []
         bufferSeconds = 0
@@ -745,9 +833,15 @@ class DictationCoordinator: ObservableObject {
     /// anything. It is auditing state a dead one left behind, and `status` is
     /// correctly `.idle` here.
     private func reconcileOrphanedDictationState() {
+        // WHY the cases are spelled out here and not asked of `isActive` (#267):
+        // this list is deliberately narrower. `.requested` is active but is written
+        // by the keyboard moments before it launches this app, so reconciling it at
+        // launch would kill every cold-start dictation. `.processing` belongs with
+        // `.recording` and `.transcribing`: the app that wrote it is the app that
+        // just died, so a launch finding it is finding a corpse.
         guard let raw = defaults.string(forKey: SharedKeys.dictationStatus),
               let stored = DictationStatus(rawValue: raw),
-              stored == .recording || stored == .transcribing else { return }
+              stored == .recording || stored == .transcribing || stored == .processing else { return }
 
         PersistentLog.log(.dictationStateReconciled(
             source: "app-launch",
@@ -791,23 +885,96 @@ class DictationCoordinator: ObservableObject {
         return models
     }
 
-    // MARK: - Transcription Watchdog
+    /// Whether the transcription task started under `session` may still report.
+    ///
+    /// A dictation that was abandoned -- cancelled, watchdog-reset, interrupted --
+    /// moves the generation, so work started before it silently stops here instead
+    /// of writing status, inserting text or driving the Live Activity into a session
+    /// that no longer exists (#267).
+    ///
+    /// WHY it logs rather than returning quietly: a dropped outcome is invisible
+    /// otherwise, and the device log is how this class of bug gets diagnosed here.
+    /// The signature to look for afterwards is the absence of rejected Live Activity
+    /// transitions following a clean abandon.
+    ///
+    /// ### What is deliberately NOT gated, and why
+    ///
+    /// Every `await` in a session-owned task is a place a cancel can land, but not
+    /// every continuation past one publishes session state. These were each checked
+    /// rather than gated by reflex:
+    ///
+    /// - `verifyAudioFlow()` already opens with `guard status == .recording`, and an
+    ///   abandoned session is `.idle` by then. Its engine restart is unreachable
+    ///   after a cancel.
+    /// - `setModelLoadState(...)` describes the *model*, which outlives any one
+    ///   dictation. Suppressing it would leave the next session reading a load state
+    ///   that never happened.
+    /// - `schedulePolishPrewarm()` warms a model and publishes nothing.
+    /// - The stage watchdog re-checks `self.status` against the status it was armed
+    ///   for before it fires.
+    /// - `pendingColdStartDictation` is retried from `didBecomeActive` only when the
+    ///   App Group still reads `.requested`; a cancel writes `.idle` first, so the
+    ///   deferred start does not resurrect.
+    private func mayReport(_ session: Int, _ what: String) -> Bool {
+        guard sessionGeneration.mayReport(from: session) else {
+            PersistentLog.log(.dictationDeferred(
+                reason: "abandoned session dropped \(what) (gen \(session) != \(sessionGeneration.current))"
+            ))
+            return false
+        }
+        return true
+    }
 
-    private func startTranscriptionWatchdog() {
-        stopTranscriptionWatchdog()
-        transcriptionWatchdog = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+    // MARK: - Stage Watchdog
+
+    /// How long a post-recording stage may run before it is declared stuck.
+    /// Nil for statuses no stage watchdog covers.
+    ///
+    /// WHY 30s for transcription: WhisperKit transcription of a typical dictation
+    /// (<60s audio) should complete in under 10s even on older devices. 30s provides
+    /// generous margin while still catching genuinely stuck transcriptions.
+    ///
+    /// WHY 60s for the LLM stage (#267) and not the same 30s: generation time scales
+    /// with the output, which is exactly why this stage was split out, and the cost
+    /// of firing early is higher here than during transcription -- the transcript
+    /// already exists and the recovery below throws it away with the rest of the
+    /// session. The number is a last-resort unfreeze, not a latency budget.
+    private func stageWatchdogTimeout(for status: DictationStatus) -> TimeInterval? {
+        switch status {
+        case .transcribing:
+            return 30
+        case .processing:
+            return 60
+        case .idle, .requested, .recording, .ready, .failed:
+            return nil
+        }
+    }
+
+    /// Log source for a fired stage watchdog. `appTranscription` is unchanged from
+    /// before #267 so log lines written by older builds keep meaning what they meant.
+    private func stageWatchdogSource(for status: DictationStatus) -> String {
+        status == .processing ? "appProcessing" : "appTranscription"
+    }
+
+    private func startStageWatchdog(for status: DictationStatus) {
+        stopStageWatchdog()
+        guard let timeout = stageWatchdogTimeout(for: status) else { return }
+        stageWatchdog = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                guard self.status == .transcribing else { return }
-                PersistentLog.log(.watchdogReset(source: "appTranscription", staleState: "transcribing"))
+                guard self.status == status else { return }
+                PersistentLog.log(.watchdogReset(
+                    source: self.stageWatchdogSource(for: status),
+                    staleState: status.rawValue
+                ))
                 self.cancelDictation()
             }
         }
     }
 
-    private func stopTranscriptionWatchdog() {
-        transcriptionWatchdog?.invalidate()
-        transcriptionWatchdog = nil
+    private func stopStageWatchdog() {
+        stageWatchdog?.invalidate()
+        stageWatchdog = nil
     }
 
     /// Write dictation status to App Group so the keyboard can observe it.
@@ -836,10 +1003,14 @@ class DictationCoordinator: ObservableObject {
         defaults.set(newStatus.rawValue, forKey: SharedKeys.dictationStatus)
         defaults.synchronize()
 
-        if newStatus == .transcribing {
-            startTranscriptionWatchdog()
-        } else if oldStatus == .transcribing {
-            stopTranscriptionWatchdog()
+        // Re-arm on every stage the watchdog covers, disarm on everything else.
+        // The `.transcribing -> .processing` hand-over is the case that makes the
+        // second branch matter: leaving the transcription timer armed would let it
+        // fire 30s into a stage it knows nothing about (#267).
+        if stageWatchdogTimeout(for: newStatus) != nil {
+            startStageWatchdog(for: newStatus)
+        } else if stageWatchdogTimeout(for: oldStatus) != nil {
+            stopStageWatchdog()
         }
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)

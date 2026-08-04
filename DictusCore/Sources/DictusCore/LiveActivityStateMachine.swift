@@ -20,7 +20,7 @@ public struct LiveActivityStateMachine {
     /// Phases of the Live Activity lifecycle.
     /// Maps 1:1 to the private LiveActivityPhase enum in LiveActivityManager.
     public enum Phase: String, Sendable {
-        case idle, standby, recording, transcribing, ready, failed
+        case idle, standby, recording, transcribing, processing, ready, failed
     }
 
     /// The current phase. Read-only from outside; mutated only via transition(to:) or reset().
@@ -45,11 +45,35 @@ public struct LiveActivityStateMachine {
     /// and produced `liveActivityFailed context=rejectedTransition error=idle->failed`
     /// instead. `endWithFailure()` still returns early when no activity is held, so
     /// allowing this creates no pill out of nothing.
+    ///
+    /// WHY `.transcribing -> .ready` survives the arrival of `.processing` (#267):
+    /// the LLM stage is skipped on most dictations -- the polish toggle is off by
+    /// default, the duration gate drops flash clips, and devices without Apple
+    /// Foundation Models never reach an engine worth announcing. A pipeline that
+    /// went straight from transcription to a result is the common case, not a
+    /// degraded one.
+    ///
+    /// WHY both post-recording stages can reach `.standby` (#267 review): a
+    /// dictation can be abandoned *inside* a stage -- the stage watchdog fires, or
+    /// the user cancels -- and the pill then has to come home. Without these two
+    /// edges it could not: the app returned to `.idle` while the machine stayed
+    /// parked on the stage, and the next dictation's `.recording` transition was
+    /// rejected from there, so the Dynamic Island kept showing the stage of a
+    /// dictation that had ended while a new one recorded underneath it. That is
+    /// the #42 / #257 desync exactly, reached through the watchdog.
+    ///
+    /// This edge existed for neither stage before #267 -- the hole was already
+    /// reachable on `develop` whenever the 30 s transcription watchdog fired.
+    ///
+    /// It widens nothing in practice: `returnToStandby` still refuses these two
+    /// phases behind its own guard, so only the deliberate recovery path
+    /// (`recoverFromAbandonedStage`) can take these edges.
     private let validTransitions: [Phase: Set<Phase>] = [
         .idle: [.standby, .failed],
         .standby: [.recording, .idle],
         .recording: [.transcribing, .standby],
-        .transcribing: [.ready, .failed],
+        .transcribing: [.processing, .ready, .failed, .standby],
+        .processing: [.ready, .failed, .standby],
         .ready: [.standby, .recording],
         .failed: [.standby, .recording, .idle]
     ]

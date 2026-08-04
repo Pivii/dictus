@@ -186,11 +186,39 @@ struct RecordingView: View {
                 ? coordinator.bufferEnergy
                 : Array(repeating: Float(0), count: 30),
             maxHeight: 120,
-            isProcessing: coordinator.status == .transcribing,
-            isActive: coordinator.status == .recording || coordinator.status == .transcribing
+            animation: waveformAnimation,
+            isActive: coordinator.status == .recording || isPostRecordingStage
         )
         .opacity(coordinator.status == .recording ? 0.5 :
-                 coordinator.status == .transcribing ? 0.3 : 0.15)
+                 isPostRecordingStage ? 0.3 : 0.15)
+    }
+
+    /// The animation for the current stage.
+    ///
+    /// This screen draws the same three animations as the keyboard overlay, from
+    /// the same `ProcessingWaveform` maths (#267). An earlier round shared one
+    /// animation across both post-recording stages, on the argument that the
+    /// distinction belongs where the user waits during a keyboard dictation. Device
+    /// testing settled it the other way: someone dictating inside DictusApp is
+    /// waiting on this screen, and it owes them the same answer.
+    private var waveformAnimation: WaveformAnimation {
+        switch coordinator.status {
+        case .recording:
+            return .micLevels
+        case .transcribing:
+            return .sweep
+        case .processing:
+            return .travellingPeak
+        case .idle, .requested, .ready, .failed:
+            return .still
+        }
+    }
+
+    /// Whether the pipeline is past the microphone and working on the audio or the
+    /// transcript. Drives opacity and the disabled mic button, both of which are
+    /// the same for either stage.
+    private var isPostRecordingStage: Bool {
+        coordinator.status == .transcribing || coordinator.status == .processing
     }
 
     // MARK: - Status Text
@@ -203,6 +231,14 @@ struct RecordingView: View {
                 .foregroundStyle(.secondary)
         } else if coordinator.status == .transcribing {
             Text("Transcribing...")
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
+        } else if coordinator.status == .processing {
+            // The waveform is shared between the two stages here, but the label is
+            // not: naming the wrong stage is the complaint #267 exists to fix, and
+            // it costs a user dictating inside DictusApp the same six seconds of
+            // wondering whether the app has hung.
+            Text("Processing...")
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
         } else if showCopiedFeedback {
@@ -246,9 +282,11 @@ struct RecordingView: View {
             }
             .buttonStyle(GlassPressStyle(pressedScale: 0.88))
             .accessibilityLabel("Stop recording")
-        } else if coordinator.status == .transcribing {
-            // Shimmer mic during processing (disabled)
-            AnimatedMicButton(status: .transcribing) {}
+        } else if isPostRecordingStage {
+            // Shimmer mic during processing (disabled). The status is passed
+            // through rather than pinned to `.transcribing` so the button reflects
+            // the stage it is actually in (#267); the shimmer is the same for both.
+            AnimatedMicButton(status: coordinator.status) {}
                 .disabled(true)
         } else {
             // Idle / result state: mic button ready for (new) recording

@@ -43,6 +43,7 @@ final class DictationSessionLivenessTests: XCTestCase {
         XCTAssertTrue(DictationSessionLivenessPolicy.isActive(.requested))
         XCTAssertTrue(DictationSessionLivenessPolicy.isActive(.recording))
         XCTAssertTrue(DictationSessionLivenessPolicy.isActive(.transcribing))
+        XCTAssertTrue(DictationSessionLivenessPolicy.isActive(.processing))
         XCTAssertFalse(DictationSessionLivenessPolicy.isActive(.idle))
         XCTAssertFalse(DictationSessionLivenessPolicy.isActive(.ready))
         XCTAssertFalse(DictationSessionLivenessPolicy.isActive(.failed))
@@ -107,6 +108,26 @@ final class DictationSessionLivenessTests: XCTestCase {
         XCTAssertEqual(transcribingThreshold, 8)
         XCTAssertEqual(evaluate(.transcribing, heartbeat: now - transcribingThreshold), .live)
         XCTAssertEqual(evaluate(.transcribing, heartbeat: now - transcribingThreshold - 0.01), .orphaned)
+    }
+
+    /// The LLM stage (#267) is judged by the same threshold as transcription, and
+    /// deliberately so: what the threshold measures is the heartbeat's cadence, and
+    /// both post-recording stages run against the same 3 s warm-idle writer. A
+    /// longer one for `processing` would only delay noticing a dead app.
+    func testProcessingIsJudgedByTheSameThresholdAsTranscribing() {
+        XCTAssertEqual(
+            DictationSessionLivenessPolicy.staleThreshold(for: .processing),
+            DictationSessionLivenessPolicy.staleThreshold(for: .transcribing)
+        )
+        XCTAssertEqual(evaluate(.processing, heartbeat: now - transcribingThreshold), .live)
+        XCTAssertEqual(evaluate(.processing, heartbeat: now - transcribingThreshold - 0.01), .orphaned)
+    }
+
+    /// A long LLM stage is not a suspicious one. Six minutes into a Smart Mode with
+    /// a heartbeat two seconds old, the session is alive -- the stage's length must
+    /// never be the thing that condemns it.
+    func testALongProcessingStageWithAFreshHeartbeatStaysLive() {
+        XCTAssertEqual(evaluate(.processing, heartbeat: now - 2, localSessionStartedAt: now - 360), .live)
     }
 
     func testTheRecordingThresholdIsUnderTheKeyboardWatchdogWindow() {
@@ -207,7 +228,7 @@ final class DictationSessionLivenessTests: XCTestCase {
 
     func testLocalAndStoredDisagreementMatrix() {
         // Every combination of "do we own a session, and when did it start" against
-        // "what does the App Group say", for the two statuses that can be orphaned.
+        // "what does the App Group say", for the statuses that can be orphaned.
         // The failure this suite exists for lived in one cell of this table and was
         // invisible to a simulator run that only ever seeded one of the two.
         let cases: [(DictationStatus, TimeInterval, TimeInterval?, DictationSessionLiveness, String)] = [
@@ -218,7 +239,10 @@ final class DictationSessionLivenessTests: XCTestCase {
             (.recording, now - 1, nil, .live, "rebuilt keyboard, app alive"),
             (.transcribing, now - 20, now - 1, .unproven, "corpse heartbeat during transcription"),
             (.transcribing, now - 5, now - 60, .live, "idle cadence inside our session"),
-            (.transcribing, now - 20, nil, .orphaned, "rebuilt keyboard, dead app, transcribing")
+            (.transcribing, now - 20, nil, .orphaned, "rebuilt keyboard, dead app, transcribing"),
+            (.processing, now - 20, now - 1, .unproven, "corpse heartbeat during the LLM stage"),
+            (.processing, now - 5, now - 60, .live, "idle cadence inside our session, LLM stage"),
+            (.processing, now - 20, nil, .orphaned, "rebuilt keyboard, dead app, LLM stage")
         ]
         for (status, heartbeat, sessionStart, expected, label) in cases {
             XCTAssertEqual(

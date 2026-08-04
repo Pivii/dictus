@@ -10,6 +10,18 @@ public protocol PolishEngineProtocol: Sendable {
     /// Stable identifier for metrics (e.g. "apple-fm", "passthrough").
     var identifier: String { get }
 
+    /// Whether running this engine is a wait the user should be told about (#267).
+    ///
+    /// The dictation status moves to `.processing` -- new overlay animation, new
+    /// footer label, new Dynamic Island treatment -- for the duration of the engine
+    /// call. That is worth doing for a backend that takes seconds and worth
+    /// suppressing for one that does not: announcing a stage that ends before the
+    /// eye lands on it is a flicker, not information.
+    ///
+    /// Default implementation returns `true`: a real backend generates text and
+    /// generation takes time, so a new engine gets the stage without opting in.
+    var announcesProcessingStage: Bool { get }
+
     /// Polish `raw` STT output in `targetLanguage` under the given `mode`.
     /// Throws on cancellation or backend failure — the coordinator falls back
     /// to the raw text and emits an `engineFailed` metric.
@@ -46,6 +58,8 @@ public protocol PolishEngineProtocol: Sendable {
 }
 
 public extension PolishEngineProtocol {
+    var announcesProcessingStage: Bool { true }
+
     func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async {}
 
     func contextFit(input: String,

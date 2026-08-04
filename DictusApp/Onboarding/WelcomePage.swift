@@ -19,7 +19,7 @@ struct WelcomePage: View {
             Spacer()
 
             // Smooth sinusoidal waveform — same as the transcription processing animation
-            BrandWaveform(maxHeight: 100, isProcessing: true)
+            BrandWaveform(maxHeight: 100, animation: .sweep)
                 .opacity(0.5)
                 .padding(.bottom, 24)
 

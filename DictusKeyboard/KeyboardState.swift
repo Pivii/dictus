@@ -344,8 +344,10 @@ class KeyboardState: ObservableObject {
         lastWaveformUpdate = Date()
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
-            guard activeStates.contains(self.dictationStatus) else {
+            // The shared predicate, not a literal list: it is an exhaustive switch
+            // over `DictationStatus`, so a status added later cannot quietly stop
+            // being watched. That is how `.processing` (#267) got here.
+            guard DictationSessionLivenessPolicy.isActive(self.dictationStatus) else {
                 self.stopWatchdog()
                 return
             }
@@ -543,9 +545,12 @@ class KeyboardState: ObservableObject {
             // WHY restart (not just start): transitioning .requested → .recording
             // must reset lastWaveformUpdate. Without this, the watchdog fires
             // immediately because it still has the timestamp from markRequested().
-            let activeStates: [DictationStatus] = [.requested, .recording, .transcribing]
-            if activeStates.contains(status) {
-                if !activeStates.contains(oldStatus) || status != oldStatus {
+            //
+            // `.transcribing → .processing` (#267) is one such transition: it
+            // restarts the watchdog, which is what gives the LLM stage its own
+            // fresh 5 s window instead of inheriting the transcription's.
+            if DictationSessionLivenessPolicy.isActive(status) {
+                if !DictationSessionLivenessPolicy.isActive(oldStatus) || status != oldStatus {
                     startWatchdog()
                 }
                 // During cold start, the app is transitioning between foreground/background.
@@ -581,7 +586,7 @@ class KeyboardState: ObservableObject {
             // from suspension (e.g., swipe-back during cold start recording).
             // WHY: If oldStatus == status == .recording, SwiftUI skips re-render
             // because no @Published value changed. objectWillChange forces it.
-            if isKeyboardVisible && oldStatus == status && activeStates.contains(status) {
+            if isKeyboardVisible && oldStatus == status && DictationSessionLivenessPolicy.isActive(status) {
                 objectWillChange.send()
             }
         }

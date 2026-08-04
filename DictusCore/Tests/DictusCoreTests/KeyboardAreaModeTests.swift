@@ -28,6 +28,7 @@ final class KeyboardAreaModeTests: XCTestCase {
         XCTAssertTrue(DictationStatus.requested.ownsKeyboardArea)
         XCTAssertTrue(DictationStatus.recording.ownsKeyboardArea)
         XCTAssertTrue(DictationStatus.transcribing.ownsKeyboardArea)
+        XCTAssertTrue(DictationStatus.processing.ownsKeyboardArea)
     }
 
     func testTerminalStatusesDoNotOwnTheKeyboardArea() {
@@ -81,7 +82,7 @@ final class KeyboardAreaModeTests: XCTestCase {
     }
 
     func testResolvingIsIdempotent() {
-        for status in [DictationStatus.idle, .requested, .recording, .transcribing, .ready, .failed] {
+        for status in DictationStatus.allCases {
             for mode in KeyboardAreaMode.allCases {
                 let once = KeyboardAreaMode.resolving(status: status, current: mode)
                 let twice = KeyboardAreaMode.resolving(status: status, current: once)

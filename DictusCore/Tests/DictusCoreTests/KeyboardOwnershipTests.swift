@@ -139,7 +139,7 @@ final class KeyboardOwnershipTests: XCTestCase {
     /// Every status a dictation passes through must be recoverable, so that the
     /// claim does not depend on catching one particular transition.
     func testRecoveryDoesNotDependOnWhichStatusTheDictationIsIn() {
-        for status in [DictationStatus.idle, .requested, .recording, .transcribing] {
+        for status in [DictationStatus.idle, .requested, .recording, .transcribing, .processing] {
             var timeline = KeyboardTimeline()
             timeline.appears(onScreen)
             timeline.appears(doomed)

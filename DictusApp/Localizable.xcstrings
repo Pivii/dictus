@@ -1621,6 +1621,17 @@
         }
       }
     },
+    "Processing..." : {
+      "comment" : "Recording screen caption while the LLM stage runs on the transcript (issue #267).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traitement en cours..."
+          }
+        }
+      }
+    },
     "Purchase Error" : {
       "localizations" : {
         "fr" : {

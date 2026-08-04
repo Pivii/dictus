@@ -29,6 +29,10 @@ public struct DictusLiveActivityAttributes: ActivityAttributes {
         case recording
         /// Processing audio through WhisperKit/Parakeet. Shows pulsing animation.
         case transcribing
+        /// Running the LLM stage on the transcript (#267). Distinct from
+        /// `transcribing` because it is the longer of the two waits and the one
+        /// the user is most likely to read as a hang.
+        case processing
         /// Transcription result available. Shows preview + checkmark.
         case ready
         /// An error occurred during recording or transcription.

@@ -51,22 +51,28 @@ public enum DictationSessionLivenessPolicy {
     /// states and, on device, never fired once for exactly that reason.
     public static let recordingStaleThreshold: TimeInterval = 4
 
-    /// The same, while the stored status is `transcribing`.
+    /// The same, while the stored status is `transcribing` or `processing`.
     ///
     /// WHY 8 s and not 4 s: recording has stopped, so the audio thread has fallen back
     /// to its warm-idle path, which writes only every 3 s (#106 Phase C, sized to stay
     /// under the watchdog's 5 s threshold). Judging that cadence by the recording
     /// threshold would condemn every transcription that runs longer than four seconds.
+    ///
+    /// WHY `processing` shares it rather than getting a longer one of its own (#267):
+    /// this threshold judges the heartbeat's *cadence*, not the stage's length. Both
+    /// post-recording stages run against the same 3 s warm-idle writer, so an LLM stage
+    /// that takes a minute is no more suspicious at second 50 than at second 5 -- what
+    /// would be suspicious is the same three missed beats.
     public static let transcribingStaleThreshold: TimeInterval = 8
 
     /// Whether `status` describes a dictation that some process should be driving.
     ///
     /// WHY an exhaustive switch and not a `Set`: adding a case to `DictationStatus`
-    /// (`processing`, #267) must stop the compiler here rather than silently fall
-    /// through to "nothing is in flight".
+    /// must stop the compiler here rather than silently fall through to "nothing is
+    /// in flight". That is how `processing` (#267) got here instead of being missed.
     public static func isActive(_ status: DictationStatus) -> Bool {
         switch status {
-        case .requested, .recording, .transcribing:
+        case .requested, .recording, .transcribing, .processing:
             return true
         case .idle, .ready, .failed:
             return false
@@ -79,7 +85,7 @@ public enum DictationSessionLivenessPolicy {
         switch status {
         case .recording:
             return recordingStaleThreshold
-        case .transcribing:
+        case .transcribing, .processing:
             return transcribingStaleThreshold
         case .requested, .idle, .ready, .failed:
             return nil
