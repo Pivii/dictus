@@ -49,8 +49,22 @@ final class BrandWaveformDriver: ObservableObject {
         stopLoop()
     }
 
+    /// Whether the current animation has to be redrawn every frame.
+    ///
+    /// `.still` draws a fixed picture, and `Canvas` re-renders on `renderTick`, so
+    /// without this a still waveform would repaint at display rate for as long as
+    /// its host kept `isActive` true.
+    private var needsDisplayLink: Bool {
+        switch animation {
+        case .micLevels, .sweep, .travellingPeak:
+            return true
+        case .still:
+            return false
+        }
+    }
+
     private func updateLoopState() {
-        if isActive {
+        if isActive && needsDisplayLink {
             startLoopIfNeeded()
         } else {
             stopLoop()
