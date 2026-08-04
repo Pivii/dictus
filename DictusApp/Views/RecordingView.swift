@@ -196,6 +196,10 @@ struct RecordingView: View {
         .onDisappear {
             holdTask?.cancel()
             holdTask = nil
+            // Reset, not merely cancel: `.onAppear` re-adopts the stage in flight, and
+            // a decision left pending here would be re-affirmed as "already decided"
+            // with no timer left to draw it. A fresh hold draws whatever it is handed.
+            hold = TranscribingStageHold()
         }
         .navigationBarHidden(true)
     }
