@@ -541,6 +541,17 @@ class DictationCoordinator: ObservableObject {
     /// dictation: this runs only when `didBecomeActive` never came, which is a path that
     /// strands 100% of the time today.
     ///
+    /// WHY it calls `startDictation` rather than starting the engine itself, which is
+    /// load-bearing and not a convenience: a success here has to be a *complete* start,
+    /// or it is the same bug with a different cause. Going through the shared path is
+    /// what guarantees that — `allowInactiveStart` suppresses the defer and nothing
+    /// else, so the cold-start task still writes `.recording` to the App Group (which
+    /// posts `statusChanged` and flips the keyboard off "Démarrage…" on its own), still
+    /// calls `transitionToRecording()`, still logs `audioEngineStarted`, still runs the
+    /// zombie-engine check, and the audio thread still streams waveform energy across.
+    /// Recording on into the background is the warm path's normal behaviour under
+    /// `UIBackgroundModes: audio`, so a success is genuinely usable and not a special case.
+    ///
     /// - Returns: whether a dictation was started. The caller needs it because the two
     ///   decisions it makes next — clearing `coldStartActive` and starting a standby
     ///   Live Activity — both assume no recording is beginning, and `status` has not
