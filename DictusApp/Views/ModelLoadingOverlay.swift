@@ -81,7 +81,7 @@ struct ModelLoadingOverlay: View {
                 // ratios — iPad letterboxed compatibility mode, iPhone SE. Same
                 // height/opacity as the onboarding welcome screen; edge-to-edge
                 // width, no horizontal padding.
-                BrandWaveform(maxHeight: 100, isProcessing: true)
+                BrandWaveform(maxHeight: 100, animation: .sweep)
                     .opacity(0.55)
                     .allowsHitTesting(false)
 

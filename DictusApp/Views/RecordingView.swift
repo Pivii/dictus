@@ -186,25 +186,37 @@ struct RecordingView: View {
                 ? coordinator.bufferEnergy
                 : Array(repeating: Float(0), count: 30),
             maxHeight: 120,
-            isProcessing: isPostRecordingStage,
+            animation: waveformAnimation,
             isActive: coordinator.status == .recording || isPostRecordingStage
         )
         .opacity(coordinator.status == .recording ? 0.5 :
                  isPostRecordingStage ? 0.3 : 0.15)
     }
 
+    /// The animation for the current stage.
+    ///
+    /// This screen draws the same three animations as the keyboard overlay, from
+    /// the same `ProcessingWaveform` maths (#267). An earlier round shared one
+    /// animation across both post-recording stages, on the argument that the
+    /// distinction belongs where the user waits during a keyboard dictation. Device
+    /// testing settled it the other way: someone dictating inside DictusApp is
+    /// waiting on this screen, and it owes them the same answer.
+    private var waveformAnimation: WaveformAnimation {
+        switch coordinator.status {
+        case .recording:
+            return .micLevels
+        case .transcribing:
+            return .sweep
+        case .processing:
+            return .travellingPeak
+        case .idle, .requested, .ready, .failed:
+            return .still
+        }
+    }
+
     /// Whether the pipeline is past the microphone and working on the audio or the
-    /// transcript.
-    ///
-    /// WHY this screen shares one *animation* across both stages (#267): the two
-    /// animations that tell them apart live in the keyboard overlay and the Dynamic
-    /// Island, which is where the user actually is while waiting. A third motion
-    /// design for this screen would be one more thing to keep in step.
-    ///
-    /// The *label* is not shared -- see `statusText`. Sharing the shimmer costs the
-    /// user nothing; telling them "Transcribing..." for six seconds of language
-    /// model is the whole complaint this issue is about, and it lands the same way
-    /// whichever screen it is read on.
+    /// transcript. Drives opacity and the disabled mic button, both of which are
+    /// the same for either stage.
     private var isPostRecordingStage: Bool {
         coordinator.status == .transcribing || coordinator.status == .processing
     }
