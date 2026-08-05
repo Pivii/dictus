@@ -170,6 +170,14 @@ public enum LogEvent: Sendable {
     case coldStartFlagSet(active: Bool, context: String)
     case coldStartRetry(keyboardStatus: String)
     case coldStartDarwinFallback(elapsedMs: Int, status: String)
+    /// A cold start was still parked when the app left the foreground, so
+    /// `didBecomeActive` was never going to arrive (#311). `action` is the
+    /// `ColdStartResolution` that was applied — `dropped`, `report` or `retry` —
+    /// or `expired`, which is the background assertion running out with the
+    /// request still unresolved. This is the line that makes the failure
+    /// self-diagnosing: before it, a stranded dictation left no trace at all
+    /// beyond a `dictationDeferred` followed by silence.
+    case coldStartStranded(keyboardStatus: String, action: String)
 
     // MARK: Subscription
     case subscriptionError(action: String, error: String)
@@ -225,7 +233,8 @@ public enum LogEvent: Sendable {
              .onboardingDictusKeyboardActivated, .onboardingGlobeTutorialTextDetected,
              .onboardingGlobeTutorialSkipped:
             return .lifecycle
-        case .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry, .coldStartDarwinFallback:
+        case .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry, .coldStartDarwinFallback,
+             .coldStartStranded:
             return .lifecycle
         case .logExportCompleted:
             return .lifecycle
@@ -260,7 +269,7 @@ public enum LogEvent: Sendable {
         case .dictationDeferred, .dictationStateReconciled,
              .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
              .waveformStall, .waveformTimelineNotFiring,
-             .coldStartDarwinFallback, .modelPrewarmTimeout,
+             .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
              .modelDownloadStalled:
             return .warning
@@ -392,6 +401,7 @@ public enum LogEvent: Sendable {
         case .coldStartFlagSet: return "coldStartFlagSet"
         case .coldStartRetry: return "coldStartRetry"
         case .coldStartDarwinFallback: return "coldStartDarwinFallback"
+        case .coldStartStranded: return "coldStartStranded"
         case .subscriptionError: return "subscriptionError"
         case .logExportCompleted: return "logExportCompleted"
         case .transcriptionPerformance: return "transcriptionPerformance"
@@ -590,6 +600,8 @@ public enum LogEvent: Sendable {
             return "keyboardStatus=\(keyboardStatus)"
         case .coldStartDarwinFallback(let elapsedMs, let status):
             return "elapsedMs=\(elapsedMs) status=\(status)"
+        case .coldStartStranded(let keyboardStatus, let action):
+            return "keyboardStatus=\(keyboardStatus) action=\(action)"
 
         // Subscription
         case .subscriptionError(let action, let error):

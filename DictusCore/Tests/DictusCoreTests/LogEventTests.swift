@@ -105,6 +105,36 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.message, "source=app-launch staleStatus=transcribing heartbeatAgeMs=-1")
     }
 
+    // MARK: - Stranded cold start (#311)
+
+    func testColdStartStrandedIsAWarningWithItsResolution() {
+        // #311's regression grep pivots on this name, and on `action` telling the
+        // reader which of the three outcomes the parked start actually got. It is a
+        // warning because a parked start reaching this point is a user-visible
+        // request that nearly went nowhere.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "requested", action: "retry")
+        XCTAssertEqual(event.name, "coldStartStranded")
+        XCTAssertEqual(event.message, "keyboardStatus=requested action=retry")
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .lifecycle)
+    }
+
+    func testColdStartStrandedCarriesTheStatusTheKeyboardWasShowing() {
+        // A `dropped` line has to say what the stored status had become, because
+        // that is the whole reason nothing was done about it.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "idle", action: "dropped")
+        XCTAssertEqual(event.message, "keyboardStatus=idle action=dropped")
+    }
+
+    func testColdStartStrandedReportsAnExpiredAssertion() {
+        // `expired` is the fourth vocabulary value and the only one that is not a
+        // `ColdStartResolution`: the background assertion ran out with the request
+        // still unresolved, which is a stranded start by definition.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "requested", action: "expired")
+        XCTAssertEqual(event.message, "keyboardStatus=requested action=expired")
+        XCTAssertEqual(event.level, .warning)
+    }
+
     // MARK: - Keyboard status message trail (#261)
 
     func testDictationMessageSetIsGreppableWithItsOwner() {

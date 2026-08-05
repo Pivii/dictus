@@ -130,6 +130,21 @@ public enum PersistentLog {
         }
     }
 
+    /// Block until every line already queued has reached the file.
+    ///
+    /// WHY this exists (#311): `log` appends asynchronously on a `.utility` queue,
+    /// which is right for a hot path and wrong for the last instants before iOS
+    /// suspends the process. A caller holding a background assertion for exactly
+    /// that reason has to get its lines on disk before it lets go, or the evidence
+    /// it was protecting is the thing that gets dropped. The queue is serial, so an
+    /// empty `sync` block is a full barrier over everything enqueued before it.
+    ///
+    /// Not for general use: it blocks the caller, so it belongs only where the
+    /// process is about to stop running anyway.
+    public static func flush() {
+        writeQueue.sync { }
+    }
+
     /// Read the full log contents.
     public static func read() -> String {
         guard let url = fileURL else { return "(no logs)" }
