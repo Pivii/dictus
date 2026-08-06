@@ -75,8 +75,31 @@ class KeyboardState: ObservableObject {
                     PersistentLog.log(.overlayHidden(status: dictationStatus.rawValue))
                 }
             }
+            // Third thing the funnel carries (#309): the stage the overlay draws.
+            // Unconditional, because the hold below is what decides whether a write
+            // that changed nothing is worth acting on -- and because a re-adoption of
+            // the same status is exactly what must not restart a floor already running.
+            advanceDisplayedStatus(to: dictationStatus)
         }
     }
+
+    /// The dictation stage the recording overlay is drawing (#309).
+    ///
+    /// Equal to `dictationStatus` except for up to
+    /// `TranscribingStageHold.minimumDisplayDuration` after a transcription that
+    /// returned faster than the eye can read it. Read by the overlay's label and by
+    /// the waveform driver, and by nothing else: the area mode below, the watchdog,
+    /// the liveness predicate and every ownership decision keep reading the real
+    /// status, so a held stage can never delay the overlay appearing or disappearing.
+    ///
+    /// The mechanics are at the bottom of this file.
+    @Published private(set) var displayedDictationStatus: DictationStatus = .idle
+
+    /// The rule behind the property above. Pure and tested in DictusCore.
+    private var transcribingHold = TranscribingStageHold()
+
+    /// Fires when a held stage becomes drawable. At most one is ever in flight.
+    private var transcribingHoldTimer: Timer?
 
     /// What the keyboard area is presenting: the key grid, a full-area picker or
     /// panel, or the recording overlay. Single source of truth for both the
@@ -284,6 +307,7 @@ class KeyboardState: ObservableObject {
     deinit {
         logProbe("deinit")
         stopWatchdog()
+        transcribingHoldTimer?.invalidate()
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.statusChanged)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.transcriptionReady)
         DarwinNotificationCenter.removeObserver(for: DarwinNotificationName.waveformUpdate)
@@ -1524,5 +1548,67 @@ extension KeyboardState {
             "statusMessageHidden",
             details: "rootView=\(rootView) controllerID=\(controller) owner=\(activeControllerID ?? "none") visible=\(isKeyboardVisible)"
         )
+    }
+}
+
+// MARK: - The stage the overlay draws (#309)
+
+/// Keeps `displayedDictationStatus` in step with `dictationStatus`, with a floor
+/// under how briefly `.transcribing` may be shown.
+///
+/// WHY the hold is owned here and not by `KeyboardRootView`: iOS keeps around nine of
+/// those alive at once (#255, #281). One timer per view would be nine timers racing on
+/// one transition, and the eight views that do not own the keyboard area draw nothing
+/// anyway. One per process, in the object that already owns the status, is also what
+/// makes a single derived value feed both the label and the animation -- split them and
+/// the transcription sine ends up under a "Traitement..." label for the length of a
+/// hold, which is a worse artefact than the flash this removes.
+///
+/// WHY a keyboard rebuilt mid-hold is right to show `.processing` at once: the new
+/// process starts at `.idle` and reads `.processing` from the App Group, having never
+/// drawn `.transcribing`. There is no flash to suppress, because the stage that would
+/// have flashed was never on screen. Do not "fix" this by carrying the hold across the
+/// App Group -- nothing here ever synthesises a stage.
+extension KeyboardState {
+
+    /// Move `displayedDictationStatus` toward `status`, honouring the floor.
+    ///
+    /// Called from `dictationStatus`'s observer, which is the only path every writer
+    /// goes through -- the same funnel argument the area mode and the status message
+    /// rest on.
+    func advanceDisplayedStatus(to status: DictationStatus) {
+        switch transcribingHold.apply(status, now: Date()) {
+        case .unchanged:
+            break
+        case .draw(let drawn):
+            cancelTranscribingHoldTimer()
+            displayedDictationStatus = drawn
+        case .hold(let held, let interval):
+            cancelTranscribingHoldTimer()
+            logProbe(
+                "transcribingHoldArmed",
+                details: "pending=\(held.rawValue) holdMs=\(Int(interval * 1000))"
+            )
+            transcribingHoldTimer = Timer.scheduledTimer(
+                withTimeInterval: interval,
+                repeats: false
+            ) { [weak self] _ in
+                self?.releaseTranscribingHold()
+            }
+        }
+    }
+
+    /// The floor has elapsed. Draws whatever was waiting, and nothing at all when a
+    /// terminal status preempted it in the meantime.
+    func releaseTranscribingHold() {
+        transcribingHoldTimer = nil
+        guard case .draw(let drawn) = transcribingHold.release(now: Date()) else { return }
+        logProbe("transcribingHoldReleased", details: "drawn=\(drawn.rawValue)")
+        displayedDictationStatus = drawn
+    }
+
+    func cancelTranscribingHoldTimer() {
+        transcribingHoldTimer?.invalidate()
+        transcribingHoldTimer = nil
     }
 }

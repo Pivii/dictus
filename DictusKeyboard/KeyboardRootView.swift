@@ -176,7 +176,7 @@ struct KeyboardRootView: View {
                 // Recording overlay fills the full area (toolbar + keyboard space).
                 // The UIKit keyboard is hidden by KeyboardViewController when recording.
                 RecordingOverlay(
-                    dictationStatus: state.dictationStatus,
+                    dictationStatus: state.displayedDictationStatus,
                     waveformEnergy: state.waveformEnergy,
                     elapsedSeconds: state.recordingElapsed,
                     waveformDriver: waveformDriver,
@@ -298,7 +298,10 @@ struct KeyboardRootView: View {
         // overlayShown/overlayHidden moved to KeyboardState (#255): they describe an
         // app-wide dictation state change, not a per-view event, so they belong
         // where the status is stored rather than in every observer's onChange.
-        .onChange(of: state.dictationStatus) { _, _ in
+        // The *drawn* stage, not the real one (#309). It is the only thing the driver
+        // consumes, and it is the one that still moves when a hold elapses — the real
+        // status changed half a second earlier and would fire nothing here.
+        .onChange(of: state.displayedDictationStatus) { _, _ in
             syncWaveformDriver()
         }
         .onChange(of: state.waveformEnergy) { _, _ in
@@ -361,10 +364,21 @@ struct KeyboardRootView: View {
         }
     }
 
+    /// Push the current presentation at the waveform driver.
+    ///
+    /// `status:` is the *drawn* stage, not the real one (#309) — the same value the
+    /// overlay's label is built from, deliberately. The label and the animation are
+    /// two halves of one statement about what the phone is doing; feeding them from
+    /// two sources would put the transcription sine under a "Traitement..." label for
+    /// the length of a hold, which is a worse artefact than the flash the hold exists
+    /// to remove.
+    ///
+    /// Everything else here still reads the real status through `presentedMode`, so
+    /// the overlay itself appears and disappears exactly when it did before.
     private func syncWaveformDriver(forceHidden: Bool = false) {
         waveformDriver.sync(
             presenterID: controllerID,
-            status: state.dictationStatus,
+            status: state.displayedDictationStatus,
             energyLevels: state.waveformEnergy,
             isVisible: !forceHidden && presentedMode == .recording
         )
