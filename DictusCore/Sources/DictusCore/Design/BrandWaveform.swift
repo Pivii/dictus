@@ -18,7 +18,14 @@ final class BrandWaveformDriver: ObservableObject {
     private var energyLevels: [Float] = []
     private var isActive = false
     private var displayLink: CADisplayLink?
-    private var lastRenderTime: Date = .distantPast
+
+    /// Timestamp of the previous display-link callback, and the worst interval between
+    /// two of them since the last heartbeat. Both read `CADisplayLink.timestamp` rather
+    /// than the wall clock: it is monotonic, it is the frame's own time rather than the
+    /// moment the callback happened to run, and it is what the keyboard's driver
+    /// already used -- the two now measure the same thing the same way (#314).
+    private var lastTickTime: CFTimeInterval?
+    private var maxGapSinceHeartbeat: CFTimeInterval = 0
     private var lastHeartbeatTime: Date = .distantPast
 
     deinit {
@@ -77,7 +84,8 @@ final class BrandWaveformDriver: ObservableObject {
         let link = CADisplayLink(target: self, selector: #selector(handleDisplayLink))
         link.add(to: .main, forMode: .common)
         displayLink = link
-        lastRenderTime = Date()
+        lastTickTime = nil
+        maxGapSinceHeartbeat = 0
         lastHeartbeatTime = .distantPast
 
         PersistentLog.log(.waveformAppeared(
@@ -93,6 +101,7 @@ final class BrandWaveformDriver: ObservableObject {
 
         displayLink?.invalidate()
         displayLink = nil
+        lastTickTime = nil
 
         PersistentLog.log(.waveformDisappeared(
             refreshID: renderTick,
@@ -103,9 +112,20 @@ final class BrandWaveformDriver: ObservableObject {
     @objc
     private func handleDisplayLink(_ link: CADisplayLink) {
         let now = Date()
+        let timestamp = link.timestamp
+        let previousTimestamp = lastTickTime
+        lastTickTime = timestamp
 
-        if lastRenderTime != .distantPast {
-            let gapMs = Int(now.timeIntervalSince(lastRenderTime) * 1000)
+        // The nominal frame duration stands in on the first callback only, which is the
+        // one tick with no previous timestamp to measure from. Everywhere else it is
+        // the wrong number: it never reports the frames that were missed (#314).
+        let elapsed = previousTimestamp.map { timestamp - $0 } ?? link.duration
+
+        if let previousTimestamp {
+            let gap = timestamp - previousTimestamp
+            maxGapSinceHeartbeat = max(maxGapSinceHeartbeat, gap)
+
+            let gapMs = Int(gap * 1000)
             if gapMs > 500 {
                 PersistentLog.log(.waveformStall(
                     gapMs: gapMs,
@@ -114,15 +134,12 @@ final class BrandWaveformDriver: ObservableObject {
                 ))
             }
         }
-        lastRenderTime = now
 
         switch animation {
         case .micLevels:
             tickLevels()
-        case .sweep:
-            processingPhase += link.duration / 2.0
-        case .travellingPeak:
-            processingPhase += link.duration * ProcessingWaveform.phaseRate
+        case .sweep, .travellingPeak:
+            processingPhase += ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: elapsed)
         case .still:
             break
         }
@@ -133,8 +150,10 @@ final class BrandWaveformDriver: ObservableObject {
             PersistentLog.log(.waveformHeartbeat(
                 renderTick: renderTick,
                 avgLevel: avg,
-                energyCount: energyLevels.count
+                energyCount: energyLevels.count,
+                maxGapMs: Int(maxGapSinceHeartbeat * 1000)
             ))
+            maxGapSinceHeartbeat = 0
             lastHeartbeatTime = now
         }
 
