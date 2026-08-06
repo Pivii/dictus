@@ -21,12 +21,22 @@ public enum PolishPipeline {
         public let engineMs: Int
         /// Marker decode + NBSP + guardrail, measured after the engine returned.
         public let postprocessMs: Int
+        /// The engine's own name for what it threw (#315). Set on
+        /// `.engineFailed` and only there: every other outcome either never
+        /// reached the engine or came back from it normally. `nil` elsewhere,
+        /// so a caller can key on the reason's presence.
+        public let failureReason: PolishFailureReason?
 
-        public init(engineOutput: String?, outcome: PolishMetrics.Outcome, engineMs: Int, postprocessMs: Int) {
+        public init(engineOutput: String?,
+                    outcome: PolishMetrics.Outcome,
+                    engineMs: Int,
+                    postprocessMs: Int,
+                    failureReason: PolishFailureReason? = nil) {
             self.engineOutput = engineOutput
             self.outcome = outcome
             self.engineMs = engineMs
             self.postprocessMs = postprocessMs
+            self.failureReason = failureReason
         }
     }
 
@@ -101,7 +111,13 @@ public enum PolishPipeline {
             return Result(engineOutput: nil, outcome: .cancelled, engineMs: engineMs, postprocessMs: 0)
         } catch {
             let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
-            return Result(engineOutput: nil, outcome: .engineFailed, engineMs: engineMs, postprocessMs: 0)
+            // Ask the engine that threw what it threw (#315). Only the failing
+            // backend can read its own SDK's error type; the transform records
+            // the answer without ever knowing which backend it is talking to.
+            // Nothing else in this `do` block throws, so the error is always the
+            // engine's.
+            return Result(engineOutput: nil, outcome: .engineFailed, engineMs: engineMs, postprocessMs: 0,
+                          failureReason: engine.failureReason(for: error))
         }
     }
 

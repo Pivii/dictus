@@ -77,6 +77,16 @@ public struct PolishMetrics: Sendable, Codable {
     /// with events persisted before the latency-investigation branch.
     public let timings: PolishTimings?
 
+    /// Why the engine failed, when it did (#315). Set on `.engineFailed` and
+    /// only there.
+    ///
+    /// Optional for the same reason `timings` is: the debug ring holds seven
+    /// days of events written by whatever build was installed at the time, and
+    /// those events must keep decoding after this field lands. A missing key
+    /// decodes to `nil` — an event from before the reason existed, not an
+    /// unclassified failure.
+    public let failureReason: PolishFailureReason?
+
     public init(engine: String,
                 mode: PolishMode?,
                 targetLanguage: SupportedLanguage,
@@ -87,7 +97,8 @@ public struct PolishMetrics: Sendable, Codable {
                 outcome: Outcome,
                 sttEngine: String? = nil,
                 sttModelID: String? = nil,
-                timings: PolishTimings? = nil) {
+                timings: PolishTimings? = nil,
+                failureReason: PolishFailureReason? = nil) {
         self.engine = engine
         self.mode = mode
         self.targetLanguage = targetLanguage
@@ -99,6 +110,7 @@ public struct PolishMetrics: Sendable, Codable {
         self.sttEngine = sttEngine
         self.sttModelID = sttModelID
         self.timings = timings
+        self.failureReason = failureReason
     }
 
     /// Emit one line for a pre-call context refusal (#270). The metrics event
@@ -121,8 +133,12 @@ public struct PolishMetrics: Sendable, Codable {
         if #available(iOS 14.0, macOS 11.0, *) {
             let t = m.timings
             let breakdown = t.map { " timings=pre:\($0.preprocessMs)/engine:\($0.engineMs)/post:\($0.postprocessMs)" } ?? ""
+            // Appended only on a failure (#315): the reason is nil on the ~80% of
+            // events that succeed, and a `reason=-` on every one of them would
+            // pay for nothing.
+            let reason = m.failureReason.map { " reason=\($0.slug)" } ?? ""
             PolishLog.logger.info(
-                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage.rawValue, privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)"
+                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage.rawValue, privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
             )
         }
     }

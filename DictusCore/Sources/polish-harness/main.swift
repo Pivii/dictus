@@ -107,6 +107,25 @@ struct RunOutcome {
     /// Raw NLLanguage code of the input ("fr", "it", "zh-Hans", …).
     let detected: String?
     let mode: PolishMode?
+    /// Set when the engine threw (#315) — the same slug the app exports, so a
+    /// failure seen here reads against the field data without a translation.
+    let failureReason: PolishFailureReason?
+
+    init(final: String,
+         engineOutput: String?,
+         outcome: PolishMetrics.Outcome,
+         engineMs: Int,
+         detected: String?,
+         mode: PolishMode?,
+         failureReason: PolishFailureReason? = nil) {
+        self.final = final
+        self.engineOutput = engineOutput
+        self.outcome = outcome
+        self.engineMs = engineMs
+        self.detected = detected
+        self.mode = mode
+        self.failureReason = failureReason
+    }
 }
 
 @available(macOS 26.0, *)
@@ -124,7 +143,7 @@ func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> 
     let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: target, mode: mode)
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: target, mode: mode)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected.rawValue, mode: mode)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected.rawValue, mode: mode, failureReason: r.failureReason)
 }
 
 /// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
@@ -141,7 +160,7 @@ func runOnceAuto(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async
     let preprocessed = PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode)
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: .english, mode: .auto)
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: .english, mode: .auto)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, mode: .auto)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, mode: .auto, failureReason: r.failureReason)
 }
 
 @available(macOS 26.0, *)
@@ -155,7 +174,8 @@ func runHarness() async {
             for run in 1...max(1, runs) {
                 let o = await runOnce(fx, engine: engine)
                 let tag = runs > 1 ? " #\(run)" : ""
-                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected ?? "-")→\(o.mode?.rawValue ?? "-")"
+                let why = o.failureReason.map { ", reason=\($0.slug)" } ?? ""
+                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected ?? "-")→\(o.mode?.rawValue ?? "-")\(why)"
                 print("  polished\(tag): \(o.final)")
                 print("            (\(route))")
                 // When the guardrail rejects, `final` is the raw fallback — surface
