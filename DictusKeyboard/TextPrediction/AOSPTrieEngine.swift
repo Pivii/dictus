@@ -61,6 +61,9 @@ final class AOSPTrieEngine {
 
             // Set proximity map based on active keyboard layout.
             // AZERTY is default because Dictus targets French-speaking users.
+            // QWERTZ takes the QWERTY map: the two differ only by the y/z swap, and
+            // the bridge ships no third map. Worth revisiting only if German typo
+            // reports point at y/z (#151).
             if LayoutType.active == .azerty {
                 self.bridge.setProximityMapAZERTY()
             } else {
