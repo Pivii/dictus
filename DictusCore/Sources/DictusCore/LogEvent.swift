@@ -193,6 +193,18 @@ public enum LogEvent: Sendable {
     case appWhisperKitLoaded(modelName: String)
     case deviceCapabilitySnapshot(model: String, ramGB: Int, availableMemoryMB: Int, thermalState: String)
 
+    // MARK: Polish
+    /// Issue #315: the polish engine threw. `reason` is the slug the engine gave
+    /// its own failure (`PolishFailureReason`) — "rateLimited", "concurrentRequests",
+    /// or "other:<Type>" for an error no engine recognised.
+    ///
+    /// WHY it belongs in this log and not only in the polish debug export: the
+    /// export answers "how often, and which reason", but not "what else was the
+    /// app doing". A failure that arrives in 4 ms has to be readable against the
+    /// dictation timeline right next to it — status transitions, holds, the
+    /// insertion — and only this log has all of them on one page.
+    case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -246,6 +258,11 @@ public enum LogEvent: Sendable {
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded, .deviceCapabilitySnapshot:
             return .lifecycle
+        // Polish is the stage after the STT result and before the App Group
+        // write, so it reads with the transcription stream rather than as a
+        // subsystem of its own (#315).
+        case .polishEngineFailed:
+            return .transcription
         }
     }
 
@@ -312,6 +329,12 @@ public enum LogEvent: Sendable {
              .waveformHeartbeat, .overlayTimerStarted, .overlayTimerStopped,
              .diagnosticProbe:
             return .debug
+
+        // Warning, not error: the user still gets their text (the deterministic
+        // floor), only the polish is lost — but silently, which is the failure
+        // worth finding in a log (#315).
+        case .polishEngineFailed:
+            return .warning
         }
     }
 
@@ -411,6 +434,7 @@ public enum LogEvent: Sendable {
         case .modelLoadStateChanged: return "modelLoadStateChanged"
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
+        case .polishEngineFailed: return "polishEngineFailed"
         }
     }
 
@@ -620,6 +644,10 @@ public enum LogEvent: Sendable {
             return "name=\(name) timeout=\(timeoutSeconds)s"
         case .deviceCapabilitySnapshot(let model, let ramGB, let availableMemoryMB, let thermalState):
             return "model=\(model) ramGB=\(ramGB) availableMB=\(availableMemoryMB) thermal=\(thermalState)"
+
+        // Polish (#315)
+        case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
+            return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
         }
     }
 

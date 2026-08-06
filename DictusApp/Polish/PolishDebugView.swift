@@ -154,7 +154,15 @@ private struct EntryRow: View {
                     .background(entry.metrics.outcome.tintColor.opacity(0.15))
                     .foregroundStyle(entry.metrics.outcome.tintColor)
                     .clipShape(Capsule())
-                if let mode = entry.metrics.mode {
+                // The reason takes the mode's slot on a failure: it is the one
+                // thing worth reading on that row (#315), and a failed event has
+                // nothing to say about which prompt it would have used.
+                if let reason = entry.metrics.failureReason {
+                    Text(reason.slug)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(entry.metrics.outcome.tintColor)
+                        .lineLimit(1)
+                } else if let mode = entry.metrics.mode {
                     Text(mode.rawValue).font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(entry.metrics.targetLanguage.rawValue.uppercased())
@@ -239,6 +247,9 @@ private struct EntryDetailView: View {
             HStack(spacing: 12) {
                 LabeledValue("latency", "\(entry.metrics.latencyMs) ms")
                 LabeledValue("chars", "\(entry.metrics.rawCharCount) → \(entry.metrics.polishedCharCount)")
+            }
+            if let reason = entry.metrics.failureReason {
+                LabeledValue("failure reason", reason.slug)
             }
         }
     }

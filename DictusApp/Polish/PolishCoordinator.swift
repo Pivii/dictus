@@ -295,7 +295,8 @@ public final class PolishCoordinator {
                 preprocessMs: preprocessMs,
                 engineMs: bundle.engineMs,
                 postprocessMs: bundle.postprocessMs
-            )
+            ),
+            failureReason: bundle.failureReason
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
 
@@ -395,7 +396,8 @@ public final class PolishCoordinator {
                 preprocessMs: preprocessMs,
                 engineMs: bundle.engineMs,
                 postprocessMs: bundle.postprocessMs
-            )
+            ),
+            failureReason: bundle.failureReason
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
         return returned
@@ -413,7 +415,8 @@ public final class PolishCoordinator {
                                   detectedLanguage: String? = nil,
                                   latencyMs: Int = 0,
                                   timings: PolishTimings =
-                                      PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0)
+                                      PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0),
+                                  failureReason: PolishFailureReason? = nil
     ) -> PolishMetrics {
         PolishMetrics(
             engine: engineID,
@@ -426,7 +429,8 @@ public final class PolishCoordinator {
             outcome: outcome,
             sttEngine: languagePolicy.engine.rawValue,
             sttModelID: languagePolicy.modelIdentifier,
-            timings: timings
+            timings: timings,
+            failureReason: failureReason
         )
     }
 
@@ -442,6 +446,19 @@ public final class PolishCoordinator {
     /// Log one metrics event and append it to the debug ring.
     private func emit(_ m: PolishMetrics, raw: String, polished: String?) async {
         PolishMetrics.log(m)
+        // An engine failure also goes to the persistent log (#315), where it can
+        // be read against the dictation timeline around it. Keyed on the
+        // outcome, not on the reason being present, so no failure can slip
+        // through unlogged; "unclassified" would mean the engine returned no
+        // reason at all, which no engine does today.
+        if m.outcome == .engineFailed {
+            PersistentLog.log(.polishEngineFailed(
+                reason: m.failureReason?.slug ?? "unclassified",
+                engine: m.engine,
+                mode: m.mode?.rawValue ?? "-",
+                engineMs: m.timings?.engineMs ?? 0
+            ))
+        }
         await metricsRing.append(PolishDebugEntry(raw: raw, polished: polished, metrics: m))
     }
 
