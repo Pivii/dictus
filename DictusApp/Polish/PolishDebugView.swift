@@ -154,9 +154,9 @@ private struct EntryRow: View {
                     .background(entry.metrics.outcome.tintColor.opacity(0.15))
                     .foregroundStyle(entry.metrics.outcome.tintColor)
                     .clipShape(Capsule())
-                // The reason takes the mode's slot on a failure: it is the one
-                // thing worth reading on that row (#315), and a failed event has
-                // nothing to say about which prompt it would have used.
+                // The reason takes the mode's slot on a failure (#315): the row
+                // is one line wide, and on a failed event the reason is what
+                // gets read. The mode is still on the detail sheet.
                 if let reason = entry.metrics.failureReason {
                     Text(reason.slug)
                         .font(.caption2.monospaced())
