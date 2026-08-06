@@ -71,8 +71,34 @@ class DictationCoordinator: ObservableObject {
     var dictationGeneration: Int { sessionGeneration.current }
 
     /// Set when cold start dictation is deferred because the app is .inactive.
-    /// Cleared in didBecomeActive when the retry happens.
-    private var pendingColdStartDictation = false
+    ///
+    /// Cleared by whichever of its two consumers gets there first: the
+    /// `didBecomeActive` retry, or `resolvePendingColdStartOnBackground()` when the
+    /// app leaves the foreground without ever having become active (#311). The
+    /// second one is not an optimisation -- it is the only exit that always exists.
+    /// `didBecomeActive` is an event the user can withhold simply by swiping back
+    /// fast enough, and four of twelve deliberately fast dictations did exactly that.
+    ///
+    /// Not `private` only because the second consumer lives in `ColdStartResolution.swift`
+    /// and `private` is file-scoped. Still single-writer.
+    var pendingColdStartDictation = false
+
+    /// Background execution assertion held across the resolution of a parked cold
+    /// start (#311). `.invalid` when none is held. Managed entirely from
+    /// `ColdStartResolution.swift`, which is why it is not `private`.
+    ///
+    /// WHY this is the only such assertion in the app: every other path either runs in
+    /// the foreground, or runs while the audio engine is already capturing and
+    /// `UIBackgroundModes: audio` grants the runtime. This one runs from the
+    /// `.background` scene transition, so the process is on its way to suspension, and
+    /// the runtime it needs is the runtime it is trying to earn -- the audio mode
+    /// grants nothing until `startRecording()` has succeeded, which is the far side of
+    /// the window. Without an assertion that window is covered only by iOS's default
+    /// post-background grace, which is a behaviour and not a contract. A suspension
+    /// inside it would leave the flag cleared, no engine started and nothing reported:
+    /// the exact silence this whole change exists to make impossible, with a log line
+    /// to prove we had thought about it.
+    var coldStartAssertion: UIBackgroundTaskIdentifier = .invalid
 
     /// Task that resolves when WhisperKit is fully loaded.
     /// WHY: Both init() pre-load and startDictation() call ensureEngineReady().
@@ -249,6 +275,10 @@ class DictationCoordinator: ObservableObject {
                 // WHY here: URL scheme launches fire handleIncomingURL at .inactive state,
                 // where engine.start() fails. startDictation sets pendingColdStartDictation
                 // and returns. Now that we're .active, retry the full startDictation flow.
+                //
+                // This stays the primary path — it is the one that runs from a fully
+                // active app with a recovered audio session. The background path added
+                // in #311 is the fallback for when this event never arrives.
                 if self.pendingColdStartDictation {
                     self.pendingColdStartDictation = false
                     // Only retry if keyboard is still waiting (watchdog hasn't reset to idle)
@@ -318,8 +348,13 @@ class DictationCoordinator: ObservableObject {
     /// - WARM START: engine already running → purge idle samples + startRecording()
     /// - COLD START: engine not running → startRecording() starts it (<100ms) + load model in parallel
     ///
-    /// - Parameter fromURL: If true, the app was opened via URL scheme from the keyboard.
-    func startDictation(fromURL: Bool = false) {
+    /// - Parameters:
+    ///   - fromURL: If true, the app was opened via URL scheme from the keyboard.
+    ///   - allowInactiveStart: Skip the cold-start defer below and attempt the start
+    ///     from whatever state the app is in. Set only by
+    ///     `resolvePendingColdStartOnBackground()`, which is the last chance a parked
+    ///     start gets (#311) — deferring a second time there would park it forever.
+    func startDictation(fromURL: Bool = false, allowInactiveStart: Bool = false) {
         // Clear previous recording state before starting new recording.
         // WHY here (not in stopDictation): DI tap and lockscreen paths call
         // startDictation directly without going through stopDictation first.
@@ -334,7 +369,10 @@ class DictationCoordinator: ObservableObject {
         PersistentLog.log(.statusChanged(from: status.rawValue, to: "clearing-for-new", source: "startDictation-reset"))
 
         // Guard against duplicate calls while actively recording or transcribing.
-        guard status == .idle || status == .failed || status == .ready || status == .requested else {
+        // The predicate moved to DictusCore in #311 so the stranded-cold-start path
+        // can ask the same question before it calls in, instead of restating this
+        // list and drifting from it.
+        guard ColdStartResolutionPolicy.canStartNewDictation(from: status) else {
             if #available(iOS 14.0, *) {
                 DictusLogger.app.info("Ignoring duplicate startDictation — already \(self.status.rawValue, privacy: .public)")
             }
@@ -441,7 +479,12 @@ class DictationCoordinator: ObservableObject {
             // URL scheme launches fire handleIncomingURL while app is still .inactive.
             // AVAudioEngine.start() fails with AUIOClient_StartIO error from non-active state.
             // Deferring to didBecomeActive guarantees the app is fully active.
-            if appState != .active {
+            //
+            // WHY the flag can override it (#311): `allowInactiveStart` is set only by
+            // the background-transition path, where `.active` is no longer coming. A
+            // second defer there would re-park the request with nothing left to unpark
+            // it, which is the bug this whole change is about.
+            if appState != .active && !allowInactiveStart {
                 pendingColdStartDictation = true
                 PersistentLog.log(.dictationDeferred(
                     reason: "cold start deferred to didBecomeActive, appState=\(appState.rawValue)"))
@@ -449,6 +492,12 @@ class DictationCoordinator: ObservableObject {
             }
 
             dictationTask = Task {
+                // Backstop for the background assertion a last-chance start holds
+                // (#311). The two outcomes release it themselves, each at the earliest
+                // moment it is safe to; this catches the exits that are neither -- a
+                // permission denial, and the `mayReport` guards that drop an abandoned
+                // session. A no-op when no assertion is held, which is every other call.
+                defer { self.endColdStartAssertion(reason: "task-exit") }
                 do {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
@@ -461,6 +510,11 @@ class DictationCoordinator: ObservableObject {
                     updateStatus(.recording)
                     LiveActivityManager.shared.transitionToRecording()
                     PersistentLog.log(.audioEngineStarted)
+                    // The engine is capturing, so `UIBackgroundModes: audio` keeps the
+                    // process alive on its own now. Released here rather than at the end
+                    // of the task so the model load below, which can run for tens of
+                    // seconds, does not sit on an assertion it no longer needs.
+                    endColdStartAssertion(reason: "engine-started")
                     schedulePolishPrewarm()
                     await verifyAudioFlow()
 
@@ -472,6 +526,14 @@ class DictationCoordinator: ObservableObject {
                     self.setModelLoadState(.ready, reason: "cold-start-success")
                 } catch {
                     PersistentLog.log(.dictationFailed(error: "Cold start engine load: \(error.localizedDescription)"))
+                    // A last-chance start (#311) fails for a reason the user can do
+                    // nothing about and cannot read: the #73 AUIOClient_StartIO failure
+                    // reaches `localizedDescription` as a bare CoreAudio error number.
+                    // The raw text stays in the log line above, where it belongs; the
+                    // keyboard banner gets the one action that works.
+                    let message = allowInactiveStart
+                        ? self.strandedColdStartMessage
+                        : error.localizedDescription
                     // The model load runs inside this task and takes seconds on a
                     // cold start, so this is the widest window in the app for a
                     // cancel to arrive mid-flight. `setModelLoadState` stays ungated
@@ -479,10 +541,37 @@ class DictationCoordinator: ObservableObject {
                     // dictation, and the next session needs it to be accurate.
                     self.setModelLoadState(.idle, reason: "cold-start-failed")
                     guard self.mayReport(session, "cold start failure") else { return }
-                    self.handleError(error.localizedDescription)
+                    self.handleError(message)
+                    // The keyboard has been told. Released here so the assertion ends on
+                    // a reported failure exactly as it does on a started engine.
+                    self.endColdStartAssertion(reason: "failure-reported")
                 }
             }
         }
+    }
+
+    /// Tell the keyboard that a parked cold start will not run.
+    ///
+    /// WHY `handleError` and not a bespoke channel: the keyboard's status message is an
+    /// in-process property of `KeyboardState`; nothing the app writes reaches it directly.
+    /// `SharedKeys.lastError` plus a `.failed` status is the app's actual channel —
+    /// `KeyboardState.refreshFromDefaults` picks the error up, shows it for three seconds
+    /// and clears it, and `.failed` does not own the keyboard area, so the "Démarrage…"
+    /// overlay drops on the same write.
+    ///
+    /// The wording asks for a second tap rather than explaining the race: by the time
+    /// this is read the user is in their host app looking at a stuck keyboard, and what
+    /// they need is the one action that works.
+    func reportStrandedColdStart() {
+        PersistentLog.log(.dictationFailed(error: "cold start stranded: app left the foreground before it could run"))
+        handleError(strandedColdStartMessage)
+    }
+
+    /// What the keyboard says when a cold start could not run. Shared by the two ways
+    /// that happens — no attempt was possible, or the attempt threw — because from the
+    /// user's side they are the same event and deserve the same sentence.
+    private var strandedColdStartMessage: String {
+        String(localized: "Dictation could not start. Tap the microphone again.")
     }
 
     /// Called when user taps the stop button.
