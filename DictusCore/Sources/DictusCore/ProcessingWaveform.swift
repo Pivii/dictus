@@ -102,4 +102,67 @@ public enum ProcessingWaveform {
     /// `(barCount - 1) / 2`. Naming it stops the phase reset from looking like it
     /// forgot to initialise something.
     public static let centredPhase: Double = 0
+
+    // MARK: - Advancing the phase
+
+    /// Phase per second for the transcription sine (`.sweep`).
+    ///
+    /// WHY it lives here, next to the travelling peak's rate, when the sine is drawn
+    /// by each surface's own `processingEnergy`: the two animations share one phase
+    /// variable, and until now this number existed only as a `/ 2.0` written inline in
+    /// two display-link callbacks. A rate that is only visible at the point it is
+    /// consumed is a rate that drifts apart between surfaces.
+    ///
+    /// The sine's pattern translates by one full row per unit of phase, so 0.5 is the
+    /// 2.00 s crossing that `phaseRate` and `TranscribingStageHold` are both stated
+    /// against. The value is unchanged from the inline divisor (#314 is about the
+    /// animation running at the speed it was designed for, not about a new speed).
+    public static let sweepPhaseRate: Double = 0.5
+
+    /// The most real time a single frame is allowed to advance the phase by.
+    ///
+    /// WHY a ceiling at all: with the phase advancing by real elapsed time, a gap of
+    /// any size advances by that size -- and the gaps that are not dropped frames are
+    /// enormous. The keyboard extension is suspended and resumed, the device sleeps,
+    /// the display link is left registered across an App Group round trip. Unclamped,
+    /// the first frame after such a gap teleports the peak to an arbitrary point of its
+    /// travel, which is a worse artefact than the slowdown this fix removes.
+    ///
+    /// WHY 100 ms. It has to sit above any hitch worth catching up and below any gap
+    /// worth abandoning. Six frames at 60 Hz is far more than a stutter costs, so
+    /// ordinary jank is still absorbed in full; and it is a fifth of the 500 ms
+    /// `waveformStall` threshold, so anything the log calls a stall is always clamped.
+    /// At the peak's 0.5 Hz the ceiling caps one frame's travel at 5 % of a cycle,
+    /// which cannot read as a jump.
+    public static let maxPhaseAdvanceSeconds: Double = 0.1
+
+    /// How far the shared phase moves in `elapsedSeconds` of real time.
+    ///
+    /// WHY the drivers must not do this themselves (#314): both used to advance the
+    /// phase by `CADisplayLink.duration`, the *nominal* interval between refreshes.
+    /// That number does not grow when a callback is late and does not account for a
+    /// frame that was skipped, so under load -- App Group writes, text insertion,
+    /// polish completing on the app side -- the phase fell behind real time by exactly
+    /// the frames that were lost, permanently. The animation did not stutter, it ran
+    /// slow, which is what was reported. Elapsed time makes a dropped frame *skip*
+    /// where the nominal duration made it *slow*.
+    ///
+    /// Negative elapsed times clamp to zero. Both surfaces feed this from
+    /// `CADisplayLink.timestamp`, which is monotonic, but the same guard is what
+    /// `TranscribingStageHold` learned to want from a clock that moved backwards, and
+    /// a negative advance would run the animation in reverse for a frame.
+    public static func phaseAdvance(for animation: WaveformAnimation, elapsedSeconds: Double) -> Double {
+        let clamped = min(max(elapsedSeconds, 0), maxPhaseAdvanceSeconds)
+
+        switch animation {
+        case .sweep:
+            return clamped * sweepPhaseRate
+        case .travellingPeak:
+            return clamped * phaseRate
+        case .micLevels, .still:
+            // Neither draws from the phase: the mic levels follow live energy, and a
+            // still waveform is not moving at all.
+            return 0
+        }
+    }
 }
