@@ -199,7 +199,15 @@ struct RecordingView: View {
             // Reset, not merely cancel: `.onAppear` re-adopts the stage in flight, and
             // a decision left pending here would be re-affirmed as "already decided"
             // with no timer left to draw it. A fresh hold draws whatever it is handed.
+            //
+            // The drawn stage is reset with it, and the two must move together. A fresh
+            // hold believes `.idle` is on screen; if the coordinator has also returned
+            // to `.idle` by the time the screen comes back, `apply` answers `.unchanged`
+            // and nothing reassigns `displayedStatus` -- leaving the travelling peak and
+            // "Traitement..." drawn over an idle screen. Resetting only one of the two
+            // is what makes them disagree.
             hold = TranscribingStageHold()
+            displayedStatus = .idle
         }
         .navigationBarHidden(true)
     }
