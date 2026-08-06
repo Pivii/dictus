@@ -55,6 +55,22 @@ public protocol PolishEngineProtocol: Sendable {
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
                     mode: PolishMode) -> PolishContextFit
+
+    /// Name the failure `error` — thrown by this engine's own `polish(...)` —
+    /// so an engine failure stops being one opaque bucket (#315).
+    ///
+    /// WHY the engine answers rather than the pipeline: the error is an SDK
+    /// type. Apple's `LanguageModelSession.GenerationError` lives behind
+    /// `#if canImport(FoundationModels)` AND behind an iOS/macOS 26 availability
+    /// gate, so a pipeline that classified it would have to import the framework
+    /// and carry that gate — onto the off-device harness and every test with it.
+    /// Only the engine that threw can see what it threw; the transform around it
+    /// stays backend-agnostic, exactly as `contextFit` above already arranges
+    /// for the context ceiling.
+    ///
+    /// Default implementation returns `.other(error)`: an engine that classifies
+    /// nothing still reports an identifiable reason.
+    func failureReason(for error: Error) -> PolishFailureReason
 }
 
 public extension PolishEngineProtocol {
@@ -65,4 +81,6 @@ public extension PolishEngineProtocol {
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
                     mode: PolishMode) -> PolishContextFit { .fits }
+
+    func failureReason(for error: Error) -> PolishFailureReason { .other(error) }
 }
