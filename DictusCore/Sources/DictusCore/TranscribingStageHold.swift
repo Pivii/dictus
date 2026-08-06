@@ -109,12 +109,19 @@ public struct TranscribingStageHold: Equatable {
             return commit(incoming, now: now)
         }
 
-        let shown = now.timeIntervalSince(displayedSince)
+        // Clamped at zero so a clock that moved backwards cannot lengthen the hold.
+        // `now` is wall-clock on both surfaces, and an NTP correction between the two
+        // reads makes this difference negative -- which, unclamped, would flow into
+        // the subtraction below and return a hold of the floor *plus* the size of the
+        // jump. A one-hour correction would then strand the overlay on
+        // "Transcription..." for the rest of the dictation, until the terminal status
+        // preempted it. The clamp makes `minimumDisplayDuration` a hard ceiling on
+        // what this can ever return, so the worst a backward jump can now cost is one
+        // full floor -- the same half-second any ordinary fast transcription gets.
+        let shown = max(0, now.timeIntervalSince(displayedSince))
         guard shown < Self.minimumDisplayDuration else {
             // The stage has already been readable for long enough -- Whisper medium
             // transcribes in 2.9-5 s, so on that engine the rule never fires at all.
-            // A clock that moved backwards yields a negative elapsed time and holds,
-            // which is the harmless direction: it delays a drawing, never the work.
             return commit(incoming, now: now)
         }
 

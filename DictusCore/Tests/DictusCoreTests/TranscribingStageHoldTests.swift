@@ -128,6 +128,32 @@ final class TranscribingStageHoldTests: XCTestCase {
         assertHold(hold.apply(.processing, now: start.addingTimeInterval(floor - 0.001)), .processing, 0.001)
     }
 
+    func testAClockThatMovedBackwardsCannotLengthenTheHold() {
+        // `now` is wall-clock on both surfaces, so an NTP correction landing between
+        // the two reads makes the elapsed time negative. Unclamped it flowed into the
+        // remainder and returned the floor *plus* the size of the jump -- an hour-long
+        // correction would have stranded the overlay on "Transcription..." for the rest
+        // of the dictation.
+        var hold = transcribing()
+        assertHold(hold.apply(.processing, now: start.addingTimeInterval(-3600)), .processing, floor)
+    }
+
+    func testTheHoldNeverExceedsTheFloor() {
+        // The ceiling the clamp buys, stated as an invariant rather than as one case:
+        // whatever the clock does, no surface is ever asked to wait longer than the
+        // floor it was given.
+        for offset in [-3600.0, -1.0, -0.001, 0.0, 0.1, 0.499] {
+            var hold = transcribing()
+            guard case .hold(_, let remaining) = hold.apply(
+                .processing, now: start.addingTimeInterval(offset)
+            ) else {
+                return XCTFail("expected a hold at offset \(offset)")
+            }
+            XCTAssertLessThanOrEqual(remaining, floor, "offset \(offset)")
+            XCTAssertGreaterThan(remaining, 0, "offset \(offset)")
+        }
+    }
+
     func testAStageMissedEntirelyIsDrawnAtOnceAndNothingIsSynthesised() {
         // Darwin notifications coalesce: the keyboard can go straight from `.recording`
         // to `.processing` without ever seeing `.transcribing`. There is nothing on
