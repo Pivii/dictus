@@ -39,6 +39,12 @@ bool AccentCostTable::setPairs(const uint16_t* from, const uint16_t* to,
 }
 
 float AccentCostTable::cost(uint16_t from, uint16_t to) const {
+    // A character is free to substitute for itself even when it has no slot -- the
+    // contract this table inherited from the accentCost() it replaced. The scorer never
+    // asks (it only substitutes differing characters), but keeping it makes the answer
+    // for every pair identical to the pre-#321 one outside the umlauts.
+    if (from == to) return 0.0f;
+
     int row = substitutionSlot(from);
     int column = substitutionSlot(to);
     if (row < 0 || column < 0) return -1.0f;

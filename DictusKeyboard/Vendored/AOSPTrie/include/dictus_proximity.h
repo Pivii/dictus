@@ -14,17 +14,22 @@ static constexpr int SUBSTITUTION_SLOT_COUNT = 58;
 ///
 /// Covers a-z plus the lowercase half of the Latin-1 supplement (U+00E0..U+00FF), which
 /// is where every accented key of every layout Dictus ships lives: é è ê ë à â ä ç î ï
-/// ô ö ù û ü. Uppercase is folded first. Anything else -- digits, punctuation, ß
-/// (U+00DF, deliberately outside the accent relation), letters beyond Latin-1 -- returns
-/// -1 and its callers treat it as unrelated.
+/// ô ö ù û ü. Anything else -- digits, punctuation, ß (U+00DF, deliberately outside the
+/// accent relation), letters beyond Latin-1 -- returns -1 and its callers treat it as
+/// unrelated.
 ///
 /// WHY a slot map rather than the c - 'a' indexing this replaced: that indexing made the
 /// tables 26 ASCII letters *by construction*, so QWERTZ's ü/ö/ä keys were not mis-scored,
 /// they were unrepresentable (#321).
+///
+/// WHY A-Z folds but À-Þ does not: A-Z folding is what the proximity map has always done.
+/// Accented uppercase had no slot to fold *into* before this change, so folding it now
+/// would newly relate `É` to `e` -- a behaviour change in French smuggled in by a German
+/// fix. The scorer is fed lowercased input anyway (`AOSPTrieEngine.spellCheck`), so this
+/// costs nothing today; if a capitalized dictionary entry ever makes it worth doing, it is
+/// its own change with its own evidence.
 inline int substitutionSlot(uint16_t c) {
     if (c >= 'A' && c <= 'Z') c = static_cast<uint16_t>(c - 'A' + 'a');
-    // Latin-1 uppercase to lowercase. U+00D7 is the multiplication sign, not a letter.
-    if (c >= 0x00C0 && c <= 0x00DE && c != 0x00D7) c = static_cast<uint16_t>(c + 0x20);
 
     if (c >= 'a' && c <= 'z') return static_cast<int>(c - 'a');
     if (c >= 0x00E0 && c <= 0x00FF) return 26 + static_cast<int>(c - 0x00E0);
