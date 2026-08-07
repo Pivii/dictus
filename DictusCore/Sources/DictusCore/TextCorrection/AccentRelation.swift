@@ -15,7 +15,8 @@ import Foundation
 ///
 /// WHY it matters: without an entry, two spellings of the same word are *unrelated*
 /// characters to the scorer. German shipped that way — `über` and `uber` scored as far
-/// apart as `über` and `xber` (#321).
+/// apart as `über` and `xber` (#321) — and so did Spanish, whose own acutes and `ñ` were
+/// absent until #327.
 public enum AccentRelation {
 
     /// Cost of substituting a base letter for one of its accented forms, or the reverse
@@ -28,8 +29,23 @@ public enum AccentRelation {
 
     /// Accented character → the base letter it is a variant of.
     ///
-    /// French and Spanish entries are frozen as they shipped: changing one silently moves
-    /// every correction in those languages. The three umlauts were added for German (#321).
+    /// The entries that shipped first are frozen: changing one silently moves every
+    /// correction in French. The three umlauts were added for German (#321), the five
+    /// Spanish characters for #327.
+    ///
+    /// WHY the Spanish pairs that are *both real words* are in here anyway — the decision
+    /// #327 is asked to record. `si`/`sí`, `mas`/`más`, `esta`/`está`, `ano`/`año` are each
+    /// two valid Spanish words, so relating them cheaply reads as an over-correction risk.
+    /// It is not one, because this table is never consulted for them: it feeds the C++
+    /// scorer's edit-distance traversal, which `TextPredictionEngine.autocorrect` reaches
+    /// only *after* its valid-word guard, and the guard returns on any typed form the
+    /// dictionary already holds. What the Spanish entries buy is the cases where the typed
+    /// form is not a word — `manana` → `mañana`, `espanpl` → `español` — exactly what the
+    /// umlauts bought German. Choosing between two valid spellings needs the preceding
+    /// words, which this path does not have; that is #114's problem, not this table's.
+    /// The accent path that *does* run before the guard is `expandAccents` over
+    /// `spanishProfile.accentMap` — it has held all six Spanish accents since the language
+    /// shipped, and its 5× frequency-dominance rule is what holds it back on those pairs.
     ///
     /// WHY `ß` (U+00DF) is deliberately absent — the decision this table is asked to
     /// record: `ß` is not an accent of `s`, it is a ligature whose written equivalent is
@@ -41,7 +57,7 @@ public enum AccentRelation {
     /// The `ss` → `ß` relation is modelled where a length change *can* be expressed:
     /// `germanProfile.collapseRules` (see `expandAccents`).
     public static let baseLetters: [Character: Character] = [
-        // French / Spanish — frozen.
+        // French — frozen.
         "\u{00E9}": "e",        // é
         "\u{00E8}": "e",        // è
         "\u{00EA}": "e",        // ê
@@ -57,7 +73,15 @@ public enum AccentRelation {
         // German umlauts (#321).
         "\u{00E4}": "a",        // ä
         "\u{00F6}": "o",        // ö
-        "\u{00FC}": "u"         // ü
+        "\u{00FC}": "u",        // ü
+        // Spanish acutes and ñ (#327). `é` and `ü` were already here by way of French and
+        // German; these five were the last supported language's own characters the scorer
+        // could not see at all.
+        "\u{00E1}": "a",        // á
+        "\u{00ED}": "i",        // í
+        "\u{00F1}": "n",        // ñ
+        "\u{00F3}": "o",        // ó
+        "\u{00FA}": "u"         // ú
     ]
 
     /// The base letter `character` is an accented form of, or `nil` if it is not one.
