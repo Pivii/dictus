@@ -30,14 +30,14 @@ public enum LayoutType: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    /// Reads the active layout from App Group UserDefaults, defaulting to AZERTY.
-    /// AZERTY is the default because Dictus targets French-speaking users.
+    /// The layout the keyboard is currently drawing: the active language's layout.
+    ///
+    /// Since #272 the layout is stored per dictionary language, so "the active layout" is a
+    /// resolution of two values rather than one stored string. Every consumer — the grid
+    /// builder, the trie's proximity map, the spacebar neighbours, the emoji picker — keeps
+    /// reading it here; only what backs it changed. See `KeyboardLayoutPreference`.
     public static var active: LayoutType {
-        guard let raw = AppGroup.defaults.string(forKey: SharedKeys.keyboardLayout),
-              let layout = LayoutType(rawValue: raw) else {
-            return .azerty
-        }
-        return layout
+        KeyboardLayoutPreference.layout(for: .active)
     }
 }
 

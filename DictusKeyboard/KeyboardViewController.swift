@@ -199,6 +199,9 @@ class KeyboardViewController: UIInputViewController {
             bridge: keyBridge,
             onLanguageChanged: { [weak self] newLang in
                 self?.handleLanguageChange(newLang)
+            },
+            onLayoutChanged: { [weak self] layout, language in
+                self?.handleLayoutChange(layout, for: language)
             }
         )
         let hosting = UIHostingController(rootView: rootView)
@@ -979,8 +982,9 @@ class KeyboardViewController: UIInputViewController {
             ))
 
         case .panel:
-            // Reserved for #241. No view is attached yet, but the geometry is:
-            // adding the panel is adding a SwiftUI branch, not editing this switch.
+            // Same geometry as the emoji picker: the bar keeps its height and the panel
+            // fills the rest. A grid rebuild triggered from the panel (a language or
+            // layout pick) ends by re-applying this case, so the panel survives it.
             giellaKeyboard?.isHidden = true
             let fullHeight = computeKeyboardHeight()
             hostingHeightConstraint?.constant = fullHeight
@@ -1092,6 +1096,24 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "languageChanged",
             details: "lang=\(newLang.rawValue) layout=\(LayoutType.active.rawValue)"
+        ))
+    }
+
+    /// Handles a layout pick from the keyboard panel (#272).
+    ///
+    /// Only the active language's layout is on screen. A layout chosen for one of the
+    /// other rows is already stored, and costing the user a ~200 ms grid rebuild to
+    /// redraw the same keys is worse than doing nothing.
+    private func handleLayoutChange(_ layout: LayoutType, for language: SupportedLanguage) {
+        guard language == SupportedLanguage.active else { return }
+
+        reloadKeyboardLayout()
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "layoutChanged",
+            details: "lang=\(language.rawValue) layout=\(LayoutType.active.rawValue)"
         ))
     }
 

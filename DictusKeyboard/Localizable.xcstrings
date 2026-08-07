@@ -82,6 +82,17 @@
         }
       }
     },
+    "Layout" : {
+      "comment" : "Column header in the keyboard panel, above the per-language layout pills (issue #272).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disposition"
+          }
+        }
+      }
+    },
     "Listening..." : {
       "localizations" : {
         "fr" : {

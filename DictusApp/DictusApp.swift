@@ -90,6 +90,13 @@ struct DictusApp: App {
         if defaults?.string(forKey: SharedKeys.language) == nil {
             defaults?.set("fr", forKey: SharedKeys.language)
         }
+        // Freeze the layout an updating install is already typing on, before anything can
+        // change the active language (#272). The migration is idempotent and also runs from
+        // the first layout read in either process — the keyboard extension can run before
+        // this app is ever launched again — so this call is only about doing it as early as
+        // possible on the app side.
+        KeyboardLayoutPreference.migrateToPerLanguageLayoutsIfNeeded()
+
         // Register liveActivityEnabled default as true for existing users.
         // WHY: UserDefaults.bool(forKey:) returns false for missing keys.
         // Without this, existing users upgrading would see Live Activity disabled.

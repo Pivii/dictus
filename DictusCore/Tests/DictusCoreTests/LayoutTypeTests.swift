@@ -10,9 +10,26 @@ final class LayoutTypeTests: XCTestCase {
         UserDefaults(suiteName: AppGroup.identifier)
     }
 
+    /// Since #272 the layout resolves through the per-language store, and the presence of
+    /// that store is a migration stamp — a leftover from another test would decide what
+    /// `LayoutType.active` returns here. Cleared both ways round.
+    override func setUp() {
+        super.setUp()
+        clearStorage()
+    }
+
     override func tearDown() {
+        clearStorage()
         super.tearDown()
+    }
+
+    private func clearStorage() {
         defaults?.removeObject(forKey: SharedKeys.keyboardLayout)
+        defaults?.removeObject(forKey: SharedKeys.keyboardLayoutsByLanguage)
+        defaults?.removeObject(forKey: SharedKeys.language)
+        // The migration also treats a completed onboarding as "this install predates
+        // #272", so a leftover flag decides the outcome of the tests below.
+        defaults?.removeObject(forKey: SharedKeys.hasCompletedOnboarding)
     }
 
     // MARK: - Persisted raw values
@@ -31,29 +48,31 @@ final class LayoutTypeTests: XCTestCase {
 
     // MARK: - Round-trip through App Group defaults
 
+    /// Since #272 the stored value is per language (`KeyboardLayoutPreference`); the migration
+    /// off the old single global key has its own coverage in `KeyboardLayoutPreferenceTests`.
     func testEveryLayoutRoundTripsThroughAppGroupDefaults() {
         for layout in LayoutType.allCases {
-            defaults?.set(layout.rawValue, forKey: SharedKeys.keyboardLayout)
+            KeyboardLayoutPreference.setLayout(layout, for: .active)
             XCTAssertEqual(LayoutType.active, layout, "\(layout.rawValue) did not round-trip")
         }
     }
 
     func testQwertzIsResolvedFromTheStoredRawValue() {
-        defaults?.set("qwertz", forKey: SharedKeys.keyboardLayout)
+        KeyboardLayoutPreference.setLayout(.qwertz, for: .active)
         XCTAssertEqual(LayoutType.active, .qwertz)
     }
 
     // MARK: - Fallback
 
     func testUnknownStoredValueFallsBackToAzerty() {
-        defaults?.set("dvorak", forKey: SharedKeys.keyboardLayout)
+        defaults?.set([SupportedLanguage.active.rawValue: "dvorak"], forKey: SharedKeys.keyboardLayoutsByLanguage)
         XCTAssertEqual(LayoutType.active, .azerty,
-                       "An unrecognised stored layout must keep falling back to AZERTY.")
+                       "An unrecognised stored layout must keep falling back to the default, AZERTY for French.")
     }
 
     func testMissingStoredValueFallsBackToAzerty() {
-        defaults?.removeObject(forKey: SharedKeys.keyboardLayout)
-        XCTAssertEqual(LayoutType.active, .azerty)
+        XCTAssertEqual(LayoutType.active, .azerty,
+                       "Nothing stored and no language stored: French, therefore AZERTY.")
     }
 
     // MARK: - Display names

@@ -30,8 +30,13 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.transcriptionLanguage, store: UserDefaults(suiteName: AppGroup.identifier))
     private var transcriptionLanguage = TranscriptionLanguageMode.followStoredValue
 
-    @AppStorage(SharedKeys.keyboardLayout, store: UserDefaults(suiteName: AppGroup.identifier))
-    private var keyboardLayout = "azerty"
+    /// Bumped whenever the Layout picker writes, to re-evaluate the body.
+    ///
+    /// WHY not @AppStorage like every other preference here: since #272 the layout is
+    /// stored per keyboard language (`KeyboardLayoutPreference`), so there is no single
+    /// key for @AppStorage to observe — the value the picker shows depends on the
+    /// language selected in the row above it.
+    @State private var layoutRevision = 0
 
     @AppStorage(SharedKeys.hapticsEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var hapticsEnabled = true
@@ -58,6 +63,32 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.autocorrectDebugLogging, store: UserDefaults(suiteName: AppGroup.identifier))
     private var autocorrectDebugLogging = false
     #endif
+
+    /// The keyboard language the pickers below operate on.
+    private var keyboardLanguage: SupportedLanguage {
+        SupportedLanguage(rawValue: language) ?? .french
+    }
+
+    /// The Layout picker's selection: the layout of whichever keyboard language is
+    /// currently selected above it (#272).
+    ///
+    /// The getter reads `layoutRevision` so a write re-renders the picker; the setter is
+    /// the only thing that records an explicit layout from this screen. Changing the
+    /// *language* runs neither — which is the whole point, the language no longer
+    /// overwrites the layout.
+    private var layoutSelection: Binding<LayoutType> {
+        let selectedLanguage = keyboardLanguage
+        return Binding(
+            get: {
+                _ = layoutRevision
+                return KeyboardLayoutPreference.layout(for: selectedLanguage)
+            },
+            set: { newLayout in
+                KeyboardLayoutPreference.setLayout(newLayout, for: selectedLanguage)
+                layoutRevision += 1
+            }
+        )
+    }
 
     /// Whether the currently active model uses the Parakeet engine (CTC/TDT).
     /// Parakeet auto-detects language — the language picker has no effect on it.
@@ -165,21 +196,27 @@ struct SettingsView: View {
                     }
                 }
                 .onChange(of: language) { _, newLang in
-                    // Auto-switch keyboard layout to the language's default.
-                    // French -> AZERTY, English/Spanish -> QWERTY, German -> QWERTZ.
+                    // The layout is NOT touched here anymore (#272): it belongs to the
+                    // language being selected, and overwriting it is what made "English
+                    // autocorrect on an AZERTY keyboard" unreachable. The Layout picker
+                    // below now shows the new language's own layout instead.
+                    //
+                    // Routing through activate() keeps the legacy mirror in step — the
+                    // @AppStorage write above has already stored the language, so this
+                    // only adds the mirror.
                     if let lang = SupportedLanguage(rawValue: newLang) {
-                        keyboardLayout = lang.defaultLayout.rawValue
+                        SupportedLanguage.activate(lang)
                     }
                 }
 
                 DefaultLayerPicker()
 
-                Picker("Layout", selection: $keyboardLayout) {
+                Picker("Layout", selection: layoutSelection) {
                     // Iterate over LayoutType so adding a layout (QWERTZ in #151,
                     // any future one) only requires the enum case — the entries used
                     // to be hardcoded here and in the keyboard panel separately.
-                    ForEach(LayoutType.allCases, id: \.rawValue) { layout in
-                        Text(layout.displayName).tag(layout.rawValue)
+                    ForEach(LayoutType.allCases, id: \.self) { layout in
+                        Text(layout.displayName).tag(layout)
                     }
                 }
 

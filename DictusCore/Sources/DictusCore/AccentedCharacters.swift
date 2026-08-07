@@ -53,6 +53,16 @@ public enum AccentedCharacters {
 /// `"'"` with `alternate: "accent"`. `DictusKeyboardBridge` calls into this
 /// namespace on each keystroke to decide what label the key should display
 /// and what action it should take when tapped.
+///
+/// WHY every entry point takes a language (#272):
+/// the key used to trigger purely off its physical presence on the AZERTY grid, with no
+/// language check at all. That was harmless while AZERTY implied French. Now that the
+/// layout is decoupled from the dictionary language, English/Spanish/German on AZERTY are
+/// reachable combinations, and French adaptive accents on those keyboards would be wrong —
+/// so outside French the key behaves as the plain apostrophe it is labelled with.
+/// French on QWERTY is not the mirror problem: that grid has no adaptive key slot at all,
+/// and those users reach accents through the standard long-press popups, which already
+/// carry the French set.
 public enum FrenchAdaptiveKey {
 
     /// Default accent per vowel (most common in French).
@@ -79,7 +89,15 @@ public enum FrenchAdaptiveKey {
     /// In French, the apostrophe is the most common non-letter character after space.
     /// It appears in "l'", "d'", "n'", "j'", "c'", "s'" etc. Having it one tap away
     /// on the letters layer eliminates the 3-tap layer switch otherwise needed.
-    public static func label(afterTyping lastChar: String?, precedingChar: String? = nil) -> String {
+    ///
+    /// - Parameter language: the active keyboard language by default; outside French the
+    ///   key is a plain apostrophe (#272).
+    public static func label(
+        afterTyping lastChar: String?,
+        precedingChar: String? = nil,
+        language: SupportedLanguage = .active
+    ) -> String {
+        guard language == .french else { return "'" }
         guard let lastChar = lastChar else { return "'" }
         let lowered = lastChar.lowercased()
 
@@ -102,7 +120,13 @@ public enum FrenchAdaptiveKey {
     /// Returns true if the adaptive key should replace the previous character
     /// (i.e., when the key is showing an accent for a vowel, not apostrophe).
     /// Used by the bridge to call `deleteBackward()` before inserting the accent.
-    public static func shouldReplace(afterTyping lastChar: String?, precedingChar: String? = nil) -> Bool {
+    /// Never replaces anything outside French, where the key inserts an apostrophe (#272).
+    public static func shouldReplace(
+        afterTyping lastChar: String?,
+        precedingChar: String? = nil,
+        language: SupportedLanguage = .active
+    ) -> Bool {
+        guard language == .french else { return false }
         guard let lastChar = lastChar?.lowercased() else { return false }
         if let prev = precedingChar?.lowercased() {
             let bigram = prev + lastChar
@@ -115,8 +139,14 @@ public enum FrenchAdaptiveKey {
 
     /// Returns the base vowel that triggered the adaptive key's accent display.
     /// Used to determine which accent variants to show on long-press.
-    /// Returns nil when the adaptive key is showing apostrophe (no long-press popup needed).
-    public static func vowel(afterTyping lastChar: String?, precedingChar: String? = nil) -> String? {
+    /// Returns nil when the adaptive key is showing apostrophe (no long-press popup needed),
+    /// which is every keystroke outside French (#272).
+    public static func vowel(
+        afterTyping lastChar: String?,
+        precedingChar: String? = nil,
+        language: SupportedLanguage = .active
+    ) -> String? {
+        guard language == .french else { return nil }
         guard let lastChar = lastChar?.lowercased() else { return nil }
         if let prev = precedingChar?.lowercased() {
             let bigram = prev + lastChar

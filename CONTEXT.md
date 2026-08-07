@@ -20,7 +20,7 @@ Per-language **must-correct** map: input → forced correction, applied before e
 Per-language map from base letter to accented variants used by `accentExpansion()` to attempt accent insertions when a typed word isn't in the dictionary. Generative, not curated — you list which accents *could* apply to which letters, then the algorithm tries them and picks the highest-frequency hit.
 
 ### Adaptive accent key
-A French-specific feature of the AZERTY layout: the apostrophe/accent key on row 3 changes its label based on context (shows `é` after `e`, apostrophe after `qu`, etc.). **Not generalized to other languages.** Lives in `DictusCore/Languages/French.swift`. Other languages reach accents via standard long-press popups.
+A French-specific feature of the AZERTY layout: the apostrophe/accent key on row 3 changes its label based on context (shows `é` after `e`, apostrophe after `qu`, etc.). **Not generalized to other languages.** Lives in `FrenchAdaptiveKey` (`DictusCore/AccentedCharacters.swift`). Since #272 the layout no longer implies the language, so the key checks the active language and behaves as a plain apostrophe outside French. Other languages reach accents via standard long-press popups, as does French on a non-AZERTY layout — those grids have no adaptive key slot.
 
 ### Seed bigrams
 Hand-curated word pairs injected into the n-gram corpus by `tools/ngram_builder.py` to compensate for underrepresentation in encyclopedic sources (Wikipedia, Google Books). Required for splitting compound input like `pasmal → pas mal`. Per-language list in `SEED_BIGRAMS_BY_LANG`. Policy: empty for new languages onboarded by non-native maintainers; populated post-launch from native-speaker contributions. See ADR 0001.
@@ -62,7 +62,10 @@ A polish backend conforming to `PolishEngineProtocol` (in DictusCore). One imple
 ## Keyboard
 
 ### Layout type
-The physical key arrangement: `LayoutType.azerty` (French), `LayoutType.qwerty` (English, Spanish) or `LayoutType.qwertz` (German, #151). Each `SupportedLanguage` declares its `defaultLayout`, which seeds the layout when that language is *selected* and never rewrites a layout already stored. Layout is global today (one active at a time), not per-language; per-language layout selection is tracked in issue #52, and decoupling layout from dictionary language in #272.
+The physical key arrangement: `LayoutType.azerty` (French), `LayoutType.qwerty` (English, Spanish) or `LayoutType.qwertz` (German, #151). **Per dictionary language since #272**: each `SupportedLanguage` stores its own layout, so French→AZERTY and English→QWERTY are remembered independently and selecting a language no longer reshapes the keyboard. `LayoutType.active` is the layout of the active language; `KeyboardLayoutPreference` owns the storage.
+
+### Inherited vs explicit layout
+A language with no stored layout is **inherited**: it resolves to `SupportedLanguage.defaultLayout` and keeps tracking it, so shipping a new default (QWERTZ for German, #151) reaches users who never expressed a preference. Picking a layout for that language — in Settings or on the keyboard panel's layout pills — makes it **explicit**, and `defaultLayout` stops applying to it. `defaultLayout` is therefore a seed, not a rule.
 
 QWERTZ carries dedicated ä/ö/ü keys, which makes its first two rows 11 units wide against 10 for every other row in every layout. The renderer normalizes each row against its own unit total, so those rows draw narrower keys. Row data lives in `DictusCore/KeyboardLayoutData.swift`; `DictusKeyboard/KeyboardLayouts.swift` builds the keys from it.
 
