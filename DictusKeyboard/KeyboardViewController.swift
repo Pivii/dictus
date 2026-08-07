@@ -782,10 +782,17 @@ class KeyboardViewController: UIInputViewController {
     ///
     /// With the number row off, `drawsDigitRow` is false in both orientations, the guard
     /// inside never opens, and this override adds nothing but a `super` call.
+    /// WHY the `isOnScreen` guard: iOS caches UIInputViewController instances and rarely
+    /// deallocates them (#128), so a rotation must not be taken as licence for a stale
+    /// controller to rebuild its grid — that is the class of bug `observeKeyboardAreaMode`
+    /// is subscribed in `viewWillAppear` to avoid. Nothing is lost by skipping: a controller
+    /// that later becomes the live keyboard runs `viewWillAppear`, which checks the same
+    /// mismatch. `onScreen=` is logged so a device capture can say which controllers got here.
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-            self?.reloadIfNumberRowChanged(trigger: "rotation")
+            guard let self, self.isOnScreen else { return }
+            self.reloadIfNumberRowChanged(trigger: "rotation")
         }
     }
 
@@ -1203,7 +1210,7 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "numberRowMismatchReload",
             details: "trigger=\(trigger) built=\(builtNumberRow.map(String.init(describing:)) ?? "nil") "
-                + "current=\(drawsDigitRow) landscape=\(DeviceContext.current.isLandscape)"
+                + "current=\(drawsDigitRow) landscape=\(DeviceContext.current.isLandscape) onScreen=\(isOnScreen)"
         ))
         reloadKeyboardLayout()
     }
