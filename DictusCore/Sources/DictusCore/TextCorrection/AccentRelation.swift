@@ -45,7 +45,13 @@ public enum AccentRelation {
     /// words, which this path does not have; that is #114's problem, not this table's.
     /// The accent path that *does* run before the guard is `expandAccents` over
     /// `spanishProfile.accentMap` — it has held all six Spanish accents since the language
-    /// shipped, and its 5× frequency-dominance rule is what holds it back on those pairs.
+    /// shipped. It cannot reach these pairs either: its 5× frequency-dominance rule runs on
+    /// the trie's *log-normalized* frequencies, so clearing 5× needs the target to be about
+    /// the input raised to the fifth power, which nothing in a 40K-entry corpus reaches
+    /// (diagnosed in #326). The rule is inert for any word the dictionary holds. So neither
+    /// accent path can correct a both-valid pair today, in any language — do not read the 5×
+    /// rule as a live safeguard that could be tuned. Making these pairs correctable at all
+    /// is #114's frequency-weighted guard, or curation out of the frequency list.
     ///
     /// WHY `ß` (U+00DF) is deliberately absent — the decision this table is asked to
     /// record: `ß` is not an accent of `s`, it is a ligature whose written equivalent is
