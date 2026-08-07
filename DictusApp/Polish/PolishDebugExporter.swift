@@ -19,6 +19,13 @@ struct PolishDebugExport: Codable {
     let device: DeviceInfo
     let settings: SettingsInfo
     let outcomes: [String: Int]
+    /// Per-reason counts over the `engineFailed` events (#315), e.g.
+    /// `{"rateLimited": 21, "other:NSError": 4}`. Same role as `outcomes` one
+    /// level down: it answers "which reason dominates" without reading 242
+    /// events. Absent keys mean zero — unlike `outcomes`, the set of reasons is
+    /// open, so seeding it with every known slug would print noise on a healthy
+    /// export.
+    let failureReasons: [String: Int]
     let events: [Event]
 
     struct DeviceInfo: Codable {
@@ -52,6 +59,8 @@ struct PolishDebugExport: Codable {
         let targetLanguage: String
         let detectedLanguage: String?
         let outcome: String
+        /// Why the engine failed (#315) — present on `engineFailed` events only.
+        let failureReason: String?
         let latencyMs: Int
         /// Latency breakdown — `latencyMs` ≈ preprocess + engine + postprocess.
         /// `engineMs` is the pure LLM cost; the other two are our regex passes.
@@ -100,8 +109,12 @@ enum PolishDebugExporter {
             "skippedShort": 0, "skippedAutoMode": 0, "cancelled": 0, "engineFailed": 0,
             "exceededContextBudget": 0
         ]
+        var failureReasons: [String: Int] = [:]
         for e in entries {
             outcomes[e.metrics.outcome.rawValue, default: 0] += 1
+            if let reason = e.metrics.failureReason {
+                failureReasons[reason.slug, default: 0] += 1
+            }
         }
 
         let events = entries.map { entry in
@@ -113,6 +126,7 @@ enum PolishDebugExporter {
                 targetLanguage: entry.metrics.targetLanguage.rawValue,
                 detectedLanguage: entry.metrics.detectedLanguage,
                 outcome: entry.metrics.outcome.rawValue,
+                failureReason: entry.metrics.failureReason?.slug,
                 latencyMs: entry.metrics.latencyMs,
                 preprocessMs: entry.metrics.timings?.preprocessMs,
                 engineMs: entry.metrics.timings?.engineMs,
@@ -131,6 +145,7 @@ enum PolishDebugExporter {
             device: device,
             settings: settings,
             outcomes: outcomes,
+            failureReasons: failureReasons,
             events: events
         )
     }

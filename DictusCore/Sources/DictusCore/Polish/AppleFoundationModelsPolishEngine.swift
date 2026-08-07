@@ -131,6 +131,42 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         )
     }
 
+    // MARK: - Failure classification (#315)
+
+    /// Map what `session.respond(...)` threw onto a stable slug.
+    ///
+    /// This is the whole point of #315: a failure that arrives in 4 ms while
+    /// availability reads `available` has to say which of Apple's nine
+    /// `GenerationError` cases it was. Two of them can plausibly throw that
+    /// fast without the model running — `rateLimited` and `concurrentRequests` —
+    /// and they point at opposite culprits: a quota Apple applies to us, or two
+    /// of our own calls overlapping. The exported reason is what tells them
+    /// apart.
+    ///
+    /// Deliberately reads nothing out of the error but its case. The attached
+    /// `Context.debugDescription` can quote the prompt, i.e. the user's
+    /// dictation, and this value travels into a shared export.
+    public func failureReason(for error: Error) -> PolishFailureReason {
+        guard let generationError = error as? LanguageModelSession.GenerationError else {
+            return .other(error)
+        }
+        switch generationError {
+        case .exceededContextWindowSize: return .exceededContextWindowSize
+        case .assetsUnavailable: return .assetsUnavailable
+        case .guardrailViolation: return .guardrailViolation
+        case .unsupportedGuide: return .unsupportedGuide
+        case .unsupportedLanguageOrLocale: return .unsupportedLanguageOrLocale
+        case .decodingFailure: return .decodingFailure
+        case .rateLimited: return .rateLimited
+        case .concurrentRequests: return .concurrentRequests
+        case .refusal: return .refusal
+        // `GenerationError` ships with library evolution, so a future OS can add
+        // a case this build has never heard of. It lands in the catch-all with
+        // its type name rather than failing to compile against a newer SDK.
+        @unknown default: return .other(error)
+        }
+    }
+
     // MARK: - Instruction routing
 
     /// Returns the system prompt for `(mode, language)`. All four supported
