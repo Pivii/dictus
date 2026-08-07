@@ -41,6 +41,13 @@ struct SettingsView: View {
     @AppStorage(SharedKeys.hapticsEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
     private var hapticsEnabled = true
 
+    /// Persistent digit row above the letter rows (#331). Off by default: it makes the
+    /// keyboard a fifth taller, and nobody's keyboard may change shape on update.
+    /// Portrait only — the keyboard reads this through `NumberRowPreference` and never draws
+    /// the row in landscape, where it would take 72% of the screen.
+    @AppStorage(SharedKeys.numberRowEnabled, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var numberRowEnabled = false
+
     @AppStorage(SharedKeys.activeModel, store: UserDefaults(suiteName: AppGroup.identifier))
     private var activeModel = "openai_whisper-small"
 
@@ -220,6 +227,11 @@ struct SettingsView: View {
                     }
                 }
 
+                // Sits under the Layout picker because it changes the same thing: the shape
+                // of the key grid. It applies to every layout and every keyboard language —
+                // a number row is a hardware habit, not a language one (#331).
+                Toggle("Number row", isOn: $numberRowEnabled)
+
                 Toggle("Haptic feedback", isOn: $hapticsEnabled)
 
                 NavigationLink("Sounds") {
@@ -260,6 +272,12 @@ struct SettingsView: View {
             } header: {
                 Text("Keyboard")
             } footer: {
+                // Only shown once the row is on: the keyboard drops it in landscape by
+                // design (#331), and without a word here that reads as a bug to the person
+                // who just turned it on.
+                if numberRowEnabled {
+                    Text("The number row is shown in portrait only.")
+                }
                 if !liveActivityEnabled {
                     Text("Dynamic Island and Lock Screen notification are disabled.")
                 }
