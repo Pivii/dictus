@@ -260,13 +260,8 @@ struct SettingsView: View {
             } header: {
                 Text("Keyboard")
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    // Without this the picker looks global, and a user who sets a layout
-                    // for one language would expect to find it on the next one (#272).
-                    Text("The layout is saved for each keyboard language.")
-                    if !liveActivityEnabled {
-                        Text("Dynamic Island and Lock Screen notification are disabled.")
-                    }
+                if !liveActivityEnabled {
+                    Text("Dynamic Island and Lock Screen notification are disabled.")
                 }
             }
 
