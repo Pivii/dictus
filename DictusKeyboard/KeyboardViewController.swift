@@ -782,6 +782,7 @@ class KeyboardViewController: UIInputViewController {
     ///
     /// With the number row off, `drawsDigitRow` is false in both orientations, the guard
     /// inside never opens, and this override adds nothing but a `super` call.
+    ///
     /// WHY the `isOnScreen` guard: iOS caches UIInputViewController instances and rarely
     /// deallocates them (#128), so a rotation must not be taken as licence for a stale
     /// controller to rebuild its grid — that is the class of bug `observeKeyboardAreaMode`
