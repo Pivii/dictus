@@ -2186,6 +2186,17 @@
         }
       }
     },
+    "The layout is saved for each keyboard language." : {
+      "comment" : "Settings footer: the Layout picker applies to the keyboard language selected above it (issue #272).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La disposition est enregistrée pour chaque langue du clavier."
+          }
+        }
+      }
+    },
     "The keyboard will be detected automatically" : {
       "localizations" : {
         "fr" : {
