@@ -192,7 +192,18 @@ struct RecordingView: View {
         }
         // A screen that appears mid-dictation adopts the stage in flight at once,
         // rather than starting from `.idle` and pretending to enter it.
-        .onAppear { advanceDisplayedStatus(to: coordinator.status) }
+        .onAppear {
+            // A failure this screen was never mounted for gets read here (#320). A cold
+            // start that dies puts `.failed` in place while `SwipeBackOverlayView` owns
+            // the window; MainTabView inserts this view only once the overlay is gone, by
+            // which time the status has stopped changing and `onChange` will never fire.
+            // Only `.failed` is adopted on appear: `.ready` would replay the result card
+            // and, in onboarding, its auto-advance.
+            if coordinator.status == .failed {
+                handleStatusChange(.failed)
+            }
+            advanceDisplayedStatus(to: coordinator.status)
+        }
         .onDisappear {
             holdTask?.cancel()
             holdTask = nil
@@ -412,7 +423,17 @@ struct RecordingView: View {
             }
         case .failed:
             showError = true
-            errorMessage = coordinator.lastResult ?? String(localized: "Transcription failed. Check that the model is downloaded.")
+            // The reason the app itself recorded, not the transcription property (#320).
+            // `lastResult` only ever holds transcribed text and `startDictation` nils it
+            // on every entry path, so reading it here was reading nil one hundred percent
+            // of the time and printing the fallback -- which named the model download,
+            // whatever had actually failed.
+            //
+            // The fallback now names nothing. A failure with no recorded reason is a
+            // failure we cannot explain, and the honest sentence for that is the one that
+            // explains nothing. Every cause we *can* name already writes its own message
+            // at its own call site.
+            errorMessage = DictationErrorChannel.current ?? String(localized: "The dictation failed.")
         default:
             break
         }
