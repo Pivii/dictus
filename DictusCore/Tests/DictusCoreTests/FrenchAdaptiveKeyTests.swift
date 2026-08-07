@@ -61,7 +61,16 @@ final class FrenchAdaptiveKeyTests: XCTestCase {
     /// calls it — one language switch is enough to change the key's behaviour.
     func testTheGuardFollowsTheActiveLanguageByDefault() {
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        defer { defaults?.removeObject(forKey: SharedKeys.language) }
+        // Restore rather than clear: the suite is shared with every other test class,
+        // and clearing would hand them a different language than they started with.
+        let previousLanguage = defaults?.string(forKey: SharedKeys.language)
+        defer {
+            if let previousLanguage {
+                defaults?.set(previousLanguage, forKey: SharedKeys.language)
+            } else {
+                defaults?.removeObject(forKey: SharedKeys.language)
+            }
+        }
 
         defaults?.set(SupportedLanguage.french.rawValue, forKey: SharedKeys.language)
         XCTAssertEqual(FrenchAdaptiveKey.label(afterTyping: "e"), "\u{00E9}")

@@ -27,6 +27,9 @@ final class LayoutTypeTests: XCTestCase {
         defaults?.removeObject(forKey: SharedKeys.keyboardLayout)
         defaults?.removeObject(forKey: SharedKeys.keyboardLayoutsByLanguage)
         defaults?.removeObject(forKey: SharedKeys.language)
+        // The migration also treats a completed onboarding as "this install predates
+        // #272", so a leftover flag decides the outcome of the tests below.
+        defaults?.removeObject(forKey: SharedKeys.hasCompletedOnboarding)
     }
 
     // MARK: - Persisted raw values
