@@ -124,7 +124,11 @@ public enum LogEvent: Sendable {
     // MARK: Waveform Diagnostics
     case waveformAppeared(refreshID: Int, isProcessing: Bool, energyCount: Int, killedState: Bool)
     case waveformDisappeared(refreshID: Int, renderTick: Int)
-    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int)
+    /// `maxGapMs` is the worst interval between two display-link callbacks since the
+    /// previous heartbeat. It is the frame-cadence evidence #314 asks for, carried by a
+    /// line that is already emitted every ~2 s: a per-frame event would be the wrong
+    /// trade against a log that is capped at 1 MB and deduplicated (#255).
+    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int, maxGapMs: Int)
     case waveformStall(gapMs: Int, renderTick: Int, energyCount: Int)
     case waveformRefreshIDChanged(oldID: Int, newID: Int, status: String)
     case waveformEnergyTransition(fromCount: Int, toCount: Int, status: String)
@@ -193,6 +197,18 @@ public enum LogEvent: Sendable {
     case appWhisperKitLoaded(modelName: String)
     case deviceCapabilitySnapshot(model: String, ramGB: Int, availableMemoryMB: Int, thermalState: String)
 
+    // MARK: Polish
+    /// Issue #315: the polish engine threw. `reason` is the slug the engine gave
+    /// its own failure (`PolishFailureReason`) — "rateLimited", "concurrentRequests",
+    /// or "other:<Type>" for an error no engine recognised.
+    ///
+    /// WHY it belongs in this log and not only in the polish debug export: the
+    /// export answers "how often, and which reason", but not "what else was the
+    /// app doing". A failure that arrives in 4 ms has to be readable against the
+    /// dictation timeline right next to it — status transitions, holds, the
+    /// insertion — and only this log has all of them on one page.
+    case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -246,6 +262,11 @@ public enum LogEvent: Sendable {
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded, .deviceCapabilitySnapshot:
             return .lifecycle
+        // Polish is the stage after the STT result and before the App Group
+        // write, so it reads with the transcription stream rather than as a
+        // subsystem of its own (#315).
+        case .polishEngineFailed:
+            return .transcription
         }
     }
 
@@ -312,6 +333,12 @@ public enum LogEvent: Sendable {
              .waveformHeartbeat, .overlayTimerStarted, .overlayTimerStopped,
              .diagnosticProbe:
             return .debug
+
+        // Warning, not error: the user still gets their text (the deterministic
+        // floor), only the polish is lost — but silently, which is the failure
+        // worth finding in a log (#315).
+        case .polishEngineFailed:
+            return .warning
         }
     }
 
@@ -411,6 +438,7 @@ public enum LogEvent: Sendable {
         case .modelLoadStateChanged: return "modelLoadStateChanged"
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
+        case .polishEngineFailed: return "polishEngineFailed"
         }
     }
 
@@ -570,8 +598,8 @@ public enum LogEvent: Sendable {
             return "refreshID=\(refreshID) isProcessing=\(isProcessing) energyCount=\(energyCount) killed=\(killedState)"
         case .waveformDisappeared(let refreshID, let renderTick):
             return "refreshID=\(refreshID) renderTick=\(renderTick)"
-        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount):
-            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount)"
+        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount, let maxGapMs):
+            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount) maxGapMs=\(maxGapMs)"
         case .waveformStall(let gapMs, let renderTick, let energyCount):
             return "gapMs=\(gapMs) renderTick=\(renderTick) energyCount=\(energyCount)"
         case .waveformRefreshIDChanged(let oldID, let newID, let status):
@@ -620,6 +648,10 @@ public enum LogEvent: Sendable {
             return "name=\(name) timeout=\(timeoutSeconds)s"
         case .deviceCapabilitySnapshot(let model, let ramGB, let availableMemoryMB, let thermalState):
             return "model=\(model) ramGB=\(ramGB) availableMB=\(availableMemoryMB) thermal=\(thermalState)"
+
+        // Polish (#315)
+        case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
+            return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
         }
     }
 
