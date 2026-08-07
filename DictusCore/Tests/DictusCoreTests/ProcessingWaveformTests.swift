@@ -160,9 +160,123 @@ final class ProcessingWaveformTests: XCTestCase {
     }
 
     /// Seconds for the transcription sine's pattern to cross the row. Its phase
-    /// advances by `link.duration / 2` per frame, i.e. 0.5 per second, and the
-    /// pattern translates by one full row per unit of phase.
+    /// advances by 0.5 per second and the pattern translates by one full row per unit
+    /// of phase.
     private var transcriptionSweepCrossingSeconds: Double {
-        1 / 0.5
+        1 / ProcessingWaveform.sweepPhaseRate
+    }
+
+    // MARK: - The phase advances with real time, not with frames
+
+    private let selfDrivenAnimations: [WaveformAnimation] = [.sweep, .travellingPeak]
+
+    /// The defect #314 reports, stated as a test: the phase has to depend on how much
+    /// time passed, not on how many callbacks arrived. Both drivers used to advance it
+    /// by `CADisplayLink.duration`, so a run of frames at 120 Hz and the same wall-clock
+    /// interval at 60 Hz produced *different* totals -- and a dropped frame, which is
+    /// the same shape of discrepancy, cost travel that was never recovered.
+    func testTheSameElapsedTimeAdvancesTheSameAmountAtAnyFrameRate() {
+        for animation in selfDrivenAnimations {
+            let atHighRefreshRate = totalPhase(for: animation, ticks: 20, each: 1.0 / 120)
+            let atStandardRefreshRate = totalPhase(for: animation, ticks: 10, each: 1.0 / 60)
+
+            XCTAssertEqual(
+                atHighRefreshRate, atStandardRefreshRate, accuracy: 0.000_001,
+                "\(animation): 20 frames at 120 Hz and 10 at 60 Hz are the same sixth of a second"
+            )
+            XCTAssertGreaterThan(atHighRefreshRate, 0, "\(animation): the phase did not move at all")
+        }
+    }
+
+    /// One long frame is worth exactly the frames it replaced. This is what makes a
+    /// dropped frame skip rather than slow: the phase arrives where it would have been
+    /// had every frame been delivered.
+    func testAFrameThatSwallowedItsNeighboursAdvancesByTheirTotal() {
+        for animation in selfDrivenAnimations {
+            let fiveFrames = totalPhase(for: animation, ticks: 5, each: 1.0 / 60)
+            let oneLateFrame = ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: 5.0 / 60)
+
+            XCTAssertEqual(fiveFrames, oneLateFrame, accuracy: 0.000_001, "\(animation)")
+        }
+    }
+
+    /// The ceiling is what separates a dropped frame from a suspended extension. A gap
+    /// large enough to be a stall must not hand the peak an arbitrary position.
+    func testAnElapsedTimeAboveTheCeilingAdvancesByTheCeiling() {
+        for animation in selfDrivenAnimations {
+            let atTheCeiling = ProcessingWaveform.phaseAdvance(
+                for: animation, elapsedSeconds: ProcessingWaveform.maxPhaseAdvanceSeconds
+            )
+
+            for elapsed in [ProcessingWaveform.maxPhaseAdvanceSeconds + 0.001, 0.5, 30, 3600] {
+                XCTAssertEqual(
+                    ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: elapsed),
+                    atTheCeiling, accuracy: 0.000_001,
+                    "\(animation): \(elapsed) s advanced by more than the ceiling"
+                )
+            }
+        }
+    }
+
+    /// Under the ceiling nothing is clamped, or the fix would have traded a slow
+    /// animation for one that is slow only under load.
+    func testAnOrdinaryFrameIsNotClamped() {
+        let ordinaryGaps = [1.0 / 120, 1.0 / 60, 1.0 / 30, ProcessingWaveform.maxPhaseAdvanceSeconds - 0.001]
+
+        for animation in selfDrivenAnimations {
+            for elapsed in ordinaryGaps {
+                let rate = animation == .sweep ? ProcessingWaveform.sweepPhaseRate : ProcessingWaveform.phaseRate
+                XCTAssertEqual(
+                    ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: elapsed),
+                    elapsed * rate, accuracy: 0.000_001,
+                    "\(animation): \(elapsed) s was clamped and should not have been"
+                )
+            }
+        }
+    }
+
+    /// A clock that moved backwards must not run the animation in reverse for a frame.
+    /// Both surfaces feed this from `CADisplayLink.timestamp`, which is monotonic; the
+    /// guard is the same one `TranscribingStageHold` needed for its wall clock.
+    func testANegativeElapsedTimeDoesNotMoveThePhaseBackwards() {
+        for animation in selfDrivenAnimations {
+            XCTAssertEqual(
+                ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: -1), 0, accuracy: 0.000_001,
+                "\(animation)"
+            )
+        }
+    }
+
+    /// The mic levels follow live energy and a still waveform is not moving, so neither
+    /// reads the phase. Advancing it under them would leave the next self-driven stage
+    /// starting somewhere other than `centredPhase`.
+    func testTheAnimationsThatDoNotUseThePhaseDoNotAdvanceIt() {
+        for animation in [WaveformAnimation.micLevels, .still] {
+            XCTAssertEqual(
+                ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: 1.0 / 60), 0,
+                "\(animation)"
+            )
+        }
+    }
+
+    /// The peak's tempo, restated through the advance function rather than the constant:
+    /// half a cycle -- one edge-to-edge crossing -- takes the second the rate promises.
+    func testASecondOfRealTimeCarriesThePeakAcrossTheRow() {
+        var phase = ProcessingWaveform.centredPhase
+        for _ in 0..<60 {
+            phase += ProcessingWaveform.phaseAdvance(for: .travellingPeak, elapsedSeconds: 1.0 / 60)
+        }
+
+        XCTAssertEqual(phase, 0.5, accuracy: 0.000_001, "half a cycle in one second")
+        XCTAssertEqual(
+            ProcessingWaveform.peakPosition(phase: phase), centre, accuracy: 0.000_001,
+            "back at the centre, having been to one edge and returned"
+        )
+    }
+
+    private func totalPhase(for animation: WaveformAnimation, ticks: Int, each elapsed: Double) -> Double {
+        (0..<ticks).reduce(0) { total, _ in
+            total + ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: elapsed)
+        }
     }
 }
