@@ -34,6 +34,13 @@ public enum SharedKeys {
     /// the migration from `keyboardLayout` has run. Read and written only through
     /// `KeyboardLayoutPreference`.
     public static let keyboardLayoutsByLanguage = "dictus.keyboardLayoutsByLanguage"
+    /// Bool: whether the keyboard draws a persistent digit row above the letter rows (#331).
+    /// Default false — absent means off, which is `UserDefaults.bool`'s natural default, so no
+    /// migration and no registration is needed and every existing install keeps its geometry.
+    /// One global value, not per language: a number row is a hardware habit, not a language one.
+    /// Read and written only through `NumberRowPreference`, except for the Settings toggle's
+    /// @AppStorage binding — the same split every other preference on that screen uses.
+    public static let numberRowEnabled = "dictus.numberRowEnabled"
     /// JSON-encoded [Float] waveform energy data written by app during recording
     public static let waveformEnergy = "dictus.waveformEnergy"
     /// Bool flag set by keyboard to request recording stop
