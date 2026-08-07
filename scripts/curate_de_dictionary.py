@@ -67,9 +67,12 @@ GERMAN_SINGLE_ACCENTS = {
 #
 # `ae/oe/ue` are Umlautersatz: the ASCII convention Germans use where umlauts
 # are unavailable — URLs, filenames, email addresses — and out of habit
-# elsewhere. `fuer`, `koennen`, `schoen` are not German words in any context,
-# only transliterations of `für`, `können`, `schön`, so the corpus counting them
-# as vocabulary is corpus noise exactly like `uber` is.
+# elsewhere. They are deliberate fallback spellings rather than typos, but they
+# are not standard orthography, and the platform treats them as correctable:
+# Apple's own German keyboard force-corrects `fuer`/`schoen`/`koennen` to
+# `Für`/`Schön`/`Können` on space (verified on device, German and Austrian
+# layouts, #326). Correcting them matches what a German user already gets from
+# every other keyboard on the phone.
 #
 # Real words that merely contain the sequence survive on the 5x rule below,
 # without a second heuristic: their collapsed forms are not words, so no umlaut
@@ -80,6 +83,14 @@ GERMAN_COLLAPSES = {
     "ae": "ä",  # ae → ä   (Mädchen, Bäume, Universität)
     "oe": "ö",  # oe → ö   (können, schön, möchte)
     "ue": "ü",  # ue → ü   (Tür, müssen, fünf, früh)
+    # `ss → ß` is NOT settled the way the three above are, and #326 deliberately
+    # left it alone. `ss` for `ß` is a valid replacement in German, not an error:
+    # it is mandatory in Switzerland and Liechtenstein, and native speakers use
+    # either form on purpose. What ships today (`strasse` → `straße`, device
+    # validated in #321) therefore stays exactly as it is, and widening or
+    # narrowing it needs a product decision with native-speaker input — it is
+    # not implied by the Umlautersatz reasoning above and must not be treated
+    # as settled by it.
     "ss": "ß",  # ss → ß   (straße, weiß, groß, Spaß)
 }
 

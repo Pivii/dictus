@@ -19,6 +19,11 @@ Per-language **must-correct** map: input → forced correction, applied before e
 ### Accent map (`LanguageProfile.accentMap`)
 Per-language map from base letter to accented variants used by `accentExpansion()` to attempt accent insertions when a typed word isn't in the dictionary. Generative, not curated — you list which accents *could* apply to which letters, then the algorithm tries them and picks the highest-frequency hit.
 
+### Collapse rules (`LanguageProfile.collapseRules`)
+The length-changing counterpart of the accent map: two-character sequences that stand for one character, applied by `expandAccents()` in the same pass. German declares four — `ae → ä`, `oe → ö`, `ue → ü` (Umlautersatz, the ASCII convention used where umlauts are unavailable) and `ss → ß`. The curation script `scripts/curate_de_dictionary.py` mirrors the same table, because a form dropped there is one the expander must be able to reconstruct.
+
+`ss → ß` is **not settled the way the three Umlautersatz rules are.** `ss` for `ß` is a valid replacement rather than an error — mandatory in Switzerland and Liechtenstein, and used deliberately by native speakers elsewhere. What ships (`strasse` → `straße`, device validated in #321) stays as it is; changing it in either direction is a product decision needing native-speaker input, and is not implied by the Umlautersatz reasoning (#326).
+
 ### Adaptive accent key
 A French-specific feature of the AZERTY layout: the apostrophe/accent key on row 3 changes its label based on context (shows `é` after `e`, apostrophe after `qu`, etc.). **Not generalized to other languages.** Lives in `FrenchAdaptiveKey` (`DictusCore/AccentedCharacters.swift`). Since #272 the layout no longer implies the language, so the key checks the active language and behaves as a plain apostrophe outside French. Other languages reach accents via standard long-press popups, as does French on a non-AZERTY layout — those grids have no adaptive key slot.
 
