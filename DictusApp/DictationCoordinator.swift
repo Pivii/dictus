@@ -22,6 +22,11 @@ class DictationCoordinator: ObservableObject {
     // MARK: - Published State
 
     @Published var status: DictationStatus = .idle
+
+    /// The last transcription, and only that. Nil on every failure by construction —
+    /// `startDictation` resets it and nothing but a successful transcription assigns it —
+    /// so it is not, and must not be read as, a failure channel (#320). What went wrong
+    /// lives in `DictationErrorChannel`.
     @Published var lastResult: String?
 
     /// Forwarded from UnifiedAudioEngine for waveform visualization in RecordingView.
@@ -361,6 +366,11 @@ class DictationCoordinator: ObservableObject {
         // The old result must be cleared regardless of entry path so
         // RecordingView never shows a stale transcription card.
         lastResult = nil
+        // Same argument, one process further out (#320): the previous attempt's failure
+        // reason is stale the moment a new attempt begins, and this is the only event
+        // that makes it so. Clearing here — rather than when a surface reads it — is
+        // what lets both the keyboard and the app read it, in either order.
+        DictationErrorChannel.clear()
         bufferEnergy = []
         bufferSeconds = 0
         // Cancel any polish still running from the previous dictation (#141).
@@ -554,10 +564,11 @@ class DictationCoordinator: ObservableObject {
     ///
     /// WHY `handleError` and not a bespoke channel: the keyboard's status message is an
     /// in-process property of `KeyboardState`; nothing the app writes reaches it directly.
-    /// `SharedKeys.lastError` plus a `.failed` status is the app's actual channel —
-    /// `KeyboardState.refreshFromDefaults` picks the error up, shows it for three seconds
-    /// and clears it, and `.failed` does not own the keyboard area, so the "Démarrage…"
-    /// overlay drops on the same write.
+    /// `DictationErrorChannel` plus a `.failed` status is the app's actual channel —
+    /// `KeyboardState.refreshFromDefaults` picks the error up and shows it for three
+    /// seconds, and `.failed` does not own the keyboard area, so the "Démarrage…"
+    /// overlay drops on the same write. The keyboard clears its own toolbar line when
+    /// the three seconds are up; the stored reason stays until the next dictation (#320).
     ///
     /// The wording asks for a second tap rather than explaining the race: by the time
     /// this is read the user is in their host app looking at a stuck keyboard, and what
@@ -914,9 +925,10 @@ class DictationCoordinator: ObservableObject {
     /// relaunches the moment has passed — the keyboard reconciles in-process, within
     /// seconds, and that is the surface that tells the user. And `failed` has no
     /// expiry in the App Group: `KeyboardState.refreshFromDefaults` adopts a stored
-    /// `failed` and shows its `lastError` whenever the extension is next loaded,
-    /// however old it is. That is pre-existing behaviour, but writing `failed` here
-    /// on every reconciliation would have made a stale error message a routine sight.
+    /// `failed` and shows the stored reason whenever the extension is next loaded,
+    /// however old it is, until a new dictation clears it (#320). That is pre-existing
+    /// behaviour, but writing `failed` here on every reconciliation would have made a
+    /// stale error message a routine sight.
     ///
     /// WHY it does NOT go through `updateStatus`: this process is not failing
     /// anything. It is auditing state a dead one left behind, and `status` is
@@ -1144,8 +1156,13 @@ class DictationCoordinator: ObservableObject {
     }
 
     /// Handle errors by updating status and writing error to App Group.
+    ///
+    /// The message goes to `DictationErrorChannel`, which both the keyboard's toolbar
+    /// and the app's own failure screen read (#320). Neither consumes it: it stays put
+    /// until the next dictation starts, so a user who reads it on one surface and then
+    /// opens the other is told the same thing twice rather than something else.
     private func handleError(_ message: String) {
-        defaults.set(message, forKey: SharedKeys.lastError)
+        DictationErrorChannel.record(message)
         defaults.set(false, forKey: SharedKeys.coldStartActive)
         defaults.removeObject(forKey: SharedKeys.sourceAppScheme)
         defaults.synchronize()
