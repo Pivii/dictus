@@ -53,7 +53,7 @@ Runs three Python scripts in order:
 
 **The trie does not store raw counts.** `dict_builder.py` writes `65535 * ln(1 + freq) / ln(1 + max_freq)` into each node, and that log-normalized value is what `AOSPTrieEngine.frequency(of:)` returns. The compression is severe: German `fuer` (712) against `für` (735 252) is 1033x in the corpus and 2.06x once stored. Two consequences, both learned the hard way in issue #326:
 
-- `AccentExpander`'s 5x-dominance rule is effectively **unreachable for any word present in the dictionary** — clearing 5x in log space needs the target to be roughly the input raised to the fifth power. A misspelling that is in the trie will not be corrected by accent expansion, whatever its corpus frequency. Curate it out of the frequency JSON instead.
+- `AccentExpander`'s 5x-dominance rule is **unreachable for every entry a curated list actually contains.** The stored value is capped at 65535, so clearing 5x needs the input to normalize below 13107 — which means a raw count under `(1 + max_freq)^0.2`. For German that threshold is **21.6**, and the top-40K list bottoms out at 88. Only corpus entries far below any sane cutoff could ever be dominated. So a misspelling that is in the trie will not be corrected by accent expansion, whatever its corpus frequency: curate it out of the frequency JSON instead. Recompute the threshold when onboarding a language, rather than assuming German's.
 - A test that drives `expandAccents` through `MockFrequencyProvider` (raw counts) will pass where the device fails. Use `LogNormalizedFrequencyProvider` when the *threshold* is what's under test.
 
 For `ngram_builder.py` to recognize the new language you must also extend two constants in that file:
