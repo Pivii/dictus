@@ -30,6 +30,19 @@ class KeyboardViewController: UIInputViewController {
     /// shown or hidden. nil = never built yet.
     private var builtNeedsGlobe: Bool?
 
+    /// The `KeyboardLayouts.drawsDigitRow` value used the last time the grid was built (#331).
+    ///
+    /// It stores the *composed* decision — the preference AND portrait — not the raw
+    /// preference, because that is what the geometry depends on: the number of rows in the
+    /// grid and the height asked for must both follow the same value.
+    ///
+    /// WHY a built-with marker rather than an observer: the setting is toggled in DictusApp's
+    /// Settings, and while Settings is on screen this keyboard is not, so there is no live
+    /// keyboard to notify. Comparing what we built with against what is true now, on the two
+    /// occasions the answer can have changed under us — the next appearance, and a rotation —
+    /// is the same shape `builtNeedsGlobe` uses for the 4.4.1 globe. nil = never built yet.
+    private var builtNumberRow: Bool?
+
     /// Delegate adapter that translates giellakbd-ios key events into Dictus actions.
     private var bridge: DictusKeyboardBridge?
 
@@ -170,6 +183,7 @@ class KeyboardViewController: UIInputViewController {
         // is re-checked and the layout rebuilt if needed in viewWillAppear.
         let needsGlobe = needsInputModeSwitchKey
         builtNeedsGlobe = needsGlobe
+        builtNumberRow = KeyboardLayouts.drawsDigitRow
         let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
@@ -398,6 +412,13 @@ class KeyboardViewController: UIInputViewController {
             ))
             reloadKeyboardLayout()
         }
+
+        // Number row (#331): the user can only reach the toggle in DictusApp's Settings, and
+        // this keyboard is not on screen while they are there — so an appearance is the first
+        // moment we can find out. Same guarded shape as the globe above: the rebuild is a full
+        // ~200 ms UICollectionView teardown, so it only runs when the answer actually moved.
+        // With the setting off the value is false in both orientations and this never fires.
+        reloadIfNumberRowChanged(trigger: "viewWillAppear")
 
         // (Re)subscribe to the keyboard area mode here, not in viewDidLoad.
         // WHY: iOS caches UIInputViewController instances across app-switches and
@@ -745,6 +766,29 @@ class KeyboardViewController: UIInputViewController {
         }
     }
 
+    /// Rotation. Until #331 nothing on this controller reacted to it, because nothing about
+    /// the keyboard depended on the orientation: the height provider reads it per call, and
+    /// the layout was the same four rows either way. The number row breaks that — it is drawn
+    /// in portrait and not in landscape — so the grid has to be rebuilt across a rotation.
+    ///
+    /// WHY here and not in a layout callback: `viewDidLayoutSubviews` and friends run inside
+    /// iOS's layout pass and can be re-entered by the rebuild they trigger. That is exactly
+    /// how #202 happened (bounds change → rebuild → bounds change), and it reached App Review.
+    /// `viewWillTransition` fires once per rotation and is not a layout callback.
+    ///
+    /// WHY the completion block: `DeviceContext.isLandscape` compares `UIScreen.main.bounds`,
+    /// which has not turned yet when this method is entered. `size` here is the input view's,
+    /// not the screen's, so it cannot stand in for it either.
+    ///
+    /// With the number row off, `drawsDigitRow` is false in both orientations, the guard
+    /// inside never opens, and this override adds nothing but a `super` call.
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.reloadIfNumberRowChanged(trigger: "rotation")
+        }
+    }
+
     deinit {
         // Issue #142 safety net, corrected by #260: viewDidDisappear skips
         // unregistration during an active dictation session to avoid a SwiftUI
@@ -800,9 +844,25 @@ class KeyboardViewController: UIInputViewController {
     /// for the key grid height, plus toolbar and padding.
     private func computeKeyboardHeight() -> CGFloat {
         let deviceContext = DeviceContext.current
+        // The number row grows the grid instead of shrinking the keys (#331): the provider
+        // divides its per-device height by a normal row count and multiplies by ours, so
+        // asking for 5 rows keeps every cell at exactly the height it has today. Shrinking
+        // the keys 20% into the existing height was measured and rejected — this codebase
+        // has already paid for dead zones three times (#56, #59, #138).
+        //
+        // WHY nil rather than 4 when the row is off: `height` early-returns the base height
+        // for a nil row count, so an install without the feature gets the same CGFloat it
+        // got before this line existed, with no divide-and-multiply in between.
+        //
+        // The provider's `rowCount > 4 && isLandscape` subtraction is unreachable from here:
+        // `drawsDigitRow` is false in landscape, by decision. On a large iPad the provider's
+        // normal row count is already 5, so this asks for the 5-row height it budgets for —
+        // the grid does not grow there and cells go 82 pt to 65.6 pt, still well above the
+        // 54 pt every iPhone lives on. Left alone deliberately; the app ships iPhone-only.
         let keyGridHeight = KeyboardHeightProvider.height(
             for: deviceContext,
-            traitCollection: traitCollection
+            traitCollection: traitCollection,
+            rowCount: KeyboardLayouts.drawsDigitRow ? 5 : nil
         )
         // bottomPadding was previously 8pt but had no real effect — keyboard view's
         // bottomAnchor is pinned to kbInputView.bottomAnchor, so the extra height got
@@ -815,7 +875,10 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "computeKbHeight",
-            details: "grid=\(keyGridHeight) total=\(total) screen=\(Int(screen.width))x\(Int(screen.height)) landscape=\(deviceContext.isLandscape)"
+            // numberRow= is the composed predicate, not the preference: it is the value the
+            // grid was built from, so a log where it disagrees with the height is the #331
+            // failure mode (five rows in a four-row box, or the reverse).
+            details: "grid=\(keyGridHeight) total=\(total) screen=\(Int(screen.width))x\(Int(screen.height)) landscape=\(deviceContext.isLandscape) numberRow=\(KeyboardLayouts.drawsDigitRow)"
         ))
         return total
     }
@@ -1117,6 +1180,34 @@ class KeyboardViewController: UIInputViewController {
         ))
     }
 
+    // MARK: - Number Row (#331)
+
+    /// Rebuilds the grid when the digit row should appear or disappear, and only then.
+    ///
+    /// WHY this goes through `reloadKeyboardLayout()` and not through a height recalculation:
+    /// three constraints have to move together — the grid's row data, the key grid's own
+    /// `keyboard.heightAnchor` constraint, and the inputView's declared `heightConstraint`.
+    /// Only the reload touches all three; the key grid's constraint is created there and in
+    /// `viewDidLoad` and refreshed nowhere else. Growing the inputView alone would leave the
+    /// grid at its old height, which is a gap between the toolbar and the keys — the shape
+    /// `reloadLayout_heightRecalc` was added to catch.
+    ///
+    /// `trigger` names the caller in the log so a device capture says whether the change was
+    /// noticed on appearance or on rotation.
+    private func reloadIfNumberRowChanged(trigger: String) {
+        let drawsDigitRow = KeyboardLayouts.drawsDigitRow
+        guard builtNumberRow != drawsDigitRow else { return }
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "numberRowMismatchReload",
+            details: "trigger=\(trigger) built=\(builtNumberRow.map(String.init(describing:)) ?? "nil") "
+                + "current=\(drawsDigitRow) landscape=\(DeviceContext.current.isLandscape)"
+        ))
+        reloadKeyboardLayout()
+    }
+
     /// Destroys the current GiellaKeyboardView and creates a new one
     /// with the current language and layout preferences from App Group.
     private func reloadKeyboardLayout() {
@@ -1137,6 +1228,7 @@ class KeyboardViewController: UIInputViewController {
         // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
         let needsGlobe = needsInputModeSwitchKey
         builtNeedsGlobe = needsGlobe
+        builtNumberRow = KeyboardLayouts.drawsDigitRow
         let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
