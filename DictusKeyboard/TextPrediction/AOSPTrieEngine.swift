@@ -59,16 +59,7 @@ final class AOSPTrieEngine {
 
             let success = self.bridge.loadDictionary(atPath: path)
 
-            // Set proximity map based on active keyboard layout.
-            // AZERTY is default because Dictus targets French-speaking users.
-            // QWERTZ takes the QWERTY map: the two differ only by the y/z swap, and
-            // the bridge ships no third map. Worth revisiting only if German typo
-            // reports point at y/z (#151).
-            if LayoutType.active == .azerty {
-                self.bridge.setProximityMapAZERTY()
-            } else {
-                self.bridge.setProximityMapQWERTY()
-            }
+            self.installSubstitutionCosts(layout: LayoutType.active)
 
             // Load n-gram data on the same queue, right after the spell dict.
             // WHY here: n-grams are only useful after the dictionary is loaded,
@@ -86,6 +77,32 @@ final class AOSPTrieEngine {
                 }
                 self.isLoading = false
             }
+        }
+    }
+
+    /// Installs the two substitution-cost tables the C++ scorer scores typos with: keyboard
+    /// proximity for the active layout, and the accent relation.
+    ///
+    /// WHY both tables come from DictusCore rather than being built in the C++:
+    /// they are data, evaluated once here per dictionary load and never in the scoring
+    /// loop, and DictusCore is the only target in this repo with a test bundle. Before
+    /// #321 the geometry was hardcoded as `float[26][26]` indexed by `c - 'a'`, which left
+    /// QWERTZ's ü/ö/ä keys with nowhere to sit and sent QWERTZ to the QWERTY table, where
+    /// y and z are in each other's places.
+    private func installSubstitutionCosts(layout: LayoutType) {
+        let proximity = KeyboardProximity.costTable(for: layout)
+        if !bridge.setProximityTable(characters: proximity.charactersData,
+                                     distances: proximity.distancesData) {
+            print("[AOSPTrieEngine] Rejected \(layout.displayName) proximity table "
+                  + "(\(proximity.count) keys) — typo scoring falls back to plain edit distance")
+        }
+
+        let accents = AccentRelation.costPairs
+        if !bridge.setAccentCosts(from: accents.fromData,
+                                  to: accents.toData,
+                                  costs: accents.costsData) {
+            print("[AOSPTrieEngine] Rejected accent cost table (\(accents.count) pairs) — "
+                  + "accented spellings score as unrelated characters")
         }
     }
 
