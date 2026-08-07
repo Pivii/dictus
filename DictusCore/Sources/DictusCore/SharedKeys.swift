@@ -21,8 +21,19 @@ public enum SharedKeys {
     public static let modelLoadState = "dictus.modelLoadState"
 
     // Keyboard-App cross-process contracts (added for Plan 3.1)
-    /// Current keyboard layout type stored as String ("azerty" or "qwerty")
+    /// Legacy single global keyboard layout, stored as String ("azerty"/"qwerty"/"qwertz").
+    /// Since #272 the layout is per dictionary language — see `keyboardLayoutsByLanguage`.
+    /// This key is now only *read* by the one-time migration, and kept up to date as a
+    /// mirror of the active language's layout so a rollback to a build without #272 finds
+    /// the shape the user is on. Nothing else should read or write it.
     public static let keyboardLayout = "dictus.keyboardLayout"
+    /// Keyboard layout per dictionary language (#272): `[SupportedLanguage.rawValue: LayoutType.rawValue]`.
+    /// An entry means the user explicitly chose that layout for that language; a missing
+    /// entry means the language still inherits `SupportedLanguage.defaultLayout` and keeps
+    /// tracking it. The presence of the dictionary itself — even empty — is the marker that
+    /// the migration from `keyboardLayout` has run. Read and written only through
+    /// `KeyboardLayoutPreference`.
+    public static let keyboardLayoutsByLanguage = "dictus.keyboardLayoutsByLanguage"
     /// JSON-encoded [Float] waveform energy data written by app during recording
     public static let waveformEnergy = "dictus.waveformEnergy"
     /// Bool flag set by keyboard to request recording stop
