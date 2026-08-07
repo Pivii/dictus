@@ -220,6 +220,55 @@ final class KeyboardProximityTests: XCTestCase {
         XCTAssertEqual(KeyboardProximity.distanceNormalizer, 2.5)
     }
 
+    // MARK: - The number row must never reach this model (#331)
+
+    /// The digit row is injected in `KeyboardLayouts` (DictusKeyboard), so it is invisible
+    /// here and `1` can never become a substitution candidate for `q`.
+    ///
+    /// This test guards the shortcut someone will eventually be tempted by: prepending the
+    /// digits to `QWERTYLayout.lettersRows` instead. `rows(for: .qwerty)` takes
+    /// `lettersRows.prefix(3)`, so that change would silently drop the real bottom letter row
+    /// — `zxcvbnm` would lose its positions and every correction involving those seven keys
+    /// would change. It compiles, it renders, and nothing else in the repo would notice.
+    ///
+    /// The flag is toggled for real rather than mocked, because the point is that the model
+    /// does not read it: a version of this that stubbed the preference would pass over
+    /// exactly the mistake it exists to catch.
+    func testTheCostTableIsIdenticalWithTheNumberRowOnAndOff() {
+        let wasEnabled = NumberRowPreference.isEnabled
+        defer { NumberRowPreference.setEnabled(wasEnabled) }
+
+        for layout in LayoutType.allCases {
+            NumberRowPreference.setEnabled(false)
+            let off = KeyboardProximity.costTable(for: layout)
+
+            NumberRowPreference.setEnabled(true)
+            let on = KeyboardProximity.costTable(for: layout)
+
+            XCTAssertEqual(on, off, "\(layout.rawValue) proximity costs moved with the number row")
+        }
+    }
+
+    /// The specific casualty of the prefix(3) trap, named so a failure reads as itself
+    /// rather than as "some table changed".
+    func testTheBottomLetterRowKeepsItsPositionsWithTheNumberRowOn() {
+        let wasEnabled = NumberRowPreference.isEnabled
+        defer { NumberRowPreference.setEnabled(wasEnabled) }
+        NumberRowPreference.setEnabled(true)
+
+        for (layout, bottomRow) in [(LayoutType.qwerty, "zxcvbnm"),
+                                    (LayoutType.qwertz, "yxcvbnm"),
+                                    (LayoutType.azerty, "wxcvbn")] {
+            let characters = KeyboardProximity.keyPositions(for: layout).map(\.character)
+            for letter in bottomRow {
+                XCTAssertTrue(characters.contains(letter),
+                              "\(layout.rawValue) lost '\(letter)' from its bottom letter row")
+            }
+        }
+        XCTAssertFalse(KeyboardProximity.keyPositions(for: .qwerty).contains { $0.character == "1" },
+                       "A digit must never hold a position in the proximity model")
+    }
+
     // MARK: - Helpers
 
     private func assertPosition(
