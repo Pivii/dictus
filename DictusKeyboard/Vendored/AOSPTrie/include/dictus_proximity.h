@@ -13,10 +13,10 @@ static constexpr int SUBSTITUTION_SLOT_COUNT = 58;
 /// Compact table slot for a character, or -1 when there is none.
 ///
 /// Covers a-z plus the lowercase half of the Latin-1 supplement (U+00E0..U+00FF), which
-/// is where every accented key of every layout Dictus ships lives: é è ê ë à â ä ç î ï
-/// ô ö ù û ü. Anything else -- digits, punctuation, ß (U+00DF, deliberately outside the
-/// accent relation), letters beyond Latin-1 -- returns -1 and its callers treat it as
-/// unrelated.
+/// is where every accented character of every language Dictus ships lives: é è ê ë à â ä
+/// ç î ï ô ö ù û ü, and the Spanish á í ñ ó ú added in #327. Anything else -- digits,
+/// punctuation, ß (U+00DF, deliberately outside the accent relation), letters beyond
+/// Latin-1 -- returns -1 and its callers treat it as unrelated.
 ///
 /// WHY a slot map rather than the c - 'a' indexing this replaced: that indexing made the
 /// tables 26 ASCII letters *by construction*, so QWERTZ's ü/ö/ä keys were not mis-scored,

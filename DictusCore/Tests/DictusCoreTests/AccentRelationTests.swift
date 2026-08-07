@@ -1,5 +1,5 @@
 // DictusCore/Tests/DictusCoreTests/AccentRelationTests.swift
-// Pins the accent-cost table the keyboard's C++ scorer consumes (#321). The C++ side is
+// Pins the accent-cost table the keyboard's C++ scorer consumes (#321, #327). The C++ side is
 // a pure lookup into the pairs enumerated here, so these assertions cover the relation
 // itself — what is related to what, at what cost — for every language Dictus ships.
 import XCTest
@@ -54,18 +54,99 @@ final class AccentRelationTests: XCTestCase {
         XCTAssertTrue(germanProfile.collapseRules.contains { $0.from == "ss" && $0.to == "\u{00DF}" })
     }
 
-    // MARK: - French and Spanish: frozen (#321 criterion — no regression)
+    // MARK: - Spanish acutes and ñ (the gap #327 closes)
 
-    /// Every relation that shipped before the umlauts were added, spelled out. A change
-    /// here moves every correction in French or Spanish, silently.
-    func testFrenchAndSpanishRelationsAreUnchanged() {
+    func testSpanishAccentsRelateToTheirBaseLetters() {
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00E1}"), "a")   // á
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00ED}"), "i")   // í
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00F3}"), "o")   // ó
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00FA}"), "u")   // ú
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00F1}"), "n")   // ñ
+        // The two Spanish characters that were covered by accident, via French and German.
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00E9}"), "e")   // é
+        XCTAssertEqual(AccentRelation.baseLetter(of: "\u{00FC}"), "u")   // ü
+    }
+
+    func testSpanishSubstitutionIsCheapInBothDirections() {
+        // `manana` for `mañana` and the reverse must both score as a near substitution.
+        let spanish = [("\u{00E1}", "a"), ("\u{00ED}", "i"), ("\u{00F3}", "o"),
+                       ("\u{00FA}", "u"), ("\u{00F1}", "n")]
+        for (accented, base) in spanish {
+            guard let accentedChar = accented.first, let baseChar = base.first else {
+                return XCTFail("bad fixture")
+            }
+            XCTAssertEqual(AccentRelation.cost(from: baseChar, to: accentedChar),
+                           AccentRelation.baseToAccentCost, "\(base) → \(accented)")
+            XCTAssertEqual(AccentRelation.cost(from: accentedChar, to: baseChar),
+                           AccentRelation.baseToAccentCost, "\(accented) → \(base)")
+        }
+    }
+
+    func testSpanishAccentRelatesToTheOtherAccentsOfItsBase() {
+        // á, à and ä share `a`; ú, ù and ü share `u` — accent-to-accent, not unrelated.
+        XCTAssertEqual(AccentRelation.cost(from: "\u{00E1}", to: "\u{00E0}"),
+                       AccentRelation.accentToAccentCost)          // á ↔ à
+        XCTAssertEqual(AccentRelation.cost(from: "\u{00E1}", to: "\u{00E4}"),
+                       AccentRelation.accentToAccentCost)          // á ↔ ä
+        XCTAssertEqual(AccentRelation.cost(from: "\u{00FA}", to: "\u{00FC}"),
+                       AccentRelation.accentToAccentCost)          // ú ↔ ü
+        XCTAssertEqual(AccentRelation.cost(from: "\u{00F3}", to: "\u{00F4}"),
+                       AccentRelation.accentToAccentCost)          // ó ↔ ô
+        XCTAssertEqual(AccentRelation.cost(from: "\u{00ED}", to: "\u{00EF}"),
+                       AccentRelation.accentToAccentCost)          // í ↔ ï
+    }
+
+    /// `ñ` is the only entry whose base letter carries no other accent, so it must relate
+    /// to `n` and to nothing else — a cheap `n` ↔ `ñ` must not leak into `n` ↔ anything.
+    func testEnyeRelatesOnlyToItsBase() {
+        XCTAssertEqual(AccentRelation.cost(from: "n", to: "\u{00F1}"),
+                       AccentRelation.baseToAccentCost)
+        XCTAssertNil(AccentRelation.cost(from: "\u{00F1}", to: "m"))
+        XCTAssertNil(AccentRelation.cost(from: "\u{00F1}", to: "\u{00E1}"))   // different bases
+    }
+
+    // MARK: - The both-valid-pairs decision (#327): cost table only
+
+    /// #327 chose the cost table alone (option 1) over the cost table plus a rule for the
+    /// pairs that are two valid Spanish words. This pins the half of that decision this
+    /// package can execute: the relation exists for those pairs, at the ordinary cost, with
+    /// nothing special-cased. What stops `si` correcting to `sí` is the valid-word guard in
+    /// `TextPredictionEngine.autocorrect`, which returns before the scorer that reads this
+    /// table ever runs. Reading between two valid spellings needs context — #114 owns it.
+    /// If this test fails, someone added a Spanish-specific rule here; read the reasoning
+    /// on `AccentRelation.baseLetters` first.
+    func testAmbiguousBothValidPairsCarryTheOrdinaryCostAndNoSpecialCase() {
+        // si/sí, mas/más, esta/está, ano/año — the differing character of each pair.
+        XCTAssertEqual(AccentRelation.cost(from: "i", to: "\u{00ED}"), 0.15)
+        XCTAssertEqual(AccentRelation.cost(from: "a", to: "\u{00E1}"), 0.15)
+        XCTAssertEqual(AccentRelation.cost(from: "n", to: "\u{00F1}"), 0.15)
+    }
+
+    /// The generative accent path, the one that *does* run before the valid-word guard,
+    /// has covered every Spanish accent since the language shipped. #327 changed nothing
+    /// there; this records that the two tables now agree on which characters exist.
+    func testSpanishAccentMapAndCostTableAgree() {
+        for (base, accents) in spanishProfile.accentMap {
+            for accent in accents {
+                XCTAssertEqual(AccentRelation.baseLetter(of: accent), base,
+                               "\(accent) is offered for \(base) but relates elsewhere")
+            }
+        }
+    }
+
+    // MARK: - French, German and English: frozen (#327 criterion — no regression)
+
+    /// Every relation that shipped before the Spanish characters were added, spelled out.
+    /// A change here moves every correction in French or German, silently.
+    func testFrenchAndGermanRelationsAreUnchanged() {
         let frozen: [Character: Character] = [
             "\u{00E9}": "e", "\u{00E8}": "e", "\u{00EA}": "e", "\u{00EB}": "e",
             "\u{00E0}": "a", "\u{00E2}": "a",
             "\u{00F9}": "u", "\u{00FB}": "u",
             "\u{00F4}": "o",
             "\u{00EE}": "i", "\u{00EF}": "i",
-            "\u{00E7}": "c"
+            "\u{00E7}": "c",
+            "\u{00E4}": "a", "\u{00F6}": "o", "\u{00FC}": "u"       // umlauts, #321
         ]
         for (accented, base) in frozen {
             XCTAssertEqual(AccentRelation.baseLetter(of: accented), base,
@@ -73,12 +154,24 @@ final class AccentRelationTests: XCTestCase {
         }
     }
 
-    func testTheTableHoldsExactlyTheFrozenSetPlusThreeUmlauts() {
-        // Guards against a fourth entry sneaking in unremarked — including the Spanish
-        // acutes (á í ó ú ñ), which are absent today and out of scope for #321.
-        XCTAssertEqual(AccentRelation.baseLetters.count, 15)
-        XCTAssertNil(AccentRelation.baseLetter(of: "\u{00E1}"))     // á — still absent
-        XCTAssertNil(AccentRelation.baseLetter(of: "\u{00F1}"))     // ñ — still absent
+    /// Was `testTheTableHoldsExactlyTheFrozenSetPlusThreeUmlauts`, which pinned the Spanish
+    /// characters as *absent* — out of scope for #321 and recorded as a known gap rather
+    /// than an oversight. #327 closed the gap, so the pin flips: the same test now records
+    /// that they are covered, and what is still not.
+    func testTheTableHoldsExactlyTheFrenchSetPlusUmlautsAndSpanish() {
+        XCTAssertEqual(AccentRelation.baseLetters.count, 20)
+        XCTAssertNotNil(AccentRelation.baseLetter(of: "\u{00E1}"))  // á — covered since #327
+        XCTAssertNotNil(AccentRelation.baseLetter(of: "\u{00F1}"))  // ñ — covered since #327
+        // What is still absent, and which language would want it. This is the record the
+        // next onboarding reads before assuming its characters are covered.
+        let absent = ["\u{00E3}", "\u{00F5}",                       // ã õ — Portuguese
+                      "\u{00E5}", "\u{00E6}", "\u{00F8}",           // å æ ø — Scandinavian
+                      "\u{00FD}",                                   // ý — Czech, Icelandic
+                      "\u{00DF}"]                                   // ß — German, deliberately
+        for entry in absent {
+            guard let character = entry.first else { return XCTFail("bad fixture") }
+            XCTAssertNil(AccentRelation.baseLetter(of: character), "\(entry) is not covered")
+        }
     }
 
     func testFrenchCostsAreUnchanged() {
