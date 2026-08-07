@@ -97,7 +97,9 @@ public enum AccentRelation {
     public static var costPairs: AccentCostPairs {
         // Every character the table can relate: the accented forms and their bases.
         let related = Set(baseLetters.keys).union(baseLetters.values)
-        let ordered = related.sorted { (scalarValue($0) ?? 0) < (scalarValue($1) ?? 0) }
+        let ordered = related.sorted {
+            ($0.singleUTF16CodeUnit ?? 0) < ($1.singleUTF16CodeUnit ?? 0)
+        }
 
         var from: [UInt16] = []
         var to: [UInt16] = []
@@ -105,10 +107,10 @@ public enum AccentRelation {
         for a in ordered {
             for b in ordered where a != b {
                 guard let cost = cost(from: a, to: b),
-                      let scalarA = scalarValue(a),
-                      let scalarB = scalarValue(b) else { continue }
-                from.append(scalarA)
-                to.append(scalarB)
+                      let codeUnitA = a.singleUTF16CodeUnit,
+                      let codeUnitB = b.singleUTF16CodeUnit else { continue }
+                from.append(codeUnitA)
+                to.append(codeUnitB)
                 costs.append(cost)
             }
         }
@@ -119,12 +121,19 @@ public enum AccentRelation {
     private static func isBaseLetter(_ character: Character) -> Bool {
         character.isASCII && character.isLowercase
     }
+}
 
-    /// The single UTF-16 code unit of `character`, or `nil` if it is not one code unit.
-    /// Every character in this table is in the Latin-1 supplement, so `nil` never happens
-    /// in practice — but returning it keeps the packing free of force unwraps.
-    static func scalarValue(_ character: Character) -> UInt16? {
-        let scalars = character.unicodeScalars
+extension Character {
+    /// The single UTF-16 code unit of this character, or `nil` if it is not exactly one.
+    ///
+    /// Shared by both substitution-cost tables (`AccentRelation`, `KeyboardProximity`):
+    /// the scorer indexes characters as UTF-16 code units, so the buffers handed to it
+    /// must refuse anything wider. Every character either table holds is a Latin letter
+    /// or a Latin-1 supplement accent, so `nil` never occurs in practice — returning it
+    /// rather than force-unwrapping is what keeps that true if a layout ever adds a key
+    /// outside the Basic Multilingual Plane.
+    var singleUTF16CodeUnit: UInt16? {
+        let scalars = unicodeScalars
         guard scalars.count == 1, let scalar = scalars.first, scalar.value <= 0xFFFF else {
             return nil
         }

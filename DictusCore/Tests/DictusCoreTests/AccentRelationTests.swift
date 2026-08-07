@@ -136,12 +136,12 @@ final class AccentRelationTests: XCTestCase {
         let pairs = AccentRelation.costPairs
         let seen = Set(zip(pairs.from, pairs.to).map { [$0, $1] })
         for (accented, base) in AccentRelation.baseLetters {
-            guard let accentedScalar = AccentRelation.scalarValue(accented),
-                  let baseScalar = AccentRelation.scalarValue(base) else {
+            guard let accentedUnit = accented.singleUTF16CodeUnit,
+                  let baseUnit = base.singleUTF16CodeUnit else {
                 return XCTFail("unmappable entry \(accented)")
             }
-            XCTAssertTrue(seen.contains([accentedScalar, baseScalar]), "\(accented) → \(base)")
-            XCTAssertTrue(seen.contains([baseScalar, accentedScalar]), "\(base) → \(accented)")
+            XCTAssertTrue(seen.contains([accentedUnit, baseUnit]), "\(accented) → \(base)")
+            XCTAssertTrue(seen.contains([baseUnit, accentedUnit]), "\(base) → \(accented)")
         }
     }
 
