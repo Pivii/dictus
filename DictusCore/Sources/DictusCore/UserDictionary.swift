@@ -15,6 +15,12 @@ import Foundation
 /// least-recently-used entries are dropped — see `shouldEvictFirst()` for why
 /// recency and not usage count.
 ///
+/// HOW THE LIFECYCLE IS REPORTED (#307):
+/// Learning, eviction, reset and the load-time migration each write two lines:
+/// a count to `PersistentLog`, which any exported log carries, and the words
+/// themselves to `AutocorrectDebugLog`, which only exists in Debug builds and
+/// only writes once the Developer toggle is on. See `logLearned()`.
+///
 /// WHY App Group UserDefaults:
 /// The dictionary must be shared between DictusApp and DictusKeyboard extension.
 /// UserDefaults via App Group is the simplest cross-process storage on iOS.
@@ -106,11 +112,18 @@ public final class UserDictionary {
     public func learn(_ word: String) {
         let key = word.lowercased()
         guard !key.isEmpty, key.count > 1 else { return }
+        // A word already in the dictionary is a usage bump, not a learning event,
+        // so only a first entry is reported below.
+        let isNew = learnedWords[key] == nil
         learnedWords[key, default: 0] += 1
+        let usageCount = learnedWords[key] ?? 1
         lastUsed[key] = Self.nowStamp()
         // Remove from pending if it was being tracked
         pendingWords.removeValue(forKey: key)
         saveToDefaults()
+        if isNew {
+            logLearned(key, usageCount: usageCount)
+        }
     }
 
     /// Record that an unknown word was typed. If it reaches the repetition
@@ -139,7 +152,7 @@ public final class UserDictionary {
             lastUsed[key] = Self.nowStamp()
             pendingWords.removeValue(forKey: key)
             saveToDefaults()
-            print("[UserDictionary] Learned '\(key)' after \(Self.repetitionThreshold) uses")
+            logLearned(key, usageCount: pendingCount)
             return true
         }
 
@@ -159,16 +172,52 @@ public final class UserDictionary {
     /// Remove all learned words and pending observations.
     /// Useful for a "Reset keyboard dictionary" option in settings.
     public func resetAll() {
+        let clearedCount = learnedWords.count
+        // Snapshotting the words costs an allocation the size of the dictionary,
+        // so it happens in Debug builds only — the count above is what every
+        // build reports.
+        #if DEBUG
+        let clearedWords = Array(learnedWords.keys)
+        #endif
+
         learnedWords.removeAll()
         lastUsed.removeAll()
         pendingWords.removeAll()
         saveToDefaults()
-        print("[UserDictionary] Reset — all learned words cleared")
+
+        PersistentLog.log(.userDictionaryReset(clearedCount: clearedCount))
+        #if DEBUG
+        AutocorrectDebugLog.userDictionaryReset(words: clearedWords)
+        #endif
     }
 
     /// Reload from App Group (useful if the other process updated the dictionary).
     public func reload() {
         loadFromDefaults()
+    }
+
+    // MARK: - Reporting
+
+    /// Report a word entering the dictionary (#307).
+    ///
+    /// WHY two loggers and not one: `LogEvent` is privacy-safe by construction and
+    /// ships in every build, so it carries the counts — which is what an exported
+    /// log needs to answer "how big did this dictionary get, and did it evict".
+    /// The word itself is user content and goes only to `AutocorrectDebugLog`,
+    /// which does not exist in a Release binary and is a no-op until the Developer
+    /// toggle is on. Every reporting site in this file follows that split.
+    ///
+    /// Called after `saveToDefaults()` so `learnedWords.count` is the size the
+    /// dictionary settled at, eviction included.
+    private func logLearned(_ key: String, usageCount: Int) {
+        PersistentLog.log(.userDictionaryWordLearned(learnedCount: learnedWords.count))
+        #if DEBUG
+        AutocorrectDebugLog.userDictionaryLearned(
+            word: key,
+            usageCount: usageCount,
+            learnedCount: learnedWords.count
+        )
+        #endif
     }
 
     // MARK: - Persistence
@@ -218,15 +267,34 @@ public final class UserDictionary {
     private func stampEntriesMissingATimestamp() {
         let before = lastUsed
         let stamp = Self.nowStamp()
+        // Collecting the stamped words costs nothing in the steady state, which is
+        // the only case that runs often: past the first load there is nothing left
+        // to stamp and this array stays empty.
+        var stampedWords: [String] = []
         for word in learnedWords.keys where lastUsed[word] == nil {
             lastUsed[word] = stamp
+            stampedWords.append(word)
         }
         // Drop stamps whose word is no longer learned, so this map cannot
         // outgrow the dictionary it describes.
+        let sizeBeforePrune = lastUsed.count
         lastUsed = lastUsed.filter { learnedWords[$0.key] != nil }
+        let droppedStamps = sizeBeforePrune - lastUsed.count
 
+        // This guard is also what keeps the migration off the log on an ordinary
+        // load: `reload()` runs on every keyboard appearance, and a store that is
+        // already fully stamped changes nothing and reports nothing.
         guard lastUsed != before else { return }
         AppGroup.defaults.set(lastUsed, forKey: Self.lastUsedKey)
+
+        PersistentLog.log(.userDictionaryMigrated(
+            stamped: stampedWords.count,
+            droppedStamps: droppedStamps,
+            learnedCount: learnedWords.count
+        ))
+        #if DEBUG
+        AutocorrectDebugLog.userDictionaryMigrated(words: stampedWords)
+        #endif
     }
 
     /// One entry as the eviction order sees it. Materialised once per eviction so
@@ -300,11 +368,19 @@ public final class UserDictionary {
         // accidental learning.
         if learnedWords.count > Self.maxLearnedWords {
             let toRemove = learnedWords.count - Self.maxLearnedWords
-            for key in evictionCandidates(limit: toRemove) {
+            let evicted = evictionCandidates(limit: toRemove)
+            for key in evicted {
                 learnedWords.removeValue(forKey: key)
                 lastUsed.removeValue(forKey: key)
             }
-            print("[UserDictionary] Evicted \(toRemove) least-recently-used words (cap: \(Self.maxLearnedWords))")
+            PersistentLog.log(.userDictionaryEvicted(
+                removed: evicted.count,
+                learnedCount: learnedWords.count,
+                cap: Self.maxLearnedWords
+            ))
+            #if DEBUG
+            AutocorrectDebugLog.userDictionaryEvicted(words: evicted)
+            #endif
         }
 
         let defaults = AppGroup.defaults
