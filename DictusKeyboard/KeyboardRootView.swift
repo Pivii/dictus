@@ -51,6 +51,11 @@ struct KeyboardRootView: View {
     /// The controller uses this to reload the GiellaKeyboardView with the new layout.
     var onLanguageChanged: ((SupportedLanguage) -> Void)?
 
+    /// Callback when the user picks a layout for a language in the panel (#272).
+    /// The controller decides whether it has to rebuild — only the active language's
+    /// layout is on screen.
+    var onLayoutChanged: ((LayoutType, SupportedLanguage) -> Void)?
+
     /// Whether the Pro entry is hidden from the panel bar.
     ///
     /// WHY @State refreshed on open rather than an observed ProStatusManager:
@@ -228,14 +233,15 @@ struct KeyboardRootView: View {
                             // height constraint has not landed yet, leaving
                             // geo.size.height at the 52 pt bar.
                             availableHeight: max(0, geo.size.height - toolbarHeight),
-                            // Picking a language closes the panel (#241 device
-                            // feedback). The confirmation is the key grid changing
-                            // layout underneath, which is louder than a checkmark,
-                            // and leaving the panel up forced a second trip to the
-                            // close control to get back to typing.
+                            // Neither selection closes the panel (#272). A row carries
+                            // two independent choices now — language and layout — and
+                            // closing on the first one takes the second away. The ✕ in
+                            // the bar is the only way out.
                             onLanguageChanged: { language in
                                 onLanguageChanged?(language)
-                                state.presentAreaMode(.keys)
+                            },
+                            onLayoutChanged: { layout, language in
+                                onLayoutChanged?(layout, language)
                             }
                         )
                     }
