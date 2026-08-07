@@ -51,6 +51,11 @@ Runs three Python scripts in order:
 2. `tools/dict_builder.py` — corpus-agnostic. Reads the frequency JSON, builds a compressed patricia trie at `<code>_spellcheck.dict` (typically 0.4–0.5 MiB).
 3. `tools/ngram_builder.py --lang <code>` — pulls OpenSubtitles top sentences, Google Books German n-grams, and 50 000 articles across `<code>wikinews/wikiquote/wikibooks/wikivoyage` CirrusSearch dumps. Outputs `<code>_ngrams.dict` (~6–7 MiB after the 50K bigram + 30K trigram cap). Wikipedia parsing dominates run time (~3–5 minutes for German).
 
+**The trie does not store raw counts.** `dict_builder.py` writes `65535 * ln(1 + freq) / ln(1 + max_freq)` into each node, and that log-normalized value is what `AOSPTrieEngine.frequency(of:)` returns. The compression is severe: German `fuer` (712) against `für` (735 252) is 1033x in the corpus and 2.06x once stored. Two consequences, both learned the hard way in issue #326:
+
+- `AccentExpander`'s 5x-dominance rule is effectively **unreachable for any word present in the dictionary** — clearing 5x in log space needs the target to be roughly the input raised to the fifth power. A misspelling that is in the trie will not be corrected by accent expansion, whatever its corpus frequency. Curate it out of the frequency JSON instead.
+- A test that drives `expandAccents` through `MockFrequencyProvider` (raw counts) will pass where the device fails. Use `LogNormalizedFrequencyProvider` when the *threshold* is what's under test.
+
 For `ngram_builder.py` to recognize the new language you must also extend two constants in that file:
 
 - `LANG_MAP[<code>] = "<orgtre name>"` — maps the BCP-47 code to the directory name used by the orgtre repos (`german`, `french`, etc.).
@@ -85,7 +90,7 @@ The DictusCore suite runs on the host Mac, not on a simulator. The package build
 - **`shortCode`** — the two-letter uppercase code shown on the keyboard toolbar switcher. Always equal to `code.uppercased()`.
 - **`defaultLayout`** — `.azerty` (French only) or `.qwerty` (everything else, including German on launch). Per-language layout selection (e.g. QWERTZ for German) is tracked in issue #52 / #151.
 - **`spaceName` / `returnName`** — local convention. `espace / retour` (fr), `space / return` (en), `espacio / intro` (es), `Leertaste / Eingabe` (de). Look up the local convention; do not translate "space" word-for-word.
-- **`accentMap`** — generative, doesn't require fluency. List each base letter and the accent variants the algorithm should try. German example: `"a": ["ä"], "o": ["ö"], "u": ["ü"], "s": ["ß"]`. Note: `AccentExpander` does single-character substitution only — German `ss → ß` (length-changing) does not work today; user reaches `ß` via long-press on `s`.
+- **`accentMap`** — generative, doesn't require fluency. List each base letter and the accent variants the algorithm should try. German example: `"a": ["ä"], "o": ["ö"], "u": ["ü"]`. `accentMap` models single-character substitution only; anything that changes the word's length (German `ss → ß`, `ue → ü`) goes in **`collapseRules`** instead, which `AccentExpander` applies in the same pass. Long-press on `s` still reaches `ß` directly.
 - **`overrides`** — **empty on first ship for non-native launches** (ADR 0001). The override map forces a correction unconditionally, so populating it from a phrasebook produces silent regressions when a "must-correct" turns out to be a valid alternative. Populate post-launch from real user feedback.
 - **`contractionPrefixes`** — language-specific. French has nine (`l'`, `d'`, `c'`, ..., `qu'`); English handles contractions via the override map; Spanish and German leave this empty.
 
@@ -193,7 +198,7 @@ After `verify` passes, install the build on the iPhone 17 Pro simulator. The run
 1. Open Settings, change language to Deutsch.
 2. Confirm spacebar reads `Leertaste`, return key reads `Eingabe`, layout stays QWERTY.
 3. Type `uber`, `schon`, `madchen` → expect `über`, `schön`, `mädchen` (single-substitution accent expansion).
-4. Type `strasse` → expect `strasse` to stay as-is (acknowledged ss → ß limitation).
+4. Type `strasse`, `fuer`, `koennen` → expect `straße`, `für`, `können` (collapse rules).
 5. Switch to French, English, Spanish in turn — verify the six pre-existing autocorrect cases from PR1 still pass.
 
 If a smoke test surfaces a quality gap (missing override, missing seed bigram), file it on the language's GitHub issue. **Don't** add it to the launch PR — the post-launch playbook (issue #152) handles iterative improvements driven by real usage.
