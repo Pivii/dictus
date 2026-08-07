@@ -74,5 +74,7 @@ The two tables the C++ trie scorer consults when it substitutes one character fo
 
 `ß` is deliberately outside the accent relation: its relation to `ss` changes length, which one-to-one substitution cannot express. That relation lives in `LanguageProfile.collapseRules` instead.
 
+The accent relation covers every accented character of every language Dictus ships: French since it shipped, German since #321, Spanish (`á í ñ ó ú`) since #327. Several Spanish pairs are two valid words (`si`/`sí`, `mas`/`más`, `ano`/`año`); relating them here is safe because the valid-word guard in `TextPredictionEngine.autocorrect` returns before the scorer that reads this table runs. Disambiguating two valid spellings needs the preceding words and belongs to #114.
+
 ### Long-press accents (`AccentedCharacters.mappings`)
 Pop-up accent variants shown when a key is long-pressed. Currently merged across languages (French + Spanish ñ + acute variants), keyed by base letter. To be migrated into `LanguageProfile.longPressAccents` so each language declares its own popups.
