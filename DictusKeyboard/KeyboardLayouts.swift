@@ -13,6 +13,9 @@ import DictusCore
 ///
 /// Bottom row on letter pages: [123] [emoji] [space] [return] -- emoji key added in Phase 20.
 /// Globe key is provided by iOS below third-party keyboards -- not part of our layout.
+///
+/// Letter pages are four rows, or five when the number row is on (#331) -- see
+/// `drawsDigitRow`. The symbols pages are always four.
 enum KeyboardLayouts {
 
     /// Glyph carried by the emoji-picker toggle key.
@@ -22,6 +25,53 @@ enum KeyboardLayouts {
     /// comparing against this glyph. Naming it once keeps those comparisons in step
     /// (`DictusKeyboardBridge.didTriggerKey`, `editsDocument`, `KeySound.category(for:)`).
     static let emojiKeyGlyph = "\u{1F600}"
+
+    // MARK: - Number Row (#331)
+
+    /// Whether the letter pages currently carry a digit row above the top letter row.
+    ///
+    /// This is the single predicate the feature turns on, and it has exactly two readers:
+    /// the page builders below, and `KeyboardViewController.computeKeyboardHeight()`. They
+    /// MUST agree. Five rows drawn in a four-row-tall grid shrinks every hit target by 20%
+    /// (the measurement in #331 that killed that option); four rows drawn in a five-row-tall
+    /// grid leaves a grey band. Neither is reachable while both sides ask this one question.
+    ///
+    /// WHY landscape never draws it, whatever the user chose (#331, confirmed by the owner):
+    /// keeping the keys at their current size means the grid grows by a fifth row's worth of
+    /// height, which in landscape puts the keyboard at 72% of a 375 pt-tall screen — 104 pt
+    /// left for the host app. Taking the vendored provider's `rowCount > 4 && isLandscape`
+    /// subtraction instead just reinstates the 20% shrink under another name. Landscape has
+    /// no version of this that passes, so it keeps four rows and today's height.
+    ///
+    /// WHY the orientation half is here and not in `NumberRowPreference`: `DeviceContext`
+    /// lives in this target (it depends on DeviceKit and UIScreen); DictusCore cannot see it.
+    static var drawsDigitRow: Bool {
+        NumberRowPreference.isEnabled && !DeviceContext.current.isLandscape
+    }
+
+    /// The digit row, prepended to every letter page when `drawsDigitRow` is true.
+    ///
+    /// Ten plain input keys, 10 units — the same unit total as every other row, so the
+    /// renderer normalizes it to exactly the width of the letter rows below it.
+    ///
+    /// No long-press alternates by construction: `longPressData` is built from
+    /// `AccentedCharacters.mappings`, which is keyed on letters, so a digit has nothing to
+    /// hold. Plain digits in v1 is a decision that needs no code to keep.
+    private static func digitRow() -> [KeyDefinition] {
+        inputRow("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+    }
+
+    /// Prepends the digit row to a letter page when the setting is on and we are in portrait.
+    ///
+    /// Applied by every letter-page builder rather than by each layout, so a layout added
+    /// later gets the row without opting in. The symbols pages (`numbersPage`, `symbolsPage`)
+    /// deliberately do not call this: `symbols1` already carries the digits.
+    ///
+    /// The "Row N" comments in the builders below number the letter page they are written in,
+    /// so with the digit row on they all sit one row lower in the rendered grid.
+    private static func withDigitRow(_ page: [[KeyDefinition]]) -> [[KeyDefinition]] {
+        drawsDigitRow ? [digitRow()] + page : page
+    }
 
     // MARK: - Public API
 
@@ -100,7 +150,7 @@ enum KeyboardLayouts {
     // MARK: - AZERTY Letter Pages
 
     private static func azertyNormal(lang: SupportedLanguage, needsGlobe: Bool) -> [[KeyDefinition]] {
-        [
+        withDigitRow([
             // Row 1: 10 keys
             inputRow("a", "z", "e", "r", "t", "y", "u", "i", "o", "p"),
             // Row 2: 10 keys
@@ -114,11 +164,11 @@ enum KeyboardLayouts {
             ],
             // Row 4: 123 + emoji + space + return
             bottomRow(lang: lang, needsGlobe: needsGlobe)
-        ]
+        ])
     }
 
     private static func azertyShifted(lang: SupportedLanguage, needsGlobe: Bool) -> [[KeyDefinition]] {
-        [
+        withDigitRow([
             // Row 1: uppercase
             inputRow("A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P"),
             // Row 2: uppercase
@@ -132,13 +182,13 @@ enum KeyboardLayouts {
             ],
             // Row 4: same as normal
             bottomRow(lang: lang, needsGlobe: needsGlobe)
-        ]
+        ])
     }
 
     // MARK: - QWERTY Letter Pages
 
     private static func qwertyNormal(lang: SupportedLanguage, needsGlobe: Bool) -> [[KeyDefinition]] {
-        [
+        withDigitRow([
             // Row 1: 10 keys = 10 units
             inputRow("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
             // Row 2: 9 keys with side spacers = 10 units (matches Apple QWERTY centering)
@@ -155,11 +205,11 @@ enum KeyboardLayouts {
             ],
             // Row 4: unified bottom row (123 + emoji + space + return)
             bottomRow(lang: lang, needsGlobe: needsGlobe)
-        ]
+        ])
     }
 
     private static func qwertyShifted(lang: SupportedLanguage, needsGlobe: Bool) -> [[KeyDefinition]] {
-        [
+        withDigitRow([
             inputRow("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
             [
                 KeyDefinition(type: .spacer, size: CGSize(width: 0.5, height: 1)),
@@ -172,7 +222,7 @@ enum KeyboardLayouts {
                 KeyDefinition(type: .backspace, size: CGSize(width: 1.5, height: 1))
             ],
             bottomRow(lang: lang, needsGlobe: needsGlobe)
-        ]
+        ])
     }
 
     // MARK: - QWERTZ Letter Pages
@@ -200,7 +250,7 @@ enum KeyboardLayouts {
                                    lang: SupportedLanguage,
                                    needsGlobe: Bool) -> [[KeyDefinition]] {
         let flankSize = CGSize(width: QWERTZLayout.flankKeyUnitWidth, height: 1)
-        return [
+        return withDigitRow([
             // Row 1: 11 keys = 11 units (…o p ü)
             rows[0].map { key($0) },
             // Row 2: 11 keys = 11 units (…k l ö ä)
@@ -211,7 +261,7 @@ enum KeyboardLayouts {
                 + [KeyDefinition(type: .backspace, size: flankSize)],
             // Row 4: unified bottom row (123 + emoji + space + return)
             bottomRow(lang: lang, needsGlobe: needsGlobe)
-        ]
+        ])
     }
 
     // MARK: - Numbers Page (symbols1)
