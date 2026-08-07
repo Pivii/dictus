@@ -857,10 +857,14 @@ final internal class GiellaKeyboardView: UIView,
 
         // Apply case transformation for shifted/capslock pages
         // so that long-pressing "E" shows uppercase accents (E, E, E, E)
+        // KeyCaseTransform rather than uppercased(): Unicode's full case mapping turns
+        // ß into the two characters "SS", which this popup drew as one key and inserted
+        // as two letters (#322). The candidate is inserted verbatim by the bridge, so the
+        // transformation has to be one character in, one character out.
         if page == .shifted || page == .capslock {
             keys = keys.map { keyDef in
                 if case let .input(char, alt) = keyDef.type {
-                    return KeyDefinition(type: .input(key: char.uppercased(), alternate: alt))
+                    return KeyDefinition(type: .input(key: KeyCaseTransform.uppercased(char), alternate: alt))
                 }
                 return keyDef
             }

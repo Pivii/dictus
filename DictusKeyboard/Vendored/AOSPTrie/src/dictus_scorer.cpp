@@ -9,34 +9,46 @@
 
 namespace dictus {
 
-// --- Accent cost tables ---
+// --- Accent cost table ---
 
-static uint16_t accentBase(uint16_t c) {
-    switch (c) {
-        case 0x00E9: case 0x00E8: case 0x00EA: case 0x00EB: return 'e';
-        case 0x00E0: case 0x00E2: return 'a';
-        case 0x00F9: case 0x00FB: return 'u';
-        case 0x00F4: return 'o';
-        case 0x00EE: case 0x00EF: return 'i';
-        case 0x00E7: return 'c';
-        default: return 0;
+AccentCostTable::AccentCostTable() {
+    reset();
+}
+
+void AccentCostTable::reset() {
+    for (int i = 0; i < SUBSTITUTION_SLOT_COUNT; i++) {
+        for (int j = 0; j < SUBSTITUTION_SLOT_COUNT; j++) {
+            costs_[i][j] = (i == j) ? 0.0f : -1.0f;
+        }
     }
 }
 
-float Scorer::accentCost(uint16_t from, uint16_t to) {
+bool AccentCostTable::setPairs(const uint16_t* from, const uint16_t* to,
+                               const float* costs, int count) {
+    if (!from || !to || !costs || count <= 0) return false;
+
+    reset();
+
+    for (int i = 0; i < count; i++) {
+        int row = substitutionSlot(from[i]);
+        int column = substitutionSlot(to[i]);
+        if (row < 0 || column < 0) continue;
+        costs_[row][column] = costs[i];
+    }
+    return true;
+}
+
+float AccentCostTable::cost(uint16_t from, uint16_t to) const {
+    // A character is free to substitute for itself even when it has no slot -- the
+    // contract this table inherited from the accentCost() it replaced. The scorer never
+    // asks (it only substitutes differing characters), but keeping it makes the answer
+    // for every pair identical to the pre-#321 one outside the umlauts.
     if (from == to) return 0.0f;
 
-    uint16_t baseFrom = accentBase(from);
-    uint16_t baseTo = accentBase(to);
-
-    // Base letter to its accent variant = 0.15
-    if (baseFrom == 0 && from >= 'a' && from <= 'z' && baseTo == from) return 0.15f;
-    if (baseTo == 0 && to >= 'a' && to <= 'z' && baseFrom == to) return 0.15f;
-
-    // Accent to different accent of same base = 0.2
-    if (baseFrom != 0 && baseTo != 0 && baseFrom == baseTo) return 0.2f;
-
-    return -1.0f;
+    int row = substitutionSlot(from);
+    int column = substitutionSlot(to);
+    if (row < 0 || column < 0) return -1.0f;
+    return costs_[row][column];
 }
 
 // --- UTF-16 to UTF-8 ---
@@ -63,10 +75,14 @@ static void utf16ToUtf8(const uint16_t* src, int srcLen, char* dst, int dstSize)
 
 // --- Scorer ---
 
-Scorer::Scorer() : proximityMap_(nullptr) {}
+Scorer::Scorer() : proximityMap_(nullptr), accentCostTable_(nullptr) {}
 
 void Scorer::setProximityMap(const ProximityMap* map) {
     proximityMap_ = map;
+}
+
+void Scorer::setAccentCostTable(const AccentCostTable* table) {
+    accentCostTable_ = table;
 }
 
 // Compute node byte size for sibling iteration.
@@ -89,11 +105,22 @@ static void insertCandidate(std::vector<Candidate>& results, const Candidate& c,
     if (static_cast<int>(results.size()) > maxResults) results.pop_back();
 }
 
+// The two cost tables the traversal consults, bundled so the recursion carries one
+// parameter instead of two.
+struct CostModel {
+    const ProximityMap* proximity;
+    const AccentCostTable* accents;
+};
+
 // Get substitution cost between two characters.
-static float substitutionCost(uint16_t from, uint16_t to, const ProximityMap* proxMap) {
-    float ac = Scorer::accentCost(from, to);
-    if (ac >= 0.0f) return ac;
-    if (proxMap) return std::max(0.2f, proxMap->cost(from, to));
+// Accent relation first: an accent slip is cheaper than any keyboard near miss, and on a
+// layout where the accented key exists it would otherwise be scored by geometry alone.
+static float substitutionCost(uint16_t from, uint16_t to, const CostModel& costs) {
+    if (costs.accents) {
+        float ac = costs.accents->cost(from, to);
+        if (ac >= 0.0f) return ac;
+    }
+    if (costs.proximity) return std::max(0.2f, costs.proximity->cost(from, to));
     return 1.0f;
 }
 
@@ -106,7 +133,7 @@ static void searchRecursive(const Trie& trie,
                             uint16_t* wordBuf, int wordLen,
                             float cost, float maxEditDist,
                             std::vector<Candidate>& results, int maxResults,
-                            const ProximityMap* proxMap,
+                            const CostModel& costs,
                             int nodeCharPos) {
     if (cost > maxEditDist) return;
 
@@ -122,17 +149,17 @@ static void searchRecursive(const Trie& trie,
             wordBuf[wordLen] = trieChar;
             searchRecursive(trie, node, input, inputLen, inputPos + 1,
                             wordBuf, wordLen + 1, cost, maxEditDist,
-                            results, maxResults, proxMap, nodeCharPos + 1);
+                            results, maxResults, costs, nodeCharPos + 1);
         }
 
         // 2. SUBSTITUTION: input char != trie char
         if (inputPos < inputLen && input[inputPos] != trieChar) {
-            float sc = substitutionCost(input[inputPos], trieChar, proxMap);
+            float sc = substitutionCost(input[inputPos], trieChar, costs);
             if (cost + sc <= maxEditDist) {
                 wordBuf[wordLen] = trieChar;
                 searchRecursive(trie, node, input, inputLen, inputPos + 1,
                                 wordBuf, wordLen + 1, cost + sc, maxEditDist,
-                                results, maxResults, proxMap, nodeCharPos + 1);
+                                results, maxResults, costs, nodeCharPos + 1);
             }
         }
 
@@ -142,7 +169,7 @@ static void searchRecursive(const Trie& trie,
             if (cost + ic <= maxEditDist) {
                 searchRecursive(trie, node, input, inputLen, inputPos + 1,
                                 wordBuf, wordLen, cost + ic, maxEditDist,
-                                results, maxResults, proxMap, nodeCharPos);
+                                results, maxResults, costs, nodeCharPos);
             }
         }
 
@@ -153,7 +180,7 @@ static void searchRecursive(const Trie& trie,
                 wordBuf[wordLen] = trieChar;
                 searchRecursive(trie, node, input, inputLen, inputPos,
                                 wordBuf, wordLen + 1, cost + dc, maxEditDist,
-                                results, maxResults, proxMap, nodeCharPos + 1);
+                                results, maxResults, costs, nodeCharPos + 1);
             }
         }
 
@@ -168,7 +195,7 @@ static void searchRecursive(const Trie& trie,
                     wordBuf[wordLen + 1] = nextTrieChar;
                     searchRecursive(trie, node, input, inputLen, inputPos + 2,
                                     wordBuf, wordLen + 2, cost + tc, maxEditDist,
-                                    results, maxResults, proxMap, nodeCharPos + 2);
+                                    results, maxResults, costs, nodeCharPos + 2);
                 }
             }
         }
@@ -205,7 +232,7 @@ static void searchRecursive(const Trie& trie,
 
             searchRecursive(trie, child, input, inputLen, inputPos,
                             wordBuf, wordLen, cost, maxEditDist,
-                            results, maxResults, proxMap, 0);
+                            results, maxResults, costs, 0);
 
             childOff += computeNodeSize(child);
         }
@@ -220,6 +247,7 @@ std::vector<Candidate> Scorer::correct(const Trie& trie,
     if (inputLen <= 0 || !trie.rootData()) return results;
 
     uint16_t wordBuf[128];
+    CostModel costs{proximityMap_, accentCostTable_};
 
     // Root children start at HEADER_SIZE with known count from header.
     uint32_t offset = HEADER_SIZE;
@@ -230,7 +258,7 @@ std::vector<Candidate> Scorer::correct(const Trie& trie,
 
         searchRecursive(trie, node, input, inputLen, 0,
                         wordBuf, 0, 0.0f, maxEditDist,
-                        results, maxResults, proximityMap_, 0);
+                        results, maxResults, costs, 0);
 
         offset += computeNodeSize(node);
     }

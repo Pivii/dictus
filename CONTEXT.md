@@ -69,5 +69,10 @@ A language with no stored layout is **inherited**: it resolves to `SupportedLang
 
 QWERTZ carries dedicated ä/ö/ü keys, which makes its first two rows 11 units wide against 10 for every other row in every layout. The renderer normalizes each row against its own unit total, so those rows draw narrower keys. Row data lives in `DictusCore/KeyboardLayoutData.swift`; `DictusKeyboard/KeyboardLayouts.swift` builds the keys from it.
 
+### Substitution-cost tables (`KeyboardProximity`, `AccentRelation`)
+The two tables the C++ trie scorer consults when it substitutes one character for another while walking correction candidates: **keyboard proximity** (how far apart two keys are on the active layout) and the **accent relation** (which accented letters are variants of which base letter, and at what cost). Both are declared in `DictusCore/Sources/DictusCore/TextCorrection/`, computed once per dictionary load, and installed into the scorer across the ObjC bridge; the scorer holds the lookup and the traversal, no rules of its own. **Distinct from `LanguageProfile.accentMap`**, which drives the Swift-side generative accent expansion — the accent relation is a *cost*, consulted during edit-distance scoring, not a list of variants to try. Declared in DictusCore because the keyboard target has no test bundle (#321, same reasoning as the QWERTZ rows in #151).
+
+`ß` is deliberately outside the accent relation: its relation to `ss` changes length, which one-to-one substitution cannot express. That relation lives in `LanguageProfile.collapseRules` instead.
+
 ### Long-press accents (`AccentedCharacters.mappings`)
 Pop-up accent variants shown when a key is long-pressed. Currently merged across languages (French + Spanish ñ + acute variants), keyed by base letter. To be migrated into `LanguageProfile.longPressAccents` so each language declares its own popups.
