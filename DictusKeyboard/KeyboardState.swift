@@ -80,8 +80,27 @@ class KeyboardState: ObservableObject {
             // that changed nothing is worth acting on -- and because a re-adoption of
             // the same status is exactly what must not restart a floor already running.
             advanceDisplayedStatus(to: dictationStatus)
+            // Fourth (#320): forgetting which error this surface has already shown.
+            // Any status that is not `.failed` means a new attempt or a reset, so the
+            // next `.failed` is a new failure and deserves the toolbar again -- even if
+            // it says the same sentence. The funnel argument applies here too:
+            // `markRequested` writes `.requested` without going through
+            // `refreshFromDefaults`, so a reset placed there would be bypassed.
+            if dictationStatus != .failed {
+                presentedErrorMessage = nil
+            }
         }
     }
+
+    /// The app error this keyboard has already put on its toolbar.
+    ///
+    /// WHY it is needed at all (#320): `DictationErrorChannel` is no longer consumed on
+    /// read, and `refreshFromDefaults` runs on every Darwin status post and on every
+    /// controller appearance. Without a record of what was shown, a `.failed` status
+    /// sitting in the App Group would re-raise the same three-second message each time.
+    /// Per instance on purpose -- the extension is torn down and rebuilt constantly, and
+    /// a keyboard the user opens fresh after a failure should still be told why.
+    private var presentedErrorMessage: String?
 
     /// The dictation stage the recording overlay is drawing (#309).
     ///
@@ -594,11 +613,18 @@ class KeyboardState: ObservableObject {
                 coldStartGraceEnd = nil
                 if status == .idle || status == .ready || status == .failed {
                     activeSessionID = nil
-                    // Read and display error message from App Group
-                    if status == .failed, let errorMsg = defaults.string(forKey: SharedKeys.lastError) {
+                    // Read and display the app's error message. The read is
+                    // deliberately non-destructive (#320): the app's own failure
+                    // screen reads the same channel, and consuming it here left that
+                    // screen with nothing to say but a hardcoded sentence about the
+                    // model download. What this surface owns is its own toolbar line,
+                    // which the timeout below clears; `presentedErrorMessage` is what
+                    // keeps a later refresh from raising the same one again.
+                    if status == .failed,
+                       let errorMsg = DictationErrorChannel.current,
+                       errorMsg != presentedErrorMessage {
+                        presentedErrorMessage = errorMsg
                         assignStatusMessage(errorMsg, reason: "appError")
-                        defaults.removeObject(forKey: SharedKeys.lastError)
-                        defaults.synchronize()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
                             self?.assignStatusMessage(nil, reason: "appError-timeout")
                         }
