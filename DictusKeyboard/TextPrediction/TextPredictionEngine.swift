@@ -538,6 +538,8 @@ class TextPredictionEngine {
     /// 3 keys from space, causing false splits like "calvier" → "cal hier".
     /// On QWERTY: bottom row is Z-X-C-V-B-N-M — M is rightmost (next to space),
     /// N and B are close enough to count.
+    /// QWERTZ shares the QWERTY set: its bottom row is Y-X-C-V-B-N-M, so the three
+    /// keys adjacent to the spacebar are the same ones (#151).
     private static let azertySpacebarNeighbors: Set<Character> = ["n", "b", ","]
     private static let qwertySpacebarNeighbors: Set<Character> = ["n", "b", "m"]
 

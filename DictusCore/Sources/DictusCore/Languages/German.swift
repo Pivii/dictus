@@ -6,14 +6,14 @@ import Foundation
 
 /// German (`de`).
 ///
-/// Layout: QWERTY on launch (QWERTZ deferred to follow-up issue #151).
+/// Layout: QWERTZ (#151) — dedicated ä/ö/ü keys, ß by long-press on `s`.
 /// Overrides: empty per ADR 0001 (populated post-launch from native-speaker feedback on issue #109).
 /// Contractions: empty — German `geht's`/`gibt's` style elisions are rare and not curated.
 public let germanProfile = LanguageProfile(
     code: "de",
     displayName: "Deutsch",
     shortCode: "DE",
-    defaultLayout: .qwerty,
+    defaultLayout: .qwertz,
     spaceName: "Leertaste",
     returnName: "Eingabe",
     overrides: [:],
@@ -28,12 +28,15 @@ public let germanProfile = LanguageProfile(
     ],
     contractionPrefixes: [],
     collapseRules: [
-        // German Umlautersatz: standard ASCII transliterations Germans use on
-        // keyboards without umlaut keys (URLs, filenames, emails — and our
-        // QWERTY layout). Each rule converts the 2-char ASCII sequence to its
-        // single-char umlaut counterpart. Same 5x-dominance protection as
-        // single-char accent expansion guards against false positives like
-        // `bauer` (farmer) → `baür` (not a word, no false correction).
+        // German Umlautersatz: standard ASCII transliterations Germans use where
+        // umlauts are unavailable or unwanted — URLs, filenames, email addresses —
+        // and out of habit anywhere else. They stay after #151 gave the layout real
+        // ä/ö/ü keys: the keys removed the *need* to transliterate, not the habit,
+        // and a user who still types `koennen` expects `können`. Each rule converts
+        // the 2-char ASCII sequence to its single-char umlaut counterpart. The same
+        // 5x-dominance protection as single-char accent expansion guards against
+        // false positives like `bauer` (farmer) → `baür` (not a word, no false
+        // correction).
         //
         // Without these rules, `tuer` → `tier` (animal, edit-distance 1) via
         // the trie's spell-check fallback instead of `Tür` (door).

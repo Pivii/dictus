@@ -28,7 +28,7 @@ final class SupportedLanguageActivationTests: XCTestCase {
         SupportedLanguage.activate(.german)
         SupportedLanguage.activate(.german)
         XCTAssertEqual(SupportedLanguage.active, .german)
-        XCTAssertEqual(LayoutType.active, .qwerty)
+        XCTAssertEqual(LayoutType.active, .qwertz)
     }
 
     // MARK: - Layout write (the #272 coupling)
@@ -45,6 +45,24 @@ final class SupportedLanguageActivationTests: XCTestCase {
         SupportedLanguage.activate(.english)
         XCTAssertEqual(defaults?.string(forKey: SharedKeys.keyboardLayout), "qwerty")
         XCTAssertEqual(LayoutType.active, .qwerty)
+    }
+
+    func testActivateGermanWritesQwertz() {
+        SupportedLanguage.activate(.english)
+        SupportedLanguage.activate(.german)
+        XCTAssertEqual(defaults?.string(forKey: SharedKeys.keyboardLayout), "qwertz")
+        XCTAssertEqual(LayoutType.active, .qwertz)
+    }
+
+    /// No migration rewrites a stored layout (#151): a German user who installed
+    /// before QWERTZ existed keeps QWERTY until they select German again. The layout
+    /// is read from what is stored, never re-derived from the active language.
+    func testStoredLayoutSurvivesALanguageItNoLongerMatches() {
+        defaults?.set(SupportedLanguage.german.rawValue, forKey: SharedKeys.language)
+        defaults?.set(LayoutType.qwerty.rawValue, forKey: SharedKeys.keyboardLayout)
+        XCTAssertEqual(SupportedLanguage.active, .german)
+        XCTAssertEqual(LayoutType.active, .qwerty,
+                       "Nobody's keyboard may change shape without them selecting the language again.")
     }
 
     /// Every supported language must leave the pair consistent — a new language

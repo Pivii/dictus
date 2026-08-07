@@ -382,6 +382,10 @@ private struct MiniSearchKeyboard: View, Equatable {
                 ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
                 ["z", "x", "c", "v", "b", "n", "m"]
             ]
+        case .qwertz:
+            // Read from the shared layout data rather than re-typed here, so the
+            // search keyboard cannot drift from the real one (#151).
+            return QWERTZLayout.lowercasedLettersRows
         }
     }
 

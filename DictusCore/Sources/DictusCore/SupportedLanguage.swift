@@ -29,12 +29,16 @@ public enum SupportedLanguage: String, CaseIterable, Codable, Sendable {
     public var shortCode: String { rawValue.uppercased() }
 
     /// Default keyboard layout for this language.
-    /// French defaults to AZERTY; English, Spanish, and German default to QWERTY.
-    /// (German QWERTZ is deferred to follow-up issue #151.)
+    /// French defaults to AZERTY; English and Spanish to QWERTY; German to QWERTZ (#151).
+    ///
+    /// This is the layout a user gets when they *select* the language. It does not
+    /// rewrite a layout already stored: a German user who installed before #151 keeps
+    /// QWERTY until they select German again. Nobody's keyboard changes shape on update.
     public var defaultLayout: LayoutType {
         switch self {
         case .french: return .azerty
-        case .english, .spanish, .german: return .qwerty
+        case .english, .spanish: return .qwerty
+        case .german: return .qwertz
         }
     }
 

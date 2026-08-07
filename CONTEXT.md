@@ -62,7 +62,9 @@ A polish backend conforming to `PolishEngineProtocol` (in DictusCore). One imple
 ## Keyboard
 
 ### Layout type
-The physical key arrangement: `LayoutType.azerty` (French) or `LayoutType.qwerty` (English, Spanish, German). Each `SupportedLanguage` declares its `defaultLayout`. Layout is global today (one active at a time), not per-language; per-language layout selection is tracked in issue #52.
+The physical key arrangement: `LayoutType.azerty` (French), `LayoutType.qwerty` (English, Spanish) or `LayoutType.qwertz` (German, #151). Each `SupportedLanguage` declares its `defaultLayout`, which seeds the layout when that language is *selected* and never rewrites a layout already stored. Layout is global today (one active at a time), not per-language; per-language layout selection is tracked in issue #52, and decoupling layout from dictionary language in #272.
+
+QWERTZ carries dedicated ä/ö/ü keys, which makes its first two rows 11 units wide against 10 for every other row in every layout. The renderer normalizes each row against its own unit total, so those rows draw narrower keys. Row data lives in `DictusCore/KeyboardLayoutData.swift`; `DictusKeyboard/KeyboardLayouts.swift` builds the keys from it.
 
 ### Long-press accents (`AccentedCharacters.mappings`)
 Pop-up accent variants shown when a key is long-pressed. Currently merged across languages (French + Spanish ñ + acute variants), keyed by base letter. To be migrated into `LanguageProfile.longPressAccents` so each language declares its own popups.

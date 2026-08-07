@@ -107,7 +107,7 @@ struct KeyboardPanelView: View {
 
                 Spacer(minLength: 8)
 
-                Text(entry.defaultLayout.rawValue.uppercased())
+                Text(entry.defaultLayout.displayName)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
             }

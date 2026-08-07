@@ -166,7 +166,7 @@ struct SettingsView: View {
                 }
                 .onChange(of: language) { _, newLang in
                     // Auto-switch keyboard layout to the language's default.
-                    // French -> AZERTY, English/Spanish -> QWERTY.
+                    // French -> AZERTY, English/Spanish -> QWERTY, German -> QWERTZ.
                     if let lang = SupportedLanguage(rawValue: newLang) {
                         keyboardLayout = lang.defaultLayout.rawValue
                     }
@@ -175,8 +175,12 @@ struct SettingsView: View {
                 DefaultLayerPicker()
 
                 Picker("Layout", selection: $keyboardLayout) {
-                    Text("AZERTY").tag("azerty")
-                    Text("QWERTY").tag("qwerty")
+                    // Iterate over LayoutType so adding a layout (QWERTZ in #151,
+                    // any future one) only requires the enum case — the entries used
+                    // to be hardcoded here and in the keyboard panel separately.
+                    ForEach(LayoutType.allCases, id: \.rawValue) { layout in
+                        Text(layout.displayName).tag(layout.rawValue)
+                    }
                 }
 
                 Toggle("Haptic feedback", isOn: $hapticsEnabled)

@@ -13,8 +13,8 @@ final class GermanLanguageTests: XCTestCase {
         XCTAssertEqual(p.code, "de")
         XCTAssertEqual(p.displayName, "Deutsch")
         XCTAssertEqual(p.shortCode, "DE")
-        XCTAssertEqual(p.defaultLayout, .qwerty,
-                       "QWERTY on launch — QWERTZ deferred to issue #151.")
+        XCTAssertEqual(p.defaultLayout, .qwertz,
+                       "German selects QWERTZ — the layout iOS ships as its default German keyboard.")
         XCTAssertEqual(p.spaceName, "Leertaste")
         XCTAssertEqual(p.returnName, "Eingabe")
     }
