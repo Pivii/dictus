@@ -11,13 +11,18 @@ The process of adding a new transcription language to Dictus. **Distinct from us
 A language registered in `DictusCore/SupportedLanguage.swift` as an enum case. Registration unlocks: settings picker entry, keyboard toolbar cycle slot, autocorrect/predict pipeline, transcription language hint to Whisper. **Adding a `SupportedLanguage` case is the act of "registering" the language** — the script and checklist exist to make every other touch point a mechanical follow-on.
 
 ### Language profile (`LanguageProfile`)
-The per-language data struct in `DictusCore/Languages/LanguageProfile.swift`. Pure data — no logic. One file per language (`French.swift`, `English.swift`, `Spanish.swift`, `German.swift`). Holds: code, displayName, shortCode, defaultLayout, spaceName, returnName, longPressAccents, overrides, accentMap, contractionPrefixes. Algorithms in `AOSPTrieEngine` and elsewhere read the profile; they don't switch on language code.
+The per-language data struct in `DictusCore/Languages/LanguageProfile.swift`. Pure data — no logic. One file per language (`French.swift`, `English.swift`, `Spanish.swift`, `German.swift`). Holds: code, displayName, shortCode, defaultLayout, spaceName, returnName, longPressAccents, overrides, accentMap, collapseRules, contractionPrefixes. Algorithms in `AOSPTrieEngine` and elsewhere read the profile; they don't switch on language code.
 
 ### Override map (`LanguageProfile.overrides`)
 Per-language **must-correct** map: input → forced correction, applied before edit-distance lookup. Used for cases the trie can't infer (e.g., French `ca → ça`: "ca" is itself never a valid French word). **Distinct from accent map** (which is generative — try adding accents and check the dict) and from **edit-distance correction** (which is statistical). Policy: empty for new languages on first ship; populated from real user feedback. See ADR 0001.
 
 ### Accent map (`LanguageProfile.accentMap`)
 Per-language map from base letter to accented variants used by `accentExpansion()` to attempt accent insertions when a typed word isn't in the dictionary. Generative, not curated — you list which accents *could* apply to which letters, then the algorithm tries them and picks the highest-frequency hit.
+
+### Collapse rules (`LanguageProfile.collapseRules`)
+The length-changing counterpart of the accent map: two-character sequences that stand for one character, applied by `expandAccents()` in the same pass. German declares four — `ae → ä`, `oe → ö`, `ue → ü` (Umlautersatz, the ASCII convention used where umlauts are unavailable) and `ss → ß`. The curation script `scripts/curate_de_dictionary.py` mirrors the same table, because a form dropped there is one the expander must be able to reconstruct.
+
+`ss → ß` is **not settled the way the three Umlautersatz rules are.** `ss` for `ß` is a valid replacement rather than an error — mandatory in Switzerland and Liechtenstein, and used deliberately by native speakers elsewhere. What ships (`strasse` → `straße`, device validated in #321) stays as it is; changing it in either direction is a product decision needing native-speaker input, and is not implied by the Umlautersatz reasoning (#326).
 
 ### Adaptive accent key
 A French-specific feature of the AZERTY layout: the apostrophe/accent key on row 3 changes its label based on context (shows `é` after `e`, apostrophe after `qu`, etc.). **Not generalized to other languages.** Lives in `FrenchAdaptiveKey` (`DictusCore/AccentedCharacters.swift`). Since #272 the layout no longer implies the language, so the key checks the active language and behaves as a plain apostrophe outside French. Other languages reach accents via standard long-press popups, as does French on a non-AZERTY layout — those grids have no adaptive key slot.
@@ -73,6 +78,8 @@ QWERTZ carries dedicated ä/ö/ü keys, which makes its first two rows 11 units 
 The two tables the C++ trie scorer consults when it substitutes one character for another while walking correction candidates: **keyboard proximity** (how far apart two keys are on the active layout) and the **accent relation** (which accented letters are variants of which base letter, and at what cost). Both are declared in `DictusCore/Sources/DictusCore/TextCorrection/`, computed once per dictionary load, and installed into the scorer across the ObjC bridge; the scorer holds the lookup and the traversal, no rules of its own. **Distinct from `LanguageProfile.accentMap`**, which drives the Swift-side generative accent expansion — the accent relation is a *cost*, consulted during edit-distance scoring, not a list of variants to try. Declared in DictusCore because the keyboard target has no test bundle (#321, same reasoning as the QWERTZ rows in #151).
 
 `ß` is deliberately outside the accent relation: its relation to `ss` changes length, which one-to-one substitution cannot express. That relation lives in `LanguageProfile.collapseRules` instead.
+
+The accent relation covers every accented character of every language Dictus ships: French since it shipped, German since #321, Spanish (`á í ñ ó ú`) since #327. Several Spanish pairs are two valid words (`si`/`sí`, `mas`/`más`, `ano`/`año`); relating them here is safe because the valid-word guard in `TextPredictionEngine.autocorrect` returns before the scorer that reads this table runs. Disambiguating two valid spellings needs the preceding words and belongs to #114.
 
 ### Long-press accents (`AccentedCharacters.mappings`)
 Pop-up accent variants shown when a key is long-pressed. Currently merged across languages (French + Spanish ñ + acute variants), keyed by base letter. To be migrated into `LanguageProfile.longPressAccents` so each language declares its own popups.
