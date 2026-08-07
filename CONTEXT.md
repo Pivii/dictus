@@ -11,13 +11,18 @@ The process of adding a new transcription language to Dictus. **Distinct from us
 A language registered in `DictusCore/SupportedLanguage.swift` as an enum case. Registration unlocks: settings picker entry, keyboard toolbar cycle slot, autocorrect/predict pipeline, transcription language hint to Whisper. **Adding a `SupportedLanguage` case is the act of "registering" the language** — the script and checklist exist to make every other touch point a mechanical follow-on.
 
 ### Language profile (`LanguageProfile`)
-The per-language data struct in `DictusCore/Languages/LanguageProfile.swift`. Pure data — no logic. One file per language (`French.swift`, `English.swift`, `Spanish.swift`, `German.swift`). Holds: code, displayName, shortCode, defaultLayout, spaceName, returnName, longPressAccents, overrides, accentMap, contractionPrefixes. Algorithms in `AOSPTrieEngine` and elsewhere read the profile; they don't switch on language code.
+The per-language data struct in `DictusCore/Languages/LanguageProfile.swift`. Pure data — no logic. One file per language (`French.swift`, `English.swift`, `Spanish.swift`, `German.swift`). Holds: code, displayName, shortCode, defaultLayout, spaceName, returnName, longPressAccents, overrides, accentMap, collapseRules, contractionPrefixes. Algorithms in `AOSPTrieEngine` and elsewhere read the profile; they don't switch on language code.
 
 ### Override map (`LanguageProfile.overrides`)
 Per-language **must-correct** map: input → forced correction, applied before edit-distance lookup. Used for cases the trie can't infer (e.g., French `ca → ça`: "ca" is itself never a valid French word). **Distinct from accent map** (which is generative — try adding accents and check the dict) and from **edit-distance correction** (which is statistical). Policy: empty for new languages on first ship; populated from real user feedback. See ADR 0001.
 
 ### Accent map (`LanguageProfile.accentMap`)
 Per-language map from base letter to accented variants used by `accentExpansion()` to attempt accent insertions when a typed word isn't in the dictionary. Generative, not curated — you list which accents *could* apply to which letters, then the algorithm tries them and picks the highest-frequency hit.
+
+### Collapse rules (`LanguageProfile.collapseRules`)
+The length-changing counterpart of the accent map: two-character sequences that stand for one character, applied by `expandAccents()` in the same pass. German declares four — `ae → ä`, `oe → ö`, `ue → ü` (Umlautersatz, the ASCII convention used where umlauts are unavailable) and `ss → ß`. The curation script `scripts/curate_de_dictionary.py` mirrors the same table, because a form dropped there is one the expander must be able to reconstruct.
+
+`ss → ß` is **not settled the way the three Umlautersatz rules are.** `ss` for `ß` is a valid replacement rather than an error — mandatory in Switzerland and Liechtenstein, and used deliberately by native speakers elsewhere. What ships (`strasse` → `straße`, device validated in #321) stays as it is; changing it in either direction is a product decision needing native-speaker input, and is not implied by the Umlautersatz reasoning (#326).
 
 ### Adaptive accent key
 A French-specific feature of the AZERTY layout: the apostrophe/accent key on row 3 changes its label based on context (shows `é` after `e`, apostrophe after `qu`, etc.). **Not generalized to other languages.** Lives in `FrenchAdaptiveKey` (`DictusCore/AccentedCharacters.swift`). Since #272 the layout no longer implies the language, so the key checks the active language and behaves as a plain apostrophe outside French. Other languages reach accents via standard long-press popups, as does French on a non-AZERTY layout — those grids have no adaptive key slot.
