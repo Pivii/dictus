@@ -283,6 +283,36 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .keyboard)
     }
 
+    // MARK: - Waveform frame cadence (#314)
+
+    /// The issue asks for frame-gap evidence at a finer grain than the 500 ms
+    /// `waveformStall` threshold: 50-100 ms is already enough to make a 60 Hz
+    /// animation feel bad, and none of it was visible in a log. The heartbeat is
+    /// where that evidence rides, because it is emitted every ~2 s and the log is
+    /// capped and deduplicated (#255) -- a per-frame event was not an option.
+    func testWaveformHeartbeatCarriesTheWorstFrameGapOfItsWindow() {
+        let event = LogEvent.waveformHeartbeat(
+            renderTick: 1200, avgLevel: 0.42, energyCount: 40, maxGapMs: 83
+        )
+        XCTAssertEqual(event.name, "waveformHeartbeat")
+        XCTAssertEqual(
+            event.message,
+            "renderTick=1200 avgLevel=0.420 energyCount=40 maxGapMs=83"
+        )
+    }
+
+    /// A window with no frame worth reporting still says so, rather than dropping the
+    /// field: a reader comparing two heartbeats needs the healthy one to be readable
+    /// as healthy, not as missing.
+    func testWaveformHeartbeatReportsASmoothWindowAsZero() {
+        let event = LogEvent.waveformHeartbeat(
+            renderTick: 60, avgLevel: 0, energyCount: 0, maxGapMs: 0
+        )
+        XCTAssertEqual(event.message, "renderTick=60 avgLevel=0.000 energyCount=0 maxGapMs=0")
+        XCTAssertEqual(event.level, .debug)
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
     // MARK: - Lifecycle events
 
     func testAppLaunchedIsInfoLifecycle() {

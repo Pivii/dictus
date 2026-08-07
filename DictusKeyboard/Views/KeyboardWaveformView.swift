@@ -22,6 +22,11 @@ final class KeyboardWaveformDriver: ObservableObject {
     private var activePresenterID: String?
     private var displayLink: CADisplayLink?
     private var lastTickTime: CFTimeInterval?
+    /// Worst interval between two display-link callbacks since the last heartbeat, which
+    /// is where it is reported (#314). A stutter well under the 500 ms `waveformStall`
+    /// threshold is already enough to be felt, and this is how it becomes visible in a
+    /// log without a per-frame line.
+    private var maxGapSinceHeartbeat: CFTimeInterval = 0
     private var lastHeartbeatTime: Date = .distantPast
 
     private init() {
@@ -72,6 +77,7 @@ final class KeyboardWaveformDriver: ObservableObject {
 
         if !isVisible {
             lastTickTime = nil
+            maxGapSinceHeartbeat = 0
             lastHeartbeatTime = .distantPast
         }
 
@@ -149,6 +155,7 @@ final class KeyboardWaveformDriver: ObservableObject {
         displayLink?.invalidate()
         displayLink = nil
         lastTickTime = nil
+        maxGapSinceHeartbeat = 0
 
         PersistentLog.log(.waveformDisappeared(
             refreshID: renderTick,
@@ -163,8 +170,16 @@ final class KeyboardWaveformDriver: ObservableObject {
         let previousTimestamp = lastTickTime
         lastTickTime = timestamp
 
+        // The nominal frame duration stands in on the first callback only, which is the
+        // one tick with no previous timestamp to measure from. Everywhere else it is
+        // the wrong number: it never reports the frames that were missed (#314).
+        let elapsed = previousTimestamp.map { timestamp - $0 } ?? link.duration
+
         if let previousTimestamp {
-            let gapMs = Int((timestamp - previousTimestamp) * 1000)
+            let gap = timestamp - previousTimestamp
+            maxGapSinceHeartbeat = max(maxGapSinceHeartbeat, gap)
+
+            let gapMs = Int(gap * 1000)
             if gapMs > 500 {
                 PersistentLog.log(.waveformStall(
                     gapMs: gapMs,
@@ -177,10 +192,8 @@ final class KeyboardWaveformDriver: ObservableObject {
         switch animation {
         case .micLevels:
             tickRecording()
-        case .sweep:
-            processingPhase += link.duration / 2.0
-        case .travellingPeak:
-            processingPhase += link.duration * ProcessingWaveform.phaseRate
+        case .sweep, .travellingPeak:
+            processingPhase += ProcessingWaveform.phaseAdvance(for: animation, elapsedSeconds: elapsed)
         case .still:
             break
         }
@@ -231,8 +244,10 @@ final class KeyboardWaveformDriver: ObservableObject {
         PersistentLog.log(.waveformHeartbeat(
             renderTick: renderTick,
             avgLevel: average,
-            energyCount: energyLevels.count
+            energyCount: energyLevels.count,
+            maxGapMs: Int(maxGapSinceHeartbeat * 1000)
         ))
+        maxGapSinceHeartbeat = 0
         if animation == .micLevels {
             logProbe(
                 "waveformShape",

@@ -124,7 +124,11 @@ public enum LogEvent: Sendable {
     // MARK: Waveform Diagnostics
     case waveformAppeared(refreshID: Int, isProcessing: Bool, energyCount: Int, killedState: Bool)
     case waveformDisappeared(refreshID: Int, renderTick: Int)
-    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int)
+    /// `maxGapMs` is the worst interval between two display-link callbacks since the
+    /// previous heartbeat. It is the frame-cadence evidence #314 asks for, carried by a
+    /// line that is already emitted every ~2 s: a per-frame event would be the wrong
+    /// trade against a log that is capped at 1 MB and deduplicated (#255).
+    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int, maxGapMs: Int)
     case waveformStall(gapMs: Int, renderTick: Int, energyCount: Int)
     case waveformRefreshIDChanged(oldID: Int, newID: Int, status: String)
     case waveformEnergyTransition(fromCount: Int, toCount: Int, status: String)
@@ -594,8 +598,8 @@ public enum LogEvent: Sendable {
             return "refreshID=\(refreshID) isProcessing=\(isProcessing) energyCount=\(energyCount) killed=\(killedState)"
         case .waveformDisappeared(let refreshID, let renderTick):
             return "refreshID=\(refreshID) renderTick=\(renderTick)"
-        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount):
-            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount)"
+        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount, let maxGapMs):
+            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount) maxGapMs=\(maxGapMs)"
         case .waveformStall(let gapMs, let renderTick, let energyCount):
             return "gapMs=\(gapMs) renderTick=\(renderTick) energyCount=\(energyCount)"
         case .waveformRefreshIDChanged(let oldID, let newID, let status):
