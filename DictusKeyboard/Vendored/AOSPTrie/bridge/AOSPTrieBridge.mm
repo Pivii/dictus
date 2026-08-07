@@ -21,6 +21,7 @@
     dictus::Trie _trie;
     dictus::Scorer _scorer;
     dictus::ProximityMap _proximityMap;
+    dictus::AccentCostTable _accentCosts;
     BOOL _loaded;
     dictus::NgramEngine* _ngramEngine;
 }
@@ -30,6 +31,12 @@
     if (self) {
         _loaded = NO;
         _ngramEngine = new dictus::NgramEngine();
+        // Both tables are members with a stable address, so the scorer is wired to them
+        // once here. Until DictusCore installs their contents they are neutral: every
+        // substitution costs 1.0 and no accent pair is related, which degrades to plain
+        // edit distance rather than to wrong scores.
+        _scorer.setProximityMap(&_proximityMap);
+        _scorer.setAccentCostTable(&_accentCosts);
     }
     return self;
 }
@@ -45,7 +52,6 @@
 
     bool success = _trie.loadMmap([path UTF8String]);
     if (success) {
-        _scorer.setProximityMap(&_proximityMap);
         _loaded = YES;
     }
     return success ? YES : NO;
@@ -147,18 +153,23 @@ static int convertString(NSString *str, uint16_t *buffer, int bufferSize) {
     return (NSUInteger)_trie.wordCount();
 }
 
-- (void)setProximityMapAZERTY {
-    _proximityMap.buildAZERTY();
-    if (_loaded) {
-        _scorer.setProximityMap(&_proximityMap);
-    }
+- (BOOL)setProximityTableWithCharacters:(NSData *)characters distances:(NSData *)distances {
+    NSUInteger count = characters.length / sizeof(uint16_t);
+    if (count == 0 || distances.length != count * count * sizeof(float)) return NO;
+
+    return _proximityMap.setTable(static_cast<const uint16_t *>(characters.bytes),
+                                  (int)count,
+                                  static_cast<const float *>(distances.bytes)) ? YES : NO;
 }
 
-- (void)setProximityMapQWERTY {
-    _proximityMap.buildQWERTY();
-    if (_loaded) {
-        _scorer.setProximityMap(&_proximityMap);
-    }
+- (BOOL)setAccentCostsFrom:(NSData *)from to:(NSData *)to costs:(NSData *)costs {
+    NSUInteger count = from.length / sizeof(uint16_t);
+    if (count == 0 || to.length != from.length || costs.length != count * sizeof(float)) return NO;
+
+    return _accentCosts.setPairs(static_cast<const uint16_t *>(from.bytes),
+                                 static_cast<const uint16_t *>(to.bytes),
+                                 static_cast<const float *>(costs.bytes),
+                                 (int)count) ? YES : NO;
 }
 
 // --- N-gram prediction methods ---
