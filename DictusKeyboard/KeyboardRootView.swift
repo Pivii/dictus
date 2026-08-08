@@ -401,6 +401,8 @@ struct KeyboardRootView: View {
     ///   - Tap index 1 (bold correction): apply correction + space
     ///   - Tap index 2 (alternative): apply alternative + space
     /// - Accent mode: replace just the vowel without adding a space.
+    /// - Undo mode: tap index 0 reverts the autocorrect; slots 1-2 are routed by
+    ///   the live document, see applyUndoModeSuggestion.
     private func handleSuggestionTap(index: Int) {
         guard index < suggestionState.suggestions.count else { return }
         let suggestion = suggestionState.suggestions[index]
@@ -420,8 +422,7 @@ struct KeyboardRootView: View {
                 suggestionState.pendingUndo = nil
                 suggestionState.clear()
             } else {
-                suggestionState.pendingUndo = nil
-                bridge?.handlePredictionTap(word: suggestion)
+                applyUndoModeSuggestion(suggestion, proxy: proxy)
             }
             HapticFeedback.keyTapped()
             return
@@ -456,6 +457,43 @@ struct KeyboardRootView: View {
         suggestionState.pendingUndo = nil
         suggestionState.clear()
         HapticFeedback.keyTapped()
+    }
+
+    /// Applies a tap on slot 1-2 of the undo bar (#335).
+    ///
+    /// WHY this is not a plain prediction tap: `.undoAvailable` only says an undo
+    /// chip is showing in slot 0. Slots 1-2 hold predictions when the cursor is
+    /// after a space, but completions of the word IN PROGRESS when the user has
+    /// started typing again — and inserting one of those glued the suggestion to
+    /// the partial word ("concerne" + "concerné" -> "concerneconcerné").
+    /// The live document decides, not the mode: see SuggestionTapRouting.
+    private func applyUndoModeSuggestion(_ suggestion: String, proxy: UITextDocumentProxy) {
+        switch SuggestionTapRouting.decide(
+            context: proxy.documentContextBeforeInput,
+            currentWord: suggestionState.currentWord
+        ) {
+        case .insert:
+            // Cursor is on a boundary: a prediction lands here, insert + space,
+            // and let the bridge chain the next predictions. Unchanged behavior.
+            suggestionState.pendingUndo = nil
+            bridge?.handlePredictionTap(word: suggestion)
+
+        case .replace(let deleteCount):
+            applyReplacement(
+                proxy: proxy,
+                deleteCount: deleteCount,
+                replacement: suggestion,
+                addSpace: true
+            )
+            suggestionState.pendingUndo = nil
+            suggestionState.clear()
+
+        case .abort(let reason):
+            // Stale `currentWord` mid-word: inserting here would reproduce the
+            // very bug this fixes. Swallow the tap — the bar refreshes on the
+            // next keystroke (same outcome as replaceCurrentWord, #191).
+            logReplacementAborted(proxy: proxy, word: suggestionState.currentWord, reason: reason)
+        }
     }
 
     /// Reverts an autocorrection, preserving any characters typed after the correction.
@@ -524,22 +562,42 @@ struct KeyboardRootView: View {
             word: currentWord
         ) {
         case .ok(let deleteCount):
-            for _ in 0..<deleteCount {
-                proxy.deleteBackward()
-            }
-        case .failed(let reason):
-            #if DEBUG
-            AutocorrectDebugLog.replacementAborted(
-                word: currentWord,
-                reason: reason,
-                contextTail: DictusKeyboardBridge.contextTail(proxy.documentContextBeforeInput)
+            applyReplacement(
+                proxy: proxy,
+                deleteCount: deleteCount,
+                replacement: replacement,
+                addSpace: addSpace
             )
-            #endif
-            return
+        case .failed(let reason):
+            logReplacementAborted(proxy: proxy, word: currentWord, reason: reason)
+        }
+    }
+
+    /// Executes a validated replacement: deletes exactly `deleteCount` graphemes,
+    /// then inserts. Only ever called with a count that a boundary check produced.
+    private func applyReplacement(
+        proxy: UITextDocumentProxy,
+        deleteCount: Int,
+        replacement: String,
+        addSpace: Bool
+    ) {
+        for _ in 0..<deleteCount {
+            proxy.deleteBackward()
         }
         proxy.insertText(replacement)
         if addSpace {
             proxy.insertText(" ")
         }
+    }
+
+    /// Logs a replacement the boundary check refused (#191). Debug builds only.
+    private func logReplacementAborted(proxy: UITextDocumentProxy, word: String, reason: String) {
+        #if DEBUG
+        AutocorrectDebugLog.replacementAborted(
+            word: word,
+            reason: reason,
+            contextTail: DictusKeyboardBridge.contextTail(proxy.documentContextBeforeInput)
+        )
+        #endif
     }
 }

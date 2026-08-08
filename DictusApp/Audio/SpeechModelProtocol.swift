@@ -49,7 +49,8 @@ enum SpeechModelError: LocalizedError {
     /// The model files are present but the engine failed to load them.
     case engineLoadFailed(identifier: String, underlying: Error)
 
-    /// User-facing text. Written to `SharedKeys.lastError` and displayed by the keyboard.
+    /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
+    /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
         switch self {
         case .modelNotInstalled:
