@@ -169,6 +169,47 @@ public enum AutocorrectDebugLog {
         write("HOST-TRAITS autocorrect=\(autocorrectAllowed) suggestions=\(suggestionsAllowed) reason=\(reason)")
     }
 
+    // MARK: - User dictionary (#307)
+    //
+    // The counting half of each event below is in LogEvent and ships in every
+    // build. These add the words, which is why they are here and nowhere else.
+
+    /// A word entered the personal dictionary. `usageCount` is the count it
+    /// entered with, `learnedCount` the size of the dictionary after the write —
+    /// both repeated from the privacy-safe line so this one reads on its own.
+    public static func userDictionaryLearned(word: String, usageCount: Int, learnedCount: Int) {
+        guard enabled else { return }
+        write("USERDICT-LEARN word=\"\(word)\" count=\(usageCount) learnedCount=\(learnedCount)")
+    }
+
+    /// The cap overflowed and these words were dropped (#304).
+    public static func userDictionaryEvicted(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-EVICT words=[\(quoted(words))]")
+    }
+
+    /// The dictionary was cleared, and what it held when it was.
+    public static func userDictionaryReset(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-RESET words=[\(quoted(words))]")
+    }
+
+    /// The words a load stamped as legacy entries (#304). This is the line that
+    /// says, by name, which vocabulary an install carried across the update.
+    public static func userDictionaryMigrated(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-MIGRATE words=[\(quoted(words))]")
+    }
+
+    /// Words as a sorted, quoted, comma-separated list.
+    ///
+    /// WHY sorted: dictionary iteration order is not stable across runs, so an
+    /// unsorted list makes two exports of the same dictionary look different.
+    /// Only ever called past a `guard enabled`, so the cost is a debug build's.
+    private static func quoted(_ words: [String]) -> String {
+        words.sorted().map { "\"\($0)\"" }.joined(separator: ", ")
+    }
+
     /// Free-form note (use sparingly — prefer typed events above).
     public static func note(_ message: String) {
         guard enabled else { return }
