@@ -352,6 +352,23 @@ final class UserDictionaryTests: XCTestCase {
         XCTAssertTrue(UserDictionary.shared.isLearned("oublie"))
     }
 
+    /// The cutoff is inclusive: an entry stamped exactly `staleAfterDays` ago has
+    /// had the full period elapse.
+    ///
+    /// WHY the stamp is computed here rather than from the fixtures above: those
+    /// are captured once when the class loads, and the load being tested reads
+    /// its own clock, so a fixture would sit a few seconds *past* the cutoff and
+    /// the boundary would never actually be exercised. Taken as late as possible
+    /// the entry lands on the cutoff or a second past it — never inside it — so
+    /// this assertion is the right one either way, and it fails outright on a
+    /// strict comparison whenever the two clock reads land in the same second.
+    func testLoadingDiscardsAnEntryStampedExactlyAtTheCutoff() {
+        let cutoff = Int(Date().timeIntervalSince1970) - UserDictionary.staleAfterDays * 86_400
+        seedStore(words: ["oublie": 2], lastUsed: ["oublie": cutoff])
+
+        XCTAssertFalse(UserDictionary.shared.isLearned("oublie"))
+    }
+
     /// The interaction that would be silently destructive if the two load steps
     /// ran the other way round: a dictionary written before recency existed has
     /// no stamps at all, and #305 stamps it as of the update. Discarding first

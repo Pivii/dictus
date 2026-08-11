@@ -36,6 +36,10 @@ class TextPredictionEngine {
         SupportedLanguage(rawValue: language)?.profile
     }
 
+    /// Counts dictionary load requests, so a load completion can tell whether it
+    /// is still the newest one. See `loadDictionaries(for:)`.
+    private var dictionaryLoadGeneration = 0
+
     private init() {
         loadDictionaries(for: language)
     }
@@ -59,6 +63,8 @@ class TextPredictionEngine {
         if !available.contains(where: { $0.hasPrefix(lang) }) {
             print("[TextPredictionEngine] Warning: '\(lang)' not in available languages: \(available)")
         }
+        dictionaryLoadGeneration += 1
+        let generation = dictionaryLoadGeneration
         frequencyDict.load(language: lang)
         aospTrieEngine.load(language: lang) { [weak self] loaded in
             guard let self = self, loaded else { return }
@@ -67,6 +73,20 @@ class TextPredictionEngine {
             // prune has no way to ask its question before this point. It returns
             // immediately once it has run, so paying the call on every language
             // switch costs one boolean read.
+            //
+            // WHY the generation check: loads are asynchronous, and a language
+            // switch during one leaves two in flight. The completions arrive in
+            // order, but nothing stops a later load from replacing the trie
+            // between an earlier completion being queued and it running — so a
+            // superseded completion can find a dictionary that is not the one it
+            // loaded, and is not the active language's either. The prune asks the
+            // live trie and sets a flag that is never retried, so pruning from
+            // there would delete one language's duplicates and permanently deny
+            // the active language its own pass. Only the newest load may prune.
+            //
+            // Skipping is free: the flag stays clear, so the next load — the one
+            // that superseded this one — prunes instead.
+            guard generation == self.dictionaryLoadGeneration else { return }
             UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: self.aospTrieEngine)
         }
     }

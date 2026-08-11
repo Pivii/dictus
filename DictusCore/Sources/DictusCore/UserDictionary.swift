@@ -339,11 +339,12 @@ public final class UserDictionary {
     /// removal UI.
     private func discardStaleEntries() {
         let cutoff = Self.nowStamp() - Self.staleAfterDays * 86_400
-        // `?? 0` cannot fire: every learned word carries a stamp by the time this
-        // runs. Treating an unstamped entry as maximally old is the safe reading
-        // if that ever breaks — it discards an entry rather than keeping one
-        // forever with no way for the user to remove it.
-        let stale = learnedWords.keys.filter { (lastUsed[$0] ?? 0) < cutoff }
+        // `<=` and not `<`: an entry stamped exactly at the cutoff has had the
+        // full period elapse, so it goes. `?? 0` cannot fire — every learned word
+        // carries a stamp by the time this runs. Treating an unstamped entry as
+        // maximally old is the safe reading if that ever breaks: it discards an
+        // entry rather than keeping one forever with no way to remove it.
+        let stale = learnedWords.keys.filter { (lastUsed[$0] ?? 0) <= cutoff }
         guard !stale.isEmpty else { return }
 
         for word in stale {

@@ -204,17 +204,23 @@ final class UserDictionaryLoggingTests: XCTestCase {
     /// The line that lets an export answer "what did the migration take off me",
     /// which is the only recourse a user has: #287 decision 6 ships no per-word
     /// removal UI, so nothing else can name what disappeared.
+    /// WHY the duplicate here is "bonjour" and not the "le" the device trace
+    /// shows: the word this test names has to be one that cannot appear in the
+    /// log for any other reason, and "le" sits inside "learnedCount" in the very
+    /// line above. Asserting on it would fail on the log's own furniture, and a
+    /// word the prune does not remove — "zorglub" alone — would let a leak of the
+    /// removed word through unnoticed.
     func testThePruneReportsHowManyDuplicatesItRemovedAndNotWhich() {
-        seedStore(words: ["le": 40, "zorglub": 3], lastUsed: nil)
+        seedStore(words: ["bonjour": 40, "zorglub": 3], lastUsed: nil)
         clearLog()
 
         UserDictionary.shared.pruneTrieDuplicatesIfNeeded(
-            using: MockFrequencyProvider(frequencies: ["le": 5000])
+            using: MockFrequencyProvider(frequencies: ["bonjour": 5000])
         )
 
         let log = logContents()
         assertLogContains("userDictionaryPruned removed=1 learnedCount=1", log)
-        assertLogNamesNoWord(["zorglub"], log)
+        assertLogNamesNoWord(["bonjour", "zorglub"], log)
     }
 
     /// `reload()` runs on every keyboard appearance, so a store that is already
