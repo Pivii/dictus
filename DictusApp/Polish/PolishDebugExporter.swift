@@ -41,7 +41,15 @@ struct PolishDebugExport: Codable {
 
     struct SettingsInfo: Codable {
         let polishEnabled: Bool
-        let targetLanguage: String
+        /// The keyboard language. Named for what it is since #332 — it was
+        /// called `targetLanguage`, which is the polish target's name, and a
+        /// reader comparing this against a per-event target was silently
+        /// comparing the keyboard language against itself.
+        let keyboardLanguage: String
+        /// The transcription-language mode: `followKeyboard` / `autoDetect` /
+        /// `explicit(<code>)`. The setting the user actually chose, which no
+        /// export recorded before #332.
+        let transcriptionLanguageMode: String
         let activeModelID: String?
         let activeModelEngine: String?
         let appleFMAvailable: Bool
@@ -56,8 +64,27 @@ struct PolishDebugExport: Codable {
         let timestamp: String
         let engine: String
         let mode: String?
+        /// The language the polish prompt told the model to write in.
         let targetLanguage: String
         let detectedLanguage: String?
+
+        // The rest of the language-resolution trail (#332). Optional because
+        // events persisted by pre-#332 builds carry no trail at all — absent
+        // means "not recorded then", not "unknown". With `targetLanguage` and
+        // `detectedLanguage` above, these are the five facts needed to tell a
+        // wrong polish target from a deliberate setting.
+
+        /// `followKeyboard` / `autoDetect` / `explicit(<code>)`.
+        let transcriptionMode: String?
+        /// The keyboard language, which is NOT the polish target.
+        let keyboardLanguage: String?
+        /// The code handed to the STT engine, or "auto".
+        let sttLanguageCode: String?
+        /// Whether the STT engine honours that code. False for Parakeet, which
+        /// auto-detects from audio — so `sttLanguageCode` there says what was
+        /// passed, never what was transcribed.
+        let sttLanguageIsEffective: Bool?
+
         let outcome: String
         /// Why the engine failed (#315) — present on `engineFailed` events only.
         let failureReason: String?
@@ -97,7 +124,8 @@ enum PolishDebugExporter {
         let activeEngine = activeModelID.flatMap { ModelInfo.forIdentifier($0)?.engine.rawValue }
         let settings = PolishDebugExport.SettingsInfo(
             polishEnabled: defaults.bool(forKey: SharedKeys.polishEnabled),
-            targetLanguage: SupportedLanguage.active.rawValue,
+            keyboardLanguage: SupportedLanguage.active.rawValue,
+            transcriptionLanguageMode: TranscriptionLanguageMode.active.telemetryDescription,
             activeModelID: activeModelID,
             activeModelEngine: activeEngine,
             appleFMAvailable: PolishAvailability.isAppleFMAvailable,
@@ -125,6 +153,10 @@ enum PolishDebugExporter {
                 mode: entry.metrics.mode?.rawValue,
                 targetLanguage: entry.metrics.targetLanguage.rawValue,
                 detectedLanguage: entry.metrics.detectedLanguage,
+                transcriptionMode: entry.metrics.languageResolution?.transcriptionMode,
+                keyboardLanguage: entry.metrics.languageResolution?.keyboardLanguage,
+                sttLanguageCode: entry.metrics.languageResolution?.sttLanguageCode,
+                sttLanguageIsEffective: entry.metrics.languageResolution?.sttLanguageIsEffective,
                 outcome: entry.metrics.outcome.rawValue,
                 failureReason: entry.metrics.failureReason?.slug,
                 latencyMs: entry.metrics.latencyMs,

@@ -244,6 +244,22 @@ private struct EntryDetailView: View {
                 LabeledValue("stt engine", entry.metrics.sttEngine ?? "-")
                 LabeledValue("stt model", entry.metrics.sttModelID ?? "-")
             }
+            // The rest of the language-resolution trail (#332): reading
+            // "target=de" next to "detected=fr" only means something once the
+            // mode and the keyboard language are visible beside them. Absent
+            // on events persisted by pre-#332 builds.
+            if let resolution = entry.metrics.languageResolution {
+                HStack(spacing: 12) {
+                    LabeledValue("tx mode", resolution.transcriptionMode)
+                    LabeledValue("keyboard", resolution.keyboardLanguage)
+                    LabeledValue(
+                        "stt lang",
+                        resolution.sttLanguageIsEffective
+                            ? resolution.sttLanguageCode
+                            : "\(resolution.sttLanguageCode) (inert)"
+                    )
+                }
+            }
             HStack(spacing: 12) {
                 LabeledValue("latency", "\(entry.metrics.latencyMs) ms")
                 LabeledValue("chars", "\(entry.metrics.rawCharCount) → \(entry.metrics.polishedCharCount)")
