@@ -30,20 +30,53 @@ public enum PersistentLog {
     /// unreliable in keyboard extensions (can return the host app's ID).
     public static var source: String = "?"
 
+    /// Basename of the resource the "Generate build info" build phase writes into
+    /// every target's bundle. Changing it here means changing it in all three
+    /// script phases in `Dictus.xcodeproj`.
+    static let buildInfoResourceName = "DictusBuildInfo"
+
     /// Human-readable code revision marker, auto-injected at build time.
     ///
-    /// The "Inject Git SHA into Info.plist" Xcode build phase writes `GitCommitSHA`
-    /// (and `GitBranch`) into every target's built Info.plist on each build. This
-    /// computed property reads that value at runtime, so every log export carries
-    /// the exact commit the binary was built from with zero manual discipline.
+    /// The "Generate build info" Xcode build phase writes `DictusBuildInfo.plist`
+    /// (`GitCommitSHA` + `GitBranch`) into every target's bundle on each build. This
+    /// computed property reads that file at runtime, so every log export carries the
+    /// exact commit the binary was built from with zero manual discipline.
     ///
-    /// Fallbacks: returns "unknown" in environments where the Info.plist keys are
-    /// missing (unit tests linking DictusCore standalone, Swift Package previews,
-    /// or a build done outside the Xcode build phase).
+    /// WHY a file of its own rather than the built Info.plist (#344): the injection
+    /// used to write its two keys into `Info.plist`, which `ProcessInfoPlistFile`
+    /// also produces from the source plist. Nothing ordered the two tasks, and an
+    /// incremental build scheduled them the other way round, so a no-op rebuild
+    /// silently dropped the keys and the header read `rev unknown`. Nothing else
+    /// produces `DictusBuildInfo.plist`, so the ordering question cannot come back.
+    ///
+    /// Fallbacks: returns "unknown" wherever the file is absent (unit tests linking
+    /// DictusCore standalone, Swift Package previews, or a build done outside the
+    /// Xcode build phase). A build with no revision information has to keep saying
+    /// so — this never guesses and never reads git at runtime.
     public static var codeRevision: String {
-        let info = Bundle.main.infoDictionary
-        let sha = info?["GitCommitSHA"] as? String ?? "unknown"
-        if let branch = info?["GitBranch"] as? String, !branch.isEmpty, branch != "unknown" {
+        codeRevision(in: .main)
+    }
+
+    /// `codeRevision` against an explicit bundle, so tests can drive the lookup.
+    static func codeRevision(in bundle: Bundle) -> String {
+        codeRevision(readingBuildInfoAt: bundle.url(forResource: buildInfoResourceName, withExtension: "plist"))
+    }
+
+    /// The revision marker held in the build-info plist at `url`, or "unknown" when
+    /// there is no file, it cannot be parsed, or it carries no sha.
+    ///
+    /// A URL rather than a Bundle is the seam because bundle resource lookup follows
+    /// the host platform's layout, and these tests run on macOS while the code ships
+    /// on iOS. The parse is what is worth testing; the lookup is one line above.
+    static func codeRevision(readingBuildInfoAt url: URL?) -> String {
+        guard let url,
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let info = plist as? [String: String] else {
+            return "unknown"
+        }
+        let sha = info["GitCommitSHA"] ?? "unknown"
+        if let branch = info["GitBranch"], !branch.isEmpty, branch != "unknown" {
             return "\(sha)@\(branch)"
         }
         return sha
