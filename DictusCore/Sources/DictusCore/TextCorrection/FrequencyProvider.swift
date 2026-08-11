@@ -26,3 +26,27 @@ public protocol FrequencyProvider {
     /// Used as a fallback when frequency is 0 but the word may still be valid.
     func wordExists(_ word: String) -> Bool
 }
+
+public extension FrequencyProvider {
+
+    /// Whether the dictionary already knows `word`, asked exactly the way the
+    /// corrector asks it (#287): lowercased, and for a contraction only the part
+    /// after the last apostrophe — "j'ai" is stored in the trie as "ai", and
+    /// `TextPredictionEngine.spellCheck` splits the same way before its
+    /// `already-valid` skip.
+    ///
+    /// WHY this lives on the protocol rather than at either call site: the two
+    /// users of it are the word-boundary learning gate in the keyboard extension
+    /// and the duplicate prune in `UserDictionary`, and a word must mean the same
+    /// thing to both — a gate that refuses to learn "j'ai" while the prune keeps
+    /// it would leave entries no reader can reach.
+    func knowsWord(_ word: String) -> Bool {
+        let lowered = word.lowercased()
+        guard let apostrophe = lowered.lastIndex(of: "'") else {
+            return wordExists(lowered)
+        }
+        let afterApostrophe = String(lowered[lowered.index(after: apostrophe)...])
+        guard !afterApostrophe.isEmpty else { return false }
+        return wordExists(afterApostrophe)
+    }
+}

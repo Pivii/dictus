@@ -538,7 +538,14 @@ struct KeyboardRootView: View {
 
         suggestionState.rejectedWords.insert(undo.originalWord.lowercased())
 
-        if UserDictionary.shared.recordUsage(undo.originalWord) {
+        // Learn on this single occurrence (#287 decision 4). `learn` and not
+        // `recordUsage`: rejecting a correction is the user saying "no, I meant
+        // this word", which is the strongest signal the keyboard ever gets, and
+        // it is the trigger Apple documents for its own keyboard dictionary. The
+        // repetition counter guards the word-boundary site, where the user has
+        // said nothing at all; applying it here would mean rejecting the same
+        // correction twice before the keyboard stopped making it.
+        if UserDictionary.shared.learn(undo.originalWord) {
             suggestionState.learnWord(undo.originalWord)
         }
     }

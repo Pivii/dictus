@@ -36,14 +36,12 @@ class TextPredictionEngine {
         SupportedLanguage(rawValue: language)?.profile
     }
 
+    /// Whether this process has already reported that the prune was done in an
+    /// earlier session. See `reportPruneAlreadyDone()`.
+    private var hasReportedPruneAlreadyDone = false
+
     private init() {
-        // Verify language is available in UITextChecker
-        let available = UITextChecker.availableLanguages
-        if !available.contains(where: { $0.hasPrefix(language) }) {
-            print("[TextPredictionEngine] Warning: '\(language)' not in available languages: \(available)")
-        }
-        frequencyDict.load(language: language)
-        aospTrieEngine.load(language: language)
+        loadDictionaries(for: language)
     }
 
     /// Updates the active language for completions and spell-checking.
@@ -54,12 +52,106 @@ class TextPredictionEngine {
     /// to stay within the keyboard extension's ~50MB memory budget.
     func setLanguage(_ lang: String) {
         language = lang
+        loadDictionaries(for: lang)
+    }
+
+    /// Loads both dictionaries for `lang` and runs the work that can only happen
+    /// once a dictionary is actually loaded.
+    private func loadDictionaries(for lang: String) {
+        // Verify language is available in UITextChecker
         let available = UITextChecker.availableLanguages
         if !available.contains(where: { $0.hasPrefix(lang) }) {
             print("[TextPredictionEngine] Warning: '\(lang)' not in available languages: \(available)")
         }
         frequencyDict.load(language: lang)
-        aospTrieEngine.load(language: lang)
+        aospTrieEngine.load(language: lang) { [weak self] _ in
+            // The user dictionary's one-shot prune (#287). This is the first
+            // moment in a cold session at which anything can ask the dictionary a
+            // question, so it has to be one of the triggers — but it is not a
+            // privileged one. A completion can belong to a load that has since
+            // been superseded, and the trie it finds may be another language's
+            // entirely; the gate below is what decides, not the fact of being
+            // called from here.
+            self?.pruneUserDictionaryIfPossible(trigger: "dictionary-loaded")
+        }
+    }
+
+    /// Attempts the user dictionary's one-shot prune, and says so when it cannot.
+    ///
+    /// WHY there are several triggers and no privileged one (#287). Two triggers
+    /// exist because neither is sufficient alone: the load completion is the only
+    /// moment a cold session can ask the dictionary anything, and it is
+    /// systematically starved once a session is warm — `viewWillAppear` issues a
+    /// load on every keyboard appearance, each tearing the mmap down
+    /// synchronously on the main thread before the previous completion, posted
+    /// with `DispatchQueue.main.async`, gets to run. That starvation is why the
+    /// prune never once ran on device. `viewWillAppear` therefore also attempts
+    /// it *before* asking for the next load, while the previous dictionary is
+    /// still mounted.
+    ///
+    /// Neither is trusted, and that is the point. `UserDictionaryPruneGate` holds
+    /// the one precondition — the mounted dictionary is the active language's —
+    /// so a trigger cannot be wrong, only early. Adding another is safe.
+    ///
+    /// Whenever the prune is still owed and cannot be done, a probe says why, so
+    /// an export can never again be ambiguous between "never called", "called and
+    /// declined", and "done long ago".
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        let decision = UserDictionaryPruneGate.decide(
+            alreadyPruned: UserDictionary.shared.hasPrunedTrieDuplicates,
+            mountedLanguage: aospTrieEngine.mountedLanguage,
+            activeLanguage: SupportedLanguage.active.rawValue
+        )
+        switch decision {
+        case .run:
+            UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
+        case .alreadyDone:
+            reportPruneAlreadyDone()
+        case .notMounted, .languageMismatch:
+            PersistentLog.log(.diagnosticProbe(
+                component: "UserDictionaryPrune",
+                instanceID: "",
+                action: "skipped",
+                details: "trigger=\(trigger) reason=\(decision.reason)"
+            ))
+        }
+    }
+
+    /// Says, once per keyboard process, that the prune has already been done.
+    ///
+    /// WHY this line has to exist. `userDictionaryPruned` is written once in the
+    /// life of an install, and `PersistentLog` is a 1 MB file trimmed from the
+    /// head — so an hour of ordinary use scrolls that line out of every later
+    /// export. Without a standing statement, "this install was cleaned long ago"
+    /// and "the prune is broken and never ran" are the same observation: silence.
+    /// The third device pass on #287 was spent on exactly that ambiguity.
+    ///
+    /// WHY once per process and not once per call: `viewWillAppear` runs on every
+    /// keyboard appearance, seventeen times in an hour of real use, and iOS keeps
+    /// several controllers alive. One line per process is enough to date the
+    /// state, and anything finer is the noise #255 was about.
+    private func reportPruneAlreadyDone() {
+        guard !hasReportedPruneAlreadyDone else { return }
+        hasReportedPruneAlreadyDone = true
+        PersistentLog.log(.diagnosticProbe(
+            component: "UserDictionaryPrune",
+            instanceID: "",
+            action: "alreadyDone",
+            details: "learnedCount=\(UserDictionary.shared.count)"
+        ))
+    }
+
+    /// Whether `word` is genuinely new to the active language's dictionary —
+    /// the gate the word-boundary learning site needs (#287 decision 2).
+    ///
+    /// WHY false while the dictionary is still loading: the answer would be
+    /// "unknown" for every word typed in that window, and learning them all is
+    /// exactly the pollution this gate exists to stop. AOSP LatinIME takes the
+    /// same position for the same reason — it turns learning off entirely on a
+    /// slow InputConnection, because a word it cannot vet is a word it should
+    /// not keep. If we cannot ask, we do not learn.
+    func isUnknownToDictionary(_ word: String) -> Bool {
+        aospTrieEngine.isReady && !aospTrieEngine.knowsWord(word)
     }
 
     /// Returns up to 3 word completions for a partial word, ranked by frequency.

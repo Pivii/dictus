@@ -201,6 +201,20 @@ public enum AutocorrectDebugLog {
         write("USERDICT-MIGRATE words=[\(quoted(words))]")
     }
 
+    /// The words a load discarded for going unused too long (#287).
+    public static func userDictionaryStaleDiscarded(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-STALE words=[\(quoted(words))]")
+    }
+
+    /// The words the one-shot prune dropped for already being in the base
+    /// dictionary (#287). This is the line that tells a given user exactly what
+    /// the migration took off them.
+    public static func userDictionaryPruned(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-PRUNE words=[\(quoted(words))]")
+    }
+
     /// Words as a sorted, quoted, comma-separated list.
     ///
     /// WHY sorted: dictionary iteration order is not stable across runs, so an

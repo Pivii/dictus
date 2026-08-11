@@ -39,12 +39,14 @@ final class UserDictionaryLoggingTests: XCTestCase {
         }
         setDeveloperToggle(false)
         UserDictionary.shared.resetAll()
+        AppGroup.defaults.removeObject(forKey: UserDictionary.prunedTrieDuplicatesKey)
         clearLog()
     }
 
     override func tearDown() {
         setDeveloperToggle(false)
         UserDictionary.shared.resetAll()
+        AppGroup.defaults.removeObject(forKey: UserDictionary.prunedTrieDuplicatesKey)
         clearLog()
         // Leave nothing behind on the host: this file is a test artifact here,
         // unlike on device where it is the log the maintainer exports.
@@ -188,6 +190,39 @@ final class UserDictionaryLoggingTests: XCTestCase {
         assertLogNamesNoWord(["kubernetes", "bonjour", "zorglub"], log)
     }
 
+    /// The two removals #287 added report the same way: a count in every build,
+    /// the words only behind the Developer toggle.
+    func testTheStaleDiscardReportsHowManyEntriesItDroppedAndNotWhich() {
+        let old = Int(Date().timeIntervalSince1970) - 301 * 86_400
+        seedStore(words: ["oublie": 2, "zorglub": 3], lastUsed: ["oublie": old, "zorglub": Int(Date().timeIntervalSince1970)])
+
+        let log = logContents()
+        assertLogContains("userDictionaryStaleDiscarded removed=1 learnedCount=1 days=300", log)
+        assertLogNamesNoWord(["oublie", "zorglub"], log)
+    }
+
+    /// The line that lets an export answer "what did the migration take off me",
+    /// which is the only recourse a user has: #287 decision 6 ships no per-word
+    /// removal UI, so nothing else can name what disappeared.
+    /// WHY the duplicate here is "bonjour" and not the "le" the device trace
+    /// shows: the word this test names has to be one that cannot appear in the
+    /// log for any other reason, and "le" sits inside "learnedCount" in the very
+    /// line above. Asserting on it would fail on the log's own furniture, and a
+    /// word the prune does not remove — "zorglub" alone — would let a leak of the
+    /// removed word through unnoticed.
+    func testThePruneReportsHowManyDuplicatesItRemovedAndNotWhich() {
+        seedStore(words: ["bonjour": 40, "zorglub": 3], lastUsed: nil)
+        clearLog()
+
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(
+            using: MockFrequencyProvider(frequencies: ["bonjour": 5000])
+        )
+
+        let log = logContents()
+        assertLogContains("userDictionaryPruned removed=1 learnedCount=1", log)
+        assertLogNamesNoWord(["bonjour", "zorglub"], log)
+    }
+
     /// `reload()` runs on every keyboard appearance, so a store that is already
     /// stamped must report nothing at all — otherwise the line is noise on a path
     /// that runs constantly (#255).
@@ -230,6 +265,22 @@ final class UserDictionaryLoggingTests: XCTestCase {
         clearLog()
         UserDictionary.shared.learn("nouveau")
         assertLogContains("USERDICT-EVICT words=[\"oubliable\"]", logContents())
+
+        // Discarded for going stale, and pruned as a duplicate of the base
+        // dictionary — the two removals #287 added.
+        UserDictionary.shared.resetAll()
+        let old = Int(Date().timeIntervalSince1970) - 301 * 86_400
+        clearLog()
+        seedStore(words: ["oublie": 2], lastUsed: ["oublie": old])
+        assertLogContains("USERDICT-STALE words=[\"oublie\"]", logContents())
+
+        AppGroup.defaults.removeObject(forKey: UserDictionary.prunedTrieDuplicatesKey)
+        seedStore(words: ["le": 40], lastUsed: nil)
+        clearLog()
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(
+            using: MockFrequencyProvider(frequencies: ["le": 5000])
+        )
+        assertLogContains("USERDICT-PRUNE words=[\"le\"]", logContents())
 
         // Reset.
         UserDictionary.shared.resetAll()

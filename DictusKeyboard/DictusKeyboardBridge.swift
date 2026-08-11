@@ -438,7 +438,16 @@ final class DictusKeyboardBridge: NSObject,
         // boundary check (possibly phantom words, #191) must not be learned:
         // a learned word bypasses autocorrect everywhere afterwards, which is
         // how test typing in Safari's search bar broke "lai"/"Cest" in Messages.
-        var wordWasEvaluated = suggestionState?.hostPolicy.autocorrectAllowed ?? false
+        //
+        // The user's own autocorrect switch counts as such a case (#287 decision 8).
+        // With autocorrect off `spellCheck` never runs, so nothing vets the word:
+        // "bonjuor" typed twice would clear the trie filter below and become
+        // permanently immune. Reading only the host policy here — as this line did
+        // until #287 — made the comment above untrue in exactly that configuration.
+        var wordWasEvaluated: Bool = {
+            guard let state = suggestionState else { return false }
+            return state.autocorrectEnabled && state.hostPolicy.autocorrectAllowed
+        }()
 
         if let state = suggestionState, state.autocorrectEnabled,
            state.hostPolicy.autocorrectAllowed,
@@ -489,12 +498,21 @@ final class DictusKeyboardBridge: NSObject,
         // correct it (user typed it as-is). Track usage — at the repetition
         // threshold, learn it. Skipped when autocorrect never ran (see
         // wordWasEvaluated above): those words were not vetted by the pipeline.
-        if let state = suggestionState, !freshWord.isEmpty, wordWasEvaluated {
-            let word = freshWord
-            if UserDictionary.shared.recordUsage(word) {
-                // Word just crossed the learning threshold — notify prediction engine
-                state.learnWord(word)
-            }
+        //
+        // The dictionary check is the gate this site was missing (#287 decision 2).
+        // Passive typing states nothing about intent, so the only word worth
+        // recording here is one the base dictionary does not have: a word it does
+        // have is never autocorrected anyway, so an entry for it protects nothing
+        // while #288 would go on to feed it into speech recognition. Six ordinary
+        // French phrases used to leave 22 entries behind, 20 of them trie words.
+        //
+        // The check belongs here rather than inside UserDictionary because the undo
+        // site must NOT be subject to it — see `UserDictionary.recordUsage`.
+        if let state = suggestionState, !freshWord.isEmpty, wordWasEvaluated,
+           state.isUnknownToDictionary(freshWord),
+           UserDictionary.shared.recordUsage(freshWord) {
+            // Word just crossed the learning threshold — notify prediction engine
+            state.learnWord(freshWord)
         }
 
         // Normal space handling with double-space period detection

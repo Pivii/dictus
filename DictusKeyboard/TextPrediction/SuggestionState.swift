@@ -338,6 +338,18 @@ class SuggestionState: ObservableObject {
         engine.injectUserWord(word)
     }
 
+    /// Whether the active language's dictionary does not know this word (#287).
+    /// The word-boundary learning site asks before recording anything.
+    func isUnknownToDictionary(_ word: String) -> Bool {
+        engine.isUnknownToDictionary(word)
+    }
+
+    /// Attempts the user dictionary's one-shot prune (#287). Call from a moment
+    /// with a dictionary already mounted and no load pending — see the engine.
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        engine.pruneUserDictionaryIfPossible(trigger: trigger)
+    }
+
     // MARK: - N-gram Predictions
 
     /// Updates suggestion bar with n-gram predicted next words.

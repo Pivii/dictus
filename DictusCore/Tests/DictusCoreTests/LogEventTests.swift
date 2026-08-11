@@ -375,16 +375,32 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.message, "stamped=12 droppedStamps=2 learnedCount=30")
     }
 
-    /// The privacy guarantee these four events rest on is that none of them can
-    /// carry a word at all: every associated value is an `Int`, so the formatted
-    /// line is digits and fixed keys and nothing else. A future parameter of type
+    func testUserDictionaryStaleDiscardedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryStaleDiscarded(removed: 4, learnedCount: 26, days: 300)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=4 learnedCount=26 days=300")
+    }
+
+    func testUserDictionaryPrunedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryPruned(removed: 20, learnedCount: 2)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=20 learnedCount=2")
+    }
+
+    /// The privacy guarantee these events rest on is that none of them can carry
+    /// a word at all: every associated value is an `Int`, so the formatted line
+    /// is digits and fixed keys and nothing else. A future parameter of type
     /// `String` would break this test before it could reach an export.
     func testUserDictionaryEventsCannotCarryText() {
         let events: [LogEvent] = [
             .userDictionaryWordLearned(learnedCount: 42),
             .userDictionaryEvicted(removed: 3, learnedCount: 1000, cap: 1000),
             .userDictionaryReset(clearedCount: 17),
-            .userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30)
+            .userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30),
+            .userDictionaryStaleDiscarded(removed: 4, learnedCount: 26, days: 300),
+            .userDictionaryPruned(removed: 20, learnedCount: 2)
         ]
         let allowed = CharacterSet(charactersIn: "0123456789= ")
             .union(CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
