@@ -163,6 +163,17 @@ public final class UserDictionary {
     /// Number of learned words.
     public var count: Int { learnedWords.count }
 
+    /// Whether the one-shot duplicate prune has already run on this install.
+    ///
+    /// WHY it is public: the prune needs a loaded base dictionary, which only the
+    /// keyboard extension has, and only at moments it does not control. Its
+    /// callers use this to know whether there is still anything to attempt — so
+    /// they can stay silent once there is not, and report when there is and they
+    /// cannot.
+    public var hasPrunedTrieDuplicates: Bool {
+        AppGroup.defaults.bool(forKey: Self.prunedTrieDuplicatesKey)
+    }
+
     /// Learn a word on this single occurrence, bypassing the repetition counter.
     /// The word is stored lowercase. If already learned, increments usage count.
     /// Returns true when this call created the entry.
@@ -387,7 +398,7 @@ public final class UserDictionary {
     @discardableResult
     public func pruneTrieDuplicatesIfNeeded(using provider: FrequencyProvider) -> Int {
         let defaults = AppGroup.defaults
-        guard !defaults.bool(forKey: Self.prunedTrieDuplicatesKey), provider.isReady else {
+        guard !hasPrunedTrieDuplicates, provider.isReady else {
             return 0
         }
 

@@ -507,6 +507,15 @@ class KeyboardViewController: UIInputViewController {
             giellaKeyboard?.page = .symbols1
         }
 
+        // The user dictionary's one-shot prune (#287), attempted BEFORE the load
+        // below and not after it. The engine is process-wide, so at this instant
+        // the previous appearance's dictionary is still mmap'd, we are on the main
+        // thread, and no load is in flight — the one moment in the cycle with no
+        // race in it. `setLanguage` on the next line unloads that dictionary
+        // synchronously, which is exactly what kept the prune from ever running
+        // off the load completion alone. Costs one boolean read once it has run.
+        suggestionState.pruneUserDictionaryIfPossible(trigger: "keyboard-appeared")
+
         // Refresh prediction language from App Group on every keyboard appearance.
         // WHY here not viewDidLoad: The user can change language in the app between
         // keyboard appearances. viewWillAppear fires each time, picking up the change.

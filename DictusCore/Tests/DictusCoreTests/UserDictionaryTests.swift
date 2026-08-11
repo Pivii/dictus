@@ -445,17 +445,35 @@ final class UserDictionaryTests: XCTestCase {
     }
 
     /// A provider that cannot answer is not asked, and the flag stays clear so
-    /// the prune waits for a load that can. The trie loads asynchronously, so
-    /// this is the state the keyboard is genuinely in for the first moments of
-    /// every session.
+    /// the prune waits for a load that can. The trie loads asynchronously and is
+    /// unloaded synchronously by the next load request, so this is the state the
+    /// keyboard is genuinely in for much of a session — it is what kept the prune
+    /// from ever running on device off the load completion alone.
     func testThePruneWaitsForADictionaryThatIsReady() {
         seedForPrune()
         let stillLoading = MockFrequencyProvider(isReady: false, frequencies: ["le": 5000])
 
         XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: stillLoading), 0)
         XCTAssertTrue(UserDictionary.shared.isLearned("le"))
+        XCTAssertFalse(
+            UserDictionary.shared.hasPrunedTrieDuplicates,
+            "A declined attempt must not consume the one shot"
+        )
 
         XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords), 3)
+        XCTAssertTrue(UserDictionary.shared.hasPrunedTrieDuplicates)
+    }
+
+    /// The flag is what the keyboard reads to decide whether it still owes a
+    /// prune, so it has to report the same thing the guard inside acts on — and
+    /// it has to survive a dictionary that ends up empty, which is the fresh
+    /// install case.
+    func testAPruneWithNothingToRemoveStillConsumesTheOneShot() {
+        XCTAssertFalse(UserDictionary.shared.hasPrunedTrieDuplicates)
+
+        XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords), 0)
+
+        XCTAssertTrue(UserDictionary.shared.hasPrunedTrieDuplicates)
     }
 
     /// A word held in probation is the same class of entry and follows the same

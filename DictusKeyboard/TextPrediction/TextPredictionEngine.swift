@@ -87,8 +87,49 @@ class TextPredictionEngine {
             // Skipping is free: the flag stays clear, so the next load — the one
             // that superseded this one — prunes instead.
             guard generation == self.dictionaryLoadGeneration else { return }
-            UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: self.aospTrieEngine)
+            self.pruneUserDictionaryIfPossible(trigger: "dictionary-loaded")
         }
+    }
+
+    /// Attempts the user dictionary's one-shot prune, and says so when it cannot.
+    ///
+    /// WHY this needs two triggers and a report (#287). The load completion alone
+    /// was not enough, and the first device pass showed it: `userDictionaryPruned`
+    /// never appeared in the export at all. The cause is that
+    /// `AOSPTrieBridge.loadDictionaryAtPath` clears `_loaded` before it mmaps, and
+    /// `AOSPTrieEngine.load` calls `unloadDictionary()` synchronously on the main
+    /// thread before it queues anything — while `KeyboardViewController`
+    /// `viewWillAppear` issues a load on *every* keyboard appearance. A completion
+    /// posted with `DispatchQueue.main.async` therefore lands behind whatever main
+    /// is doing, which during a keyboard appearance includes further loads, each
+    /// of which has already blanked the flag. The completion then finds a
+    /// dictionary that reports itself unloaded, and the prune declines.
+    ///
+    /// Declining is correct — pruning against a dictionary that is not mounted
+    /// would ask every word and be told "not present", which prunes nothing but
+    /// would set the one-shot flag if it did not check. What was wrong is that it
+    /// was the *only* trigger, and a silent one.
+    ///
+    /// So: `viewWillAppear` calls this **before** it asks for a new load, which is
+    /// a moment with no race in it — on main, previous language's data still
+    /// mmap'd, nothing queued. And whenever the prune is still owed and cannot be
+    /// done, a probe line says why, so an export can never again be ambiguous
+    /// between "never called" and "called and declined".
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        // Once it has run there is nothing to attempt and nothing to report. This
+        // is what keeps the probe off a path that runs on every appearance.
+        guard !UserDictionary.shared.hasPrunedTrieDuplicates else { return }
+
+        guard aospTrieEngine.isReady else {
+            PersistentLog.log(.diagnosticProbe(
+                component: "UserDictionaryPrune",
+                instanceID: "",
+                action: "skipped",
+                details: "trigger=\(trigger) reason=dictionary-not-ready"
+            ))
+            return
+        }
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
     }
 
     /// Whether `word` is genuinely new to the active language's dictionary —

@@ -344,6 +344,12 @@ class SuggestionState: ObservableObject {
         engine.isUnknownToDictionary(word)
     }
 
+    /// Attempts the user dictionary's one-shot prune (#287). Call from a moment
+    /// with a dictionary already mounted and no load pending — see the engine.
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        engine.pruneUserDictionaryIfPossible(trigger: trigger)
+    }
+
     // MARK: - N-gram Predictions
 
     /// Updates suggestion bar with n-gram predicted next words.
