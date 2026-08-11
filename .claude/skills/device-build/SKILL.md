@@ -33,7 +33,7 @@ Device id as of 2026-08-09: `B05E304C-D238-5A94-B0D9-F4BF366A7FC6` ("Iphone de B
 
 ## Build from the dedicated worktree, never the main clone
 
-```
+```text
 /Users/pierreviviere/dev/dictus-wt/device
 ```
 
@@ -82,7 +82,7 @@ Both must print the sha you checked out. **Anything else — a different sha, or
 
 The build log carries the same line if you would rather grep it:
 
-```
+```text
 note: build info f31f7da@fix/344-git-sha-injection -> …/DictusApp.app/DictusBuildInfo.plist
 ```
 
