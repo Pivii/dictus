@@ -27,6 +27,20 @@ final class AOSPTrieEngine {
     /// Set by load(language:) so overrides and apostrophe handling can be language-aware.
     private var currentLanguage: String = "fr"
 
+    /// The language whose data is mmap'd **right now**, or nil when none is.
+    ///
+    /// WHY this is not `currentLanguage`: that one is the language most recently
+    /// *requested*, assigned synchronously when `load` is called, so it names a
+    /// dictionary that will not exist for another few hundred milliseconds. Any
+    /// decision about the data itself — see `UserDictionaryPruneGate` — has to
+    /// ask what is mounted, not what was ordered.
+    ///
+    /// Written on the main thread only: cleared in `load` at the same instant the
+    /// previous mmap is torn down, set in the load's main-thread completion. So a
+    /// non-nil value implies the bridge is loaded, and the pair cannot be
+    /// observed disagreeing from the main thread.
+    private(set) var mountedLanguage: String?
+
     /// The active language's data profile, or nil if `currentLanguage` is not a
     /// registered `SupportedLanguage`. All per-language data (overrides, accentMap,
     /// contractionPrefixes) is read from here so adding a language is a matter of
@@ -48,6 +62,9 @@ final class AOSPTrieEngine {
     func load(language: String, bundle: Bundle = .main, completion: ((Bool) -> Void)? = nil) {
         isLoading = true
         currentLanguage = language
+        // Cleared here, with the teardown it describes: from this line until the
+        // completion below, nothing is mounted.
+        mountedLanguage = nil
         bridge.unloadDictionary()
         wordCount = 0
 
@@ -79,6 +96,7 @@ final class AOSPTrieEngine {
             DispatchQueue.main.async {
                 if success {
                     self.wordCount = Int(self.bridge.wordCount())
+                    self.mountedLanguage = language
                     print("[AOSPTrieEngine] Loaded \(language)_spellcheck.dict (\(self.wordCount) words)")
                 } else {
                     print("[AOSPTrieEngine] Failed to load \(language)_spellcheck.dict")

@@ -36,10 +36,6 @@ class TextPredictionEngine {
         SupportedLanguage(rawValue: language)?.profile
     }
 
-    /// Counts dictionary load requests, so a load completion can tell whether it
-    /// is still the newest one. See `loadDictionaries(for:)`.
-    private var dictionaryLoadGeneration = 0
-
     /// Whether this process has already reported that the prune was done in an
     /// earlier session. See `reportPruneAlreadyDone()`.
     private var hasReportedPruneAlreadyDone = false
@@ -67,74 +63,58 @@ class TextPredictionEngine {
         if !available.contains(where: { $0.hasPrefix(lang) }) {
             print("[TextPredictionEngine] Warning: '\(lang)' not in available languages: \(available)")
         }
-        dictionaryLoadGeneration += 1
-        let generation = dictionaryLoadGeneration
         frequencyDict.load(language: lang)
-        aospTrieEngine.load(language: lang) { [weak self] loaded in
-            guard let self = self, loaded else { return }
-            // The user dictionary's one-shot prune (#287): the only place in the
-            // app that holds a loaded base dictionary is right here, and the
-            // prune has no way to ask its question before this point. It returns
-            // immediately once it has run, so paying the call on every language
-            // switch costs one boolean read.
-            //
-            // WHY the generation check: loads are asynchronous, and a language
-            // switch during one leaves two in flight. The completions arrive in
-            // order, but nothing stops a later load from replacing the trie
-            // between an earlier completion being queued and it running — so a
-            // superseded completion can find a dictionary that is not the one it
-            // loaded, and is not the active language's either. The prune asks the
-            // live trie and sets a flag that is never retried, so pruning from
-            // there would delete one language's duplicates and permanently deny
-            // the active language its own pass. Only the newest load may prune.
-            //
-            // Skipping is free: the flag stays clear, so the next load — the one
-            // that superseded this one — prunes instead.
-            guard generation == self.dictionaryLoadGeneration else { return }
-            self.pruneUserDictionaryIfPossible(trigger: "dictionary-loaded")
+        aospTrieEngine.load(language: lang) { [weak self] _ in
+            // The user dictionary's one-shot prune (#287). This is the first
+            // moment in a cold session at which anything can ask the dictionary a
+            // question, so it has to be one of the triggers — but it is not a
+            // privileged one. A completion can belong to a load that has since
+            // been superseded, and the trie it finds may be another language's
+            // entirely; the gate below is what decides, not the fact of being
+            // called from here.
+            self?.pruneUserDictionaryIfPossible(trigger: "dictionary-loaded")
         }
     }
 
     /// Attempts the user dictionary's one-shot prune, and says so when it cannot.
     ///
-    /// WHY this needs two triggers and a report (#287). The load completion alone
-    /// was not enough, and the first device pass showed it: `userDictionaryPruned`
-    /// never appeared in the export at all. The cause is that
-    /// `AOSPTrieBridge.loadDictionaryAtPath` clears `_loaded` before it mmaps, and
-    /// `AOSPTrieEngine.load` calls `unloadDictionary()` synchronously on the main
-    /// thread before it queues anything — while `KeyboardViewController`
-    /// `viewWillAppear` issues a load on *every* keyboard appearance. A completion
-    /// posted with `DispatchQueue.main.async` therefore lands behind whatever main
-    /// is doing, which during a keyboard appearance includes further loads, each
-    /// of which has already blanked the flag. The completion then finds a
-    /// dictionary that reports itself unloaded, and the prune declines.
+    /// WHY there are several triggers and no privileged one (#287). Two triggers
+    /// exist because neither is sufficient alone: the load completion is the only
+    /// moment a cold session can ask the dictionary anything, and it is
+    /// systematically starved once a session is warm — `viewWillAppear` issues a
+    /// load on every keyboard appearance, each tearing the mmap down
+    /// synchronously on the main thread before the previous completion, posted
+    /// with `DispatchQueue.main.async`, gets to run. That starvation is why the
+    /// prune never once ran on device. `viewWillAppear` therefore also attempts
+    /// it *before* asking for the next load, while the previous dictionary is
+    /// still mounted.
     ///
-    /// Declining is correct — pruning against a dictionary that is not mounted
-    /// would ask every word and be told "not present", which prunes nothing but
-    /// would set the one-shot flag if it did not check. What was wrong is that it
-    /// was the *only* trigger, and a silent one.
+    /// Neither is trusted, and that is the point. `UserDictionaryPruneGate` holds
+    /// the one precondition — the mounted dictionary is the active language's —
+    /// so a trigger cannot be wrong, only early. Adding another is safe.
     ///
-    /// So: `viewWillAppear` calls this **before** it asks for a new load, which is
-    /// a moment with no race in it — on main, previous language's data still
-    /// mmap'd, nothing queued. And whenever the prune is still owed and cannot be
-    /// done, a probe line says why, so an export can never again be ambiguous
-    /// between "never called" and "called and declined".
+    /// Whenever the prune is still owed and cannot be done, a probe says why, so
+    /// an export can never again be ambiguous between "never called", "called and
+    /// declined", and "done long ago".
     func pruneUserDictionaryIfPossible(trigger: String) {
-        guard !UserDictionary.shared.hasPrunedTrieDuplicates else {
+        let decision = UserDictionaryPruneGate.decide(
+            alreadyPruned: UserDictionary.shared.hasPrunedTrieDuplicates,
+            mountedLanguage: aospTrieEngine.mountedLanguage,
+            activeLanguage: SupportedLanguage.active.rawValue
+        )
+        switch decision {
+        case .run:
+            UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
+        case .alreadyDone:
             reportPruneAlreadyDone()
-            return
-        }
-
-        guard aospTrieEngine.isReady else {
+        case .notMounted, .languageMismatch:
             PersistentLog.log(.diagnosticProbe(
                 component: "UserDictionaryPrune",
                 instanceID: "",
                 action: "skipped",
-                details: "trigger=\(trigger) reason=dictionary-not-ready"
+                details: "trigger=\(trigger) reason=\(decision.reason)"
             ))
-            return
         }
-        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
     }
 
     /// Says, once per keyboard process, that the prune has already been done.
