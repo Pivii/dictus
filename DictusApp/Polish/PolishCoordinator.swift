@@ -461,10 +461,14 @@ public final class PolishCoordinator {
     /// Metrics for one auto-path event. Defaults cover the skip exits (no
     /// mode, no detection, ~0ms); the engine-run exit overrides them.
     ///
-    /// `targetLanguage` is the keyboard language — session context only, since
-    /// auto mode targets nothing. The event's `languageResolution` records the
-    /// mode as `autoDetect`, so a reader can tell this context value from a
-    /// real target rather than having to know the convention (#332).
+    /// `targetLanguage` is recorded as `nil`, because on this path there is no
+    /// target: the prompt is language-agnostic and the model writes in the
+    /// language the input is already in. It used to be filled with the
+    /// keyboard language "for session context", which meant an export showed
+    /// `target=de` beside `detected=fr` on a dictation that correctly came out
+    /// French — a reader auditing that would conclude the #332 bug was live.
+    /// The keyboard language is still on the event, under its own name, in
+    /// `languageResolution`.
     private func autoEventMetrics(outcome: PolishMetrics.Outcome,
                                   raw: String,
                                   finalCount: Int,
@@ -480,7 +484,7 @@ public final class PolishCoordinator {
         PolishMetrics(
             engine: engineID,
             mode: mode,
-            targetLanguage: languagePolicy.keyboardLanguage,
+            targetLanguage: nil,
             detectedLanguage: detectedLanguage,
             rawCharCount: raw.count,
             polishedCharCount: finalCount,

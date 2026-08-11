@@ -65,7 +65,11 @@ struct PolishDebugExport: Codable {
         let engine: String
         let mode: String?
         /// The language the polish prompt told the model to write in.
-        let targetLanguage: String
+        /// **Absent on auto-mode events**, which have no target — the prompt
+        /// is language-agnostic there and the model writes in the input's own
+        /// language. Absent therefore means "nothing was targeted", never
+        /// "not recorded": every event predating #332 carries a value.
+        let targetLanguage: String?
         let detectedLanguage: String?
 
         // The rest of the language-resolution trail (#332). Optional because
@@ -151,7 +155,7 @@ enum PolishDebugExporter {
                 timestamp: formatter.string(from: entry.timestamp),
                 engine: entry.metrics.engine,
                 mode: entry.metrics.mode?.rawValue,
-                targetLanguage: entry.metrics.targetLanguage.rawValue,
+                targetLanguage: entry.metrics.targetLanguage?.rawValue,
                 detectedLanguage: entry.metrics.detectedLanguage,
                 transcriptionMode: entry.metrics.languageResolution?.transcriptionMode,
                 keyboardLanguage: entry.metrics.languageResolution?.keyboardLanguage,

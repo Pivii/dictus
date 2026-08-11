@@ -165,7 +165,8 @@ private struct EntryRow: View {
                 } else if let mode = entry.metrics.mode {
                     Text(mode.rawValue).font(.caption2).foregroundStyle(.secondary)
                 }
-                Text(entry.metrics.targetLanguage.rawValue.uppercased())
+                // "—" on the auto path, which targets no language at all.
+                Text(entry.metrics.targetLanguage?.rawValue.uppercased() ?? "—")
                     .font(.caption2.bold())
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -237,7 +238,7 @@ private struct EntryDetailView: View {
             HStack(spacing: 12) {
                 LabeledValue("engine", entry.metrics.engine)
                 LabeledValue("mode", entry.metrics.mode?.rawValue ?? "-")
-                LabeledValue("target", entry.metrics.targetLanguage.rawValue)
+                LabeledValue("target", entry.metrics.targetLanguage?.rawValue ?? "none (auto)")
                 LabeledValue("detected", entry.metrics.detectedLanguage ?? "-")
             }
             HStack(spacing: 12) {

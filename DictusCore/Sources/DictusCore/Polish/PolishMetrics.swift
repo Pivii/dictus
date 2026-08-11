@@ -106,7 +106,21 @@ public struct PolishMetrics: Sendable, Codable {
     /// The language the polish prompt instructs the model to write in — the
     /// resolved polish target, NOT the keyboard language. See
     /// `TranscriptionLanguagePolicy.polishPromptSelection(detectedLanguage:)`.
-    public let targetLanguage: SupportedLanguage
+    ///
+    /// `nil` on the auto path, where there is no target at all: the prompt is
+    /// language-agnostic and the model writes in whatever language the input
+    /// is in. It was previously recorded as the keyboard language "for session
+    /// context", which put a language that had no influence under a field
+    /// named for the one that does — the precise confusion #332 exists to end,
+    /// and the reason three device reproductions were needed to prove the
+    /// original bug. An absent target now means no target.
+    ///
+    /// Optional decoding is also what keeps the seven-day ring readable: every
+    /// event written before #332 carries a value here, so a missing key can
+    /// only mean the auto path on a build that has this fix. (Auto-path events
+    /// from older builds still carry their keyboard language; they are
+    /// recognisable by having no `languageResolution`.)
+    public let targetLanguage: SupportedLanguage?
     public let detectedLanguage: String?   // BCP-47 ("fr","en",…) or nil for gibberish
 
     /// How the polish target was arrived at (#332). Optional for the reason
@@ -145,7 +159,7 @@ public struct PolishMetrics: Sendable, Codable {
 
     public init(engine: String,
                 mode: PolishMode?,
-                targetLanguage: SupportedLanguage,
+                targetLanguage: SupportedLanguage?,
                 detectedLanguage: String?,
                 rawCharCount: Int,
                 polishedCharCount: Int,
@@ -205,7 +219,7 @@ public struct PolishMetrics: Sendable, Codable {
                     + "/stt:\(r.sttLanguageCode)\(inert)"
             } ?? ""
             PolishLog.logger.info(
-                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage.rawValue, privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public)\(resolution, privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
+                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage?.rawValue ?? "none", privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public)\(resolution, privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
             )
         }
     }

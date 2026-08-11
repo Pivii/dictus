@@ -283,7 +283,52 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
         // The distinction the export existed to make and could not: the polish
         // target and the keyboard language are separate values on one event.
         XCTAssertEqual(decoded.targetLanguage, .german)
-        XCTAssertNotEqual(decoded.detectedLanguage, decoded.targetLanguage.rawValue)
+        XCTAssertNotEqual(decoded.detectedLanguage, decoded.targetLanguage?.rawValue)
+    }
+
+    /// The auto path targets no language: the prompt is language-agnostic and
+    /// the model writes in whatever the input is. Recording the keyboard
+    /// language there — as this did until the device test caught it — puts a
+    /// language that had no influence under the field named for the one that
+    /// does, which is the confusion #332 exists to end. On device it produced
+    /// `detected=fr, target=de` on a dictation that correctly came out French.
+    func testAutoPathRecordsNoTargetAtAll() throws {
+        let sut = PolishMetrics(
+            engine: "apple-fm", mode: .auto, targetLanguage: nil,
+            detectedLanguage: "fr", rawCharCount: 200, polishedCharCount: 210,
+            latencyMs: 2800, outcome: .success,
+            sttEngine: "PK", sttModelID: "parakeet-tdt-0.6b-v3",
+            languageResolution: PolishMetrics.LanguageResolution(
+                transcriptionMode: "autoDetect", keyboardLanguage: "de",
+                sttLanguageCode: "de", sttLanguageIsEffective: false
+            )
+        )
+        let json = try XCTUnwrap(String(data: try JSONEncoder().encode(sut), encoding: .utf8))
+        XCTAssertFalse(json.contains("\"targetLanguage\""),
+                       "a nil target must be omitted, not encoded as a language: \(json)")
+        // The keyboard language is still on the event — under its own name.
+        XCTAssertTrue(json.contains("\"keyboardLanguage\":\"de\""))
+
+        let decoded = try JSONDecoder().decode(
+            PolishMetrics.self, from: XCTUnwrap(json.data(using: .utf8))
+        )
+        XCTAssertNil(decoded.targetLanguage)
+        XCTAssertEqual(decoded.languageResolution?.keyboardLanguage, "de")
+    }
+
+    /// Absent must mean "nothing was targeted", never "not recorded" — which
+    /// holds only because every event written before #332 carries a value.
+    func testPreFixEventsStillCarryTheirTarget() throws {
+        let shipped = """
+        {"engine":"apple-fm","mode":"auto","targetLanguage":"de","detectedLanguage":"fr",\
+        "rawCharCount":200,"polishedCharCount":210,"latencyMs":2800,"outcome":"success"}
+        """
+        let decoded = try JSONDecoder().decode(
+            PolishMetrics.self, from: XCTUnwrap(shipped.data(using: .utf8))
+        )
+        XCTAssertEqual(decoded.targetLanguage, .german)
+        XCTAssertNil(decoded.languageResolution,
+                     "no trail is what marks an auto event as predating the fix")
     }
 
     /// Backward compatibility: a payload shaped exactly like one written by
