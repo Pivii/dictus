@@ -345,6 +345,65 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .lifecycle)
     }
 
+    // MARK: - User dictionary events (#307)
+
+    func testUserDictionaryWordLearnedIsDebugKeyboard() {
+        let event = LogEvent.userDictionaryWordLearned(learnedCount: 42)
+        XCTAssertEqual(event.level, .debug)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "learnedCount=42")
+    }
+
+    func testUserDictionaryEvictedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryEvicted(removed: 3, learnedCount: 1000, cap: 1000)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=3 learnedCount=1000 cap=1000")
+    }
+
+    func testUserDictionaryResetIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryReset(clearedCount: 17)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "clearedCount=17")
+    }
+
+    func testUserDictionaryMigratedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "stamped=12 droppedStamps=2 learnedCount=30")
+    }
+
+    /// The privacy guarantee these four events rest on is that none of them can
+    /// carry a word at all: every associated value is an `Int`, so the formatted
+    /// line is digits and fixed keys and nothing else. A future parameter of type
+    /// `String` would break this test before it could reach an export.
+    func testUserDictionaryEventsCannotCarryText() {
+        let events: [LogEvent] = [
+            .userDictionaryWordLearned(learnedCount: 42),
+            .userDictionaryEvicted(removed: 3, learnedCount: 1000, cap: 1000),
+            .userDictionaryReset(clearedCount: 17),
+            .userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30)
+        ]
+        let allowed = CharacterSet(charactersIn: "0123456789= ")
+            .union(CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        for event in events {
+            XCTAssertNil(
+                event.message.rangeOfCharacter(from: allowed.inverted),
+                "\(event.name) formats something other than plain key=integer pairs"
+            )
+            // The parameter values themselves are digits only.
+            let values = event.message.split(separator: " ").map { $0.split(separator: "=")[1] }
+            for value in values {
+                XCTAssertTrue(
+                    value.allSatisfy(\.isNumber),
+                    "\(event.name) has a non-numeric value \"\(value)\""
+                )
+            }
+        }
+    }
+
     // MARK: - Formatted output
 
     func testFormattedOutputContainsLevelSubsystemAndEventName() {

@@ -104,6 +104,26 @@ public enum LogEvent: Sendable {
     /// it over its life, so a single line answers whether anybody could have read it.
     case dictationMessageCleared(reason: String, displayedCount: Int)
 
+    // MARK: User dictionary (#307)
+    // Every payload here is an Int, and that is the point: these cases *cannot*
+    // carry a learned word. The words themselves live in AutocorrectDebugLog,
+    // which does not exist in a Release binary. See that file's header for the
+    // split.
+    /// A word entered the personal dictionary. `learnedCount` is the size of the
+    /// dictionary after the write, so a reader can watch it grow and see where it
+    /// stops.
+    case userDictionaryWordLearned(learnedCount: Int)
+    /// The cap overflowed and entries were dropped (#304). `removed` is how many
+    /// this write took out, `learnedCount` the size it settled at.
+    case userDictionaryEvicted(removed: Int, learnedCount: Int, cap: Int)
+    /// The dictionary was cleared, and how many words that cost.
+    case userDictionaryReset(clearedCount: Int)
+    /// Entries written before recency existed were stamped on load (#304).
+    /// `stamped` is the legacy cohort, `droppedStamps` the timestamps whose word
+    /// was no longer learned. This is the line that answers "did the update keep
+    /// this install's vocabulary" — the #304 criterion no log could settle.
+    case userDictionaryMigrated(stamped: Int, droppedStamps: Int, learnedCount: Int)
+
     // MARK: Animation
     case overlayShown(status: String)
     case overlayHidden(status: String)
@@ -236,7 +256,9 @@ public enum LogEvent: Sendable {
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
              .waveformRefreshIDChanged, .waveformEnergyTransition, .waveformTimelineNotFiring,
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
-             .diagnosticProbe:
+             .diagnosticProbe,
+             .userDictionaryWordLearned, .userDictionaryEvicted, .userDictionaryReset,
+             .userDictionaryMigrated:
             return .keyboard
         case .statusChanged, .watchdogReset, .idleInvariantViolation:
             return .dictation
@@ -317,7 +339,8 @@ public enum LogEvent: Sendable {
              .waveformAppeared, .waveformDisappeared, .waveformRefreshIDChanged,
              .waveformEnergyTransition, .overlayBodyEvaluated, .overlayRecreated,
              .audioInterruptionEnded, .audioRouteChanged,
-             .warmStateReleased, .warmStateRestored:
+             .warmStateReleased, .warmStateRestored,
+             .userDictionaryEvicted, .userDictionaryReset, .userDictionaryMigrated:
             return .info
 
         // Debug (internal state transitions)
@@ -331,7 +354,11 @@ public enum LogEvent: Sendable {
              .engineWarmUpAttempt, .engineWarmUpSuccess,
              .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived,
              .waveformHeartbeat, .overlayTimerStarted, .overlayTimerStopped,
-             .diagnosticProbe:
+             .diagnosticProbe,
+             // Debug, not info: one line per newly learned word is the finest grain
+             // in this group. The eviction and reset lines are the ones a reader
+             // scans for.
+             .userDictionaryWordLearned:
             return .debug
 
         // Warning, not error: the user still gets their text (the deterministic
@@ -439,6 +466,10 @@ public enum LogEvent: Sendable {
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
         case .polishEngineFailed: return "polishEngineFailed"
+        case .userDictionaryWordLearned: return "userDictionaryWordLearned"
+        case .userDictionaryEvicted: return "userDictionaryEvicted"
+        case .userDictionaryReset: return "userDictionaryReset"
+        case .userDictionaryMigrated: return "userDictionaryMigrated"
         }
     }
 
@@ -648,6 +679,16 @@ public enum LogEvent: Sendable {
             return "name=\(name) timeout=\(timeoutSeconds)s"
         case .deviceCapabilitySnapshot(let model, let ramGB, let availableMemoryMB, let thermalState):
             return "model=\(model) ramGB=\(ramGB) availableMB=\(availableMemoryMB) thermal=\(thermalState)"
+
+        // User dictionary (#307)
+        case .userDictionaryWordLearned(let learnedCount):
+            return "learnedCount=\(learnedCount)"
+        case .userDictionaryEvicted(let removed, let learnedCount, let cap):
+            return "removed=\(removed) learnedCount=\(learnedCount) cap=\(cap)"
+        case .userDictionaryReset(let clearedCount):
+            return "clearedCount=\(clearedCount)"
+        case .userDictionaryMigrated(let stamped, let droppedStamps, let learnedCount):
+            return "stamped=\(stamped) droppedStamps=\(droppedStamps) learnedCount=\(learnedCount)"
 
         // Polish (#315)
         case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
