@@ -22,18 +22,22 @@ import Foundation
 ///    its own, so it buys the weaker evidence a second occurrence.
 ///
 /// HOW WORDS ARE FORGOTTEN:
-/// The dictionary is bounded without the user having to do anything (#287
-/// decision 6 ships no per-word removal UI, so an entry that should not be there
-/// has to age out on its own):
+/// Three bounds, none of which needs the user to do anything (#287 decisions 6
+/// and 7 — there is deliberately no per-word removal UI, so an entry that should
+/// not be there has to age out on its own):
 /// - the dictionary is capped at `maxLearnedWords`, and past the cap the
 ///   least-recently-used entries are dropped — see `shouldEvictFirst()` for why
-///   recency and not usage count.
+///   recency and not usage count;
+/// - an entry not used for `staleAfterDays` is discarded on load;
+/// - entries the base dictionary already knows are pruned once, on the first
+///   load that can ask a loaded dictionary — see `pruneTrieDuplicatesIfNeeded`.
 ///
 /// HOW THE LIFECYCLE IS REPORTED (#307):
-/// Learning, eviction, reset and the load-time migration each write two lines:
-/// a count to `PersistentLog`, which any exported log carries, and the words
-/// themselves to `AutocorrectDebugLog`, which only exists in Debug builds and
-/// only writes once the Developer toggle is on. See `logLearned()`.
+/// Every event above — learning, eviction, reset, the load-time migration, the
+/// stale discard and the duplicate prune — writes two lines: a count to
+/// `PersistentLog`, which any exported log carries, and the words themselves to
+/// `AutocorrectDebugLog`, which only exists in Debug builds and only writes once
+/// the Developer toggle is on. See `logLearned()`.
 ///
 /// WHY App Group UserDefaults:
 /// The dictionary must be shared between DictusApp and DictusKeyboard extension.
@@ -77,6 +81,10 @@ public final class UserDictionary {
     /// boundary.
     static let lastUsedKey = "dictus.userDictionary.lastUsed"
 
+    /// Key for the one-shot flag recording that the trie-duplicate prune has run.
+    /// See `pruneTrieDuplicatesIfNeeded(using:)`.
+    static let prunedTrieDuplicatesKey = "dictus.userDictionary.prunedTrieDuplicates"
+
     /// Number of times a word the base dictionary does not know must be typed
     /// before `recordUsage` learns it (#287 decision 3).
     ///
@@ -111,6 +119,17 @@ public final class UserDictionary {
     /// WHY half the learned cap: a pending entry is weaker evidence than a
     /// learned one, so it deserves less room than the vocabulary it feeds.
     static let maxPendingWords = 500
+
+    /// A learned word unused for this long is discarded on load (#287 decision 7).
+    ///
+    /// WHY 300 days: it is AOSP LatinIME's own constant for the same policy, and
+    /// what actually ships there — its documented forgetting curve is dead code
+    /// at HEAD, so a flat discard plus the recency eviction above is the whole of
+    /// the mechanism worth copying. See `docs/research/287-user-dictionary-learning.md`.
+    ///
+    /// WHY a keyboard needs one: decision 6 leaves "Reset learned words" as the
+    /// only exit, so a wrong entry the user cannot see has no other way out.
+    static let staleAfterDays = 300
 
     /// In-memory cache of learned words. Synced to UserDefaults on mutation.
     private var learnedWords: [String: Int] = [:]
@@ -302,6 +321,97 @@ public final class UserDictionary {
         pendingWords = defaults.dictionary(forKey: Self.pendingKey) as? [String: Int] ?? [:]
         lastUsed = defaults.dictionary(forKey: Self.lastUsedKey) as? [String: Int] ?? [:]
         stampEntriesMissingATimestamp()
+        discardStaleEntries()
+    }
+
+    /// Drops entries unused for `staleAfterDays` (#287 decision 7).
+    ///
+    /// WHY it runs after `stampEntriesMissingATimestamp()` and not before: that
+    /// migration stamps a legacy entry with **the moment the gap was noticed**,
+    /// not with a maximally old value, so a dictionary written before recency
+    /// existed arrives here fully stamped as of now and nothing in it is old
+    /// enough to discard. Running this first would delete the entire cohort on
+    /// the first launch after the update.
+    ///
+    /// WHY on every load rather than once: this is a standing policy, not a
+    /// version step. It is also the only thing that ever removes a wrong entry
+    /// below the cap, since #287 decision 6 deliberately ships no per-word
+    /// removal UI.
+    private func discardStaleEntries() {
+        let cutoff = Self.nowStamp() - Self.staleAfterDays * 86_400
+        // `?? 0` cannot fire: every learned word carries a stamp by the time this
+        // runs. Treating an unstamped entry as maximally old is the safe reading
+        // if that ever breaks — it discards an entry rather than keeping one
+        // forever with no way for the user to remove it.
+        let stale = learnedWords.keys.filter { (lastUsed[$0] ?? 0) < cutoff }
+        guard !stale.isEmpty else { return }
+
+        for word in stale {
+            learnedWords.removeValue(forKey: word)
+            lastUsed.removeValue(forKey: word)
+        }
+        let defaults = AppGroup.defaults
+        defaults.set(learnedWords, forKey: Self.storageKey)
+        defaults.set(lastUsed, forKey: Self.lastUsedKey)
+
+        PersistentLog.log(.userDictionaryStaleDiscarded(
+            removed: stale.count,
+            learnedCount: learnedWords.count,
+            days: Self.staleAfterDays
+        ))
+        #if DEBUG
+        AutocorrectDebugLog.userDictionaryStaleDiscarded(words: stale)
+        #endif
+    }
+
+    /// Removes, once ever, every entry the base dictionary already knows
+    /// (#287 decision 9). Returns how many entries were dropped.
+    ///
+    /// WHY this is safe: a word present in the base dictionary is never
+    /// autocorrected — `TextPredictionEngine.spellCheck` returns nil at its
+    /// `already-valid` branch before any candidate is generated — so the entry's
+    /// immunity was protecting nothing. And a word learned by rejecting an
+    /// autocorrection is absent from the dictionary by construction, since
+    /// otherwise there would have been no correction to reject.
+    ///
+    /// WHY once and not on every load: the caller can only offer the *active*
+    /// language's dictionary. Running repeatedly would delete a bilingual user's
+    /// other-language entries again after each re-learning, which is a churn loop;
+    /// running once bounds the exposure to a single pass, and normal learning
+    /// puts back anything it took (see the PR for the full argument).
+    ///
+    /// - Parameter provider: the loaded base dictionary. A provider that is not
+    ///   ready is not asked and the flag is not set, so the prune simply waits
+    ///   for a load that can answer.
+    @discardableResult
+    public func pruneTrieDuplicatesIfNeeded(using provider: FrequencyProvider) -> Int {
+        let defaults = AppGroup.defaults
+        guard !defaults.bool(forKey: Self.prunedTrieDuplicatesKey), provider.isReady else {
+            return 0
+        }
+
+        let duplicates = learnedWords.keys.filter { provider.knowsWord($0) }
+        for word in duplicates {
+            learnedWords.removeValue(forKey: word)
+            lastUsed.removeValue(forKey: word)
+        }
+        // The pad holds the same class of entry and is subject to the same rule,
+        // so a word about to be promoted into a duplicate is dropped with them.
+        pendingWords = pendingWords.filter { !provider.knowsWord($0.key) }
+
+        defaults.set(true, forKey: Self.prunedTrieDuplicatesKey)
+        defaults.set(learnedWords, forKey: Self.storageKey)
+        defaults.set(lastUsed, forKey: Self.lastUsedKey)
+        defaults.set(pendingWords, forKey: Self.pendingKey)
+
+        PersistentLog.log(.userDictionaryPruned(
+            removed: duplicates.count,
+            learnedCount: learnedWords.count
+        ))
+        #if DEBUG
+        AutocorrectDebugLog.userDictionaryPruned(words: duplicates)
+        #endif
+        return duplicates.count
     }
 
     /// MIGRATION RULE for entries written before recency existed: a learned word

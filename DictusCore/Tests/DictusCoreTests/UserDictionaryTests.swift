@@ -29,8 +29,12 @@ final class UserDictionaryTests: XCTestCase {
         super.tearDown()
     }
 
+    /// The one-shot prune flag outlives the dictionary it describes, so a clean
+    /// slate has to clear it too — otherwise the first test to run a prune would
+    /// be the only one that could.
     private func clearStore() {
         UserDictionary.shared.resetAll()
+        AppGroup.defaults.removeObject(forKey: UserDictionary.prunedTrieDuplicatesKey)
     }
 
     // MARK: - Promotion from pending to learned
@@ -157,6 +161,7 @@ final class UserDictionaryTests: XCTestCase {
     private static let tenDaysAgo = now - 10 * 86_400
     /// Old enough to lose an eviction, young enough to survive the stale discard.
     private static let twoHundredDaysAgo = now - 200 * 86_400
+    private static let threeHundredAndOneDaysAgo = now - 301 * 86_400
 
     /// `count` filler words, named so they never collide with the words a test
     /// makes assertions about.
@@ -326,5 +331,129 @@ final class UserDictionaryTests: XCTestCase {
         )
 
         XCTAssertEqual(Set(persistedTimestamps.keys), ["zorglub"])
+    }
+
+    // MARK: - Discarding entries unused for 300 days (#287)
+
+    func testLoadingDiscardsAnEntryUnusedForLongerThanTheStalePeriod() {
+        seedStore(
+            words: ["zorglub": 3, "oublie": 2],
+            lastUsed: ["zorglub": Self.aMinuteAgo, "oublie": Self.threeHundredAndOneDaysAgo]
+        )
+
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+        XCTAssertFalse(UserDictionary.shared.isLearned("oublie"))
+        XCTAssertNil(persistedTimestamps["oublie"], "The discarded entry takes its stamp with it")
+    }
+
+    func testLoadingKeepsAnEntryStillInsideTheStalePeriod() {
+        seedStore(words: ["oublie": 2], lastUsed: ["oublie": Self.twoHundredDaysAgo])
+
+        XCTAssertTrue(UserDictionary.shared.isLearned("oublie"))
+    }
+
+    /// The interaction that would be silently destructive if the two load steps
+    /// ran the other way round: a dictionary written before recency existed has
+    /// no stamps at all, and #305 stamps it as of the update. Discarding first
+    /// would read those entries as maximally old and delete every one of them on
+    /// the first launch after this ships.
+    func testALegacyStoreSurvivesItsFirstLoad() {
+        seedStore(words: ["kubernetes": 2, "zorglub": 3], lastUsed: nil)
+
+        XCTAssertTrue(UserDictionary.shared.isLearned("kubernetes"))
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+    }
+
+    // MARK: - The one-shot prune of base-dictionary duplicates (#287)
+
+    /// The store as an existing install carries it: mostly words the base
+    /// dictionary already knows, plus the handful of personal ones the feature
+    /// exists for.
+    private func seedForPrune() {
+        seedStore(
+            words: ["le": 40, "chat": 12, "pomme": 8, "kubernetes": 2, "zorglub": 3],
+            lastUsed: nil
+        )
+    }
+
+    /// The base dictionary as the corrector sees it: "j'ai" is stored as "ai",
+    /// which is why the prune asks about the part after the apostrophe.
+    private var frenchWords: MockFrequencyProvider {
+        MockFrequencyProvider(frequencies: ["le": 5000, "chat": 900, "pomme": 400, "ai": 8000])
+    }
+
+    func testThePruneRemovesEntriesTheBaseDictionaryAlreadyKnows() {
+        seedForPrune()
+
+        let removed = UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+
+        XCTAssertEqual(removed, 3)
+        XCTAssertFalse(UserDictionary.shared.isLearned("le"))
+        XCTAssertFalse(UserDictionary.shared.isLearned("chat"))
+        XCTAssertFalse(UserDictionary.shared.isLearned("pomme"))
+        XCTAssertTrue(UserDictionary.shared.isLearned("kubernetes"), "Personal vocabulary is what survives")
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+        XCTAssertEqual(Set(persistedTimestamps.keys), ["kubernetes", "zorglub"])
+    }
+
+    /// An entry is judged on the part the dictionary actually stores, the same
+    /// split `spellCheck` makes before its `already-valid` skip. Without this,
+    /// "j'ai" would sit in the dictionary forever: the prune would keep it and no
+    /// reader would ever look it up under that spelling.
+    func testThePruneJudgesAContractionOnThePartAfterTheApostrophe() {
+        seedStore(words: ["j'ai": 12, "zorglub": 3], lastUsed: nil)
+
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+
+        XCTAssertFalse(UserDictionary.shared.isLearned("j'ai"))
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+    }
+
+    /// It runs once and never again. This is what bounds the exposure for a user
+    /// who types in more than one language: the prune can only offer the active
+    /// language's dictionary, so a second run under a second language could
+    /// delete what the first language's user had just re-learned.
+    func testThePruneRunsOnlyOnce() {
+        seedForPrune()
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+
+        UserDictionary.shared.learn("chat")
+        let removedAgain = UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+
+        XCTAssertEqual(removedAgain, 0)
+        XCTAssertTrue(
+            UserDictionary.shared.isLearned("chat"),
+            "A word deliberately learned after the prune is not taken away again"
+        )
+    }
+
+    /// A provider that cannot answer is not asked, and the flag stays clear so
+    /// the prune waits for a load that can. The trie loads asynchronously, so
+    /// this is the state the keyboard is genuinely in for the first moments of
+    /// every session.
+    func testThePruneWaitsForADictionaryThatIsReady() {
+        seedForPrune()
+        let stillLoading = MockFrequencyProvider(isReady: false, frequencies: ["le": 5000])
+
+        XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: stillLoading), 0)
+        XCTAssertTrue(UserDictionary.shared.isLearned("le"))
+
+        XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords), 3)
+    }
+
+    /// A word held in probation is the same class of entry and follows the same
+    /// rule, so the prune must not leave one behind to be promoted into a
+    /// duplicate on its next occurrence.
+    func testThePruneAlsoClearsProbationEntriesTheDictionaryKnows() {
+        seedStore(words: ["zorglub": 3], lastUsed: nil)
+        UserDictionary.shared.recordUsage("pomme")
+
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+        UserDictionary.shared.recordUsage("pomme")
+
+        XCTAssertFalse(
+            UserDictionary.shared.isLearned("pomme"),
+            "The second occurrence starts probation over instead of promoting a duplicate"
+        )
     }
 }
