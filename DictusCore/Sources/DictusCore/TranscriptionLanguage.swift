@@ -68,6 +68,18 @@ public enum TranscriptionLanguageMode: Equatable, Sendable {
         }
     }
 
+    /// Self-describing form for telemetry (#332). NOT `storedValue`: a stored
+    /// "fr" says which language without saying that the user *chose* it, and
+    /// telling an explicit choice from a coincidence is the entire question a
+    /// polish debug export has to answer.
+    public var telemetryDescription: String {
+        switch self {
+        case .followKeyboard: return "followKeyboard"
+        case .autoDetect: return "autoDetect"
+        case .explicit(let language): return "explicit(\(language.rawValue))"
+        }
+    }
+
     // MARK: - Resolution
 
     /// Reads the active mode from the App Group. Missing key = `.followKeyboard`.
@@ -180,13 +192,27 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable {
         return mode.resolvedLanguageCode(keyboardLanguageCode: keyboardLanguage.rawValue)
     }
 
-    /// Polish-stage prompt selection (#239).
+    /// Polish-stage prompt selection (#239, resolution order fixed in #332).
     ///
-    /// WHY polish follows the *transcription* language, not the keyboard:
-    /// The polish prompts and typography passes must match the language of the
-    /// STT output. In `.explicit` mode the user dictates in that language even
-    /// if the keyboard shows another one — targeting the keyboard language
-    /// would, e.g., apply French NBSP typography to English text.
+    /// The polish target is the language the LLM is *instructed to write in*
+    /// (`AppleFoundationModelsPolishEngine.resolvedInstructions(mode:language:)`),
+    /// so getting it wrong does not mis-tune typography — it TRANSLATES the
+    /// user's speech. That is the most destructive thing this pipeline can do,
+    /// which is why the order below is strict and the keyboard comes last:
+    ///
+    /// 1. an explicitly chosen transcription language, whenever one is set;
+    /// 2. otherwise the language detection found in the STT output;
+    /// 3. the keyboard language only as a last resort, never over either.
+    ///
+    /// WHY the engine no longer splits case 1 (#332): until this fix, explicit
+    /// mode resolved to `engine == .whisperKit ? language : keyboardLanguage`,
+    /// on the reasoning that the setting is Whisper-only-effective so Parakeet
+    /// should keep the pre-#226 behavior. Parakeet is the shipping engine, so
+    /// in practice every explicit choice was discarded: three device
+    /// reproductions caught French speech polished into German and into
+    /// English purely because the keyboard had been switched. "The setting
+    /// cannot steer Parakeet's STT" is true and irrelevant here — the user
+    /// still named a language, and polish still needs a target.
     ///
     /// WHY auto mode ignores the engine (#239 scope amendment): Parakeet
     /// natively transcribes whichever of its 25 languages is spoken, so in
@@ -197,18 +223,43 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable {
     /// mode. This is a polish-stage decision only — `sttLanguageCode` keeps
     /// Parakeet's follow behavior because the engine ignores the parameter.
     ///
-    /// In follow/explicit modes the setting stays Whisper-only-effective:
-    /// with Parakeet active, explicit resolves to the keyboard language, the
-    /// exact pre-#226 behavior.
-    public var polishPromptSelection: PolishPromptSelection {
+    /// - Parameter detectedLanguage: what `NLLanguageRecognizer` read in the
+    ///   raw STT output, or `nil` when it was not confident or landed outside
+    ///   the four supported languages. Injected by the caller rather than
+    ///   detected here so this stays a pure, testable function.
+    public func polishPromptSelection(
+        detectedLanguage: SupportedLanguage?
+    ) -> PolishPromptSelection {
         switch mode {
         case .autoDetect:
             return .autoDetected
-        case .followKeyboard:
-            return .language(keyboardLanguage)
         case .explicit(let language):
-            return .language(engine == .whisperKit ? language : keyboardLanguage)
+            return .language(language)
+        case .followKeyboard:
+            // No explicit choice to honour, so detection decides. Only when it
+            // has nothing to say does the keyboard language get used — and
+            // then it is a guess about the user's speech, not an instruction
+            // from them.
+            return .language(detectedLanguage ?? keyboardLanguage)
         }
+    }
+
+    /// Whether the STT engine actually honours `sttLanguageCode` (#332).
+    ///
+    /// Parakeet auto-detects from audio and ignores the parameter entirely
+    /// (`ParakeetEngine.transcribe(audioSamples:language:)`), so the code it
+    /// receives is inert. The language-resolution probe logs a code either
+    /// way, which made `stt=en engine=PK` read as "transcribed in English"
+    /// when the raw text was French; recording this alongside it is what
+    /// removes the ambiguity.
+    public var sttLanguageIsEffective: Bool {
+        engine == .whisperKit
+    }
+
+    /// `sttLanguageCode` rendered for logs and the debug export, with `nil`
+    /// (Whisper auto-detection) spelled out rather than dropped.
+    public var sttLanguageCodeDescription: String {
+        sttLanguageCode ?? "auto"
     }
 
     /// True when the transcription must be inserted literally as-is (no
