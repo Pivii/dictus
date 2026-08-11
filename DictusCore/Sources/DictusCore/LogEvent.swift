@@ -123,6 +123,14 @@ public enum LogEvent: Sendable {
     /// was no longer learned. This is the line that answers "did the update keep
     /// this install's vocabulary" — the #304 criterion no log could settle.
     case userDictionaryMigrated(stamped: Int, droppedStamps: Int, learnedCount: Int)
+    /// Entries unused for `days` were discarded on load (#287). Below the cap this
+    /// is the only thing that ever removes an entry, so it is the line that says
+    /// a dictionary is being kept honest over time.
+    case userDictionaryStaleDiscarded(removed: Int, learnedCount: Int, days: Int)
+    /// The one-shot prune of entries the base dictionary already knew (#287).
+    /// `removed` is what this install was carrying for nothing; the words
+    /// themselves are in the debug log.
+    case userDictionaryPruned(removed: Int, learnedCount: Int)
 
     // MARK: Animation
     case overlayShown(status: String)
@@ -258,7 +266,7 @@ public enum LogEvent: Sendable {
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
              .diagnosticProbe,
              .userDictionaryWordLearned, .userDictionaryEvicted, .userDictionaryReset,
-             .userDictionaryMigrated:
+             .userDictionaryMigrated, .userDictionaryStaleDiscarded, .userDictionaryPruned:
             return .keyboard
         case .statusChanged, .watchdogReset, .idleInvariantViolation:
             return .dictation
@@ -340,7 +348,8 @@ public enum LogEvent: Sendable {
              .waveformEnergyTransition, .overlayBodyEvaluated, .overlayRecreated,
              .audioInterruptionEnded, .audioRouteChanged,
              .warmStateReleased, .warmStateRestored,
-             .userDictionaryEvicted, .userDictionaryReset, .userDictionaryMigrated:
+             .userDictionaryEvicted, .userDictionaryReset, .userDictionaryMigrated,
+             .userDictionaryStaleDiscarded, .userDictionaryPruned:
             return .info
 
         // Debug (internal state transitions)
@@ -470,6 +479,8 @@ public enum LogEvent: Sendable {
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
         case .userDictionaryMigrated: return "userDictionaryMigrated"
+        case .userDictionaryStaleDiscarded: return "userDictionaryStaleDiscarded"
+        case .userDictionaryPruned: return "userDictionaryPruned"
         }
     }
 
@@ -689,6 +700,10 @@ public enum LogEvent: Sendable {
             return "clearedCount=\(clearedCount)"
         case .userDictionaryMigrated(let stamped, let droppedStamps, let learnedCount):
             return "stamped=\(stamped) droppedStamps=\(droppedStamps) learnedCount=\(learnedCount)"
+        case .userDictionaryStaleDiscarded(let removed, let learnedCount, let days):
+            return "removed=\(removed) learnedCount=\(learnedCount) days=\(days)"
+        case .userDictionaryPruned(let removed, let learnedCount):
+            return "removed=\(removed) learnedCount=\(learnedCount)"
 
         // Polish (#315)
         case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
