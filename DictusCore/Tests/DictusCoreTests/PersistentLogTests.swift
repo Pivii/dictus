@@ -297,6 +297,69 @@ final class PersistentLogTests: XCTestCase {
         XCTAssertTrue(result.contains("Another unparseable"), "Unparseable lines should be kept")
     }
 
+    // MARK: - Code revision
+
+    /// Issue #344: the revision comes from a generated `DictusBuildInfo.plist`, so
+    /// the happy path is "the build phase ran and the file is in the bundle".
+    func testCodeRevisionReadsGeneratedBuildInfo() throws {
+        let url = try writeBuildInfo(["GitCommitSHA": "3e9bdda", "GitBranch": "fix/344-git-sha-injection"])
+
+        XCTAssertEqual(
+            PersistentLog.codeRevision(readingBuildInfoAt: url),
+            "3e9bdda@fix/344-git-sha-injection")
+    }
+
+    /// A detached build stamps `GitBranch = HEAD`, which is meaningful, but a branch
+    /// that is empty or literally "unknown" would only add noise to the header.
+    func testCodeRevisionDropsAnUninformativeBranch() throws {
+        let noBranch = try writeBuildInfo(["GitCommitSHA": "3e9bdda"])
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: noBranch), "3e9bdda")
+
+        let unknownBranch = try writeBuildInfo(["GitCommitSHA": "3e9bdda", "GitBranch": "unknown"])
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: unknownBranch), "3e9bdda")
+
+        let emptyBranch = try writeBuildInfo(["GitCommitSHA": "3e9bdda", "GitBranch": ""])
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: emptyBranch), "3e9bdda")
+    }
+
+    /// A build with no revision information has to keep announcing itself. Never a
+    /// crash, never an invented sha, never a stale one carried over.
+    func testCodeRevisionFallsBackToUnknown() throws {
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: nil), "unknown")
+
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("absent_\(UUID().uuidString).plist")
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: missing), "unknown")
+
+        let garbage = FileManager.default.temporaryDirectory
+            .appendingPathComponent("garbage_\(UUID().uuidString).plist")
+        try Data("not a plist".utf8).write(to: garbage)
+        addTeardownBlock { try? FileManager.default.removeItem(at: garbage) }
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: garbage), "unknown")
+
+        let noSHA = try writeBuildInfo(["GitBranch": "develop"])
+        XCTAssertEqual(PersistentLog.codeRevision(readingBuildInfoAt: noSHA), "unknown@develop")
+    }
+
+    /// Acceptance criterion of #344: a build outside the Xcode build phase — this
+    /// very test bundle — reports "unknown" rather than crashing or guessing.
+    /// `Bundle.main` here is the XCTest runner, which carries no build info.
+    func testCodeRevisionIsUnknownOutsideTheXcodeBuildPhase() {
+        XCTAssertEqual(PersistentLog.codeRevision(in: .main), "unknown")
+        XCTAssertEqual(PersistentLog.codeRevision, "unknown")
+    }
+
+    /// Write a build-info plist to a temp file and register it for cleanup.
+    private func writeBuildInfo(_ contents: [String: String]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("buildinfo_\(UUID().uuidString).plist")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: contents, format: .xml, options: 0)
+        try data.write(to: url)
+        return url
+    }
+
     // MARK: - Export header
 
     func testExportHeaderFormat() {

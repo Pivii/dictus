@@ -716,7 +716,7 @@
 				AA300001 /* Frameworks */,
 				AA600003 /* Resources */,
 				AA060001 /* Embed App Extensions */,
-				AA060010 /* Inject Git SHA into Info.plist */,
+				AA060010 /* Generate build info */,
 			);
 			buildRules = (
 			);
@@ -741,7 +741,7 @@
 				AA600002 /* Sources */,
 				AA300002 /* Frameworks */,
 				AA600004 /* Resources */,
-				AA060011 /* Inject Git SHA into Info.plist */,
+				AA060011 /* Generate build info */,
 			);
 			buildRules = (
 			);
@@ -763,7 +763,7 @@
 				BB600001 /* Sources */,
 				BB300001 /* Frameworks */,
 				BB600002 /* Resources */,
-				AA060012 /* Inject Git SHA into Info.plist */,
+				AA060012 /* Generate build info */,
 			);
 			buildRules = (
 			);
@@ -869,7 +869,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		AA060010 /* Inject Git SHA into Info.plist */ = {
+		AA060010 /* Generate build info */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -879,16 +879,16 @@
 			);
 			inputPaths = (
 			);
-			name = "Inject Git SHA into Info.plist";
+			name = "Generate build info";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Inject the current git commit short SHA + branch into the built Info.plist\n# so that PersistentLog can expose them at runtime without any manual discipline.\n# We write to the COPY of Info.plist in TARGET_BUILD_DIR, not the source file,\n# so `git status` stays clean.\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$PLIST\" ]; then\n  echo \"warning: Info.plist not found at $PLIST — skipping git SHA injection\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :GitCommitSHA $GIT_COMMIT\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitCommitSHA string $GIT_COMMIT\" \"$PLIST\"\n/usr/libexec/PlistBuddy -c \"Set :GitBranch $GIT_BRANCH\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitBranch string $GIT_BRANCH\" \"$PLIST\"\n";
+			shellScript = "# Write the current git commit short SHA + branch into a generated resource inside\n# the built bundle, so PersistentLog can report at runtime which commit the binary\n# came from without any manual discipline.\n#\n# WHY a file of its own rather than the built Info.plist (#344): Info.plist is\n# produced by ProcessInfoPlistFile and nothing ordered this phase against it, so an\n# incremental build scheduled the two the other way round and the injected keys were\n# wiped. Nothing else produces DictusBuildInfo.plist, so no ordering question exists.\n#\n# The phase stays \"always out of date\" on purpose: HEAD moves without any input file\n# changing, so dependency analysis would skip it exactly when it matters.\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nBUILD_INFO=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DictusBuildInfo.plist\"\nmkdir -p \"$(dirname \"$BUILD_INFO\")\"\nrm -f \"$BUILD_INFO\"\n/usr/libexec/PlistBuddy \\\n  -c \"Add :GitCommitSHA string $GIT_COMMIT\" \\\n  -c \"Add :GitBranch string $GIT_BRANCH\" \\\n  \"$BUILD_INFO\" >/dev/null\necho \"note: build info ${GIT_COMMIT}@${GIT_BRANCH} -> ${BUILD_INFO}\"\n";
 		};
-		AA060011 /* Inject Git SHA into Info.plist */ = {
+		AA060011 /* Generate build info */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -898,16 +898,16 @@
 			);
 			inputPaths = (
 			);
-			name = "Inject Git SHA into Info.plist";
+			name = "Generate build info";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Inject git commit short SHA + branch into the built Info.plist (keyboard extension).\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$PLIST\" ]; then\n  echo \"warning: Info.plist not found at $PLIST — skipping git SHA injection\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :GitCommitSHA $GIT_COMMIT\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitCommitSHA string $GIT_COMMIT\" \"$PLIST\"\n/usr/libexec/PlistBuddy -c \"Set :GitBranch $GIT_BRANCH\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitBranch string $GIT_BRANCH\" \"$PLIST\"\n";
+			shellScript = "# Write the current git commit short SHA + branch into a generated resource inside\n# the built bundle, so PersistentLog can report at runtime which commit the binary\n# came from without any manual discipline.\n#\n# WHY a file of its own rather than the built Info.plist (#344): Info.plist is\n# produced by ProcessInfoPlistFile and nothing ordered this phase against it, so an\n# incremental build scheduled the two the other way round and the injected keys were\n# wiped. Nothing else produces DictusBuildInfo.plist, so no ordering question exists.\n#\n# The phase stays \"always out of date\" on purpose: HEAD moves without any input file\n# changing, so dependency analysis would skip it exactly when it matters.\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nBUILD_INFO=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DictusBuildInfo.plist\"\nmkdir -p \"$(dirname \"$BUILD_INFO\")\"\nrm -f \"$BUILD_INFO\"\n/usr/libexec/PlistBuddy \\\n  -c \"Add :GitCommitSHA string $GIT_COMMIT\" \\\n  -c \"Add :GitBranch string $GIT_BRANCH\" \\\n  \"$BUILD_INFO\" >/dev/null\necho \"note: build info ${GIT_COMMIT}@${GIT_BRANCH} -> ${BUILD_INFO}\"\n";
 		};
-		AA060012 /* Inject Git SHA into Info.plist */ = {
+		AA060012 /* Generate build info */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -917,14 +917,14 @@
 			);
 			inputPaths = (
 			);
-			name = "Inject Git SHA into Info.plist";
+			name = "Generate build info";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Inject git commit short SHA + branch into the built Info.plist (widgets extension).\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$PLIST\" ]; then\n  echo \"warning: Info.plist not found at $PLIST — skipping git SHA injection\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :GitCommitSHA $GIT_COMMIT\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitCommitSHA string $GIT_COMMIT\" \"$PLIST\"\n/usr/libexec/PlistBuddy -c \"Set :GitBranch $GIT_BRANCH\" \"$PLIST\" 2>/dev/null || \\\n  /usr/libexec/PlistBuddy -c \"Add :GitBranch string $GIT_BRANCH\" \"$PLIST\"\n";
+			shellScript = "# Write the current git commit short SHA + branch into a generated resource inside\n# the built bundle, so PersistentLog can report at runtime which commit the binary\n# came from without any manual discipline.\n#\n# WHY a file of its own rather than the built Info.plist (#344): Info.plist is\n# produced by ProcessInfoPlistFile and nothing ordered this phase against it, so an\n# incremental build scheduled the two the other way round and the injected keys were\n# wiped. Nothing else produces DictusBuildInfo.plist, so no ordering question exists.\n#\n# The phase stays \"always out of date\" on purpose: HEAD moves without any input file\n# changing, so dependency analysis would skip it exactly when it matters.\nset -e\nGIT_COMMIT=$(cd \"$SRCROOT\" && git rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nGIT_BRANCH=$(cd \"$SRCROOT\" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo \"unknown\")\nBUILD_INFO=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DictusBuildInfo.plist\"\nmkdir -p \"$(dirname \"$BUILD_INFO\")\"\nrm -f \"$BUILD_INFO\"\n/usr/libexec/PlistBuddy \\\n  -c \"Add :GitCommitSHA string $GIT_COMMIT\" \\\n  -c \"Add :GitBranch string $GIT_BRANCH\" \\\n  \"$BUILD_INFO\" >/dev/null\necho \"note: build info ${GIT_COMMIT}@${GIT_BRANCH} -> ${BUILD_INFO}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
