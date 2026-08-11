@@ -181,6 +181,13 @@ class KeyboardState: ObservableObject {
     /// it lives, or what it says.
     @Published var statusMessage: String? {
         didSet {
+            // Advanced before the guard, and before anything else here, so it counts
+            // writes rather than changes (#342): a message re-raised with the exact
+            // same text is still a new message and deserves a full three seconds, and
+            // the guard below would swallow it. The funnel argument applies to the
+            // token for the same reason it applies to the log line -- a writer that
+            // skipped `assignStatusMessage` would otherwise leave a stale clear armed.
+            messageLifetime.advance()
             guard oldValue != statusMessage else { return }
             logStatusMessageTransition(from: oldValue)
             statusMessageReason = Self.unspecifiedMessageReason
@@ -191,6 +198,11 @@ class KeyboardState: ObservableObject {
     /// observer above.
     private var statusMessageReason = KeyboardState.unspecifiedMessageReason
     private static let unspecifiedMessageReason = "unspecified"
+
+    /// Which message currently holds the toolbar, so a clear scheduled three seconds
+    /// ago can only take down the message it was scheduled for (#342). Advanced by the
+    /// observer above; read by `presentStatusMessage`. The rule is tested in DictusCore.
+    private var messageLifetime = StatusMessageLifetime()
 
     /// How many live views have reported putting the current message on screen.
     /// Reset when a message is assigned, reported when it ends: `displayedCount=0`
@@ -624,10 +636,11 @@ class KeyboardState: ObservableObject {
                        let errorMsg = DictationErrorChannel.current,
                        errorMsg != presentedErrorMessage {
                         presentedErrorMessage = errorMsg
-                        assignStatusMessage(errorMsg, reason: "appError")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                            self?.assignStatusMessage(nil, reason: "appError-timeout")
-                        }
+                        presentStatusMessage(
+                            errorMsg,
+                            reason: "appError",
+                            timeoutReason: "appError-timeout"
+                        )
                     }
                 }
             }
@@ -1375,11 +1388,6 @@ class KeyboardState: ObservableObject {
 /// class's private members, so nothing had to be widened to make room.
 private extension KeyboardState {
 
-    /// How long the "the recording was interrupted" message stays on the toolbar.
-    /// Matches the `.failed` message lifetime in `refreshFromDefaults`, deliberately:
-    /// this is the same failure UX, reached from a different direction.
-    static let interruptedMessageDuration: TimeInterval = 3
-
     /// What the App Group says about the dictation, and what that means.
     struct DictationLivenessReading {
         let verdict: DictationSessionLiveness
@@ -1487,13 +1495,11 @@ private extension KeyboardState {
         // wording is "interrupted", not "crashed": from the user's side that is both
         // truer and less alarming, and it is what they need to know -- the recording
         // is gone and the next tap starts fresh.
-        assignStatusMessage(
+        presentStatusMessage(
             String(localized: "Recording interrupted. Please try again."),
-            reason: "reconciled-\(source)"
+            reason: "reconciled-\(source)",
+            timeoutReason: "reconciled-timeout"
         )
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.interruptedMessageDuration) { [weak self] in
-            self?.assignStatusMessage(nil, reason: "reconciled-timeout")
-        }
     }
 }
 
@@ -1523,6 +1529,30 @@ extension KeyboardState {
     func assignStatusMessage(_ message: String?, reason: String) {
         statusMessageReason = reason
         statusMessage = message
+    }
+
+    /// Put a message on the toolbar and take it down again once it has had its time.
+    ///
+    /// WHY the token rather than a bare `asyncAfter` (#342): the pending clear used to
+    /// capture nothing, so it cleared whatever was current when it fired. Two mic taps
+    /// two seconds apart were enough to lose the second message after one second, and
+    /// to name `appError-timeout` on a clear that took down a `reconciled` message. The
+    /// token is read here and checked in the closure, so a clear can only ever take
+    /// down the message it was scheduled for. Nothing is logged when it declines: the
+    /// `set` and `cleared` pair already bracket every message's life, and #255 makes a
+    /// line that says "I did nothing" a cost rather than a neutral.
+    ///
+    /// WHY every timed message goes through one function: it is the same argument
+    /// `assignStatusMessage` makes for itself above. A future site that schedules its
+    /// own clear would reintroduce the bug in full, and there would be nothing to stop
+    /// it -- here there is no reason to write one.
+    func presentStatusMessage(_ message: String, reason: String, timeoutReason: String) {
+        assignStatusMessage(message, reason: reason)
+        let token = messageLifetime.current
+        DispatchQueue.main.asyncAfter(deadline: .now() + StatusMessageLifetime.displayDuration) { [weak self] in
+            guard let self, self.messageLifetime.mayClear(token) else { return }
+            self.assignStatusMessage(nil, reason: timeoutReason)
+        }
     }
 
     /// Record a message assignment or its end. Called only from `statusMessage`'s
