@@ -476,6 +476,37 @@ final class UserDictionaryTests: XCTestCase {
         XCTAssertTrue(UserDictionary.shared.hasPrunedTrieDuplicates)
     }
 
+    /// Resetting the dictionary re-arms the prune, because the flag describes a
+    /// dictionary that no longer exists. It is also the only way a device that
+    /// has already pruned can show that the mechanism still works.
+    func testResettingTheDictionaryReArmsThePrune() {
+        seedForPrune()
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+        XCTAssertTrue(UserDictionary.shared.hasPrunedTrieDuplicates)
+
+        UserDictionary.shared.resetAll()
+
+        XCTAssertFalse(UserDictionary.shared.hasPrunedTrieDuplicates)
+    }
+
+    /// Re-arming is safe, which is what makes it worth doing: everything learned
+    /// after a reset is absent from the base dictionary by construction — the
+    /// boundary site gates on exactly that, and a word restored by undo was never
+    /// in the dictionary to begin with — so the next prune has nothing to take.
+    func testThePruneAfterAResetHasNothingToTake() {
+        seedForPrune()
+        UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords)
+        UserDictionary.shared.resetAll()
+
+        UserDictionary.shared.learn("zorglub")
+        UserDictionary.shared.recordUsage("kubernetes")
+        UserDictionary.shared.recordUsage("kubernetes")
+
+        XCTAssertEqual(UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: frenchWords), 0)
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+        XCTAssertTrue(UserDictionary.shared.isLearned("kubernetes"))
+    }
+
     /// A word held in probation is the same class of entry and follows the same
     /// rule, so the prune must not leave one behind to be promoted into a
     /// duplicate on its next occurrence.

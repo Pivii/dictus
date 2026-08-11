@@ -281,6 +281,16 @@ public final class UserDictionary {
         lastUsed.removeAll()
         pendingWords.removeAll()
         saveToDefaults()
+        // The prune flag describes the stored dictionary — "this one has been
+        // cleaned" — so destroying that dictionary leaves it describing nothing,
+        // and it is re-armed with everything else (#287). Re-arming costs the
+        // user nothing: every entry learned after a reset is absent from the base
+        // dictionary by construction, at both call sites, so the prune that
+        // follows has nothing it could take. What it buys is that the migration
+        // stays observable — without this, a device that has pruned once can
+        // never show that the mechanism still works, and "already done" and
+        // "broken" read identically in an export forever after.
+        AppGroup.defaults.removeObject(forKey: Self.prunedTrieDuplicatesKey)
 
         PersistentLog.log(.userDictionaryReset(clearedCount: clearedCount))
         #if DEBUG

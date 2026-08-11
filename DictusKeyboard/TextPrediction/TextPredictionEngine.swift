@@ -40,6 +40,10 @@ class TextPredictionEngine {
     /// is still the newest one. See `loadDictionaries(for:)`.
     private var dictionaryLoadGeneration = 0
 
+    /// Whether this process has already reported that the prune was done in an
+    /// earlier session. See `reportPruneAlreadyDone()`.
+    private var hasReportedPruneAlreadyDone = false
+
     private init() {
         loadDictionaries(for: language)
     }
@@ -116,9 +120,10 @@ class TextPredictionEngine {
     /// done, a probe line says why, so an export can never again be ambiguous
     /// between "never called" and "called and declined".
     func pruneUserDictionaryIfPossible(trigger: String) {
-        // Once it has run there is nothing to attempt and nothing to report. This
-        // is what keeps the probe off a path that runs on every appearance.
-        guard !UserDictionary.shared.hasPrunedTrieDuplicates else { return }
+        guard !UserDictionary.shared.hasPrunedTrieDuplicates else {
+            reportPruneAlreadyDone()
+            return
+        }
 
         guard aospTrieEngine.isReady else {
             PersistentLog.log(.diagnosticProbe(
@@ -130,6 +135,30 @@ class TextPredictionEngine {
             return
         }
         UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
+    }
+
+    /// Says, once per keyboard process, that the prune has already been done.
+    ///
+    /// WHY this line has to exist. `userDictionaryPruned` is written once in the
+    /// life of an install, and `PersistentLog` is a 1 MB file trimmed from the
+    /// head — so an hour of ordinary use scrolls that line out of every later
+    /// export. Without a standing statement, "this install was cleaned long ago"
+    /// and "the prune is broken and never ran" are the same observation: silence.
+    /// The third device pass on #287 was spent on exactly that ambiguity.
+    ///
+    /// WHY once per process and not once per call: `viewWillAppear` runs on every
+    /// keyboard appearance, seventeen times in an hour of real use, and iOS keeps
+    /// several controllers alive. One line per process is enough to date the
+    /// state, and anything finer is the noise #255 was about.
+    private func reportPruneAlreadyDone() {
+        guard !hasReportedPruneAlreadyDone else { return }
+        hasReportedPruneAlreadyDone = true
+        PersistentLog.log(.diagnosticProbe(
+            component: "UserDictionaryPrune",
+            instanceID: "",
+            action: "alreadyDone",
+            details: "learnedCount=\(UserDictionary.shared.count)"
+        ))
     }
 
     /// Whether `word` is genuinely new to the active language's dictionary —
