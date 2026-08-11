@@ -37,13 +37,7 @@ class TextPredictionEngine {
     }
 
     private init() {
-        // Verify language is available in UITextChecker
-        let available = UITextChecker.availableLanguages
-        if !available.contains(where: { $0.hasPrefix(language) }) {
-            print("[TextPredictionEngine] Warning: '\(language)' not in available languages: \(available)")
-        }
-        frequencyDict.load(language: language)
-        aospTrieEngine.load(language: language)
+        loadDictionaries(for: language)
     }
 
     /// Updates the active language for completions and spell-checking.
@@ -54,12 +48,40 @@ class TextPredictionEngine {
     /// to stay within the keyboard extension's ~50MB memory budget.
     func setLanguage(_ lang: String) {
         language = lang
+        loadDictionaries(for: lang)
+    }
+
+    /// Loads both dictionaries for `lang` and runs the work that can only happen
+    /// once a dictionary is actually loaded.
+    private func loadDictionaries(for lang: String) {
+        // Verify language is available in UITextChecker
         let available = UITextChecker.availableLanguages
         if !available.contains(where: { $0.hasPrefix(lang) }) {
             print("[TextPredictionEngine] Warning: '\(lang)' not in available languages: \(available)")
         }
         frequencyDict.load(language: lang)
-        aospTrieEngine.load(language: lang)
+        aospTrieEngine.load(language: lang) { [weak self] loaded in
+            guard let self = self, loaded else { return }
+            // The user dictionary's one-shot prune (#287): the only place in the
+            // app that holds a loaded base dictionary is right here, and the
+            // prune has no way to ask its question before this point. It returns
+            // immediately once it has run, so paying the call on every language
+            // switch costs one boolean read.
+            UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: self.aospTrieEngine)
+        }
+    }
+
+    /// Whether `word` is genuinely new to the active language's dictionary —
+    /// the gate the word-boundary learning site needs (#287 decision 2).
+    ///
+    /// WHY false while the dictionary is still loading: the answer would be
+    /// "unknown" for every word typed in that window, and learning them all is
+    /// exactly the pollution this gate exists to stop. AOSP LatinIME takes the
+    /// same position for the same reason — it turns learning off entirely on a
+    /// slow InputConnection, because a word it cannot vet is a word it should
+    /// not keep. If we cannot ask, we do not learn.
+    func isUnknownToDictionary(_ word: String) -> Bool {
+        aospTrieEngine.isReady && !aospTrieEngine.knowsWord(word)
     }
 
     /// Returns up to 3 word completions for a partial word, ranked by frequency.

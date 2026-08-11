@@ -40,7 +40,12 @@ final class AOSPTrieEngine {
     ///
     /// WHY async: Prevents blocking the main thread during keyboard init.
     /// The keyboard appears instantly; spell correction becomes available after mmap load.
-    func load(language: String, bundle: Bundle = .main) {
+    ///
+    /// - Parameter completion: called on the main thread once the load has
+    ///   settled, with whether a dictionary is now available. Exists so a caller
+    ///   can run work that needs to ask the dictionary questions — there is no
+    ///   other moment at which `wordExists` starts telling the truth.
+    func load(language: String, bundle: Bundle = .main, completion: ((Bool) -> Void)? = nil) {
         isLoading = true
         currentLanguage = language
         bridge.unloadDictionary()
@@ -53,7 +58,10 @@ final class AOSPTrieEngine {
                 forResource: "\(language)_spellcheck", ofType: "dict"
             ) else {
                 print("[AOSPTrieEngine] Failed to find \(language)_spellcheck.dict")
-                DispatchQueue.main.async { self.isLoading = false }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion?(false)
+                }
                 return
             }
 
@@ -76,6 +84,7 @@ final class AOSPTrieEngine {
                     print("[AOSPTrieEngine] Failed to load \(language)_spellcheck.dict")
                 }
                 self.isLoading = false
+                completion?(success)
             }
         }
     }
