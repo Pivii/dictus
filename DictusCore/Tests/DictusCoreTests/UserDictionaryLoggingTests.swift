@@ -231,6 +231,7 @@ final class UserDictionaryLoggingTests: XCTestCase {
         UserDictionary.shared.learn("nouveau")
         assertLogContains("USERDICT-EVICT words=[\"oubliable\"]", logContents())
 
+
         // Reset.
         UserDictionary.shared.resetAll()
         UserDictionary.shared.learn("zorglub")

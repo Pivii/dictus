@@ -21,12 +21,16 @@ final class UserDictionaryTests: XCTestCase {
     /// edges makes each test independent of what ran before it.
     override func setUp() {
         super.setUp()
-        UserDictionary.shared.resetAll()
+        clearStore()
     }
 
     override func tearDown() {
-        UserDictionary.shared.resetAll()
+        clearStore()
         super.tearDown()
+    }
+
+    private func clearStore() {
+        UserDictionary.shared.resetAll()
     }
 
     // MARK: - Promotion from pending to learned
@@ -44,14 +48,50 @@ final class UserDictionaryTests: XCTestCase {
         XCTAssertEqual(UserDictionary.shared.allLearnedWords[word], UserDictionary.repetitionThreshold)
     }
 
-    func testRecordUsageBelowTheThresholdDoesNotLearnTheWord() throws {
-        try XCTSkipIf(
-            UserDictionary.repetitionThreshold < 2,
-            "Threshold is 1, so there is no below-threshold call to observe"
-        )
+    /// Un-skipped by #287: at a threshold of 1 there was no below-threshold call
+    /// to observe, which is the whole reason the counter was dead as a gate.
+    func testRecordUsageBelowTheThresholdDoesNotLearnTheWord() {
         let word = "zorglub"
         XCTAssertFalse(UserDictionary.shared.recordUsage(word))
         XCTAssertFalse(UserDictionary.shared.isLearned(word))
+    }
+
+    /// The observable rule the two sites are held to (#287 decisions 3 and 4):
+    /// the word-boundary path learns on the second occurrence, the undo path on
+    /// the first.
+    func testTypingTwiceLearnsAWordThatTypingOnceDoesNot() {
+        XCTAssertFalse(UserDictionary.shared.recordUsage("zorglub"))
+        XCTAssertFalse(UserDictionary.shared.isLearned("zorglub"))
+
+        XCTAssertTrue(UserDictionary.shared.recordUsage("zorglub"))
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+    }
+
+    func testLearnRecordsAWordOnItsFirstOccurrence() {
+        XCTAssertTrue(UserDictionary.shared.learn("zorglub"), "The call creating the entry reports it")
+        XCTAssertTrue(UserDictionary.shared.isLearned("zorglub"))
+
+        XCTAssertFalse(
+            UserDictionary.shared.learn("zorglub"),
+            "A second call is a usage bump, not a new entry"
+        )
+        XCTAssertEqual(UserDictionary.shared.allLearnedWords["zorglub"], 2)
+    }
+
+    // MARK: - Bounding the probation pad (#287)
+
+    /// Raising the threshold above 1 is what brings `pendingWords` to life, and
+    /// what reaches it is mostly typos that never come back for a second
+    /// occurrence. Without a bound the pad would grow for the life of the install
+    /// and be re-serialised on every word boundary.
+    func testThePendingPadIsBounded() {
+        for index in 0...UserDictionary.maxPendingWords {
+            UserDictionary.shared.recordUsage("pending\(index)")
+        }
+
+        let pending = AppGroup.defaults.dictionary(forKey: UserDictionary.pendingKey) as? [String: Int] ?? [:]
+        XCTAssertLessThanOrEqual(pending.count, UserDictionary.maxPendingWords)
+        XCTAssertEqual(UserDictionary.shared.count, 0, "Nothing was typed twice, so nothing is learned")
     }
 
     // MARK: - Bumping an already-learned word
@@ -115,7 +155,8 @@ final class UserDictionaryTests: XCTestCase {
     private static let now = Int(Date().timeIntervalSince1970)
     private static let aMinuteAgo = now - 60
     private static let tenDaysAgo = now - 10 * 86_400
-    private static let threeHundredDaysAgo = now - 300 * 86_400
+    /// Old enough to lose an eviction, young enough to survive the stale discard.
+    private static let twoHundredDaysAgo = now - 200 * 86_400
 
     /// `count` filler words, named so they never collide with the words a test
     /// makes assertions about.
@@ -252,7 +293,7 @@ final class UserDictionaryTests: XCTestCase {
         words["legacy"] = 5
         words["ancient"] = 5
         var timestamps = stamp(words, at: Self.aMinuteAgo)
-        timestamps["ancient"] = Self.threeHundredDaysAgo
+        timestamps["ancient"] = Self.twoHundredDaysAgo
         timestamps.removeValue(forKey: "legacy")
         seedStore(words: words, lastUsed: timestamps)
 

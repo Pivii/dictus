@@ -4,16 +4,30 @@ import Foundation
 
 /// Stores words the user has taught the keyboard through usage patterns.
 ///
+/// WHAT BELONGS IN IT (#287):
+/// Only words the base dictionary does not know. A learned word is immune from
+/// autocorrect for as long as it is in here, and #288 will propagate this set
+/// into speech recognition — so an entry that merely duplicates the trie costs
+/// storage, a write per word boundary, and a wrong word in another subsystem,
+/// while protecting nothing (the trie never corrects a word it knows).
+///
 /// HOW WORDS ARE LEARNED:
-/// 1. Rejection learning: user types "helo" → autocorrected to "hello" → user
-///    presses backspace to undo → "helo" is immediately learned (strong signal).
-/// 2. Repetition learning: user types an unknown word multiple times → after
-///    `repetitionThreshold` occurrences, the word is learned.
+/// 1. Rejection learning: user types "helo" → autocorrected to "hello" → the
+///    user rejects the correction → `learn()` records "helo" on that single
+///    occurrence. The user stated what they meant, so no repetition is asked for.
+/// 2. Repetition learning: the user types a word the trie does not know and the
+///    pipeline declines to correct → `recordUsage()` counts it, and the word is
+///    learned on the `repetitionThreshold`-th occurrence. The caller is the one
+///    that checks the trie (see `recordUsage`) — passive typing says nothing on
+///    its own, so it buys the weaker evidence a second occurrence.
 ///
 /// HOW WORDS ARE FORGOTTEN:
-/// The dictionary is capped at `maxLearnedWords`. Past the cap the
-/// least-recently-used entries are dropped — see `shouldEvictFirst()` for why
-/// recency and not usage count.
+/// The dictionary is bounded without the user having to do anything (#287
+/// decision 6 ships no per-word removal UI, so an entry that should not be there
+/// has to age out on its own):
+/// - the dictionary is capped at `maxLearnedWords`, and past the cap the
+///   least-recently-used entries are dropped — see `shouldEvictFirst()` for why
+///   recency and not usage count.
 ///
 /// HOW THE LIFECYCLE IS REPORTED (#307):
 /// Learning, eviction, reset and the load-time migration each write two lines:
@@ -63,10 +77,19 @@ public final class UserDictionary {
     /// boundary.
     static let lastUsedKey = "dictus.userDictionary.lastUsed"
 
-    /// Number of times an unknown word must be typed/rejected before it's learned.
-    /// 1 = learn immediately. Safe now that autocorrect undo requires an intentional
-    /// tap in the suggestion bar (no more accidental backspace-undo learning).
-    public static let repetitionThreshold = 1
+    /// Number of times a word the base dictionary does not know must be typed
+    /// before `recordUsage` learns it (#287 decision 3).
+    ///
+    /// WHY 2 and not 1: at 1 the `pendingWords` counter below could never hold
+    /// anything, so passive typing — which states nothing about intent — was
+    /// enough to grant a word permanent immunity from autocorrect. Two
+    /// occurrences is the probation AOSP LatinIME uses for the same signal, and
+    /// it is the cheapest gate that costs no new stored data.
+    ///
+    /// This threshold gates `recordUsage` only. Rejecting an autocorrection is a
+    /// different, much stronger signal and goes through `learn()`, which is not
+    /// subject to it.
+    public static let repetitionThreshold = 2
 
     /// Maximum number of learned words. When exceeded, the least-recently-used
     /// words are dropped — see `shouldEvictFirst()`.
@@ -74,6 +97,20 @@ public final class UserDictionary {
     /// Generous cap for personal vocabulary (names, slang, jargon, brands).
     /// Prevents unbounded growth from accidental learning over months/years.
     public static let maxLearnedWords = 1000
+
+    /// Maximum number of words held in probation at once.
+    ///
+    /// WHY a cap exists at all: raising `repetitionThreshold` above 1 is what
+    /// brings `pendingWords` to life, and everything that reaches it is by
+    /// definition a word the base dictionary does not know — a name, a piece of
+    /// jargon, or a typo the corrector had no candidate for. Typos never come
+    /// back for a second occurrence, so without a bound the pad would grow for
+    /// the life of the install, and `savePendingToDefaults()` runs on every word
+    /// boundary.
+    ///
+    /// WHY half the learned cap: a pending entry is weaker evidence than a
+    /// learned one, so it deserves less room than the vocabulary it feeds.
+    static let maxPendingWords = 500
 
     /// In-memory cache of learned words. Synced to UserDefaults on mutation.
     private var learnedWords: [String: Int] = [:]
@@ -107,11 +144,20 @@ public final class UserDictionary {
     /// Number of learned words.
     public var count: Int { learnedWords.count }
 
-    /// Learn a word immediately (e.g., after user rejects autocorrection).
+    /// Learn a word on this single occurrence, bypassing the repetition counter.
     /// The word is stored lowercase. If already learned, increments usage count.
-    public func learn(_ word: String) {
+    /// Returns true when this call created the entry.
+    ///
+    /// WHY this bypasses `repetitionThreshold` while `recordUsage` does not
+    /// (#287 decision 4): the caller is the undo of an applied autocorrection,
+    /// where the user has explicitly said "no, I meant this word". That is the
+    /// same trigger Apple documents for its own keyboard dictionary, and asking
+    /// for a second occurrence would mean rejecting the same correction twice
+    /// before the keyboard stopped making it.
+    @discardableResult
+    public func learn(_ word: String) -> Bool {
         let key = word.lowercased()
-        guard !key.isEmpty, key.count > 1 else { return }
+        guard !key.isEmpty, key.count > 1 else { return false }
         // A word already in the dictionary is a usage bump, not a learning event,
         // so only a first entry is reported below.
         let isNew = learnedWords[key] == nil
@@ -124,11 +170,19 @@ public final class UserDictionary {
         if isNew {
             logLearned(key, usageCount: usageCount)
         }
+        return isNew
     }
 
-    /// Record that an unknown word was typed. If it reaches the repetition
-    /// threshold, it's automatically learned. Returns true if the word was
-    /// just learned (crossed the threshold this call).
+    /// Record that a word the base dictionary does not know was typed. If it
+    /// reaches the repetition threshold, it's automatically learned. Returns true
+    /// if the word was just learned (crossed the threshold this call).
+    ///
+    /// The caller is responsible for the trie check (#287 decision 2). It is not
+    /// done here on purpose: `learn()`'s caller must NOT be subject to it — a word
+    /// restored by undoing an autocorrection is absent from the trie by
+    /// construction — and expressing that would mean handing `UserDictionary` a
+    /// `FrequencyProvider` to make the two call sites share a rule only one of
+    /// them wants.
     @discardableResult
     public func recordUsage(_ word: String) -> Bool {
         let key = word.lowercased()
@@ -156,8 +210,21 @@ public final class UserDictionary {
             return true
         }
 
+        boundPendingWords()
         savePendingToDefaults()
         return false
+    }
+
+    /// Keeps the probation pad bounded — see `maxPendingWords`.
+    ///
+    /// WHY it empties the pad instead of picking victims: at a threshold of 2
+    /// every pending entry has been seen exactly once, so there is nothing to
+    /// rank them by. The alternative would be a second timestamp map for entries
+    /// that are not even vocabulary yet. Emptying costs the words in flight one
+    /// extra occurrence, which is the cheapest possible failure for a memo pad.
+    private func boundPendingWords() {
+        guard pendingWords.count > Self.maxPendingWords else { return }
+        pendingWords.removeAll()
     }
 
     /// Remove a learned word (e.g., user removes it from dictionary management UI).
