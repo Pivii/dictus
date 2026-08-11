@@ -91,7 +91,7 @@ CFBundleVersion            (build no.)  →  what Apple tracks: 18    (integer, 
 | Points at | the `chore: bump…` commit on develop | the release merge commit on main |
 | Answers | "when/what was build N" + promotion anchor | "exactly what is in production" |
 
-Why two tiers: build tags give full per-build traceability **without** cluttering the GitHub Releases page (only the Tags page) — this is what CI systems do. Release tags stay rare and meaningful: each one is a real, shipped version. Runtime traceability is *also* covered independently by the git-SHA injected into every built Info.plist (a build phase writes `GitCommitSHA` + `GitBranch`), so even an untagged build is identifiable from the app's debug log.
+Why two tiers: build tags give full per-build traceability **without** cluttering the GitHub Releases page (only the Tags page) — this is what CI systems do. Release tags stay rare and meaningful: each one is a real, shipped version. Runtime traceability is *also* covered independently by the git-SHA generated into every built bundle (a `Generate build info` build phase writes `GitCommitSHA` + `GitBranch` into `DictusBuildInfo.plist`), so even an untagged build is identifiable from the app's debug log.
 
 ## TestFlight → App Store: promote, don't rebuild
 
