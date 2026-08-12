@@ -260,7 +260,11 @@ public final class PolishCoordinator {
                 engine: activeEngine.identifier,
                 mode: nil,
                 targetLanguage: target,
-                detectedLanguage: nil,
+                // Detection ran before the target was chosen (#332), so it is
+                // in hand even here, where the engine never runs. It used to
+                // be recorded as nil because detection happened after this
+                // gate; keeping that would throw away a fact the event needs.
+                detectedLanguage: request.detectedCode,
                 rawCharCount: raw.count,
                 polishedCharCount: finalShort.count,
                 latencyMs: preprocessMs + postMs,
@@ -290,7 +294,13 @@ public final class PolishCoordinator {
                 engine: activeEngine.identifier,
                 mode: nil,
                 targetLanguage: target,
-                detectedLanguage: nil,
+                // The raw code, not nil: this exit is reached BOTH when
+                // detection was unconfident and when it confidently found a
+                // language outside the four this path has prompts for. Those
+                // are different events — "we could not read it" versus "you
+                // dictated Italian" — and only the code tells them apart. A
+                // nil here now means gibberish and nothing else.
+                detectedLanguage: request.detectedCode,
                 rawCharCount: raw.count,
                 polishedCharCount: fallback.count,
                 latencyMs: preprocessMs + postMs,

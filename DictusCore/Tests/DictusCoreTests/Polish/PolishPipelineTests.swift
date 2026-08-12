@@ -135,6 +135,21 @@ final class PolishPipelineTests: XCTestCase {
         ))
     }
 
+    /// The pairing the per-language skip exit records against (#332): an
+    /// unsupported language yields a code but no `SupportedLanguage`, while
+    /// gibberish yields neither. Both skip polish, but they are different
+    /// events — "you dictated Italian, and this path has no Italian prompt"
+    /// versus "we could not read this at all" — and the event only tells them
+    /// apart because the code is recorded where it used to write nil.
+    func testUnsupportedLanguageAndGibberishAreDistinguishable() {
+        let italian = "allora ho parlato con Marco ieri sera e mi ha detto che il progetto va bene"
+        XCTAssertEqual(PolishPipeline.detectLanguageCode(in: italian), "it")
+        XCTAssertNil(PolishPipeline.detectLanguage(in: italian))
+
+        XCTAssertNil(PolishPipeline.detectLanguageCode(in: "   \n  "))
+        XCTAssertNil(PolishPipeline.detectLanguage(in: "   \n  "))
+    }
+
     /// In auto mode the target-language typography must NOT run: a French
     /// input with `target: .french` as engine placeholder keeps its ASCII
     /// space before `?` (no NBSP) — the prompt owns typography in auto mode.
