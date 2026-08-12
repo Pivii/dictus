@@ -56,10 +56,80 @@ public struct PolishMetrics: Sendable, Codable {
         case exceededContextBudget
     }
 
+    /// The inputs that decided the polish target, captured per event (#332).
+    ///
+    /// WHY this exists: five facts decide which language the model is told to
+    /// write in, and until #332 an export carried only two of them — under a
+    /// name (`targetLanguage`) that in fact held a third. A reader looking at
+    /// a German target on French speech could not tell a bug from a setting,
+    /// and it took three deliberate device re-tests to establish which it was.
+    /// Recorded together with `targetLanguage` and `detectedLanguage` above,
+    /// these make that question answerable from the export alone.
+    public struct LanguageResolution: Sendable, Codable, Equatable {
+        /// The user's transcription-language mode, self-describing:
+        /// `followKeyboard` / `autoDetect` / `explicit(fr)`. Distinct from the
+        /// keyboard language, which is the whole point.
+        public let transcriptionMode: String
+        /// The keyboard language at dictation time.
+        public let keyboardLanguage: String
+        /// The language code handed to the STT engine, or "auto".
+        public let sttLanguageCode: String
+        /// Whether that engine honours the code. False for Parakeet, which
+        /// auto-detects from audio and ignores the parameter — so `stt:de`
+        /// there describes what was passed, never what was heard.
+        public let sttLanguageIsEffective: Bool
+
+        public init(transcriptionMode: String,
+                    keyboardLanguage: String,
+                    sttLanguageCode: String,
+                    sttLanguageIsEffective: Bool) {
+            self.transcriptionMode = transcriptionMode
+            self.keyboardLanguage = keyboardLanguage
+            self.sttLanguageCode = sttLanguageCode
+            self.sttLanguageIsEffective = sttLanguageIsEffective
+        }
+
+        /// Read the trail off the per-dictation policy snapshot — the same
+        /// snapshot the target was resolved from, so the two can never drift.
+        public init(policy: TranscriptionLanguagePolicy) {
+            self.init(
+                transcriptionMode: policy.mode.telemetryDescription,
+                keyboardLanguage: policy.keyboardLanguage.rawValue,
+                sttLanguageCode: policy.sttLanguageCodeDescription,
+                sttLanguageIsEffective: policy.sttLanguageIsEffective
+            )
+        }
+    }
+
     public let engine: String              // polish engine id, e.g. "apple-fm"
     public let mode: PolishMode?           // nil when skipped (no mode chosen)
-    public let targetLanguage: SupportedLanguage
+    /// The language the polish prompt instructs the model to write in — the
+    /// resolved polish target, NOT the keyboard language. See
+    /// `TranscriptionLanguagePolicy.polishPromptSelection(detectedLanguage:)`.
+    ///
+    /// `nil` on the auto path, where there is no target at all: the prompt is
+    /// language-agnostic and the model writes in whatever language the input
+    /// is in. It was previously recorded as the keyboard language "for session
+    /// context", which put a language that had no influence under a field
+    /// named for the one that does — the precise confusion #332 exists to end,
+    /// and the reason three device reproductions were needed to prove the
+    /// original bug. An absent target now means no target.
+    ///
+    /// Optional decoding is also what keeps the seven-day ring readable: every
+    /// event written before #332 carries a value here, so a missing key can
+    /// only mean the auto path on a build that has this fix. (Auto-path events
+    /// from older builds still carry their keyboard language; they are
+    /// recognisable by having no `languageResolution`.)
+    public let targetLanguage: SupportedLanguage?
     public let detectedLanguage: String?   // BCP-47 ("fr","en",…) or nil for gibberish
+
+    /// How the polish target was arrived at (#332). Optional for the reason
+    /// `sttEngine` and `timings` are: the debug ring holds seven days of
+    /// events written by whatever build was installed at the time, and those
+    /// must keep decoding. A missing key means "written before this existed",
+    /// never "unknown".
+    public let languageResolution: LanguageResolution?
+
     public let rawCharCount: Int
     public let polishedCharCount: Int      // equals rawCharCount when not polished
     public let latencyMs: Int
@@ -89,7 +159,7 @@ public struct PolishMetrics: Sendable, Codable {
 
     public init(engine: String,
                 mode: PolishMode?,
-                targetLanguage: SupportedLanguage,
+                targetLanguage: SupportedLanguage?,
                 detectedLanguage: String?,
                 rawCharCount: Int,
                 polishedCharCount: Int,
@@ -98,11 +168,13 @@ public struct PolishMetrics: Sendable, Codable {
                 sttEngine: String? = nil,
                 sttModelID: String? = nil,
                 timings: PolishTimings? = nil,
-                failureReason: PolishFailureReason? = nil) {
+                failureReason: PolishFailureReason? = nil,
+                languageResolution: LanguageResolution? = nil) {
         self.engine = engine
         self.mode = mode
         self.targetLanguage = targetLanguage
         self.detectedLanguage = detectedLanguage
+        self.languageResolution = languageResolution
         self.rawCharCount = rawCharCount
         self.polishedCharCount = polishedCharCount
         self.latencyMs = latencyMs
@@ -137,8 +209,17 @@ public struct PolishMetrics: Sendable, Codable {
             // events that succeed, and a `reason=-` on every one of them would
             // pay for nothing.
             let reason = m.failureReason.map { " reason=\($0.slug)" } ?? ""
+            // How the target was arrived at (#332), appended only when the
+            // event carries the trail so pre-#332 events keep their old shape.
+            // `inert` marks a code the engine ignores — Parakeet auto-detects
+            // from audio, so `stt:de` there says nothing about what was heard.
+            let resolution = m.languageResolution.map { r in
+                let inert = r.sttLanguageIsEffective ? "" : "(inert)"
+                return " resolution=tx:\(r.transcriptionMode)/kbd:\(r.keyboardLanguage)"
+                    + "/stt:\(r.sttLanguageCode)\(inert)"
+            } ?? ""
             PolishLog.logger.info(
-                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage.rawValue, privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
+                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage?.rawValue ?? "none", privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public)\(resolution, privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
             )
         }
     }

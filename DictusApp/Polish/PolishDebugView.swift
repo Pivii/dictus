@@ -165,7 +165,8 @@ private struct EntryRow: View {
                 } else if let mode = entry.metrics.mode {
                     Text(mode.rawValue).font(.caption2).foregroundStyle(.secondary)
                 }
-                Text(entry.metrics.targetLanguage.rawValue.uppercased())
+                // "—" on the auto path, which targets no language at all.
+                Text(entry.metrics.targetLanguage?.rawValue.uppercased() ?? "—")
                     .font(.caption2.bold())
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -237,12 +238,28 @@ private struct EntryDetailView: View {
             HStack(spacing: 12) {
                 LabeledValue("engine", entry.metrics.engine)
                 LabeledValue("mode", entry.metrics.mode?.rawValue ?? "-")
-                LabeledValue("target", entry.metrics.targetLanguage.rawValue)
+                LabeledValue("target", entry.metrics.targetLanguage?.rawValue ?? "none (auto)")
                 LabeledValue("detected", entry.metrics.detectedLanguage ?? "-")
             }
             HStack(spacing: 12) {
                 LabeledValue("stt engine", entry.metrics.sttEngine ?? "-")
                 LabeledValue("stt model", entry.metrics.sttModelID ?? "-")
+            }
+            // The rest of the language-resolution trail (#332): reading
+            // "target=de" next to "detected=fr" only means something once the
+            // mode and the keyboard language are visible beside them. Absent
+            // on events persisted by pre-#332 builds.
+            if let resolution = entry.metrics.languageResolution {
+                HStack(spacing: 12) {
+                    LabeledValue("tx mode", resolution.transcriptionMode)
+                    LabeledValue("keyboard", resolution.keyboardLanguage)
+                    LabeledValue(
+                        "stt lang",
+                        resolution.sttLanguageIsEffective
+                            ? resolution.sttLanguageCode
+                            : "\(resolution.sttLanguageCode) (inert)"
+                    )
+                }
             }
             HStack(spacing: 12) {
                 LabeledValue("latency", "\(entry.metrics.latencyMs) ms")

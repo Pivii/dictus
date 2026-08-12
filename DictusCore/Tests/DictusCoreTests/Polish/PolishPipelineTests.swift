@@ -135,6 +135,40 @@ final class PolishPipelineTests: XCTestCase {
         ))
     }
 
+    /// The detection pairing the per-language skip exit relies on (#332): an
+    /// unsupported language yields a code but no `SupportedLanguage`, while
+    /// text that cannot be read yields neither. Both skip polish, and the
+    /// coordinator records `detectedLanguage: detectedCode` at that exit so
+    /// the two stay distinguishable on the event — "you dictated Italian, and
+    /// this path has no Italian prompt" is not "we could not read this".
+    ///
+    /// SCOPE: this asserts the detection pairing only. That the skip exit
+    /// actually writes the code onto the event is NOT covered — it lives in
+    /// `PolishCoordinator` (DictusApp), and the project has no app test
+    /// bundle, so DictusCore is the only suite that exists. That half is a
+    /// manual check: a sub-2s dictation should produce a `skippedShort` event
+    /// carrying a detected language.
+    ///
+    /// Both undetectable cases below are non-empty on purpose, so they reach
+    /// the recognizer rather than the empty-input guard covered above, and
+    /// they exercise different branches of it: digits produce no hypothesis at
+    /// all, while nonsense words produce one the threshold then rejects
+    /// (measured 0.27 against a 0.5 threshold — a fixture nearer the boundary,
+    /// e.g. "xyz" at 0.46, would be one NL revision from flipping).
+    func testDetectionSeparatesUnsupportedLanguageFromUnreadableText() {
+        let italian = "allora ho parlato con Marco ieri sera e mi ha detto che il progetto va bene"
+        XCTAssertEqual(PolishPipeline.detectLanguageCode(in: italian), "it",
+                       "an unsupported language must still yield its code")
+        XCTAssertNil(PolishPipeline.detectLanguage(in: italian),
+                     "…while resolving to no SupportedLanguage")
+
+        for unreadable in ["123 456 789", "asdf qwer zxcv"] {
+            XCTAssertNil(PolishPipeline.detectLanguageCode(in: unreadable),
+                         "no confident language in \(unreadable)")
+            XCTAssertNil(PolishPipeline.detectLanguage(in: unreadable))
+        }
+    }
+
     /// In auto mode the target-language typography must NOT run: a French
     /// input with `target: .french` as engine placeholder keeps its ASCII
     /// space before `?` (no NBSP) — the prompt owns typography in auto mode.

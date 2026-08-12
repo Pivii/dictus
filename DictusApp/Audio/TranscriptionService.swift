@@ -120,11 +120,18 @@ class TranscriptionService {
         PersistentLog.log(.transcriptionStarted(modelName: modelName))
         // Trace the resolution so device tests (#226 acceptance: Mandarin via
         // Auto-detect, toolbar-switcher non-override) can verify it from logs.
+        //
+        // `mode` spells the mode out rather than printing its stored value
+        // (#332): a bare "fr" could not be told from a coincidence, and a
+        // reader of `mode=fr keyboard=en` had no way to see that the user had
+        // explicitly chosen French. `sttEffective` says whether the engine
+        // honours `stt=` at all — Parakeet ignores it and auto-detects from
+        // audio, which is how `stt=en` came to sit above a French transcript.
         PersistentLog.log(.diagnosticProbe(
             component: "TranscriptionService",
             instanceID: "languageResolution",
             action: "resolved",
-            details: "mode=\(languagePolicy.mode.storedValue) keyboard=\(languagePolicy.keyboardLanguage.rawValue) engine=\(languagePolicy.engine.rawValue) stt=\(language ?? "auto")"
+            details: "mode=\(languagePolicy.mode.telemetryDescription) keyboard=\(languagePolicy.keyboardLanguage.rawValue) engine=\(languagePolicy.engine.rawValue) stt=\(language ?? "auto") sttEffective=\(languagePolicy.sttLanguageIsEffective ? "yes" : "no")"
         ))
 
         // Route to active engine if set (multi-engine path)

@@ -79,14 +79,17 @@ public final class PolishCoordinator {
     public func prewarm() {
         guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
-        // Resolve the prompt selection through the engine-aware language
-        // policy (#226/#239): explicit mode targets the dictated language, not
-        // the keyboard one; Auto mode warms the language-agnostic auto session
-        // (the language argument is a placeholder the engine normalizes).
-        // Prewarm has no dictation-scoped policy to receive (it fires at app
-        // launch and ~1.5s into recording), so it snapshots on its own — a
-        // stale warm target is harmless (prewarm is best-effort).
-        let selection = TranscriptionLanguagePolicy.snapshot().polishPromptSelection
+        // Resolve the prompt selection through the language policy
+        // (#226/#239/#332): explicit mode targets the language the user chose,
+        // not the keyboard one; Auto mode warms the language-agnostic auto
+        // session (the language argument is a placeholder the engine
+        // normalizes). Prewarm has no dictation-scoped policy to receive (it
+        // fires at app launch and ~1.5s into recording), so it snapshots on
+        // its own — and passes no detected language, since there is no
+        // transcript yet. A stale warm target is harmless: prewarm is
+        // best-effort, and `polish()` resolves the real target from scratch.
+        let selection = TranscriptionLanguagePolicy.snapshot()
+            .polishPromptSelection(detectedLanguage: nil)
         Task {
             switch selection {
             case .language(let target):
@@ -145,47 +148,94 @@ public final class PolishCoordinator {
             return raw
         }
 
-        // Transcription language decoupling (#226/#239): the prompt selection
-        // branches on the resolved mode. Follow/explicit modes run the
-        // per-language path (prompts + typography passes tuned for the four
-        // tested languages; in explicit mode polish targets the dictated
-        // language, not the keyboard one). Auto-detect mode — BOTH engines,
-        // per the #239 amendment — runs the language-agnostic auto path: the
-        // output language is unknown (could be zh, it, pt, …), so the engine
-        // uses the auto prompt; the verbal-punctuation pre-pass runs keyed on
-        // the DETECTED language, and the typography post-pass stays off.
-        switch languagePolicy.polishPromptSelection {
+        // `methodStart` anchors the full wall-clock the user actually waits
+        // for, detection and the deterministic passes included. Captured here
+        // rather than inside each path (#332) so moving detection above the
+        // branch does not quietly drop its cost out of `preprocessMs`.
+        let methodStart = Date()
+
+        // Detection runs BEFORE the branch (#332). The polish target is
+        // resolved from it — an explicit choice aside, the language the STT
+        // output actually reads as outranks the keyboard language — so it can
+        // no longer happen after the target has been chosen. Detecting once
+        // here also stops the two paths from each running their own pass.
+        //
+        // Detection reads `raw`, not the pre-pass output: the pre-pass is
+        // keyed on the target (circular now), and all it does is swap spoken
+        // punctuation words for marks, which can only remove language signal.
+        // The auto path already detected on `raw` for the same reason.
+        let detectedCode = PolishPipeline.detectLanguageCode(in: raw)
+        // The per-language path only understands the four tested languages;
+        // anything else is `nil` to it and falls through to its skip gate.
+        let request = Request(
+            raw: raw,
+            languagePolicy: languagePolicy,
+            recordingDuration: recordingDuration,
+            methodStart: methodStart,
+            detectedCode: detectedCode,
+            detected: detectedCode.flatMap(SupportedLanguage.init(rawValue:))
+        )
+
+        // Transcription language decoupling (#226/#239/#332): the prompt
+        // selection branches on the resolved mode. Follow/explicit modes run
+        // the per-language path (prompts + typography passes tuned for the
+        // four tested languages; explicit targets the language the user
+        // chose, follow targets what detection found and only falls back to
+        // the keyboard). Auto-detect mode — BOTH engines, per the #239
+        // amendment — runs the language-agnostic auto path: the output
+        // language is unknown (could be zh, it, pt, …), so the engine uses
+        // the auto prompt; the verbal-punctuation pre-pass runs keyed on the
+        // DETECTED language, and the typography post-pass stays off.
+        switch languagePolicy.polishPromptSelection(detectedLanguage: request.detected) {
         case .language(let target):
-            return await polishTargeted(
-                raw: raw, target: target,
-                languagePolicy: languagePolicy, recordingDuration: recordingDuration,
-                onEngineWillRun: onEngineWillRun
-            )
+            return await polishTargeted(request, target: target, onEngineWillRun: onEngineWillRun)
         case .autoDetected:
-            return await polishAutoDetected(
-                raw: raw, languagePolicy: languagePolicy, recordingDuration: recordingDuration,
-                onEngineWillRun: onEngineWillRun
-            )
+            return await polishAutoDetected(request, onEngineWillRun: onEngineWillRun)
         }
+    }
+
+    /// One dictation's polish input, as both paths need it: the raw text, the
+    /// policy snapshot, and the detection the caller ran before branching.
+    ///
+    /// Grouped rather than passed loose because #332 moved detection above the
+    /// branch, and threading five values through two paths made the parameter
+    /// lists longer than the linter (rightly) tolerates. Path-specific values —
+    /// the resolved target — stay separate arguments.
+    private struct Request {
+        let raw: String
+        let languagePolicy: TranscriptionLanguagePolicy
+        let recordingDuration: TimeInterval
+        /// Anchors the wall-clock the user waits for. Captured before
+        /// detection so its cost lands in `preprocessMs` like everything else.
+        let methodStart: Date
+        /// Raw `NLLanguage` code, the whole long tail ("it", "zh-Hans", …).
+        /// What the auto path gates and pre-processes on.
+        let detectedCode: String?
+        /// The same detection narrowed to the four languages the per-language
+        /// prompts exist for, or `nil` — gibberish, or outside that set.
+        let detected: SupportedLanguage?
     }
 
     // MARK: - Per-language path
 
     /// The historical polish path: verbal-punctuation pre-pass, duration gate,
-    /// gibberish gate, per-language prompt, typography post-pass. `target` is
-    /// the resolved polish language from the policy snapshot.
-    private func polishTargeted(raw: String,
+    /// gibberish gate, per-language prompt, typography post-pass.
+    ///
+    /// `target` is the resolved polish language — what the model will be told
+    /// to write in — and `request.detected` is what detection read in the raw
+    /// text, already run by the caller because the target is resolved from it
+    /// (#332). They are separate values because they legitimately differ: an
+    /// explicit transcription language outranks detection, and that gap is
+    /// exactly what selects `PolishMode.repair` below.
+    private func polishTargeted(_ request: Request,
                                 target: SupportedLanguage,
-                                languagePolicy: TranscriptionLanguagePolicy,
-                                recordingDuration: TimeInterval,
                                 onEngineWillRun: (() -> Void)?) async -> String {
+        let raw = request.raw
+        let languagePolicy = request.languagePolicy
+        let methodStart = request.methodStart
         let sttEngine = languagePolicy.engine
         let sttModelID = languagePolicy.modelIdentifier
-
-        // `methodStart` anchors the full wall-clock the user actually waits for,
-        // INCLUDING the deterministic passes (which the old timer excluded).
-        // The timing breakdown below proves where the time goes.
-        let methodStart = Date()
+        let resolution = PolishMetrics.LanguageResolution(policy: languagePolicy)
 
         // Pre-pass: deterministic regex substitution of verbal punctuation
         // commands. Round 3 testing showed Apple FM cannot be coaxed into
@@ -199,7 +249,7 @@ public final class PolishCoordinator {
         // punctuation above + NBSP below, both ~0ms) so typography stays
         // consistent with longer clips. No language detection / guardrail here
         // since the engine never runs.
-        if recordingDuration < Self.engineMinDuration {
+        if request.recordingDuration < Self.engineMinDuration {
             let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let postStart = Date()
             // No engine ran → no newline markers to decode; this only applies
@@ -210,21 +260,28 @@ public final class PolishCoordinator {
                 engine: activeEngine.identifier,
                 mode: nil,
                 targetLanguage: target,
-                detectedLanguage: nil,
+                // Detection ran before the target was chosen (#332), so it is
+                // in hand even here, where the engine never runs. It used to
+                // be recorded as nil because detection happened after this
+                // gate; keeping that would throw away a fact the event needs.
+                detectedLanguage: request.detectedCode,
                 rawCharCount: raw.count,
                 polishedCharCount: finalShort.count,
                 latencyMs: preprocessMs + postMs,
                 outcome: .skippedShort,
                 sttEngine: sttEngine.rawValue,
                 sttModelID: sttModelID,
-                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
+                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs),
+                languageResolution: resolution
             )
             await emit(m, raw: raw, polished: finalShort)
             return finalShort
         }
 
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
-        guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+        // Also covers a confident detection outside the four supported
+        // languages, which this path has no prompt for.
+        guard let detected = request.detected else {
             // Return the deterministic floor, NOT the literal raw: the verbal-
             // punctuation pre-pass already ran (~0ms) and the user expects their
             // spoken "virgule"/"point" turned into marks even when the LLM is
@@ -237,14 +294,21 @@ public final class PolishCoordinator {
                 engine: activeEngine.identifier,
                 mode: nil,
                 targetLanguage: target,
-                detectedLanguage: nil,
+                // The raw code, not nil: this exit is reached BOTH when
+                // detection was unconfident and when it confidently found a
+                // language outside the four this path has prompts for. Those
+                // are different events — "we could not read it" versus "you
+                // dictated Italian" — and only the code tells them apart. A
+                // nil here now means gibberish and nothing else.
+                detectedLanguage: request.detectedCode,
                 rawCharCount: raw.count,
                 polishedCharCount: fallback.count,
                 latencyMs: preprocessMs + postMs,
                 outcome: .skipped,
                 sttEngine: sttEngine.rawValue,
                 sttModelID: sttModelID,
-                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs)
+                timings: PolishTimings(preprocessMs: preprocessMs, engineMs: 0, postprocessMs: postMs),
+                languageResolution: resolution
             )
             await emit(m, raw: raw, polished: nil)
             return fallback
@@ -296,7 +360,8 @@ public final class PolishCoordinator {
                 engineMs: bundle.engineMs,
                 postprocessMs: bundle.postprocessMs
             ),
-            failureReason: bundle.failureReason
+            failureReason: bundle.failureReason,
+            languageResolution: resolution
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
 
@@ -325,30 +390,30 @@ public final class PolishCoordinator {
     /// the raw NLLanguage code of the INPUT (e.g. "it", "zh-Hans"), which is
     /// how device tests validate output language == input language. Engine
     /// runs are identified by `mode == .auto` in the debug export.
-    private func polishAutoDetected(raw: String,
-                                    languagePolicy: TranscriptionLanguagePolicy,
-                                    recordingDuration: TimeInterval,
+    private func polishAutoDetected(_ request: Request,
                                     onEngineWillRun: (() -> Void)?) async -> String {
-        let methodStart = Date()
+        let raw = request.raw
+        let languagePolicy = request.languagePolicy
+        let methodStart = request.methodStart
         // Engine-API placeholder in auto mode — never used for typography or
         // guardrails (see PolishPipeline); doubles as the metrics context.
         let contextLanguage = languagePolicy.keyboardLanguage
 
-        // Detection runs FIRST (before the duration gate) because the verbal-
-        // punctuation pre-pass needs the detected language as its key — and,
-        // exactly like the per-language path, flash dictations must still get
-        // their spoken commands converted even when the LLM is skipped (#185).
-        let detectedCode = PolishPipeline.detectLanguageCode(in: raw)
-        let preprocessed = PolishPipeline.autoPreprocess(raw, detectedCode: detectedCode)
+        // `detectedCode` is detected by the caller, before the duration gate,
+        // because the verbal-punctuation pre-pass needs the detected language
+        // as its key — and, exactly like the per-language path, flash
+        // dictations must still get their spoken commands converted even when
+        // the LLM is skipped (#185).
+        let preprocessed = PolishPipeline.autoPreprocess(raw, detectedCode: request.detectedCode)
 
         // Duration gate (#141): on a flash dictation the user wants instant
         // text, so the LLM is skipped — but the deterministic floor is kept.
-        if recordingDuration < Self.engineMinDuration {
+        if request.recordingDuration < Self.engineMinDuration {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
                 outcome: .skippedShort, raw: raw, finalCount: preprocessed.count,
                 languagePolicy: languagePolicy, engineID: activeEngine.identifier,
-                detectedLanguage: detectedCode, latencyMs: detectMs,
+                detectedLanguage: request.detectedCode, latencyMs: detectMs,
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
             await emit(m, raw: raw, polished: nil)
@@ -359,7 +424,7 @@ public final class PolishCoordinator {
         // path (ADR 0002), but on the raw NLLanguage code: auto mode must
         // accept the whole long tail (zh, it, pt, …), not just the four
         // supported languages. No detection → no pre-pass ran → raw is intact.
-        guard let detectedCode else {
+        guard let detectedCode = request.detectedCode else {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
                 outcome: .skipped, raw: raw, finalCount: raw.count,
@@ -405,7 +470,15 @@ public final class PolishCoordinator {
 
     /// Metrics for one auto-path event. Defaults cover the skip exits (no
     /// mode, no detection, ~0ms); the engine-run exit overrides them.
-    /// `targetLanguage` is the keyboard language — session context only.
+    ///
+    /// `targetLanguage` is recorded as `nil`, because on this path there is no
+    /// target: the prompt is language-agnostic and the model writes in the
+    /// language the input is already in. It used to be filled with the
+    /// keyboard language "for session context", which meant an export showed
+    /// `target=de` beside `detected=fr` on a dictation that correctly came out
+    /// French — a reader auditing that would conclude the #332 bug was live.
+    /// The keyboard language is still on the event, under its own name, in
+    /// `languageResolution`.
     private func autoEventMetrics(outcome: PolishMetrics.Outcome,
                                   raw: String,
                                   finalCount: Int,
@@ -421,7 +494,7 @@ public final class PolishCoordinator {
         PolishMetrics(
             engine: engineID,
             mode: mode,
-            targetLanguage: languagePolicy.keyboardLanguage,
+            targetLanguage: nil,
             detectedLanguage: detectedLanguage,
             rawCharCount: raw.count,
             polishedCharCount: finalCount,
@@ -430,7 +503,8 @@ public final class PolishCoordinator {
             sttEngine: languagePolicy.engine.rawValue,
             sttModelID: languagePolicy.modelIdentifier,
             timings: timings,
-            failureReason: failureReason
+            failureReason: failureReason,
+            languageResolution: PolishMetrics.LanguageResolution(policy: languagePolicy)
         )
     }
 
