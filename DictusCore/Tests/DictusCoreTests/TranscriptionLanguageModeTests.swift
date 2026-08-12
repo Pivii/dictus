@@ -280,10 +280,14 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.languageResolution?.keyboardLanguage, "de")
         XCTAssertEqual(decoded.languageResolution?.sttLanguageCode, "de")
         XCTAssertEqual(decoded.languageResolution?.sttLanguageIsEffective, false)
-        // The distinction the export existed to make and could not: the polish
-        // target and the keyboard language are separate values on one event.
+        // The distinction the export existed to make and could not: detected,
+        // target and keyboard are three separate values on one event. Asserted
+        // as exact values rather than as "target != detected" — that form also
+        // passes when detectedLanguage is lost and decodes as nil, which is
+        // the failure a round-trip test is here to catch.
+        // (the keyboard language is asserted with the rest of the trail above)
+        XCTAssertEqual(decoded.detectedLanguage, "fr")
         XCTAssertEqual(decoded.targetLanguage, .german)
-        XCTAssertNotEqual(decoded.detectedLanguage, decoded.targetLanguage?.rawValue)
     }
 
     /// The auto path targets no language: the prompt is language-agnostic and
