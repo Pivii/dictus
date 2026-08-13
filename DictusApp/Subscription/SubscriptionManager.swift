@@ -76,6 +76,18 @@ final class SubscriptionManager: ObservableObject {
                     action: "loadProducts",
                     error: "empty result (StoreKit configuration missing or product ID unknown)"
                 ))
+            } else if products.count != productIDs.count {
+                // A partial result is just as silent and harder to notice: the
+                // missing plan's row simply does not render, and the paywall
+                // looks intentional. One product can fail alone — mistyped,
+                // still Waiting for Review, or not cleared for the storefront —
+                // while the others resolve. Name the absent ones: that is the
+                // whole diagnosis, and it is invisible from the screen (#350).
+                let missing = productIDs.subtracting(products.map(\.id)).sorted()
+                PersistentLog.log(.subscriptionError(
+                    action: "loadProducts",
+                    error: "missing product IDs: \(missing.joined(separator: ", "))"
+                ))
             }
         } catch {
             PersistentLog.log(.subscriptionError(action: "loadProducts", error: error.localizedDescription))
