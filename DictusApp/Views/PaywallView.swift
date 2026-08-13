@@ -212,7 +212,7 @@ struct PaywallView: View {
                 planCard(
                     product: yearly,
                     title: "Yearly",
-                    priceText: Text("\(yearly.displayPrice)/year"),
+                    priceText: priceLabel(for: yearly),
                     subtitle: perMonthEquivalent(for: yearly),
                     badge: discountBadgeText
                 )
@@ -221,7 +221,7 @@ struct PaywallView: View {
                 planCard(
                     product: monthly,
                     title: "Monthly",
-                    priceText: Text("\(monthly.displayPrice)/month"),
+                    priceText: priceLabel(for: monthly),
                     subtitle: nil,
                     badge: nil
                 )
@@ -286,6 +286,23 @@ struct PaywallView: View {
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
     }
 
+    /// A plan's price carrying its own period, e.g. "39,99 €/an" — or, for the
+    /// lifetime non-consumable, "49,99 €" with no period at all.
+    ///
+    /// WHY derived from `Product.subscription` rather than from an identifier:
+    /// the chain this replaces tested for the yearly ID and fell through to
+    /// "/month" for everything else, so the one-off lifetime would have been
+    /// advertised as a monthly plan (#350). A unit Dictus does not sell (a
+    /// daily or weekly subscription) shows the bare price: less informative,
+    /// never false.
+    private func priceLabel(for product: Product) -> Text {
+        switch product.subscription?.subscriptionPeriod.unit {
+        case .some(.year): return Text("\(product.displayPrice)/year")
+        case .some(.month): return Text("\(product.displayPrice)/month")
+        default: return Text(verbatim: product.displayPrice)
+        }
+    }
+
     /// Per-month equivalent under the yearly price, e.g. "Soit 3,33 € par mois".
     /// WHY priceFormatStyle: it carries the product's own currency and locale,
     /// so the divided price is formatted exactly like displayPrice.
@@ -341,20 +358,32 @@ struct PaywallView: View {
         .accessibilityLabel(ctaLabel)
     }
 
-    /// CTA label follows the selected plan. Prices and trial duration come
-    /// from the StoreKit Product; nothing is hardcoded.
+    /// CTA label follows the selected plan. Price, period and trial duration
+    /// come from the StoreKit Product; nothing is hardcoded.
+    ///
+    /// WHY the sentence wraps `priceLabel(for:)` instead of spelling a period
+    /// out per branch: the period belongs to the price, so one localized
+    /// sentence serves every plan and there is no branch left to fall through.
     private var ctaLabel: Text {
         guard let product = selectedProduct else { return Text(verbatim: "...") }
-        if product.id == ProProductID.yearly {
-            if isEligibleForTrial,
-               let offer = product.subscription?.introductoryOffer,
-               offer.paymentMode == .freeTrial,
-               let days = trialDays(for: offer) {
-                return Text("\(days) days free, then \(product.displayPrice)/year")
-            }
-            return Text("Subscribe for \(product.displayPrice)/year")
+        let price = priceLabel(for: product)
+
+        // No `subscription` means a non-consumable, and "Subscribe" would
+        // misdescribe a purchase that never renews.
+        guard let subscription = product.subscription else {
+            return Text("Buy for \(price)")
         }
-        return Text("Subscribe for \(product.displayPrice)/month")
+
+        // Ask this product for its offer rather than assuming which plan
+        // carries one. Configuration puts the trial on the yearly plan today
+        // (#215); the CTA should follow the configuration, not a memory of it.
+        if isEligibleForTrial,
+           let offer = subscription.introductoryOffer,
+           offer.paymentMode == .freeTrial,
+           let days = trialDays(for: offer) {
+            return Text("\(days) days free, then \(price)")
+        }
+        return Text("Subscribe for \(price)")
     }
 
     /// Trial length in days. StoreKit expresses the 7-day trial as 1 week;
