@@ -80,6 +80,20 @@ final class ProProductCatalogTests: XCTestCase {
         XCTAssertEqual(config.nonConsumables[ProProductID.lifetime]?["displayPrice"] as? String, "49.99")
     }
 
+    // MARK: - Founder window
+
+    func testFounderWindowShipsUnscheduled() {
+        // The window opens one month from the release that ships the first Pro
+        // feature (#79), which has no date. Setting this locally is how the
+        // founder copy gets reviewed, so guard against committing that date:
+        // it would announce a deadline the App Store price change will not
+        // honour, and an unhonoured deadline burns every later scarcity claim.
+        XCTAssertNil(
+            PremiumFlags.lifetimeFounderOfferEnd,
+            "Set this only in the release that opens the founder window (#350)"
+        )
+    }
+
     // MARK: - Helpers
 
     private struct StoreKitConfiguration {

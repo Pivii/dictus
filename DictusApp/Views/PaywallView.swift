@@ -48,12 +48,12 @@ struct PaywallView: View {
                     // Already subscribed
                     alreadyProBanner
                 } else {
-                    // Plan selector: yearly (preselected) and monthly cards
+                    // Plan selector: yearly (preselected), monthly and lifetime
                     planSelector
                     // Subscribe CTA following the selected plan
                     subscribeCTA
-                    // "Cancel anytime" reassurance
-                    Text("Cancel anytime")
+                    // Reassurance following the selected plan
+                    reassuranceLabel
                         .font(.dictusCaption)
                         .foregroundColor(.secondary)
                 }
@@ -206,6 +206,8 @@ struct PaywallView: View {
 
     /// Yearly card first, matching its preselection. Each card renders only
     /// if its product loaded, so a partial fetch degrades instead of crashing.
+    /// The lifetime comes last: it is the plan that needs the most reading,
+    /// and its scope footnote closes the group.
     private var planSelector: some View {
         VStack(spacing: 12) {
             if let yearly = subscriptionManager.yearlyProduct {
@@ -226,7 +228,57 @@ struct PaywallView: View {
                     badge: nil
                 )
             }
+            if let lifetime = subscriptionManager.lifetimeProduct {
+                planCard(
+                    product: lifetime,
+                    title: "Lifetime",
+                    priceText: priceLabel(for: lifetime),
+                    subtitle: founderOfferLabel,
+                    badge: nil
+                )
+                lifetimeScopeFootnote
+            }
         }
+    }
+
+    /// What the lifetime purchase covers, verbatim from the #350 decision.
+    ///
+    /// WHY it always renders next to the row, rather than behind a disclosure
+    /// or only during the founder window: a promise cannot be narrowed after
+    /// someone has bought against it, so the boundary has to be visible before
+    /// the first sale.
+    ///
+    /// WHY the boundary is drawn at who pays to run the feature, not at where
+    /// it runs: a feature pointed at a server the user provides costs the
+    /// project nothing recurring and belongs inside a one-off purchase, while
+    /// anything on Dictus infrastructure carries a per-user marginal cost that
+    /// a single payment cannot fund. "Local" only approximated that line.
+    private var lifetimeScopeFootnote: some View {
+        Text("The lifetime purchase covers every current and future Pro feature that runs on your device or on a server you provide. Any feature relying on Dictus infrastructure is a separate offering.")
+            .font(.dictusCaption)
+            .foregroundColor(.secondary)
+            // Long copy inside a VStack of fixed-height cards: without this it
+            // is truncated to a single line instead of wrapping.
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+    }
+
+    /// Founder-window line under the lifetime price, e.g. "Founder offer until
+    /// 12 September 2026. 79,99 € afterwards."
+    ///
+    /// WHY nil rather than a placeholder while the window is unscheduled: the
+    /// end date is only knowable once the first Pro release is scheduled
+    /// (#79), and an announcement missing its date is worse than none.
+    ///
+    /// WHY it announces a future increase instead of striking 79,99 € through:
+    /// selling from France, the Omnibus directive (art. L.112-1-1) requires the
+    /// reference price of an announced reduction to have actually been charged
+    /// in the previous 30 days, and this one never was.
+    private var founderOfferLabel: Text? {
+        guard let end = PremiumFlags.lifetimeFounderOfferEnd else { return nil }
+        let date = end.formatted(.dateTime.day().month(.wide).year())
+        return Text("Founder offer until \(date). 79,99 € afterwards.")
     }
 
     private func planCard(
@@ -384,6 +436,17 @@ struct PaywallView: View {
             return Text("\(days) days free, then \(price)")
         }
         return Text("Subscribe for \(price)")
+    }
+
+    /// Fine print under the CTA, following the selected plan: "Cancel anytime"
+    /// describes a subscription and would misdescribe the one-off lifetime.
+    /// Falls back to the subscription wording while nothing has loaded, which
+    /// is the state the CTA itself shows as "...".
+    private var reassuranceLabel: Text {
+        guard let product = selectedProduct, product.subscription == nil else {
+            return Text("Cancel anytime")
+        }
+        return Text("One-time purchase")
     }
 
     /// Trial length in days. StoreKit expresses the 7-day trial as 1 week;

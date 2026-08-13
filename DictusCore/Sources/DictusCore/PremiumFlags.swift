@@ -25,4 +25,22 @@ public enum PremiumFlags {
     /// Controls whether users can see and reach the paywall.
     /// `false` = the app looks like there is no subscription at all.
     public static let paywallVisible = false
+
+    /// Last day of the lifetime founder window, or `nil` while it is not
+    /// scheduled (#350).
+    ///
+    /// The window runs one month from the App Store release that ships the
+    /// first real Pro feature (#79). That release has no date yet, so none can
+    /// be written here. While this is `nil` the lifetime row shows its price
+    /// and its scope sentence and **no founder line at all** — a promotional
+    /// claim with a missing date is worse than no claim.
+    ///
+    /// WHY it governs copy only: the price comes from StoreKit, so the App
+    /// Store Connect price change at the end of the window is what moves
+    /// 49,99 € to 79,99 €. Setting this constant announces the deadline; it
+    /// does not enforce it.
+    ///
+    /// To open the window, give it the day the offer ends:
+    /// `DateComponents(calendar: .current, year: 2026, month: 9, day: 12).date`
+    public static let lifetimeFounderOfferEnd: Date? = nil
 }
