@@ -25,11 +25,34 @@ struct PaywallView: View {
     /// Drives the staged entrance animation of the thank-you screen elements.
     @State private var successEntrance = false
 
-    /// Product matching the current selection, degrading to whatever loaded
-    /// if the selected one is unavailable. Nil disables the CTA.
+    /// Product matching the current selection. Nil disables the CTA.
+    ///
+    /// WHY no fallback here: it used to degrade to `products.first` when the
+    /// selected plan had not loaded, which made the CTA charge a plan that no
+    /// row showed as selected — every circle empty while the button read
+    /// "S'abonner pour 4,99 €/mois" and charging it did exactly that. With
+    /// three plans the gap between the intended and the charged price reaches
+    /// 45 €. `reconcileSelection()` moves the selection onto a product that
+    /// exists instead, so the checked row, the CTA and the charge never
+    /// disagree.
     private var selectedProduct: Product? {
         subscriptionManager.products.first { $0.id == selectedProductID }
-            ?? subscriptionManager.products.first
+    }
+
+    /// Move the selection onto a plan that actually loaded.
+    ///
+    /// WHY it is needed at all: `selectedProductID` is fixed before the fetch,
+    /// so a plan that fails to load leaves it pointing at nothing while the
+    /// user sees no checked row.
+    ///
+    /// WHY the cheapest rather than a preference order: `products` is sorted
+    /// ascending by price, so a failed fetch can only ever demote the user to a
+    /// cheaper plan. Falling onto the lifetime because the yearly went missing
+    /// would put a 49,99 € one-off under a button the user thought said 39,99 €.
+    private func reconcileSelection() {
+        guard selectedProduct == nil,
+              let cheapest = subscriptionManager.products.first else { return }
+        selectedProductID = cheapest.id
     }
 
     var body: some View {
@@ -74,11 +97,17 @@ struct PaywallView: View {
             if subscriptionManager.products.isEmpty {
                 await subscriptionManager.loadProducts()
             }
+            reconcileSelection()
             // Configuration describes the trial for everyone; eligibility is
             // per Apple ID. Ask StoreKit rather than assuming.
             if let subscription = subscriptionManager.yearlyProduct?.subscription {
                 isEligibleForTrial = await subscription.isEligibleForIntroOffer
             }
+        }
+        // Products can also land after this view appears: the launch-time fetch
+        // started in SubscriptionManager.init and may finish at any point.
+        .onChange(of: subscriptionManager.products.map(\.id)) { _, _ in
+            reconcileSelection()
         }
         .onChange(of: subscriptionManager.purchaseState) { _, newState in
             // Celebrate instead of silently ejecting the user who just paid:
