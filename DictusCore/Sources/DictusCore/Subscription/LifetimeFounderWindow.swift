@@ -7,10 +7,11 @@ import Foundation
 /// WHY this is not just a nil check on `PremiumFlags.lifetimeFounderOfferEnd`:
 /// the constant is compiled into a build, and builds outlive the window. The
 /// price rises to 79,99 € in App Store Connect on the announced day, but a user
-/// who has not updated keeps running the build that announced it — so the row
-/// would read "79,99 €" with "Founder offer until 12 September 2026. 79,99 €
-/// afterwards." underneath it, an expired claim contradicting the price above.
-/// The date has to be checked against the clock, not only against nil.
+/// who has not updated keeps running the build that announced the offer — so
+/// the row would read "79,99 €" with "Offre fondateur jusqu'au 12 septembre
+/// 2026" underneath it, promising a price that is already gone, on a date
+/// already past. The date has to be checked against the clock, not only
+/// against nil.
 ///
 /// WHY an enum with no cases: a caseless enum can never be instantiated,
 /// making it a pure namespace for static functions (common Swift pattern).

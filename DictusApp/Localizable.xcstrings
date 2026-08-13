@@ -922,12 +922,12 @@
     "Forget %lld learned words" : {
 
     },
-    "Founder offer until %@. 79,99 € afterwards." : {
+    "Founder offer until %@." : {
       "localizations" : {
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Offre fondateur jusqu'au %@. 79,99 € ensuite."
+            "value" : "Offre fondateur jusqu'au %@."
           }
         }
       }
