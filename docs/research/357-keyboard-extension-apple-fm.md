@@ -83,11 +83,22 @@ The question the whole issue turns on.
 
 | | Criterion |
 | --- | --- |
-| **YES** | While DictusApp is **demonstrably** in the refusing state, a probe generation issued from the extension **succeeds**. Decisive. |
-| **NO** | The probe generation throws `rateLimited` in the same window. Also decisive, and it is the answer that re-ranks [#351](https://github.com/getdictus/dictus-ios/issues/351) onto the Dictus Pro critical path. |
+| **YES** | While DictusApp is **demonstrably** in the refusing state, a **burst of ten** generations issued from the extension succeeds with no `rateLimited`. |
+| **NO** | The burst starts returning `rateLimited` partway through, in the same window. |
 | **INCONCLUSIVE** | The app is not actually refusing at the moment the probe runs. |
 
-The inconclusive row is the trap, and the procedure is built around avoiding it: **the app's refusal must be pinned in the same log window as the probe's result**, not assumed from "I did a lot of dictations". A probe success against an app that was quietly serving requests again proves nothing.
+Two traps, and the design is built around both.
+
+**The first is the confound that makes a single call worthless.** #315 established the budget is **per process** and only a fresh process resets it. The keyboard extension is a *different process* from DictusApp, so one successful call from it has two explanations that a single result cannot separate:
+
+1. the extension counts as foreground and is never limited — the hypothesis; or
+2. the extension is simply a fresh process whose background budget has never been spent, and it would have succeeded either way.
+
+Under (2) the problem is **not solved, only relocated**: the extension would deplete its own budget with use and start refusing exactly as the app does, and a design built on a single green result would ship straight into it. A burst inside one process lifetime separates them, because (2) predicts refusals appearing partway through and (1) predicts none.
+
+The asymmetry is worth stating in advance: a burst that survives is strong evidence for (1), because a backgrounded app gets refused under far lighter load than ten back-to-back calls. A burst that fails is weaker evidence for (2) — it could be specific to the density — and would need the slower once-a-minute protocol before concluding.
+
+**The second is the inconclusive row.** The app's refusal must be pinned in the same log window as the probe's result, not assumed from "I did a lot of dictations". A probe success against an app that had quietly started serving requests again proves nothing.
 
 ### Q3 — What does a `LanguageModelSession` cost inside the extension's budget?
 
@@ -132,13 +143,15 @@ A toggle on `PolishDebugView` — the hidden screen already reached by long-pres
 
 ### What it records
 
-One line when armed and starting, one line on completion or failure, carrying:
+A `started` line, one `call` line per generation in the burst, and a `finished` line, all sharing one run token so a whole run greps out together. Between them they carry:
 
 - `availability` — `SystemLanguageModel.default.availability` as seen **from inside the extension** (Q1b)
-- `outcome` — success, or the `PolishFailureReason` slug via the engine's existing `failureReason(for:)` mapping (Q2: `rateLimited` or not)
-- `engineMs` — the arming signature from #315 is that the first refusal is slow (52–436 ms) and everything after returns in 4–9 ms
-- `memBefore` / `memAfter` / `memPeak` in MB via the existing `MemoryFootprint` (Q3)
-- a run token shared by the start and completion lines (Q4)
+- `outcome` per call — success, or the `PolishFailureReason` slug via the engine's existing `failureReason(for:)` mapping (Q2: `rateLimited` or not)
+- `engineMs` per call — the arming signature from #315 is that the first refusal is slow (52–436 ms) and everything after returns in 4–9 ms, so the *shape* of a refusal run is as diagnostic as the slug
+- `memMB` per call plus `memPeakMB` from a 25 ms sampler, and `memBefore` / `memAfter`, all via the existing `MemoryFootprint` (Q3)
+- the run token, shared by every line (Q4)
+
+Every line is flushed as it is written. Under Q3's bad outcome the process is jetsam-killed partway through the burst, and the last line to reach disk is the only evidence of how far it got.
 
 No generated text and no input text is logged — only its length.
 

@@ -60,8 +60,9 @@ struct PolishDebugView: View {
             } header: {
                 Text("#357 spike")
             } footer: {
-                Text("Fires ONE Apple FM call inside the keyboard extension, "
-                     + "the next time the keyboard appears, then disarms itself. "
+                Text("Fires a burst of 10 Apple FM calls inside the keyboard "
+                     + "extension, the next time the keyboard appears, then "
+                     + "disarms itself. Takes about a minute, keyboard open. "
                      + "Results land in the persistent log as diagnosticProbe / "
                      + "AppleFMExtensionProbe. Arm this only once the app is "
                      + "already being refused, otherwise the result proves nothing.")

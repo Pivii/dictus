@@ -37,6 +37,36 @@ enum AppleFMExtensionProbe {
     /// an exported log pulls the whole run out.
     private static let component = "AppleFMExtensionProbe"
 
+    /// How many generations one armed run issues, back to back, in a single
+    /// extension process.
+    ///
+    /// WHY a burst and not a single call — this is the point the experiment
+    /// turns on. #315 established that the budget is **per process** and that
+    /// only a fresh process resets it. The keyboard extension is a *different
+    /// process* from DictusApp, so ONE successful call from it has two
+    /// explanations that a single result cannot separate:
+    ///
+    /// 1. the extension counts as foreground and is never limited — the
+    ///    hypothesis this spike is testing; or
+    /// 2. the extension is simply a fresh process whose background budget has
+    ///    never been spent, and it would have succeeded either way.
+    ///
+    /// Under (2) the problem is not solved, only relocated: the extension would
+    /// deplete its own budget with use and start refusing exactly as the app
+    /// does. A burst inside one process lifetime tells them apart, because (2)
+    /// predicts refusals appearing partway through and (1) predicts none.
+    ///
+    /// The asymmetry is worth stating: a burst that survives is strong evidence
+    /// for (1), because a backgrounded app gets refused under much lighter load
+    /// than this. A burst that fails is weaker evidence for (2) — it could be
+    /// specific to the density — and would need the slower, once-a-minute
+    /// protocol before concluding.
+    ///
+    /// Ten is enough to land inside the refusal regime measured on the app (the
+    /// 2026-08-13 capture refused 55 of 133 calls) while keeping the run under
+    /// about a minute, which is as long as a human will hold a keyboard open.
+    private static let burstSize = 10
+
     /// Fixed synthetic input, never the user's text.
     ///
     /// WHY fixed and synthetic: these lines land in a log that gets exported and
@@ -105,16 +135,17 @@ enum AppleFMExtensionProbe {
         report(
             token: token,
             action: "started",
-            details: "availability=\(availability) memBeforeMB=\(memBefore) inputChars=\(fixture.count)"
+            details: "availability=\(availability) memBeforeMB=\(memBefore)"
+                + " inputChars=\(fixture.count) burst=\(burstSize)"
         )
         // Flush before generating, not after. If Q4's teardown kills the process
         // mid-`respond()`, an unflushed start line would be lost too and the run
         // would leave no trace at all — the one outcome that cannot be read.
         PersistentLog.flush()
 
-        // Sample the footprint while the call is in flight. A peak that only
-        // exists during generation is exactly the shape Q3 is looking for, and
-        // a before/after pair would step straight over it.
+        // Sample the footprint across the whole burst. A peak that only exists
+        // during generation is exactly the shape Q3 is looking for, and a
+        // before/after pair would step straight over it.
         let peak = PeakSampler(initial: memBefore)
         let sampling = Task { await peak.sample() }
 
@@ -125,30 +156,48 @@ enum AppleFMExtensionProbe {
         // production type also makes the build itself the Q1a evidence — this
         // file puts `AppleFoundationModelsPolishEngine` into a target compiled
         // with `APPLICATION_EXTENSION_API_ONLY = YES`.
+        //
+        // One engine for the whole burst, as a future implementation would hold
+        // one: a fresh engine per call would mean a fresh session cache too, and
+        // that is not the lifecycle being priced.
         let engine = AppleFoundationModelsPolishEngine()
-        let start = DispatchTime.now().uptimeNanoseconds
-        var outcome: String
-        do {
-            let polished = try await engine.polish(raw: fixture, targetLanguage: .french, mode: .natural)
-            // Length only. The generated text is not logged, for the same
-            // privacy reason the input is a fixture.
-            outcome = "success outputChars=\(polished.count)"
-        } catch {
-            // Reuse the engine's own #315 classification so a refusal here is
-            // directly comparable with the app-side `failureReason` slugs in the
-            // polish export. `rateLimited` versus anything else IS the Q2 answer.
-            outcome = "failed reason=\(engine.failureReason(for: error).slug)"
+
+        for index in 1...burstSize {
+            let start = DispatchTime.now().uptimeNanoseconds
+            var outcome: String
+            do {
+                let polished = try await engine.polish(raw: fixture, targetLanguage: .french, mode: .natural)
+                // Length only. The generated text is not logged, for the same
+                // privacy reason the input is a fixture.
+                outcome = "success outputChars=\(polished.count)"
+            } catch {
+                // Reuse the engine's own #315 classification so a refusal here is
+                // directly comparable with the app-side `failureReason` slugs in
+                // the polish export. `rateLimited` versus anything else IS the
+                // Q2 answer.
+                outcome = "failed reason=\(engine.failureReason(for: error).slug)"
+            }
+            let engineMs = Int((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+
+            report(
+                token: token,
+                action: "call",
+                details: "n=\(index)/\(burstSize) \(outcome) engineMs=\(engineMs)"
+                    + " memMB=\(MemoryFootprint.residentMB()) memPeakMB=\(peak.value)"
+            )
+            // Flush every call. Under Q3's bad outcome the process is jetsam-killed
+            // partway through the burst, and the last line written is the only
+            // evidence of how far it got.
+            PersistentLog.flush()
         }
-        let engineMs = Int((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
 
         sampling.cancel()
-        let memAfter = MemoryFootprint.residentMB()
 
         report(
             token: token,
             action: "finished",
-            details: "\(outcome) engineMs=\(engineMs) memBeforeMB=\(memBefore)"
-                + " memPeakMB=\(peak.value) memAfterMB=\(memAfter)"
+            details: "memBeforeMB=\(memBefore) memPeakMB=\(peak.value)"
+                + " memAfterMB=\(MemoryFootprint.residentMB())"
         )
         PersistentLog.flush()
         #else
