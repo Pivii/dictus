@@ -378,14 +378,34 @@ struct PaywallView: View {
     /// WHY derived from `Product.subscription` rather than from an identifier:
     /// the chain this replaces tested for the yearly ID and fell through to
     /// "/month" for everything else, so the one-off lifetime would have been
-    /// advertised as a monthly plan (#350). A unit Dictus does not sell (a
-    /// daily or weekly subscription) shows the bare price: less informative,
-    /// never false.
+    /// advertised as a monthly plan (#350). Any period Dictus does not sell —
+    /// a weekly plan, or one of App Store Connect's 3- and 6-month durations —
+    /// shows the bare price: less informative, never false. `ProPlanPeriod`
+    /// owns that rule so it can be tested.
     private func priceLabel(for product: Product) -> Text {
-        switch product.subscription?.subscriptionPeriod.unit {
-        case .some(.year): return Text("\(product.displayPrice)/year")
-        case .some(.month): return Text("\(product.displayPrice)/month")
-        default: return Text(verbatim: product.displayPrice)
+        let period = product.subscription?.subscriptionPeriod
+        switch ProPlanPeriod.resolve(
+            unit: period.map { Self.planUnit(for: $0.unit) },
+            value: period?.value ?? 0
+        ) {
+        case .yearly: return Text("\(product.displayPrice)/year")
+        case .monthly: return Text("\(product.displayPrice)/month")
+        case .unlabelled: return Text(verbatim: product.displayPrice)
+        }
+    }
+
+    /// Maps StoreKit's period unit onto the one DictusCore reasons about.
+    ///
+    /// WHY the indirection: the keyboard extension links DictusCore and must
+    /// not link StoreKit, so the rule deciding the suffix cannot name
+    /// StoreKit's types. This mapping is the only place the two meet.
+    private static func planUnit(for unit: Product.SubscriptionPeriod.Unit) -> ProSubscriptionUnit {
+        switch unit {
+        case .day: return .day
+        case .week: return .week
+        case .month: return .month
+        case .year: return .year
+        @unknown default: return .unknown
         }
     }
 
