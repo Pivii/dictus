@@ -275,8 +275,13 @@ struct PaywallView: View {
     /// selling from France, the Omnibus directive (art. L.112-1-1) requires the
     /// reference price of an announced reduction to have actually been charged
     /// in the previous 30 days, and this one never was.
+    /// WHY it goes through `LifetimeFounderWindow` rather than reading the
+    /// constant directly: the build outlives the window. The price rises in
+    /// App Store Connect on the announced day, but a user who has not updated
+    /// keeps running this build, and the line has to retire itself rather than
+    /// contradict the price shown right above it.
     private var founderOfferLabel: Text? {
-        guard let end = PremiumFlags.lifetimeFounderOfferEnd else { return nil }
+        guard let end = LifetimeFounderWindow.announcedEnd() else { return nil }
         let date = end.formatted(.dateTime.day().month(.wide).year())
         return Text("Founder offer until \(date). 79,99 € afterwards.")
     }

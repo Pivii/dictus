@@ -38,9 +38,14 @@ public enum PremiumFlags {
     /// WHY it governs copy only: the price comes from StoreKit, so the App
     /// Store Connect price change at the end of the window is what moves
     /// 49,99 € to 79,99 €. Setting this constant announces the deadline; it
-    /// does not enforce it.
+    /// does not enforce it. Both have to be done on the same day.
     ///
-    /// To open the window, give it the day the offer ends:
+    /// To open the window, give it the **last day the offer stands**:
     /// `DateComponents(calendar: .current, year: 2026, month: 9, day: 12).date`
+    ///
+    /// That expression is midnight at the *start* of 12 September, while the
+    /// offer runs to the end of that day. Nothing should compare against this
+    /// value directly — `LifetimeFounderWindow.announcedEnd()` owns that
+    /// boundary, and reading the constant raw retires the line a day early.
     public static let lifetimeFounderOfferEnd: Date? = nil
 }
