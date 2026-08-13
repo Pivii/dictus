@@ -66,6 +66,38 @@ final internal class GiellaKeyboardView: UIView,
         }
     }
 
+    /// The row a long-press popup sizes its keys against: the first of the current page's
+    /// letter rows.
+    ///
+    /// WHY not `currentPage.first`, which is what this was (#337): with the number row on
+    /// (#331) the first row of a letter page is the ten digits, and QWERTZ is the one layout
+    /// whose letter rows do not carry ten keys — ü closes the top row, ö and ä the home row
+    /// (#151). Sizing off the first row therefore moved the divisor 11 → 10 the moment the
+    /// setting was turned on, and every QWERTZ popup key got ~10% wider. The digit row is not
+    /// representative of the keyboard the popup belongs to; the letter rows are.
+    ///
+    /// WHY not the pressed key's own row, the other candidate in #337: it would size the popup
+    /// by an accident of which row was tapped, and QWERTZ rows 1-2 and row 3 do not agree.
+    ///
+    /// WHY the row is recognised by its contents rather than by asking
+    /// `KeyboardLayouts.drawsDigitRow`: that flag is read at long-press time and the page was
+    /// built earlier, so the two can disagree while a rebuild is pending. The contents cannot.
+    ///
+    /// The symbols pages are excluded because their leading digits are their own — `symbols1`
+    /// carries `1234567890` as its real first row and never gets the injected one.
+    private var popupSizingRow: [KeyDefinition]? {
+        let rows = currentPage
+        switch page {
+        case .normal, .shifted, .capslock:
+            guard let first = rows.first, first.isDigitRow else {
+                return rows.first
+            }
+            return rows.dropFirst().first
+        case .symbols1, .symbols2:
+            return rows.first
+        }
+    }
+
     public var page: KeyboardPage = .normal {
         didSet {
             update()
@@ -465,7 +497,7 @@ final internal class GiellaKeyboardView: UIView,
             break
         }
 
-        let width = bounds.size.width / CGFloat(currentPage.first?.count ?? 10)
+        let width = bounds.size.width / CGFloat(popupSizingRow?.count ?? 10)
         // Reduce height to 60% so first-row popups stay within keyboard bounds (#69).
         var height = ((bounds.size.height / CGFloat(currentPage.count)) - theme.popupCornerRadius * 2) * 0.6
         height = max(24.0, height)
@@ -1008,6 +1040,23 @@ final internal class GiellaKeyboardView: UIView,
 
         required init?(coder _: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+    }
+}
+
+private extension Array where Element == KeyDefinition {
+    /// True for the digit row the number-row setting prepends to a letter page (#331).
+    ///
+    /// Ten plain input keys, every one of them a single digit. No letter page has a row of its
+    /// own that answers this, so the test cannot mistake one — see `popupSizingRow`, its only
+    /// caller. Kept in this file rather than on the vendored `KeyDefinition` model so the whole
+    /// deviation from giellakbd-ios sits next to the code that needs it.
+    var isDigitRow: Bool {
+        guard !isEmpty else { return false }
+        return allSatisfy { key in
+            guard case .input(let character, _) = key.type else { return false }
+            // count == 1 first: `contains` is a substring test, so "12" would pass on its own.
+            return character.count == 1 && "1234567890".contains(character)
         }
     }
 }
