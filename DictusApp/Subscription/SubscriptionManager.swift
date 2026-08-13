@@ -24,20 +24,15 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchaseState: PurchaseState = .idle
 
-    /// Product IDs matching App Store Connect configuration.
-    /// WHY static constants: PaywallView looks products up by ID (never by
-    /// array index, since StoreKit's fetch order is unspecified) to preselect
-    /// the yearly plan and label the CTA per plan.
-    static let monthlyProductID = "solutions.pivi.dictus.pro.monthly"
-    static let yearlyProductID = "solutions.pivi.dictus.pro.yearly"
+    /// Identifiers live in `DictusCore.ProProductID`, which the DictusCore test
+    /// suite checks against the local StoreKit configuration — this target has
+    /// no tests of its own and an identifier typo is unrecoverable (#215).
+    /// PaywallView looks products up by ID (never by array index, since
+    /// StoreKit's fetch order is unspecified) to preselect the yearly plan.
+    private let productIDs = ProProductID.all
 
-    private let productIDs: Set<String> = [
-        SubscriptionManager.monthlyProductID,
-        SubscriptionManager.yearlyProductID
-    ]
-
-    var monthlyProduct: Product? { products.first { $0.id == Self.monthlyProductID } }
-    var yearlyProduct: Product? { products.first { $0.id == Self.yearlyProductID } }
+    var monthlyProduct: Product? { products.first { $0.id == ProProductID.monthly } }
+    var yearlyProduct: Product? { products.first { $0.id == ProProductID.yearly } }
 
     private var transactionListener: Task<Void, Never>?
     private let proStatus: ProStatusManager

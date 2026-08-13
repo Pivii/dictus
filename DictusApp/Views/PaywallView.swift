@@ -12,7 +12,7 @@ struct PaywallView: View {
     /// Selected plan, tracked by product ID (never by array index: StoreKit's
     /// product order is unspecified). Yearly is preselected per the pricing
     /// decision on #78, true from the first frame with no load-completion hook.
-    @State private var selectedProductID = SubscriptionManager.yearlyProductID
+    @State private var selectedProductID = ProProductID.yearly
 
     /// Whether the user can still claim the yearly intro offer (7-day trial).
     /// The offer exists in configuration for everyone, but StoreKit grants it
@@ -345,7 +345,7 @@ struct PaywallView: View {
     /// from the StoreKit Product; nothing is hardcoded.
     private var ctaLabel: Text {
         guard let product = selectedProduct else { return Text(verbatim: "...") }
-        if product.id == SubscriptionManager.yearlyProductID {
+        if product.id == ProProductID.yearly {
             if isEligibleForTrial,
                let offer = product.subscription?.introductoryOffer,
                offer.paymentMode == .freeTrial,
