@@ -19,10 +19,19 @@ public enum ProProductID {
     /// Auto-renewable subscription, 1 year, 7-day free trial.
     public static let yearly = "solutions.pivi.dictus.pro.yearly"
 
+    /// Non-consumable one-off purchase (#54, #350).
+    ///
+    /// WHY it is not in the `Dictus Pro` subscription group: a group makes its
+    /// members mutually exclusive plans a user switches between, which is
+    /// meaningless for a purchase that never renews. Being outside the group
+    /// also means it can carry no introductory offer — free trials are a
+    /// subscription feature.
+    public static let lifetime = "solutions.pivi.dictus.pro.lifetime"
+
     /// Every identifier `SubscriptionManager` asks StoreKit for.
     ///
     /// WHY a Set: `Product.products(for:)` takes a collection of identifiers
     /// and its result order is unspecified, so nothing downstream may depend
     /// on the declaration order here.
-    public static let all: Set<String> = [monthly, yearly]
+    public static let all: Set<String> = [monthly, yearly, lifetime]
 }

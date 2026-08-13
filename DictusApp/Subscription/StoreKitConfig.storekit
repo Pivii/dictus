@@ -4,7 +4,21 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "D1C7B003",
+      "localizations" : [
+        {
+          "description" : "The lifetime purchase covers every current and future Pro feature that runs on your device or on a server you provide. Any feature relying on Dictus infrastructure is a separate offering.",
+          "displayName" : "Dictus Pro Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "solutions.pivi.dictus.pro.lifetime",
+      "referenceName" : "Dictus Pro Lifetime",
+      "type" : "NonConsumable"
+    }
   ],
   "settings" : {
     "_failTransactionsEnabled" : false,

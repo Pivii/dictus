@@ -16,9 +16,11 @@ import DictusCore
 /// cross-actor data races and explicit DispatchQueue.main.async calls.
 ///
 /// WHY a single class for all StoreKit logic:
-/// Dictus has one subscription group with two plans (monthly and yearly).
-/// A single manager handles product fetch, purchase, restore, and
-/// transaction listening for both. No need for abstraction layers.
+/// Dictus sells three plans — a subscription group with monthly and yearly,
+/// plus a lifetime non-consumable outside it (#350). A single manager handles
+/// product fetch, purchase, restore, and transaction listening for all three.
+/// No need for abstraction layers: the lifetime needs no special entitlement
+/// path, see `updateProStatus()`.
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
@@ -33,6 +35,7 @@ final class SubscriptionManager: ObservableObject {
 
     var monthlyProduct: Product? { products.first { $0.id == ProProductID.monthly } }
     var yearlyProduct: Product? { products.first { $0.id == ProProductID.yearly } }
+    var lifetimeProduct: Product? { products.first { $0.id == ProProductID.lifetime } }
 
     private var transactionListener: Task<Void, Never>?
     private let proStatus: ProStatusManager
@@ -154,6 +157,11 @@ final class SubscriptionManager: ObservableObject {
     /// WHY Transaction.currentEntitlements instead of storing expiry dates:
     /// StoreKit 2 manages all subscription state internally. currentEntitlements
     /// returns only active, non-revoked transactions. No manual expiry tracking needed.
+    ///
+    /// WHY no filter on product type: currentEntitlements also yields the
+    /// lifetime non-consumable, so owning it grants Pro through this same loop
+    /// with no code of its own (#350). Restore lands here too, which is the
+    /// whole promise of a non-consumable.
     private func updateProStatus() async {
         var isActive = false
         for await result in Transaction.currentEntitlements {
