@@ -153,4 +153,18 @@ public enum SharedKeys {
     public static let historyEnabled = "dictus.historyEnabled"
     /// Bool: per-feature toggle for Vocabulary, default true (registered by ProStatusManager)
     public static let vocabularyEnabled = "dictus.vocabularyEnabled"
+
+    // MARK: - #357 spike (throwaway)
+    /// Bool: arms exactly ONE Apple Foundation Models probe run inside the
+    /// keyboard extension. Written by the hidden polish debug screen, read and
+    /// immediately cleared by `AppleFMExtensionProbe` in DictusKeyboard.
+    ///
+    /// WHY it lives here rather than next to the probe: the two processes that
+    /// have to agree on this string cannot see each other's targets, and a
+    /// literal duplicated across a process boundary is the kind of typo that
+    /// costs a device session to find. Absent — which is the shipped state —
+    /// it reads false and the probe never runs.
+    ///
+    /// Delete with the spike.
+    public static let appleFMExtensionProbeArmed = "dictus.debug.appleFMExtensionProbeArmed"
 }
