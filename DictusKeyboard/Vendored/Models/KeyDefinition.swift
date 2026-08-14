@@ -158,6 +158,20 @@ public enum KeyType: Codable, Hashable {
             return false
         }
     }
+
+    /// True for an input key carrying a single digit. Dictus addition (#336).
+    ///
+    /// WHY this exists at all: before the optional number row (#331) no letter page carried a
+    /// digit, so "which page am I on" answered every question about what a key draws. The
+    /// injected digit row broke that, and two places now have to tell a digit from a letter —
+    /// the popup width divisor (`GiellaKeyboardView.popupSizingRow`, #337) and the label font
+    /// (`KeyView.configureKeyLabel`, #336). One property so they cannot drift into asking
+    /// subtly different questions.
+    var isDigit: Bool {
+        guard case .input(let character, _) = self else { return false }
+        // count == 1 first: `contains` is a substring test, so "12" would pass on its own.
+        return character.count == 1 && "1234567890".contains(character)
+    }
 }
 
 public struct KeyDefinition: Codable {

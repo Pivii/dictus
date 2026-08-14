@@ -103,7 +103,22 @@ final class KeyView: UIView {
             case .shifted, .capslock, .symbols1, .symbols2:
                 label.font = theme.capitalKeyFont
             default:
-                label.font = theme.lowerKeyFont
+                // A digit takes the capital font here too (#336). Picking the font from the
+                // page was always right before the number row (#331): no letter page carried a
+                // digit, so "not a shifted page" meant "a lowercase letter". The injected row
+                // broke that and the same ten keys rendered 25 pt on the normal page against
+                // 22 pt on the shifted one, which is visible.
+                //
+                // WHY the capital font is the right one and not the larger: `lowerKey` is
+                // 25 pt against `capitalKey` 22 pt on iPhone (`Theme.fonts`) because lowercase
+                // has a lower x-height and needs the extra point size to read at the same
+                // optical size. A digit is a cap-height glyph like an uppercase letter, so the
+                // compensation does not apply to it and only makes it oversized.
+                //
+                // The arm above is untouched, so `symbols1` and `symbols2` — whose first row
+                // genuinely is digits — render exactly as they did. This lands the injected
+                // row on the same font those pages have always used for the same glyphs.
+                label.font = key.type.isDigit ? theme.capitalKeyFont : theme.lowerKeyFont
             }
         } else {
             if text.count > 6 {

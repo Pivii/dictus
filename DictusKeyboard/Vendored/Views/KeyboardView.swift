@@ -1047,17 +1047,12 @@ final internal class GiellaKeyboardView: UIView,
 private extension Array where Element == KeyDefinition {
     /// True for the digit row the number-row setting prepends to a letter page (#331).
     ///
-    /// Ten plain input keys, every one of them a single digit. No letter page has a row of its
-    /// own that answers this, so the test cannot mistake one — see `popupSizingRow`, its only
-    /// caller. Kept in this file rather than on the vendored `KeyDefinition` model so the whole
-    /// deviation from giellakbd-ios sits next to the code that needs it.
+    /// Ten plain input keys, every one of them a digit. No letter page has a row of its own
+    /// that answers this, so the test cannot mistake one — see `popupSizingRow`, its only
+    /// caller. `KeyType.isDigit` is the shared atom: `KeyView` asks the same question of a
+    /// single key when it picks that key's font (#336).
     var isDigitRow: Bool {
-        guard !isEmpty else { return false }
-        return allSatisfy { key in
-            guard case .input(let character, _) = key.type else { return false }
-            // count == 1 first: `contains` is a substring test, so "12" would pass on its own.
-            return character.count == 1 && "1234567890".contains(character)
-        }
+        !isEmpty && allSatisfy { $0.type.isDigit }
     }
 }
 
