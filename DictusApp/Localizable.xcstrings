@@ -2290,13 +2290,13 @@
         }
       }
     },
-    "The number row is shown in portrait only." : {
-      "comment" : "Settings footer explaining that the digit row is deliberately dropped in landscape (issue #331).",
+    "The number row is shown on iPhone in portrait only." : {
+      "comment" : "Settings footer explaining where the digit row is drawn: dropped in landscape (issue #331) and on iPad (issue #336).",
       "localizations" : {
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La rangée de chiffres s'affiche uniquement en mode portrait."
+            "value" : "La rangée de chiffres s'affiche uniquement sur iPhone, en mode portrait."
           }
         }
       }

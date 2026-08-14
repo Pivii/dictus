@@ -273,10 +273,18 @@ struct SettingsView: View {
                 Text("Keyboard")
             } footer: {
                 // Only shown once the row is on: the keyboard drops it in landscape by
-                // design (#331), and without a word here that reads as a bug to the person
-                // who just turned it on.
+                // design (#331) and on iPad by design (#336), and without a word here either
+                // one reads as a bug to the person who just turned it on.
+                //
+                // WHY one sentence covering both rather than a device-aware one, and why the
+                // toggle stays visible on an iPad where it now does nothing: this target has
+                // no device detection at all — `DeviceContext` and DeviceKit are linked to the
+                // keyboard, not here, and `UIDevice.userInterfaceIdiom` reports `.phone` in
+                // compatibility mode, which is the only way an iPad reaches this app. A second
+                // copy of device detection in a second target, for a device class Dictus does
+                // not target, costs more than a sentence that is simply true on both.
                 if numberRowEnabled {
-                    Text("The number row is shown in portrait only.")
+                    Text("The number row is shown on iPhone in portrait only.")
                 }
                 if !liveActivityEnabled {
                     Text("Dynamic Island and Lock Screen notification are disabled.")
