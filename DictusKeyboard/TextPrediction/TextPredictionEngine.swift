@@ -159,27 +159,38 @@ class TextPredictionEngine {
     /// HOW IT WORKS:
     /// 1. UITextChecker.completions() returns all possible completions from the system dictionary
     /// 2. We sort those completions by our frequency dictionary (lower rank = more common = first)
-    /// 3. We return only the top 3 to fill the suggestion bar's 3 slots
+    /// 3. LearnedWordCompletions gives one word the user taught us the first slot (#346)
+    /// 4. We return only the top 3 to fill the suggestion bar's 3 slots
     ///
     /// WHY frequency-based ranking:
     /// UITextChecker returns completions in alphabetical order by default. Ranking by
     /// word frequency ensures "les" appears before "lesparre" when typing "le".
+    ///
+    /// WHY the learned set is read here on every keystroke, with no cache:
+    /// it lives in memory, holds tens of entries since #287 stopped learning
+    /// words the trie already knows, and this runs on the suggestion queue. A
+    /// cache would only add an invalidation to get wrong — the other process
+    /// writes to this dictionary too.
     func suggestions(for partialWord: String) -> [String] {
         guard !partialWord.isEmpty else { return [] }
 
         let nsString = partialWord as NSString
         let range = NSRange(location: 0, length: nsString.length)
 
-        guard let completions = textChecker.completions(
+        // `?? []` and not an early return: a prefix the system checker has
+        // nothing to say about is exactly the case a learned word exists for.
+        let completions = textChecker.completions(
             forPartialWordRange: range,
             in: partialWord,
             language: language
-        ) else {
-            return []
-        }
+        ) ?? []
 
         let ranked = completions.sorted { frequencyDict.rank(of: $0) > frequencyDict.rank(of: $1) }
-        return Array(ranked.prefix(3))
+        return LearnedWordCompletions.merge(
+            typedPrefix: partialWord,
+            learnedWords: UserDictionary.shared.learnedWordsByLastUsed,
+            systemCompletions: ranked
+        )
     }
 
     /// Returns the best correction and alternatives for a misspelled word.
@@ -613,12 +624,6 @@ class TextPredictionEngine {
             }
         }
         return dp[b.count]
-    }
-
-    /// No-op: user words are handled by the two-pass lookup in spellCheck().
-    /// The mmap'd trie is read-only; user words live in UserDictionary (App Group).
-    func injectUserWord(_ word: String) {
-        // No-op: UserDictionary.shared is checked before trie in spellCheck()
     }
 
     // MARK: - Word Splitting
