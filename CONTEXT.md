@@ -83,3 +83,17 @@ The accent relation covers every accented character of every language Dictus shi
 
 ### Long-press accents (`AccentedCharacters.mappings`)
 Pop-up accent variants shown when a key is long-pressed. Currently merged across languages (French + Spanish ñ + acute variants), keyed by base letter. To be migrated into `LanguageProfile.longPressAccents` so each language declares its own popups.
+
+## Suggestions and learning
+
+### Learned word
+An entry in `UserDictionary` (DictusCore), the per-user store in the App Group. **Distinct from a trie word**, which comes from the shipped `<lang>_spellcheck.dict`. The two sets never overlap by construction: since #287 a word is only learned when the trie does not already know it. Learned words carry no language tag — one store serves every language.
+
+### Undo site and boundary site
+The two places that learn. The **undo site** (`KeyboardRootView`) fires when the user rejects an applied autocorrection; it learns on the first occurrence, because rejecting a correction is an explicit statement. The **boundary site** (`DictusKeyboardBridge`) fires on any word the pipeline evaluated and did not correct; it learns only a word absent from the trie, seen twice, with autocorrect enabled. Their signal quality is not comparable and no rule should be shared between them without saying which one it is for (#287 decisions 2–4, 8).
+
+### The three levels a learned word can hold
+**L1 — offered**: the word can appear in the suggestion bar, where it is only ever applied by a tap. **L2 — immune**: the word is never rewritten by autocorrect (`spellCheck` returns `nil` for it). **L3 — authoritative**: the keyboard may rewrite *another* word into it. Dictus grants L1 (#346) and L2, and withholds L3, which belongs to #114. The separation is categorical rather than scored, which no keyboard in the field does (`docs/research/287-user-dictionary-learning.md` §5.4) — see ADR 0004 for why it is affordable here.
+
+### Suggestion mode (`SuggestionMode`)
+Which question the suggestion bar is answering. **`.completions`** — words starting with the partial word being typed; sourced from `UITextChecker`, ranked by `FrequencyDictionary`, merged with learned words since #346. **`.corrections`** — what `spellCheck` would apply on space, laid out `[typed | correction | alternative]`. **`.predictions`** — likely next words after a space, from the trie's n-grams, falling back to the language's most frequent words. **`.undoAvailable`** and **`.idle`** carry no candidates. Only `.corrections` previews something the space key will apply on its own; every other mode is tap-only.
