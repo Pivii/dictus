@@ -43,10 +43,35 @@ enum KeyboardLayouts {
     /// subtraction instead just reinstates the 20% shrink under another name. Landscape has
     /// no version of this that passes, so it keeps four rows and today's height.
     ///
+    /// WHY iPad never draws it either (#336): the height provider's reference row count is
+    /// already 5 on a large iPad, so asking it for 5 rows returns the base height unchanged —
+    /// the grid does not grow and `sizeForItemAt` divides the same height by five instead of
+    /// four, taking cells from 82 pt to 65.6 pt. That is the 20% shrink #331 rejected, arriving
+    /// through the back door. Excluding the context is the fix that keeps the vendored layout
+    /// maths untouched.
+    ///
+    /// WHY all iPads and not just `isLargeIPad`, the only class that shrinks: on a mini or
+    /// medium iPad the provider's reference count is 4, the grid does grow, and the row would
+    /// be safe there. It goes anyway. That split is `screenInches >= 12` against DeviceKit's
+    /// diagonal table, with 13.0 substituted whenever the diagonal is missing — a fragile thing
+    /// to hang a feature on for a device class Dictus does not target. The app ships
+    /// iPhone-only and reaches an iPad through compatibility mode.
+    ///
+    /// An iPad whose identifier DeviceKit does not recognise reads as neither, and the height
+    /// provider falls through to its iPhone values, where a five-row request does grow the
+    /// grid. The unrecognised case is the safe one either way.
+    ///
+    /// WHY `isPad` and not `isIPhoneAppRunningOnIPad(traitCollection:)`, which is what the
+    /// height provider uses: this predicate must stay context-free. Its whole job is to give
+    /// the two readers below one answer, and a parameter is a way for them to be handed
+    /// different ones. On an iPhone-only app `isPad` is already true exactly when the app is
+    /// running on an iPad in compatibility mode.
+    ///
     /// WHY the orientation half is here and not in `NumberRowPreference`: `DeviceContext`
     /// lives in this target (it depends on DeviceKit and UIScreen); DictusCore cannot see it.
     static var drawsDigitRow: Bool {
-        NumberRowPreference.isEnabled && !DeviceContext.current.isLandscape
+        let device = DeviceContext.current
+        return NumberRowPreference.isEnabled && !device.isLandscape && !device.isPad
     }
 
     /// The digit row, prepended to every letter page when `drawsDigitRow` is true.
