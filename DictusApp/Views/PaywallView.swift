@@ -48,7 +48,7 @@ struct PaywallView: View {
     /// WHY the cheapest rather than a preference order: `products` is sorted
     /// ascending by price, so a failed fetch can only ever demote the user to a
     /// cheaper plan. Falling onto the lifetime because the yearly went missing
-    /// would put a 49,99 € one-off under a button the user thought said 39,99 €.
+    /// would put a 79,99 € one-off under a button the user thought said 39,99 €.
     private func reconcileSelection() {
         guard selectedProduct == nil,
               let cheapest = subscriptionManager.products.first else { return }
@@ -391,7 +391,7 @@ struct PaywallView: View {
     }
 
     /// A plan's price carrying its own period, e.g. "39,99 €/an" — or, for the
-    /// lifetime non-consumable, "49,99 €" with no period at all.
+    /// lifetime non-consumable, "79,99 €" with no period at all.
     ///
     /// WHY derived from `Product.subscription` rather than from an identifier:
     /// the chain this replaces tested for the yearly ID and fell through to
