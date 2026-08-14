@@ -357,6 +357,10 @@ struct KeyboardRootView: View {
             // Language is set in KeyboardViewController.viewWillAppear, which fires
             // on every keyboard appearance and picks up any App Group preference changes.
 
+            // #357 spike, throwaway. Returns immediately unless deliberately armed
+            // from the hidden polish debug screen; see AppleFMExtensionProbe.
+            AppleFMExtensionProbe.runIfArmed()
+
             syncWaveformDriver()
         }
         .onDisappear {
