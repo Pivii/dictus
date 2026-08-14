@@ -161,12 +161,19 @@ public enum KeyType: Codable, Hashable {
 
     /// True for an input key carrying a single digit. Dictus addition (#336).
     ///
-    /// WHY this exists at all: before the optional number row (#331) no letter page carried a
-    /// digit, so "which page am I on" answered every question about what a key draws. The
-    /// injected digit row broke that, and two places now have to tell a digit from a letter —
-    /// the popup width divisor (`GiellaKeyboardView.popupSizingRow`, #337) and the label font
-    /// (`KeyView.configureKeyLabel`, #336). One property so they cannot drift into asking
-    /// subtly different questions.
+    /// READ THIS BEFORE DERIVING ANY STYLING FROM `KeyboardPage`. Before the optional number
+    /// row (#331), an `.input` key on a letter page was always a letter, so "which page am I
+    /// on" answered every question about what a key draws: `.normal` meant lowercase, and
+    /// anything else meant a capital-height glyph. #331 injects a row of `.input` keys that
+    /// are not letters and do not follow the shift state, and every decision resting on that
+    /// assumption silently became wrong for ten keys.
+    ///
+    /// Four sites have been caught by it so far, each found separately and each after
+    /// shipping: the long-press popup width divisor (`GiellaKeyboardView.popupSizingRow`,
+    /// #337), the label font (`KeyView.configureKeyLabel`, #336), and the label's vertical
+    /// nudge at both of its call sites (`KeyView.labelYOffset(on:)`, #336). The pattern, not
+    /// the individual bugs, is the thing to remember: if a piece of styling asks what page an
+    /// `.input` key is on, it has to ask this property first.
     var isDigit: Bool {
         guard case .input(let character, _) = self else { return false }
         // count == 1 first: `contains` is a substring test, so "12" would pass on its own.

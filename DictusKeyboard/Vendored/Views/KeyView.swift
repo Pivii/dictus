@@ -84,6 +84,21 @@ final class KeyView: UIView {
         }
     }
 
+    /// Vertical nudge applied to a key's label, in points.
+    ///
+    /// The normal page raises an input key's label by 2 pt; every other page leaves it
+    /// centred. A digit takes 0.0 on every page (#336) — see `KeyType.isDigit` for why an
+    /// `.input` key on a letter page can no longer be assumed to be a letter.
+    ///
+    /// Dictus change: this rule was spelled out identically at both call sites below. One
+    /// copy, so the digit exception cannot be applied to one and forgotten at the other.
+    private func labelYOffset(on page: KeyboardPage) -> CGFloat {
+        guard case .normal = page, key.type.isInputKey, !key.type.isDigit else {
+            return 0.0
+        }
+        return -2.0
+    }
+
     private func configureKeyLabel(_ label: UILabel, page: KeyboardPage, text: String) {
         label.textColor = theme.textColor
         label.numberOfLines = 0
@@ -103,17 +118,13 @@ final class KeyView: UIView {
             case .shifted, .capslock, .symbols1, .symbols2:
                 label.font = theme.capitalKeyFont
             default:
-                // A digit takes the capital font here too (#336). Picking the font from the
-                // page was always right before the number row (#331): no letter page carried a
-                // digit, so "not a shifted page" meant "a lowercase letter". The injected row
-                // broke that and the same ten keys rendered 25 pt on the normal page against
-                // 22 pt on the shifted one, which is visible.
+                // A digit takes the capital font here too (#336, see `KeyType.isDigit`).
                 //
-                // WHY the capital font is the right one and not the larger: `lowerKey` is
-                // 25 pt against `capitalKey` 22 pt on iPhone (`Theme.fonts`) because lowercase
-                // has a lower x-height and needs the extra point size to read at the same
-                // optical size. A digit is a cap-height glyph like an uppercase letter, so the
-                // compensation does not apply to it and only makes it oversized.
+                // WHY the capital font and not the larger one: `lowerKey` is 25 pt against
+                // `capitalKey` 22 pt on iPhone (`Theme.fonts`) because lowercase has a lower
+                // x-height and needs the extra point size to read at the same optical size. A
+                // digit is a cap-height glyph, so the compensation does not apply to it and
+                // only makes it oversized.
                 //
                 // The arm above is untouched, so `symbols1` and `symbols2` — whose first row
                 // genuinely is digits — render exactly as they did. This lands the injected
@@ -182,12 +193,7 @@ final class KeyView: UIView {
         label.centerXAnchor.constraint(equalTo: labelContainer.centerXAnchor).enable()
         label.widthAnchor.constraint(equalTo: labelContainer.widthAnchor).enable()
 
-        let yConstant: CGFloat
-        if case .normal = page, case KeyType.input(_, _) = self.key.type {
-            yConstant = -2.0
-        } else {
-            yConstant = 0.0
-        }
+        let yConstant = labelYOffset(on: page)
 
         if let alternateLabel = self.alternateLabel {
             swipeLayoutConstraint = alternateLabel.topAnchor
@@ -218,12 +224,7 @@ final class KeyView: UIView {
         labelContainer.addSubview(label)
         addSubview(labelContainer)
 
-        let yConstant: CGFloat
-        if case .normal = page, case KeyType.input(_, _) = self.key.type {
-            yConstant = -2.0
-        } else {
-            yConstant = 0.0
-        }
+        let yConstant = labelYOffset(on: page)
 
         label.centerXAnchor.constraint(equalTo: labelContainer.centerXAnchor).enable()
         label.centerYAnchor.constraint(equalTo: labelContainer.centerYAnchor, constant: yConstant).enable()
