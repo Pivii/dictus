@@ -333,11 +333,6 @@ class SuggestionState: ObservableObject {
         engine.setLanguage(lang)
     }
 
-    /// Learn a word and notify the prediction engine (no-op for trie engine).
-    func learnWord(_ word: String) {
-        engine.injectUserWord(word)
-    }
-
     /// Whether the active language's dictionary does not know this word (#287).
     /// The word-boundary learning site asks before recording anything.
     func isUnknownToDictionary(_ word: String) -> Bool {

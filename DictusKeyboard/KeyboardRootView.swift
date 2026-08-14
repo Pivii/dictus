@@ -545,9 +545,7 @@ struct KeyboardRootView: View {
         // repetition counter guards the word-boundary site, where the user has
         // said nothing at all; applying it here would mean rejecting the same
         // correction twice before the keyboard stopped making it.
-        if UserDictionary.shared.learn(undo.originalWord) {
-            suggestionState.learnWord(undo.originalWord)
-        }
+        UserDictionary.shared.learn(undo.originalWord)
     }
 
     /// Replaces the word currently being typed with a replacement string.
