@@ -12,10 +12,12 @@ import DictusCore
 struct ProBannerView: View {
     @EnvironmentObject var proStatus: ProStatusManager
 
+    @State private var showPaywall = false
+
     var body: some View {
         if !proStatus.isProActive {
-            NavigationLink {
-                PaywallView()
+            Button {
+                showPaywall = true
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "crown.fill")
@@ -51,6 +53,7 @@ struct ProBannerView: View {
             .buttonStyle(GlassPressStyle(pressedScale: 0.97))
             .transition(.opacity.combined(with: .scale))
             .animation(.easeOut(duration: 0.3), value: proStatus.isProActive)
+            .paywallCover(isPresented: $showPaywall)
         }
     }
 }

@@ -457,6 +457,16 @@
         }
       }
     },
+    "Close" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        }
+      }
+    },
     "Compact and fast" : {
       "localizations" : {
         "fr" : {

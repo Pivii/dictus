@@ -113,6 +113,10 @@ struct SettingsView: View {
     /// Confirmation dialog for resetting the learned-words dictionary (#222).
     @State private var showResetDictionaryConfirmation = false
 
+    /// Drives the paywall cover. Shared by the Dictus Pro row and every locked
+    /// feature row: they open the same screen, so one flag serves both.
+    @State private var showPaywall = false
+
     // MARK: - Body
 
     var body: some View {
@@ -122,19 +126,25 @@ struct SettingsView: View {
             // feature ships and ASC setup is done (#236, #79, #215).
             if PremiumFlags.paywallVisible {
                 Section {
-                    NavigationLink {
-                        PaywallView()
+                    Button {
+                        showPaywall = true
                     } label: {
                         HStack {
                             Image(systemName: "crown.fill")
                                 .foregroundColor(.dictusAccent)
                             Text("Dictus Pro")
+                                .foregroundColor(.primary)
                             Spacer()
                             if proStatus.isProActive {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.dictusSuccess)
                                     .accessibilityLabel("Pro active")
                             }
+                            // A Button in a List draws no disclosure indicator,
+                            // and this row still leads somewhere. Matching the
+                            // system one by hand keeps the section reading like
+                            // the rows around it.
+                            listDisclosureIndicator
                         }
                     }
                 }
@@ -314,8 +324,8 @@ struct SettingsView: View {
                             }
                         } else {
                             // Locked: show lock + PRO pill, tap opens paywall
-                            NavigationLink {
-                                PaywallView()
+                            Button {
+                                showPaywall = true
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: feature.icon)
@@ -335,6 +345,7 @@ struct SettingsView: View {
                                         .background(Color.dictusAccent)
                                         .clipShape(Capsule())
                                         .accessibilityLabel("Pro feature")
+                                    listDisclosureIndicator
                                 }
                             }
                         }
@@ -426,6 +437,7 @@ struct SettingsView: View {
         .navigationDestination(isPresented: $showPolishDebug) {
             PolishDebugView()
         }
+        .paywallCover(isPresented: $showPaywall)
         .sheet(isPresented: Binding(
             get: { exportURL != nil },
             set: { isPresented in
@@ -441,6 +453,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// The chevron `NavigationLink` draws on a List row, for rows that open a
+    /// cover instead and therefore have to draw it themselves.
+    private var listDisclosureIndicator: some View {
+        Image(systemName: "chevron.forward")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+    }
 
     /// Export logs via iOS share sheet.
     ///
