@@ -166,12 +166,16 @@ class SuggestionState: ObservableObject {
                isAtSentenceStart: ProperNounGuard.isAtSentenceStart(context: context, word: partial)
            ),
            result.correction.lowercased() != partial.lowercased() {
-            // Standard mobile layout: [original | correction (bold) | alternative]
-            var correctionSuggestions = [partial, result.correction]
-            if let firstAlt = result.alternatives.first {
-                correctionSuggestions.append(firstAlt)
-            }
-            suggestions = correctionSuggestions
+            // Standard mobile layout: [original | correction (bold) | alternative],
+            // with a learned word claiming the third slot when it extends what
+            // was typed (#346). Slot 1 stays the corrector's — see the comment
+            // on `correctionsRow`.
+            suggestions = LearnedWordCompletions.correctionsRow(
+                typedWord: partial,
+                correction: result.correction,
+                alternative: result.alternatives.first,
+                learnedWords: UserDictionary.shared.learnedWordsByLastUsed
+            )
             mode = .corrections
             return
         }
@@ -266,6 +270,12 @@ class SuggestionState: ObservableObject {
             // Compute completions as fallback
             let completions = self.engine.suggestions(for: partial)
 
+            // Snapshot the learned set here rather than in the main-thread block
+            // below: it is the same background queue `suggestions(for:)` already
+            // reads it on, and the corrections row must be built from the same
+            // view of the dictionary the completions were.
+            let learnedWords = UserDictionary.shared.learnedWordsByLastUsed
+
             // Publish on main thread (required for @Published)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
@@ -282,12 +292,15 @@ class SuggestionState: ObservableObject {
                     self.mode = .undoAvailable
                 } else if let result = spellResult,
                    result.correction.lowercased() != partial.lowercased() {
-                    // Spell correction (standard mobile layout)
-                    var correctionSuggestions = [partial, result.correction]
-                    if let firstAlt = result.alternatives.first {
-                        correctionSuggestions.append(firstAlt)
-                    }
-                    self.suggestions = correctionSuggestions
+                    // Spell correction (standard mobile layout), third slot to a
+                    // learned word when one extends the typed prefix (#346).
+                    // Same function as the sync path so the two agree.
+                    self.suggestions = LearnedWordCompletions.correctionsRow(
+                        typedWord: partial,
+                        correction: result.correction,
+                        alternative: result.alternatives.first,
+                        learnedWords: learnedWords
+                    )
                     self.mode = .corrections
                 } else if !completions.isEmpty {
                     self.suggestions = completions

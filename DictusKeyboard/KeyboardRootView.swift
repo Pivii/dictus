@@ -399,7 +399,9 @@ struct KeyboardRootView: View {
     /// - Correction mode: standard mobile behavior:
     ///   - Tap index 0 (original word): keep as-is + space, reject future autocorrect
     ///   - Tap index 1 (bold correction): apply correction + space
-    ///   - Tap index 2 (alternative): apply alternative + space
+    ///   - Tap index 2 (alternative, or a learned word when one extends the
+    ///     typed prefix — #346): apply it + space. Either way this slot is
+    ///     reached only by a tap, which is what keeps a learned word out of L3.
     /// - Accent mode: replace just the vowel without adding a space.
     /// - Undo mode: tap index 0 reverts the autocorrect; slots 1-2 are routed by
     ///   the live document, see applyUndoModeSuggestion.

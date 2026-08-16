@@ -2,18 +2,21 @@
 // Merges the user's learned words into the system completion list (#346).
 import Foundation
 
-/// Builds the `.completions` list the suggestion bar shows for a partial word,
-/// giving one learned word the first slot when it extends what was typed.
+/// Places one learned word in the suggestion bar: first slot in `.completions`,
+/// third slot in `.corrections`. These two are the only routes a learned word
+/// has into the bar, and both are tap-only.
 ///
-/// WHY this is the only route a learned word takes into the bar (ADR 0004).
-/// A learned word is **offered** (L1) and **immune** to autocorrect (L2), but it
-/// is never an autocorrect **target** (L3) — the keyboard must not rewrite
-/// another word into it. That rule is not a gate anyone has to enforce here: on
-/// space only `spellCheck` can apply anything, and every suggestion mode except
-/// `.corrections` is tap-only. A candidate that arrives through this function
-/// and never through `spellCheck` is structurally incapable of being applied on
-/// its own. Re-check that before letting a learned word reach `spellCheck`, the
-/// trie, or `.corrections`.
+/// WHY tap-only is the whole of the L3 guarantee (ADR 0004). A learned word is
+/// **offered** (L1) and **immune** to autocorrect (L2), but it is never an
+/// autocorrect **target** (L3) — the keyboard must not rewrite another word
+/// into it. On space only `spellCheck` can apply anything, and `spellCheck`
+/// never sees this file. `.corrections` is the one mode that previews an
+/// automatic action, and it previews it in slot 1, which `correctionsRow` fills
+/// from the corrector and never from the learned set.
+///
+/// So the rule holds by construction, not by a gate: nothing here can reach the
+/// document without a tap. Re-check exactly that before letting a learned word
+/// reach `spellCheck`, the trie, or slot 1 of the corrections row.
 ///
 /// WHY it lives in DictusCore rather than beside its one caller in the keyboard
 /// extension: DictusCore is the only target `swift test` can see, and #287's
@@ -43,22 +46,77 @@ public enum LearnedWordCompletions {
         limit: Int = 3
     ) -> [String] {
         guard limit > 0 else { return [] }
-        guard let match = bestMatch(for: typedPrefix, in: learnedWords) else {
+        guard let display = offer(for: typedPrefix, in: learnedWords) else {
             return Array(systemCompletions.prefix(limit))
         }
 
+        // The system checker can know the word too — it is only absent from the
+        // *trie*, which is what learning gates on. Dropping it here is what
+        // makes "at most once" true rather than merely likely.
+        let rest = systemCompletions.filter { $0.lowercased() != display.lowercased() }
+        return [display] + rest.prefix(limit - 1)
+    }
+
+    /// Builds the `.corrections` row: `[typed | correction | third slot]`, where
+    /// the third slot is a learned word extending what was typed, and otherwise
+    /// the alternative correction it replaces.
+    ///
+    /// WHY the third slot and not the second, which is the one the user's eye
+    /// goes to. Slot 1 is what space applies on its own; it is the preview of
+    /// the automatic action, and the whole of ADR 0004 rests on a learned word
+    /// never reaching it. Putting one there would be L3 — the keyboard deciding
+    /// on its own that the user meant a word it learned — and that is #114's to
+    /// grant, not this one's. Apple's keyboard does promote a learned word to
+    /// the applied slot once four characters are typed; Dictus deliberately
+    /// stops one slot short of that.
+    ///
+    /// WHY the row is built here rather than at its two call sites: `update`
+    /// and `updateAsync` both assemble it, and the sync and async paths showing
+    /// different bars for the same keystroke is the class of bug #114 item 4.4
+    /// already tracks. One function is also the only version of this that
+    /// `swift test` can reach.
+    ///
+    /// - Parameters:
+    ///   - typedWord: the partial word as typed. Slot 0, and the prefix the
+    ///     learned word must extend.
+    ///   - correction: what space would apply. Slot 1, never a learned word.
+    ///   - alternative: the runner-up correction, kept in slot 2 when no
+    ///     learned word claims it.
+    ///   - learnedWords: `UserDictionary.learnedWordsByLastUsed`.
+    public static func correctionsRow(
+        typedWord: String,
+        correction: String,
+        alternative: String?,
+        learnedWords: [String: Int]
+    ) -> [String] {
+        var row = [typedWord, correction]
+
+        // A learned word equal to something already in the row would show the
+        // same string twice. It cannot equal `typedWord` — the match is a
+        // strict extension — but `correction` is a separate source and nothing
+        // stops the two agreeing.
+        let learned = offer(for: typedWord, in: learnedWords)
+            .flatMap { $0.lowercased() == correction.lowercased() ? nil : $0 }
+
+        if let third = learned ?? alternative {
+            row.append(third)
+        }
+        return row
+    }
+
+    /// The one learned word that strictly extends `typedPrefix`, cased to match
+    /// it, or nil when nothing qualifies.
+    ///
+    /// This is the single selector both bar layouts share: whichever slot a
+    /// learned word lands in, it is chosen by the same rules.
+    public static func offer(for typedPrefix: String, in learnedWords: [String: Int]) -> String? {
+        guard let match = bestMatch(for: typedPrefix, in: learnedWords) else { return nil }
         // Casing is reconstructed, never stored: `UserDictionary` lowercases its
         // keys, so the form the user typed is gone by the time we read it back.
         // This is the same test the accent path applies in
         // `TextPredictionEngine.spellCheck`.
         let isCapitalized = typedPrefix.first?.isUppercase == true
-        let display = isCapitalized ? match.capitalized : match
-
-        // The system checker can know the word too — it is only absent from the
-        // *trie*, which is what learning gates on. Dropping it here is what
-        // makes "at most once" true rather than merely likely.
-        let rest = systemCompletions.filter { $0.lowercased() != match }
-        return [display] + rest.prefix(limit - 1)
+        return isCapitalized ? match.capitalized : match
     }
 
     /// The single learned word that gets the first slot, lowercased, or nil.

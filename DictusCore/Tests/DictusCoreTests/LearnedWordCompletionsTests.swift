@@ -211,4 +211,126 @@ final class LearnedWordCompletionsTests: XCTestCase {
         )
         XCTAssertEqual(result, ["zorglub"])
     }
+
+    // MARK: - The corrections row
+
+    func testTheLearnedWordTakesTheThirdSlotFromTheAlternative() {
+        // The device case: typing "Zor" proposes "Air", and "Zorglub" had no
+        // slot at all before this.
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zor",
+            correction: "Air",
+            alternative: "Aire",
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(row, ["Zor", "Air", "Zorglub"])
+    }
+
+    func testTheCorrectionSlotIsNeverTheLearnedWord() {
+        // Slot 1 is what space applies on its own. A learned word there is L3,
+        // which is #114's — see ADR 0004.
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zor",
+            correction: "Air",
+            alternative: nil,
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(row[1], "Air")
+    }
+
+    func testTheAlternativeKeepsTheThirdSlotWhenNoLearnedWordMatches() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zor",
+            correction: "Air",
+            alternative: "Aire",
+            learnedWords: ["mathilde": newer]
+        )
+        XCTAssertEqual(row, ["Zor", "Air", "Aire"])
+    }
+
+    func testTheRowIsTwoSlotsWhenThereIsNeitherAnAlternativeNorALearnedWord() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zor",
+            correction: "Air",
+            alternative: nil,
+            learnedWords: [:]
+        )
+        XCTAssertEqual(row, ["Zor", "Air"])
+    }
+
+    func testALearnedWordFillsTheThirdSlotEvenWithNoAlternative() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zorgl",
+            correction: "Sorti",
+            alternative: nil,
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(row, ["Zorgl", "Sorti", "Zorglub"])
+    }
+
+    func testAtMostOneLearnedWordReachesTheCorrectionsRow() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "zo",
+            correction: "ai",
+            alternative: nil,
+            learnedWords: ["zorglub": newer, "zorbax": older, "zoltan": older]
+        )
+        XCTAssertEqual(row, ["zo", "ai", "zorglub"])
+    }
+
+    func testTheMostRecentlyUsedLearnedWordTakesTheCorrectionsSlot() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "zo",
+            correction: "ai",
+            alternative: nil,
+            learnedWords: ["zorglub": older, "zorbax": newer]
+        )
+        XCTAssertEqual(row.last, "zorbax")
+    }
+
+    func testTheCorrectionsSlotFollowsTheCasingOfTheTypedPrefix() {
+        let lower = LearnedWordCompletions.correctionsRow(
+            typedWord: "zorg", correction: "sort", alternative: nil,
+            learnedWords: ["zorglub": newer]
+        )
+        let upper = LearnedWordCompletions.correctionsRow(
+            typedWord: "Zorg", correction: "Sort", alternative: nil,
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(lower.last, "zorglub")
+        XCTAssertEqual(upper.last, "Zorglub")
+    }
+
+    func testAFullyTypedLearnedWordDoesNotClaimTheCorrectionsSlot() {
+        // Same strictness as the completions merge: nothing left to complete.
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "zorglub",
+            correction: "zorglube",
+            alternative: "zorglubs",
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(row, ["zorglub", "zorglube", "zorglubs"])
+    }
+
+    func testALearnedWordEqualToTheCorrectionYieldsToTheAlternative() {
+        // The two come from different sources and nothing stops them agreeing;
+        // the same string twice in one bar is a bug either way.
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "zorg",
+            correction: "Zorglub",
+            alternative: "sortie",
+            learnedWords: ["zorglub": newer]
+        )
+        XCTAssertEqual(row, ["zorg", "Zorglub", "sortie"])
+    }
+
+    func testTheCorrectionsRowNeverExceedsThreeSlots() {
+        let row = LearnedWordCompletions.correctionsRow(
+            typedWord: "zo",
+            correction: "ai",
+            alternative: "air",
+            learnedWords: ["zorglub": newer, "zorbax": older]
+        )
+        XCTAssertEqual(row.count, 3)
+    }
 }
