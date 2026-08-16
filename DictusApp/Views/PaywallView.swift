@@ -91,6 +91,7 @@ struct PaywallView: View {
         // Empty bar title: the hero's gradient title is the screen title.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { closeButton }
         .task {
             // Retry the product fetch if the launch-time load came back empty,
             // so a transient failure doesn't leave the CTA stuck on "...".
@@ -124,13 +125,30 @@ struct PaywallView: View {
                     .transition(.opacity)
             }
         }
-        // The only way forward from the thank-you screen is Continue
-        // (edge swipe-back still works as an escape hatch).
-        .navigationBarBackButtonHidden(showPurchaseSuccess)
         .alert("Purchase Error", isPresented: showErrorAlert) {
             Button("OK") { subscriptionManager.resetState() }
         } message: {
             Text(errorMessage)
+        }
+    }
+
+    // MARK: - Close
+
+    /// Dismisses the cover. Absent while the thank-you screen is up, so the
+    /// only way forward from it is Continue — a cover has no swipe-back to
+    /// serve as the escape hatch a pushed screen had.
+    @ToolbarContentBuilder
+    private var closeButton: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if !showPurchaseSuccess {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                }
+                .accessibilityLabel("Close")
+            }
         }
     }
 
@@ -243,7 +261,6 @@ struct PaywallView: View {
                 planCard(
                     product: yearly,
                     title: "Yearly",
-                    priceText: priceLabel(for: yearly),
                     subtitle: perMonthEquivalent(for: yearly),
                     badge: discountBadgeText
                 )
@@ -252,7 +269,6 @@ struct PaywallView: View {
                 planCard(
                     product: monthly,
                     title: "Monthly",
-                    priceText: priceLabel(for: monthly),
                     subtitle: nil,
                     badge: nil
                 )
@@ -261,7 +277,6 @@ struct PaywallView: View {
                 planCard(
                     product: lifetime,
                     title: "Lifetime",
-                    priceText: priceLabel(for: lifetime),
                     subtitle: founderOfferLabel,
                     badge: nil
                 )
@@ -336,7 +351,6 @@ struct PaywallView: View {
     private func planCard(
         product: Product,
         title: LocalizedStringKey,
-        priceText: Text,
         subtitle: Text?,
         badge: String?
     ) -> some View {
@@ -344,13 +358,29 @@ struct PaywallView: View {
         return Button {
             selectedProductID = product.id
         } label: {
-            HStack(spacing: 12) {
+            // Name and price share one line, so a plan with nothing more to say
+            // — the monthly, the lifetime outside its founder window — is a
+            // single-line row. Stacking them cost two rows for every plan and
+            // left a wide empty column on the right; with three plans that ran
+            // the CTA off the bottom of a 6.1-inch screen.
+            HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.dictusBody.weight(.semibold))
-                    priceText
-                        .font(.dictusBody)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.dictusBody.weight(.semibold))
+
+                        // Next to the name rather than out by the price: it
+                        // qualifies the plan, and the right edge belongs to the
+                        // number the user is comparing.
+                        if let badge {
+                            Text(verbatim: badge)
+                                .font(.dictusCaption.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.dictusSuccess, in: Capsule())
+                                .foregroundColor(.white)
+                        }
+                    }
                     if let subtitle {
                         subtitle
                             .font(.dictusCaption)
@@ -358,22 +388,34 @@ struct PaywallView: View {
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                if let badge {
-                    Text(verbatim: badge)
-                        .font(.dictusCaption.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.dictusSuccess, in: Capsule())
-                        .foregroundColor(.white)
-                }
+                // The bare amount, with no period suffix: the row's own title
+                // already says Yearly / Monthly / Lifetime, and repeating it
+                // here was what broke the column. Right-aligning three prices
+                // only lines them up if they end on the same token; "39,99 €/an"
+                // next to "4,99 €/mois" and "79,99 €" ends on three different
+                // ones, so the amounts — the only part being compared — each
+                // started at a different x. Ending every row on "€" fixes that,
+                // and monospaced digits then hold the digit columns themselves
+                // in line across rows of unequal length.
+                //
+                // `priceLabel(for:)` keeps the period for the CTA, where the
+                // sentence has no title to lean on.
+                Text(verbatim: product.displayPrice)
+                    .font(.dictusSubheading.monospacedDigit())
+                    // The price is what the row exists to compare, so it must
+                    // not wrap or shrink away when a long plan name and a badge
+                    // share the line.
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundColor(isSelected ? .dictusAccent : .secondary)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .foregroundColor(.primary)
             .dictusGlass()
             .overlay(
@@ -392,6 +434,10 @@ struct PaywallView: View {
 
     /// A plan's price carrying its own period, e.g. "39,99 €/an" — or, for the
     /// lifetime non-consumable, "79,99 €" with no period at all.
+    ///
+    /// Used by the CTA only. The plan rows show the bare amount, because their
+    /// titles already name the period and repeating it there cost the price
+    /// column its alignment.
     ///
     /// WHY derived from `Product.subscription` rather than from an identifier:
     /// the chain this replaces tested for the yearly ID and fell through to
