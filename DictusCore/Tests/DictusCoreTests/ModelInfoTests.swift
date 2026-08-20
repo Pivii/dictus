@@ -153,6 +153,22 @@ final class ModelInfoTests: XCTestCase {
                        "parakeet-tdt-0.6b-v3")
     }
 
+    func testRecommendedIdentifierUsesBaseOnA12AndA13IPhones() {
+        for identifier in ["iPhone11,2", "iPhone11,8", "iPhone12,1", "iPhone12,8"] {
+            let device = makeCapabilities(ramGB: 4, model: identifier)
+            XCTAssertEqual(ModelInfo.recommendedIdentifier(for: device),
+                           "openai_whisper-base",
+                           "\(identifier) must stay within Argmax's A12/A13 support matrix")
+        }
+    }
+
+    func testRecommendedIdentifierKeepsSmallOnA14FourGBIPhone() {
+        let iphone12 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
+
+        XCTAssertEqual(ModelInfo.recommendedIdentifier(for: iphone12),
+                       "openai_whisper-small")
+    }
+
     // MARK: - Supported identifiers
 
     func testSupportedIdentifiersMatchesAllIncludingDeprecated() {

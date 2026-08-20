@@ -196,16 +196,15 @@ public struct ModelInfo: Identifiable {
         allIncludingDeprecated.first { $0.identifier == id }
     }
 
-    // MARK: - RAM-based Recommendation
+    // MARK: - Device-compatible Recommendation
 
-    /// Returns the recommended model identifier based on device RAM.
+    /// Returns the recommended model identifier based on hardware compatibility
+    /// first, then device RAM.
     ///
-    /// WHY RAM-based instead of hardcoded:
-    /// Different iPhones have different RAM tiers. Parakeet v3 (~800 MB) needs
-    /// enough headroom to compile and run without OOM. Devices with >=6 GB RAM
-    /// (iPhone 12 Pro, 13 Pro, 14+, 15+, 16+) can handle it comfortably.
-    /// Devices with <=4 GB RAM (iPhone 12, 12 mini, 13, 13 mini) should stick
-    /// with the smaller Whisper Small model.
+    /// WHY compatibility before RAM:
+    /// Argmax only supports Tiny/Base on A12/A13 iPhones, while A14 devices with
+    /// the same 4 GB RAM tier support Small. After that hardware exception,
+    /// Parakeet v3 (~800 MB) remains the recommendation for devices with >=6 GB.
     ///
     /// WHY in ModelInfo (not ModelManager):
     /// This is catalog-level logic — which model fits this device. It doesn't
@@ -217,8 +216,20 @@ public struct ModelInfo: Identifiable {
     /// unit testing. The caller-less overload still exists for convenience — it
     /// reads the current device, same behaviour as before.
     /// Turbo is intentionally never recommended by default during Phase 37.
+    ///
+    /// WHY hardware family before RAM: Argmax's WhisperKit Core ML support matrix
+    /// limits A12/A13 iPhones (`iPhone11,*` / `iPhone12,*`) to Tiny and Base.
+    /// Those devices have 3-4 GB RAM, but RAM alone cannot distinguish them from
+    /// A14 iPhones that do support Small. Recommending Small on iPhone 11 traps
+    /// onboarding in Core ML optimization and can jetsam the app (issue #362).
     public static func recommendedIdentifier(for capabilities: DeviceCapabilities) -> String {
-        capabilities.physicalMemoryGB >= 6 ? "parakeet-tdt-0.6b-v3" : "openai_whisper-small"
+        let hardware = capabilities.deviceModelIdentifier
+        if hardware.hasPrefix("iPhone11,") || hardware.hasPrefix("iPhone12,") {
+            return "openai_whisper-base"
+        }
+        return capabilities.physicalMemoryGB >= 6
+            ? "parakeet-tdt-0.6b-v3"
+            : "openai_whisper-small"
     }
 
     public static func recommendedIdentifier() -> String {
