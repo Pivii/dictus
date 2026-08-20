@@ -113,6 +113,10 @@ struct SettingsView: View {
     /// Confirmation dialog for resetting the learned-words dictionary (#222).
     @State private var showResetDictionaryConfirmation = false
 
+    /// Drives the paywall cover. Shared by the Dictus Pro row and every locked
+    /// feature row: they open the same screen, so one flag serves both.
+    @State private var showPaywall = false
+
     // MARK: - Body
 
     var body: some View {
@@ -122,19 +126,25 @@ struct SettingsView: View {
             // feature ships and ASC setup is done (#236, #79, #215).
             if PremiumFlags.paywallVisible {
                 Section {
-                    NavigationLink {
-                        PaywallView()
+                    Button {
+                        showPaywall = true
                     } label: {
                         HStack {
                             Image(systemName: "crown.fill")
                                 .foregroundColor(.dictusAccent)
                             Text("Dictus Pro")
+                                .foregroundColor(.primary)
                             Spacer()
                             if proStatus.isProActive {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.dictusSuccess)
                                     .accessibilityLabel("Pro active")
                             }
+                            // A Button in a List draws no disclosure indicator,
+                            // and this row still leads somewhere. Matching the
+                            // system one by hand keeps the section reading like
+                            // the rows around it.
+                            listDisclosureIndicator
                         }
                     }
                 }
@@ -273,10 +283,18 @@ struct SettingsView: View {
                 Text("Keyboard")
             } footer: {
                 // Only shown once the row is on: the keyboard drops it in landscape by
-                // design (#331), and without a word here that reads as a bug to the person
-                // who just turned it on.
+                // design (#331) and on iPad by design (#336), and without a word here either
+                // one reads as a bug to the person who just turned it on.
+                //
+                // WHY one sentence covering both rather than a device-aware one, and why the
+                // toggle stays visible on an iPad where it now does nothing: this target has
+                // no device detection at all — `DeviceContext` and DeviceKit are linked to the
+                // keyboard, not here, and `UIDevice.userInterfaceIdiom` reports `.phone` in
+                // compatibility mode, which is the only way an iPad reaches this app. A second
+                // copy of device detection in a second target, for a device class Dictus does
+                // not target, costs more than a sentence that is simply true on both.
                 if numberRowEnabled {
-                    Text("The number row is shown in portrait only.")
+                    Text("The number row is shown on iPhone in portrait only.")
                 }
                 if !liveActivityEnabled {
                     Text("Dynamic Island and Lock Screen notification are disabled.")
@@ -306,8 +324,8 @@ struct SettingsView: View {
                             }
                         } else {
                             // Locked: show lock + PRO pill, tap opens paywall
-                            NavigationLink {
-                                PaywallView()
+                            Button {
+                                showPaywall = true
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: feature.icon)
@@ -327,6 +345,7 @@ struct SettingsView: View {
                                         .background(Color.dictusAccent)
                                         .clipShape(Capsule())
                                         .accessibilityLabel("Pro feature")
+                                    listDisclosureIndicator
                                 }
                             }
                         }
@@ -418,6 +437,7 @@ struct SettingsView: View {
         .navigationDestination(isPresented: $showPolishDebug) {
             PolishDebugView()
         }
+        .paywallCover(isPresented: $showPaywall)
         .sheet(isPresented: Binding(
             get: { exportURL != nil },
             set: { isPresented in
@@ -433,6 +453,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// The chevron `NavigationLink` draws on a List row, for rows that open a
+    /// cover instead and therefore have to draw it themselves.
+    private var listDisclosureIndicator: some View {
+        Image(systemName: "chevron.forward")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+    }
 
     /// Export logs via iOS share sheet.
     ///

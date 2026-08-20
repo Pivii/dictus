@@ -872,10 +872,11 @@ class KeyboardViewController: UIInputViewController {
         // got before this line existed, with no divide-and-multiply in between.
         //
         // The provider's `rowCount > 4 && isLandscape` subtraction is unreachable from here:
-        // `drawsDigitRow` is false in landscape, by decision. On a large iPad the provider's
-        // normal row count is already 5, so this asks for the 5-row height it budgets for —
-        // the grid does not grow there and cells go 82 pt to 65.6 pt, still well above the
-        // 54 pt every iPhone lives on. Left alone deliberately; the app ships iPhone-only.
+        // `drawsDigitRow` is false in landscape, by decision. Its large-iPad branch — where the
+        // normal row count is already 5, so asking for 5 rows returns the base height and the
+        // cells shrink instead of the grid growing — is unreachable for the same reason since
+        // #336: `drawsDigitRow` is false on any iPad, so this passes nil there and the provider
+        // early-returns the height it has always returned.
         let keyGridHeight = KeyboardHeightProvider.height(
             for: deviceContext,
             traitCollection: traitCollection,

@@ -16,28 +16,26 @@ import DictusCore
 /// cross-actor data races and explicit DispatchQueue.main.async calls.
 ///
 /// WHY a single class for all StoreKit logic:
-/// Dictus has one subscription group with two plans (monthly and yearly).
-/// A single manager handles product fetch, purchase, restore, and
-/// transaction listening for both. No need for abstraction layers.
+/// Dictus sells three plans — a subscription group with monthly and yearly,
+/// plus a lifetime non-consumable outside it (#350). A single manager handles
+/// product fetch, purchase, restore, and transaction listening for all three.
+/// No need for abstraction layers: the lifetime needs no special entitlement
+/// path, see `updateProStatus()`.
 @MainActor
 final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchaseState: PurchaseState = .idle
 
-    /// Product IDs matching App Store Connect configuration.
-    /// WHY static constants: PaywallView looks products up by ID (never by
-    /// array index, since StoreKit's fetch order is unspecified) to preselect
-    /// the yearly plan and label the CTA per plan.
-    static let monthlyProductID = "solutions.pivi.dictus.pro.monthly"
-    static let yearlyProductID = "solutions.pivi.dictus.pro.yearly"
+    /// Identifiers live in `DictusCore.ProProductID`, which the DictusCore test
+    /// suite checks against the local StoreKit configuration — this target has
+    /// no tests of its own and an identifier typo is unrecoverable (#215).
+    /// PaywallView looks products up by ID (never by array index, since
+    /// StoreKit's fetch order is unspecified) to preselect the yearly plan.
+    private let productIDs = ProProductID.all
 
-    private let productIDs: Set<String> = [
-        SubscriptionManager.monthlyProductID,
-        SubscriptionManager.yearlyProductID
-    ]
-
-    var monthlyProduct: Product? { products.first { $0.id == Self.monthlyProductID } }
-    var yearlyProduct: Product? { products.first { $0.id == Self.yearlyProductID } }
+    var monthlyProduct: Product? { products.first { $0.id == ProProductID.monthly } }
+    var yearlyProduct: Product? { products.first { $0.id == ProProductID.yearly } }
+    var lifetimeProduct: Product? { products.first { $0.id == ProProductID.lifetime } }
 
     private var transactionListener: Task<Void, Never>?
     private let proStatus: ProStatusManager
@@ -77,6 +75,18 @@ final class SubscriptionManager: ObservableObject {
                 PersistentLog.log(.subscriptionError(
                     action: "loadProducts",
                     error: "empty result (StoreKit configuration missing or product ID unknown)"
+                ))
+            } else if products.count != productIDs.count {
+                // A partial result is just as silent and harder to notice: the
+                // missing plan's row simply does not render, and the paywall
+                // looks intentional. One product can fail alone — mistyped,
+                // still Waiting for Review, or not cleared for the storefront —
+                // while the others resolve. Name the absent ones: that is the
+                // whole diagnosis, and it is invisible from the screen (#350).
+                let missing = productIDs.subtracting(products.map(\.id)).sorted()
+                PersistentLog.log(.subscriptionError(
+                    action: "loadProducts",
+                    error: "missing product IDs: \(missing.joined(separator: ", "))"
                 ))
             }
         } catch {
@@ -159,6 +169,11 @@ final class SubscriptionManager: ObservableObject {
     /// WHY Transaction.currentEntitlements instead of storing expiry dates:
     /// StoreKit 2 manages all subscription state internally. currentEntitlements
     /// returns only active, non-revoked transactions. No manual expiry tracking needed.
+    ///
+    /// WHY no filter on product type: currentEntitlements also yields the
+    /// lifetime non-consumable, so owning it grants Pro through this same loop
+    /// with no code of its own (#350). Restore lands here too, which is the
+    /// whole promise of a non-consumable.
     private func updateProStatus() async {
         var isActive = false
         for await result in Transaction.currentEntitlements {
