@@ -10,6 +10,7 @@
 		AA0000L0 /* ModelInfo+Localized.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000L0 /* ModelInfo+Localized.swift */; };
 		SS000001 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100001 /* SubscriptionManager.swift */; };
 		SS000002 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100002 /* PaywallView.swift */; };
+		SS000009 /* PaywallPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100009 /* PaywallPresentation.swift */; };
 		SS000003 /* ProBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SS100003 /* ProBannerView.swift */; };
 		AA0000L1 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA1000L1 /* Localizable.xcstrings */; };
 		AA0000L2 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AA1000L2 /* Localizable.xcstrings */; };
@@ -259,6 +260,7 @@
 		AA1000G0 /* KeyTapSignposter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyTapSignposter.swift; sourceTree = "<group>"; };
 		SS100001 /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
 		SS100002 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		SS100009 /* PaywallPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallPresentation.swift; sourceTree = "<group>"; };
 		SS100003 /* ProBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProBannerView.swift; sourceTree = "<group>"; };
 		SS100004 /* StoreKitConfig.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = StoreKitConfig.storekit; sourceTree = "<group>"; };
 		AA100P10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -516,6 +518,7 @@
 				AA100300 /* CyclingLoadingText.swift */,
 				AA100301 /* ModelLoadingOverlay.swift */,
 				SS100002 /* PaywallView.swift */,
+				SS100009 /* PaywallPresentation.swift */,
 				SS100003 /* ProBannerView.swift */,
 			);
 			path = Views;
@@ -985,6 +988,7 @@
 				AA0000L0 /* ModelInfo+Localized.swift in Sources */,
 				SS000001 /* SubscriptionManager.swift in Sources */,
 				SS000002 /* PaywallView.swift in Sources */,
+				SS000009 /* PaywallPresentation.swift in Sources */,
 				SS000003 /* ProBannerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
