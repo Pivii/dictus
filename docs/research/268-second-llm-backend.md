@@ -3,6 +3,14 @@
 **Issue:** [#268](https://github.com/getdictus/dictus-ios/issues/268)
 **Scope:** measurement only. No production integration, no shipped `PolishEngineProtocol` implementation, no change to `PolishCoordinator` or to any app target.
 **Date:** 2026-08-13.
+**Amended:** 2026-08-21 — see [Addendum](#addendum--2026-08-21-d1-came-back-and-it-falsifies-the-memory-ceiling) at the end.
+
+> **Read the addendum before acting on Finding 3, Finding 5, or the Recommendation.**
+> D1 was collected on 2026-08-21 and it does not confirm this report — it
+> falsifies the memory ceiling three of the five candidates were rejected
+> against. One candidate, `qwen3:1.7b`, survives the correction, and the
+> reliability half of #268 is no longer closed. The coverage half is unaffected
+> and stands as written.
 
 The plan for this spike — the decision rule, the candidate list, the thresholds —
 was written and committed **before** any measurement was taken, so the findings
@@ -588,3 +596,182 @@ Latency and resident-set figures came from Ollama's native `/api/chat` with
 `options.num_gpu` set to `0` (CPU-only) or `99` (Metal), `num_ctx: 4096`, the
 `PolishNaturalPromptFR` system message and the `3-long` fixture, with `ollama ps`
 read after a warm call.
+
+---
+
+## Addendum — 2026-08-21: D1 came back, and it falsifies the memory ceiling
+
+**Author's note.** Everything above this line is the report as written on
+2026-08-13, unedited. This section records what changed when D1 was actually
+collected, and it changes the conclusion on one of the two rationales. It is
+appended rather than merged into the findings so the original reasoning stays
+auditable.
+
+### What D1 returned
+
+Collected on the maintainer's device on 2026-08-21, following the protocol in
+D1 exactly: five ordinary French dictations from the keyboard, Parakeet, app
+backgrounded throughout **[field]**.
+
+```text
+rev 284f094@develop | iOS 26.6 | App 1.8.0 (26) | iPhone16,2 | ramGB=8
+deviceCapabilitySnapshot availableMB=3369 thermal=nominal   (at launch)
+transcriptionPerformance audioMs=6404  transcribeMs=354 peakMB=3335
+transcriptionPerformance audioMs=3101  transcribeMs=127 peakMB=3336
+transcriptionPerformance audioMs=7704  transcribeMs=151 peakMB=3334
+transcriptionPerformance audioMs=11907 transcribeMs=182 peakMB=3331
+transcriptionPerformance audioMs=19312 transcribeMs=351 peakMB=3330
+```
+
+`appDidEnterBackground` is logged at 11:37:10 and no foreground transition
+follows, so all five readings are taken in the state that matters **[field]**.
+
+Two things come out of it.
+
+**Available jetsam headroom is ~3.33 GB**, with Parakeet resident and the audio
+engine warm, backgrounded, on an 8 GB device. Not 1.2 GB.
+
+**Drift across five dictations is −5 MB** (3335 → 3330). The dictation pipeline
+does not leak. That was not what D1 was for, and it is worth recording anyway.
+
+### What that falsifies
+
+D1 was written to test whether there was room for a second tenant. The threshold
+it stated — "if the headroom is under about 1.5 GB, the question is settled" —
+was chosen when no device number existed. The device number is **2.8× the 1.2 GB
+ceiling in Finding 3's V2 column**.
+
+That ceiling was not wrong so much as **misapplied**. 1.2 GB is a defensible
+budget for the *coverage* tier — a 4 GB iPhone 12 running a backgrounded audio
+app. It is not the budget on the tier where the *reliability* rationale lives.
+Finding 3 used one number for both, and rejected three candidates on it.
+
+Corrected against the measured headroom:
+
+| Model | Resident (CPU-only) | Score | Finding 3 verdict | Verdict under measured headroom |
+| --- | --- | --- | --- | --- |
+| `gemma3:1b` | 1.2 GB | 60/72 | at the line | fits — and is still a **net negative** (control 63/72) |
+| `qwen3.5:0.8b` | 1.4 GB | 63/72 | over | fits — and still **fabricates** (disqualified in Finding 4) |
+| **`qwen3:1.7b`** | **1.9 GB** | **66/72** | over | **fits, with ~1.4 GB to spare** |
+| `llama3.2:3b` | 2.9 GB | 66/72 | well over | fits — and still fails the jargon fixture (Finding 4) |
+| `gemma3:4b` | 3.4 GB | 72/72 | well over | **still does not fit**, on the largest device the product runs on |
+
+Only one row changes from "excluded" to "live": `qwen3:1.7b`. The
+quality-based disqualifications in Finding 4 are untouched by D1 — they were
+never memory arguments.
+
+### The candidate Finding 4 never showed
+
+`qwen3:1.7b` scored 66/72 and then appears in no qualitative table in this
+report. It was eliminated on memory before its output was examined. Run on
+2026-08-21, same Mac, same `PolishNaturalPromptFR` system message, same
+Input/"Polished output:" framing, `temperature: 0`, thinking off **[measured]**:
+
+Fixture `2-bilingue` — the one that disqualified `llama3.2:3b` and `gemma3:1b`:
+
+> "Alors écoute, faut que je **push** le **commit** sur GitHub avant la deadline
+> de **aujourd'hui** et ensuite je te laisse **review** la pull request.
+> Normalement le **merge** va clôturer le **slice** et on pourra fermer
+> l'**issue**."
+
+Every jargon token survives; only `today` is translated. That is the same
+behaviour as `apple-fm` and `gemma3:4b` on this fixture, and the opposite of
+`llama3.2:3b` ("j'envoie le commit", "la revue de la pull request") and
+`gemma3:1b` ("je pousse le commit", "examiner la pull request").
+
+Fixture `1-normal` returned a clean rewrite with no fabrication — the failure
+mode that disqualified `qwen3.5:0.8b`.
+
+This is two fixtures, not the 72-check suite, and it is not offered as a score.
+It is offered as the missing evidence that `qwen3:1.7b` does not fail the way the
+models around it failed.
+
+### Latency: the number Finding 2 left blank, and why it now decides everything
+
+Finding 2's table carries `—` for `qwen3:1.7b` cold. Measured on 2026-08-21,
+same machine, same method (Ollama native `/api/chat`, `num_ctx: 4096`,
+`3-long` fixture, 1,704 tokens of prefill, `ollama stop` before the cold run,
+`ollama ps` read to confirm the compute path) **[measured]**:
+
+| `qwen3:1.7b` | cold | warm |
+| --- | --- | --- |
+| **CPU-only** (`num_gpu: 0`, confirmed 100% CPU) | **7.92 s** (load 1.95 + prefill 3.32 + decode 2.64) | **2.70 s** |
+| **Metal** (`num_gpu: 99`, confirmed 100% GPU) | **3.82 s** (load 1.70 + prefill 0.85 + decode 1.25) | **1.37 s** |
+
+The warm figures reproduce Finding 2's table (2.97 s / 1.30 s there, 2.70 s /
+1.37 s here), so the two sessions are comparable. Prefill is **3.9×** slower on
+CPU, decode **2.1×** — inside the 2.5–7× and 2.2–2.9× ranges Finding 1 reports.
+
+Against the pre-registered budget of p50 ≤ 5 s, and against the Apple FM field
+baseline of p50 1,654 ms **[field]**:
+
+- **With the GPU**, 1.37 s warm on an M4 Pro is competitive with what ships today.
+- **Without it**, 7.92 s cold already exceeds the budget *on a Mac*, which
+  Finding 2 establishes is a floor for any iPhone.
+
+So the viability of the one surviving candidate rests entirely on which compute
+units a backgrounded DictusApp can actually reach. Finding 1 asserts the GPU is
+closed and this addendum does not dispute that. But the report's own "What I am
+not comfortable asserting" section records that the *mechanism* was never
+investigated, and that the shipping WhisperKit path requests `.cpuAndGPU`
+backgrounded without failing. That open question was not load-bearing when the
+only viable model was a 3.4 GB one. It is load-bearing now.
+
+The ANE is the sharper version of the same question: Finding 6 could not close
+it, and Parakeet demonstrates on every dictation that ANE inference **does** run
+backgrounded. D2 was parked on the assumption that it could only ever serve a
+coverage story that was already dead. That assumption no longer holds — D2 is now
+the decisive experiment for the reliability story, on a 1.9 GB model rather than
+a 3.4 GB one.
+
+### Revised recommendation
+
+**On the coverage rationale — still no, unchanged, and it should be closed.**
+Nothing in D1 touches it. The 4 GB and 6 GB tier has no Apple Intelligence to
+free memory from, cannot hold 1.9 GB alongside Parakeet, and ANEMLL's documented
+A14 limit of 512-context monolithic models cannot accommodate a 1,704-token
+prompt. Close it, and reopen only for a named model with a named footprint.
+
+**On the reliability rationale — no longer answered, and no longer closed.**
+The corrected state is one candidate (`qwen3:1.7b`: 1.9 GB, 66/72, jargon
+handling equal to Apple FM's on the fixture that matters) and one open mechanism
+(can a backgrounded DictusApp reach the ANE or the GPU for LLM inference).
+
+There is also a product-level argument, contributed by the maintainer on
+2026-08-21, that this report did not make and that constrains any future
+"free some memory" reasoning: **the lever only exists where it is useless.**
+Apple Intelligence can be disabled to reclaim system RAM only on devices that
+have it — which are exactly the devices that do not need a second backend. On the
+coverage tier there is nothing to disable. And a feature whose precondition is
+"turn off Apple Intelligence on your phone" is not shippable regardless of what
+it would measure.
+
+**Order of work, revised:**
+
+1. **D2, reframed and no longer optional.** Not "convert Gemma 3 4B QAT for the
+   coverage tier" — that is dead. The question is whether a ~1.7B model can be
+   made ANE-resident and hold a 1,704-token prefill on modern silicon while
+   backgrounded. A negative result closes #268 completely; a positive one makes
+   `qwen3:1.7b` a real alternative to Apple FM on 8 GB devices.
+2. **#315's option 3 regardless.** Unchanged from the original recommendation and
+   still independent of everything here.
+3. **#351 still gets the same reliability outcome for zero resident bytes**, and
+   still does not help the user with no server. It is no longer the *only*
+   candidate answer, which is what changed.
+
+### What this addendum does not assert
+
+- **That `qwen3:1.7b` is viable.** It is not excluded. Its iPhone latency is
+  unmeasured, its ANE conversion is unattempted, and whether 1.9 GB plus a
+  resident KV cache plus Parakeet's ~800 MB plus the audio engine leaves a safe
+  jetsam margin backgrounded is exactly what D2 would have to show.
+- **That 66/72 means good.** Finding 4's caveat stands: the suite calibrates
+  against a floor and cannot rank 66 against 72. What the two fixtures above add
+  is that this model is not failing categorically, which is a different claim.
+- **That the headroom generalises.** 3.33 GB was measured on one `iPhone16,2`
+  with 8 GB of RAM, at nominal thermal state, with one model loaded. It says
+  nothing about a 6 GB device and it is not a budget to spend to the last byte on
+  a background-audio app that jetsam can kill mid-dictation.
+- **That the GPU is reachable in the background.** This addendum raises the
+  question's importance; it does not answer it. Finding 1's sourced position
+  stands until someone measures otherwise.
