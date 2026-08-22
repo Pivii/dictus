@@ -209,6 +209,22 @@ class KeyboardState: ObservableObject {
     /// on a `dictationMessageCleared` line means nobody could have read it.
     private var statusMessageDisplayCount = 0
 
+    /// Whether DictusApp has stopped calling the polish engine for the rest of its
+    /// process (#315).
+    ///
+    /// WHY it is not a `statusMessage`: that path carries a three-second timer
+    /// (the one behind #342), and this condition can last the whole app process —
+    /// twelve minutes of unbroken refusals were measured on device. A state that
+    /// outlives its own announcement is not a message. So this is a second display
+    /// path: no timer, no dismissal, just a value read from the App Group and
+    /// rendered whenever the toolbar has room. #313 owns making that layer
+    /// coherent; nothing here waits on it.
+    ///
+    /// Read on every refresh rather than observed: the flag only ever changes
+    /// during a dictation, and `refreshFromDefaults()` runs on the `statusChanged`
+    /// that dictation posts, and again whenever a controller appears.
+    @Published private(set) var polishUnavailable = false
+
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
@@ -580,6 +596,12 @@ class KeyboardState: ObservableObject {
     /// Starts/stops the watchdog timer based on the new status.
     func refreshFromDefaults() {
         logProbe("refreshFromDefaults", details: "storedStatus=\(defaults.string(forKey: SharedKeys.dictationStatus) ?? "nil") visible=\(isKeyboardVisible) \(sessionDetails())")
+
+        // Read BEFORE the reconcile guard below (#315): that guard returns early
+        // on an abandoned dictation, and the polish state has nothing to do with
+        // whether this one was abandoned. A state that can last the whole app
+        // process must not be skipped by an unrelated exit.
+        polishUnavailable = PolishAvailabilityChannel.isUnavailable
 
         // Before adopting what the App Group says, check that somebody is still
         // writing it (#261). This is the read a rebuilt extension performs from its

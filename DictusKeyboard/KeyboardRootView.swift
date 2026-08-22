@@ -124,6 +124,7 @@ struct KeyboardRootView: View {
             statusMessage: state.statusMessage,
             messageProbeRootViewID: instanceID,
             messageProbeControllerID: controllerID,
+            showsPolishUnavailable: state.polishUnavailable,
             suggestions: [],
             suggestionMode: .idle,
             onSuggestionTap: { _ in },
@@ -255,6 +256,7 @@ struct KeyboardRootView: View {
                     statusMessage: state.statusMessage,
                     messageProbeRootViewID: instanceID,
                     messageProbeControllerID: controllerID,
+                    showsPolishUnavailable: state.polishUnavailable,
                     suggestions: suggestionState.suggestions,
                     suggestionMode: suggestionState.mode,
                     onSuggestionTap: { index in
