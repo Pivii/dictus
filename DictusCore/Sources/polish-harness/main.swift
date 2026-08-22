@@ -13,6 +13,13 @@
 //
 // `--instructions <file>` overrides the system prompt (A/B a candidate without
 // recompiling). `ab` runs two prompt files side by side.
+//
+// SPIKE ADDITION (#268, throwaway): `--engine local --model <name> [--base-url <url>]`
+// on `show` and `eval` runs the same pipeline against an OpenAI-compatible server
+// on localhost instead of Apple FM, so a candidate open-weights model can be
+// scored on the shipping fixtures. `--engine apple-fm` is the default and the
+// baseline. See `LocalHTTPPolishEngine.swift` for what that measurement is and is
+// not worth.
 
 import Foundation
 import DictusCore
@@ -36,13 +43,19 @@ func optionValue(_ name: String, in args: [String]) -> String? {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard let command = args.first, ["show", "eval", "ab"].contains(command), args.count >= 2 else {
+guard let command = args.first, ["show", "eval", "ab", "prompt"].contains(command), args.count >= 2 else {
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
-      show <fixtures.json> [--runs N] [--instructions <prompt.txt>]
-      eval <fixtures.json> [--instructions <prompt.txt>]
-      ab   <fixtures.json> --a <promptA.txt> --b <promptB.txt>
+      show   <fixtures.json> [--runs N] [--instructions <prompt.txt>]
+      eval   <fixtures.json> [--instructions <prompt.txt>]
+      ab     <fixtures.json> --a <promptA.txt> --b <promptB.txt>
+      prompt <fixtures.json> [--id <fixtureID>] [--out <dir>]
+
+    show/eval also accept (#268 spike, throwaway):
+      --engine apple-fm | local   (default apple-fm)
+      --model <name>              required with --engine local
+      --base-url <url>            default http://127.0.0.1:11434
     """)
     exit(2)
 }
@@ -52,6 +65,13 @@ let runs = Int(optionValue("--runs", in: args) ?? "1") ?? 1
 let instructionsFile = optionValue("--instructions", in: args)
 let abA = optionValue("--a", in: args)
 let abB = optionValue("--b", in: args)
+// #268 spike, throwaway.
+let engineKind = optionValue("--engine", in: args) ?? "apple-fm"
+let localModel = optionValue("--model", in: args)
+let localBaseURL = optionValue("--base-url", in: args) ?? "http://127.0.0.1:11434"
+// #268 D2, throwaway. `prompt` only.
+let promptFixtureID = optionValue("--id", in: args)
+let promptOutputDir = optionValue("--out", in: args)
 
 // MARK: - Load fixtures
 
@@ -79,13 +99,21 @@ guard #available(macOS 26.0, *) else {
     exit(1)
 }
 
+// Apple Intelligence is required only by the apple-fm engine. The #268 spike runs
+// candidate models through a local server on machines where the check would be
+// beside the point, so it is scoped to the engine that needs it rather than to
+// the process.
 #if canImport(FoundationModels)
-switch SystemLanguageModel.default.availability {
-case .available:
-    break
-default:
-    print("error: Apple Foundation Models not available (\(SystemLanguageModel.default.availability)). Enable Apple Intelligence in System Settings.")
-    exit(1)
+// `prompt` never runs a model — it prints the bytes one would be sent — so it is
+// usable on a machine with Apple Intelligence off, which is the point of it.
+if command != "prompt", engineKind == "apple-fm" {
+    switch SystemLanguageModel.default.availability {
+    case .available:
+        break
+    default:
+        print("error: Apple Foundation Models not available (\(SystemLanguageModel.default.availability)). Enable Apple Intelligence in System Settings.")
+        exit(1)
+    }
 }
 #else
 print("error: FoundationModels not importable on this toolchain.")
@@ -93,7 +121,25 @@ exit(1)
 #endif
 
 @available(macOS 26.0, *)
-func makeEngine(_ override: (@Sendable (PolishMode, SupportedLanguage) -> String)?) -> AppleFoundationModelsPolishEngine {
+func makeEngine(_ override: (@Sendable (PolishMode, SupportedLanguage) -> String)?) -> any PolishEngineProtocol {
+    // #268 spike, throwaway. `--instructions` has no meaning for the local engine:
+    // it is there to A/B prompts on one model, and the spike A/Bs models on one
+    // prompt. Refusing the combination beats silently ignoring the flag.
+    if engineKind != "apple-fm" {
+        guard engineKind == "local" else {
+            print("error: unknown --engine \(engineKind) (expected 'apple-fm' or 'local')")
+            exit(2)
+        }
+        guard let localModel else {
+            print("error: --engine local requires --model <name>")
+            exit(2)
+        }
+        if override != nil {
+            print("error: --instructions is not supported with --engine local")
+            exit(2)
+        }
+        return LocalHTTPPolishEngine(baseURL: localBaseURL, model: localModel)
+    }
     if let override { return AppleFoundationModelsPolishEngine(instructionsOverride: override) }
     return AppleFoundationModelsPolishEngine()
 }
@@ -129,7 +175,7 @@ struct RunOutcome {
 }
 
 @available(macOS 26.0, *)
-func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
+func runOnce(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcome {
     guard let target = fx.language else {
         return await runOnceAuto(fx, engine: engine)
     }
@@ -153,7 +199,7 @@ func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> 
 /// floor (the pre-pass output). `target` below is the placeholder the engine
 /// API requires — the auto prompt and guardrails ignore it.
 @available(macOS 26.0, *)
-func runOnceAuto(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
+func runOnceAuto(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcome {
     guard let detectedCode = PolishPipeline.detectLanguageCode(in: fx.raw) else {
         return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
     }
@@ -216,6 +262,57 @@ func runHarness() async {
             let b = await runOnce(fx, engine: engineB)
             print("  A (\(a.engineMs)ms): \(a.final)")
             print("  B (\(b.engineMs)ms): \(b.final)")
+        }
+
+    // #268 D2, throwaway. Prints the exact two strings the polish engine sends —
+    // the resolved system instructions and the user turn — for a fixture, so the
+    // ANE measurement runs on the shipping prompt rather than on a paraphrase of
+    // it. The user turn carries the PRE-PASSED text, because that is what the
+    // engine receives: `runOnce` applies `VerbalPunctuationPrepass` first, and the
+    // mode is resolved the same way rather than assumed to be `.natural` — a
+    // Parakeet fixture whose detected language differs from its target resolves to
+    // `.repair`, and printing the Natural instructions for it would be printing a
+    // prompt the engine would never send.
+    case "prompt":
+        let selected = promptFixtureID.map { id in fixtures.filter { $0.id == id } } ?? fixtures
+        if selected.isEmpty {
+            print("error: no fixture with id \(promptFixtureID ?? "-") in \(fixturesPath)")
+            exit(1)
+        }
+        for fx in selected {
+            guard let target = fx.language else {
+                print("error: [\(fx.id)] routes through auto mode, which has no per-language prompt")
+                exit(1)
+            }
+            let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
+            guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+                print("error: [\(fx.id)] language detection returned nil — the pipeline "
+                      + "would skip the engine entirely, so there is no prompt to print")
+                exit(1)
+            }
+            let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
+            let system = AppleFoundationModelsPolishEngine.instructions(for: mode, language: target)
+            let user = LocalHTTPPolishEngine.userTurn(raw: preprocessed)
+            print("━━ [\(fx.id)] lang=\(fx.lang) stt=\(fx.sttEngine ?? "PK") "
+                  + "detected=\(detected.rawValue) mode=\(mode.rawValue) "
+                  + "systemChars=\(system.count) userChars=\(user.count)")
+            if let dir = promptOutputDir {
+                let base = URL(fileURLWithPath: dir).appendingPathComponent(fx.id)
+                do {
+                    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+                    try system.write(to: base.appendingPathComponent("system.txt"), atomically: true, encoding: .utf8)
+                    try user.write(to: base.appendingPathComponent("user.txt"), atomically: true, encoding: .utf8)
+                } catch {
+                    print("error: cannot write to \(base.path): \(error)")
+                    exit(1)
+                }
+                print("  wrote \(base.path)/{system,user}.txt")
+            } else {
+                print("──── system ────")
+                print(system)
+                print("──── user ────")
+                print(user)
+            }
         }
 
     default:

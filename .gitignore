@@ -63,3 +63,9 @@ designs/
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# #268 D2 throwaway harness: a pinned ANEMLL checkout and 1.8 GB of Core ML
+# weights, both fetched by tools/ane-harness/setup.sh
+tools/ane-harness/.deps/
+tools/ane-harness/build/
+tools/ane-harness/AneBenchKit/Sources/AneBenchKit/Resources/

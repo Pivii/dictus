@@ -1,0 +1,68 @@
+# tools/ane-harness/project.yml
+#
+# THROWAWAY — #268 D2. xcodegen input for the benchmark app.
+#
+# A project of its own rather than a target in Dictus.xcodeproj, deliberately:
+# #268 puts "no change to any app target" in scope, and adding an SPM dependency
+# and a target to the shared project file to answer a research question would
+# make every other build resolve a package it does not need.
+#
+# Regenerate with `xcodegen` from this directory. Run ./setup.sh first — the
+# model folder and the ANEMLL checkout it references do not exist otherwise.
+name: AneHarness
+options:
+  bundleIdPrefix: com.pivi.dictus
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  AneBenchKit:
+    path: AneBenchKit
+
+targets:
+  AneHarness:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+      # A folder reference, not a group: the 1.8 GB of .mlmodelc bundles are
+      # copied into Resources whole, so `Bundle.main.url(forResource: "model")`
+      # finds a directory with meta.yaml at its root.
+      - path: .deps/model
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: AneBenchKit
+        product: AneBenchKit
+    # No `info:` / `entitlements:` blocks: those make xcodegen *generate* those
+    # files, overwriting the ones checked in here. The build settings below point
+    # at the authored files instead.
+    #
+    # No entitlements file at all, and #268 asked for one. The harness was first
+    # built with `group.solutions.pivi.dictus` so its results would come out
+    # through DictusApp's persistent-log export, the way D1's did. Signing
+    # refuses it:
+    #
+    #   error: Provisioning profile "iOS Team Provisioning Profile: *" doesn't
+    #   support the group.solutions.pivi.dictus App Group.
+    #   error: No Accounts: Add a new account in Accounts settings.
+    #
+    # The three profiles on this machine that carry that group are bound to
+    # com.pivi.dictus, .keyboard and .widgets; a new bundle id needs the
+    # capability enabled in the developer portal, which needs an authenticated
+    # Xcode. So the results leave the phone from the app's own Documents
+    # directory instead — `devicectl device copy from --domain-type
+    # appDataContainer` fetches them over Wi-Fi with nothing to tap, and
+    # UIFileSharingEnabled puts them in the Files app as a fallback.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pivi.dictus.anebench
+        DEVELOPMENT_TEAM: 9B8B36C2FA
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
