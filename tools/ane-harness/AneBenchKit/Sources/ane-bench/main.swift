@@ -38,7 +38,8 @@ let runner = AneBenchRunner(configuration: AneBenchRunner.Configuration(
     maxNewTokens: maxNewTokens,
     iterations: iterations,
     fixtureID: fixtureID,
-    computeUnits: computeUnits
+    computeUnits: computeUnits,
+    allowThinking: CommandLine.arguments.contains("--thinking")
 ))
 
 do {

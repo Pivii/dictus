@@ -81,7 +81,17 @@ reasons the spike expected.**
    [Deviations](#deviations-from-the-issue). There is no toolchain failure to
    report: the model converted, loaded, and ran.
 
-8. **Loading is a once-per-install cost, not a per-launch one.** 118.5 s the
+8. **The converted build barely polishes, and quality is unreachable on it for a
+   structural reason.** With reasoning off — the only mode that fits — its output
+   differs from its input by **one character**, on the Mac and on the phone
+   identically **[measured]**. Allowed to reason, it reasons coherently and
+   on-task, so the weights are not the problem; but the prompt occupies 1,676 of
+   a 2,048-token window and its reasoning needs 500–700 more, so **the mode that
+   works does not fit** **[measured, derived]**. Quality would need a larger
+   context, and a larger context means more prefill on a call already 2.8× over
+   budget.
+
+9. **Loading is a once-per-install cost, not a per-launch one.** 118.5 s the
    first time on the device, **2.1 s** every time after **[measured]**.
 
 **Against the pre-registered rule this is the negative branch: close #268.** The
@@ -298,6 +308,20 @@ if the ANE is unavailable or busy.
 same prompt, same `temperature: 0`, thinking off. Collected 2026-08-22
 **[measured]**. Two runs, and the difference between them is itself a finding.
 
+### Which build produced these numbers
+
+Line 2 of every export in this repository carries `rev <sha>@<branch>`, and this
+one says **`rev unknown`**. That is not a fault in the run: the harness is not a
+target of `Dictus.xcodeproj`, so the "Generate build info" phase that writes
+`DictusBuildInfo.plist` never runs for it, and `PersistentLog.codeRevision`
+correctly reports that it has no revision to report rather than guessing
+**[code]**.
+
+**The binary on the phone was built from the working tree that became
+`eba99cf`**, and nothing under `tools/ane-harness/App/` changed between that
+commit and the run. So there is no revision line to check on this one, and the
+sha is recorded here instead.
+
 ### Run B — the clean one, thermal `nominal` throughout
 
 ```text
@@ -369,9 +393,27 @@ Prefill is 4.5 s. Even a prompt of length zero leaves 9.4 s, so the one lever th
 predecessor identified — shorten the 1,150-token instruction block — still
 cannot reach the budget **[derived]**.
 
-The iPhone-to-Mac multiplier is **1.65×** on the total (14.0 s against 8.5 s),
-which confirms the predecessor's "a Mac figure is a floor" framing without
-needing it to be conservative.
+### The iPhone-to-Mac multiplier, given separately because it was asked for
+
+Like for like — same runtime, same bundle, same prompt, same compute units,
+medians of three iterations **[measured]**:
+
+| | Mac (M4 Pro, ANE) | iPhone16,2 (ANE) | Multiplier |
+| --- | --- | --- | --- |
+| Prefill, 1,680 tokens | 2,790 ms (602 tok/s) | 4,476 ms (375 tok/s) | **×1.60** |
+| Decode, 162 tokens | 5,845 ms (27.7 tok/s) | 9,358 ms (17.3 tok/s) | **×1.60** |
+| Total | 8,635 ms | 13,834 ms | **×1.60** |
+
+The two terms scale by the same factor, which is the useful thing to know: on
+this runtime the phone is uniformly 1.6× the Mac, so a Mac figure can be scaled
+without asking which half of the call it came from.
+
+**A larger multiplier can be produced by comparing the wrong pairs.** Setting the
+predecessor's Mac figures against these device figures gives roughly ×2.7 on
+prefill and ×4.5 on decode — but those Mac figures are Ollama serving a Q4_K_M
+build on the CPU, and these are ANEMLL serving a LUT6 build on the ANE. Runtime,
+quantization and compute unit all differ, so the ratio measures the change of
+stack, not the change of machine. The table above changes one variable.
 
 ### Run A — what thermal pressure does, and why it is not a footnote
 
@@ -416,6 +458,96 @@ processes loading the same bundle from the same path both paid 96–104 s
 
 So the two-minute load is a once-per-install cost, not a once-per-launch one, and
 it is not an argument against anything.
+
+---
+
+## Finding 7 — the converted model barely polishes, and the reason is not the one it looks like
+
+Noticed by the maintainer on reading the export, and worth recording even though
+latency already decides the issue: on `3-long` the ANE build returns the input
+almost unchanged.
+
+Measured rather than eyeballed — the model's output against the exact text the
+prompt carried **[measured]**:
+
+| Build | Similarity to input | Edits |
+| --- | --- | --- |
+| ANEMLL LUT6, Mac ANE | **0.9992** | one: a final `.` |
+| ANEMLL LUT6, iPhone ANE | **0.9992** | one: a final `.` |
+| `qwen3:1.7b` Q4_K_M via Ollama, same prompt | 0.113 | a real rewrite |
+
+The Mac and the phone produce **byte-identical** 638-character output, so this is
+a property of the build, not of the device. And the Ollama rewrite is a genuine
+polish — punctuation added, `pardon` and `tout simplement` dropped:
+
+> T'aimerais bien tester un texte un peu plus long que je décris à l'oral, comme
+> je le fais en fait. Et justement, quand je ne sais pas trop quoi dire […]
+> L'idée, c'est de voir comment se comporte le modèle et l'application en
+> général.
+
+(It also mangles the opening clause — `Ce que j'aimerais` → `T'aimerais`. Neither
+output is being held up as good here; the point is that one transformed the text
+and the other did not.)
+
+### LUT6 is the obvious suspect and it is probably not the culprit
+
+The two runs differ in more than quantization: **the Ollama run reasoned first
+and the ANE run did not.** Ollama generated 1,800–2,500 characters of reasoning
+before answering **[measured]**, while the harness suppresses reasoning by
+injecting the empty `<think></think>` block. A model that thinks before rewriting
+is not the same model.
+
+Re-running the ANE build with reasoning left on settles it **[measured]**:
+
+```text
+computeUnits=cpuAndNeuralEngine +thinking
+iteration 1 promptTokens=1676 prefillMs=2711 decodeMs=12744 generated=360 stop=max_tokens
+output: <think>
+Okay, let's tackle this input. The user wants the French text polished according
+to the given rules. […] Here, "pardon" is a word that should be replaced with the
+punctuation mark. […]
+```
+
+**The weights are fine.** Allowed to think, the LUT6 build reasons coherently and
+on-task about the French text — it identifies the filler, quotes the rules, works
+through the clauses. This is not a model destroyed by quantization.
+
+### What actually blocks it is the context window
+
+The reasoning above never reaches an answer. It runs to the token cap still
+inside `<think>`, and it cannot do otherwise: the prompt is **1,676 tokens of a
+2,048-token window**, leaving **372 tokens**, and this model's own reasoning on
+this prompt needs 500–700 **[derived, from the Ollama runs]**.
+
+So the two modes available on this bundle are:
+
+- **reasoning off** — fits, and returns the input plus a full stop;
+- **reasoning on** — polishes, and does not fit.
+
+A build with a larger context would be needed to get the quality, and a larger
+context means more prefill on top of a call that is already 2.8× over budget.
+That is why this finding, which looks like a footnote, points the same way as
+the latency: **it makes the gap wider, not narrower.**
+
+### A correction the predecessor should carry
+
+The predecessor established that `chat_template_kwargs: {enable_thinking: false}`
+was accepted and ignored by Ollama while `reasoning_effort: "none"` worked, and
+verified that against `qwen3.5:0.8b`.
+
+On Ollama 0.32.6 today, with `qwen3:1.7b`, **neither key suppresses reasoning**.
+Both were sent and the response still carried 1,812–2,481 characters of it
+**[measured]** — moved into a separate `message.thinking` field rather than
+inlined in `content`, which is why it does not show up by reading the answer.
+
+Two consequences, neither of which changes this document's conclusion:
+
+- `LocalHTTPPolishEngine` reads `message.content` and strips inline reasoning, so
+  the predecessor's **quality** scores are unaffected — the content it scored was
+  clean **[code]**.
+- Its **latency** figures for `qwen3:1.7b` include generating reasoning tokens
+  that were believed to be suppressed, so they are, if anything, overstated
+  against a product that would not pay for them.
 
 ---
 
@@ -466,8 +598,12 @@ scope: #268 is about `qwen3:1.7b`, and its decode rate misses by 3×. A differen
 model is a different issue, opened for a named model with a named footprint, as
 the coverage half already requires.
 
-**Quality of this LUT6 build through `polish-harness eval`.** It would have
-mattered only if the latency had come back positive. See below.
+**Quality of this LUT6 build through the full 72-check suite.** Finding 7 settles
+the question the suite would have been asked — the build returns its input
+unchanged in the only mode that fits its context window — without needing 72
+fixture-runs to say it. Scoring it properly would mean putting an
+OpenAI-compatible façade in front of the ANE runtime, and it would have mattered
+only if latency had come back positive.
 
 ## Deviations from the issue
 
@@ -519,15 +655,21 @@ the phone. The App Group write is still attempted and its outcome recorded.
   narrow (13.8–14.4 s) and that is all it establishes. The budget is written as a
   p50 and this is not one.
 
-- **That LUT6 inherits the 66/72 the predecessor measured.** That score is a
-  Q4_K_M build of `Qwen3-1.7B` served by Ollama; this is a 6-bit look-up-table
-  quantization with per-channel scales, produced by a different toolchain, and
-  ANEMLL's own README warns "Quantization should be improved. LUT4 quality is
-  fairly low due to lack of Block Quantization on Apple Neural Engine"
-  **[source]**. One fixture producing clean French is a sanity gate. Scoring this
-  build would mean putting an OpenAI-compatible façade in front of the ANE
-  runtime and re-running `polish-harness eval` — cheap enough, and worth nothing
-  until the latency question comes back positive.
+- **That LUT6 is why the output is near-identical.** Finding 7 rules out the
+  obvious reading rather than confirming it: allowed to reason, the same build
+  reasons coherently on the same prompt. What is established is that *this
+  build, in the only mode its context window allows*, does not transform the
+  text. Whether a LUT6 build with a 4K context would polish acceptably is
+  untested, and so is whether LUT6 costs anything against the 66/72 the
+  predecessor measured on a Q4_K_M build. ANEMLL's own README does warn that
+  "Quantization should be improved. LUT4 quality is fairly low due to lack of
+  Block Quantization on Apple Neural Engine" **[source]** — a reason to suspect
+  it, not evidence that it bit here.
+
+- **That one fixture characterises the quality gap.** Finding 7 is `3-long`, the
+  largest shipping fixture. A shorter input leaves more of the window free and
+  might behave differently in the reasoning-on mode. The 72-check suite was not
+  run against this build.
 
 - **That 162 generated tokens is representative.** The `3-long` fixture is the
   largest shipping one, and its polished output happens to be close to a copy of
@@ -572,10 +714,11 @@ in that directory's `README.md`.
 cd DictusCore
 swift run polish-harness prompt Sources/polish-harness/fixtures/seed.json --id 3-long
 
-# Mac: the ANE run, and the CPU control
+# Mac: the ANE run, the CPU control, and the reasoning-on control (Finding 7)
 cd tools/ane-harness/AneBenchKit
 swift run -c release ane-bench --iterations 3
 swift run -c release ane-bench --iterations 1 --max-tokens 60 --compute-units cpu
+swift run -c release ane-bench --iterations 1 --max-tokens 360 --thinking
 
 # Phone: build, install, launch (needs the phone unlocked), collect
 cd tools/ane-harness

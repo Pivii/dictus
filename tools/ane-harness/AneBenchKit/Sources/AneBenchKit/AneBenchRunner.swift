@@ -27,17 +27,25 @@ public actor AneBenchRunner {
         /// same harness can produce the contrast that proves the ANE was doing
         /// the work — a fast number alone does not name a processor.
         public let computeUnits: MLComputeUnits
+        /// Leave Qwen 3's reasoning on. Off by default because a polish call is a
+        /// rewrite and no shipping product would pay for the tokens; exposed
+        /// because "the converted model barely polishes" and "the converted model
+        /// was not allowed to think" are two different explanations and only a
+        /// run with this flipped tells them apart.
+        public let allowThinking: Bool
 
         public init(modelDirectory: URL,
                     maxNewTokens: Int = 280,
                     iterations: Int = 3,
                     fixtureID: String = "3-long",
-                    computeUnits: MLComputeUnits = .cpuAndNeuralEngine) {
+                    computeUnits: MLComputeUnits = .cpuAndNeuralEngine,
+                    allowThinking: Bool = false) {
             self.modelDirectory = modelDirectory
             self.maxNewTokens = maxNewTokens
             self.iterations = iterations
             self.fixtureID = fixtureID
             self.computeUnits = computeUnits
+            self.allowThinking = allowThinking
         }
     }
 
@@ -94,7 +102,9 @@ public actor AneBenchRunner {
         }
         let prompt = try PolishPrompt.natural(fixtureID: configuration.fixtureID)
         self.prompt = prompt
-        self.promptTokens = Self.tokens(for: prompt, tokenizer: tokenizer)
+        self.promptTokens = Self.tokens(for: prompt,
+                                        tokenizer: tokenizer,
+                                        allowThinking: configuration.allowThinking)
 
         progress("Loading Core ML models onto the Neural Engine…")
         let loadStart = Date()
@@ -184,7 +194,8 @@ public actor AneBenchRunner {
             systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             physicalMemoryGB: capabilities.physicalMemoryGB,
             modelBundle: configuration.modelDirectory.lastPathComponent,
-            computeUnits: Self.describe(configuration.computeUnits),
+            computeUnits: Self.describe(configuration.computeUnits)
+                + (configuration.allowThinking ? " +thinking" : ""),
             contextLength: config.contextLength,
             batchSize: config.batchSize,
             fixtureID: prompt.fixtureID,
@@ -216,12 +227,15 @@ public actor AneBenchRunner {
     /// with thinking silently ON and discarded the whole pass when it noticed —
     /// a polish call is a rewrite, not a puzzle, and letting the model reason
     /// reports a latency no shipped product would pay.
-    private static func tokens(for prompt: PolishPrompt, tokenizer: Tokenizer) -> [Int] {
+    private static func tokens(for prompt: PolishPrompt,
+                               tokenizer: Tokenizer,
+                               allowThinking: Bool) -> [Int] {
         let templated = tokenizer.applyChatTemplate(
             input: [Tokenizer.ChatMessage.system(prompt.system),
                     Tokenizer.ChatMessage.user(prompt.user)],
             addGenerationPrompt: true
         )
+        guard !allowThinking else { return templated }
         return templated + tokenizer.tokenize("<think>\n\n</think>\n\n")
     }
 }
