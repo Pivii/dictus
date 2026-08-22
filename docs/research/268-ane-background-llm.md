@@ -34,58 +34,59 @@ Same scheme as the predecessor, because the two documents are read together.
 
 ## Summary
 
-1. **The ANE holds the prompt. That question is answered, and it turns out not
-   to be the one that decides.** A 1,680-token prefill runs to completion in a
-   2048-context ANEMLL build of Qwen3 1.7B, stopping on EOS with no window shift
-   and no truncation **[measured]**. The predecessor's "does it fit" worry is
-   closed for modern silicon.
+**#268's question is answered, and the answer is no — but not for any of the
+reasons the spike expected.**
 
-2. **Core ML really does place it on the Neural Engine, and this is read from
-   Core ML rather than inferred from a timing.** `MLComputePlan` reports **1,166
-   ANE operations against 13 CPU** in the transformer chunk under
-   `.cpuAndNeuralEngine`, and **0 ANE against 1,179 CPU** for the same file under
-   `.cpuOnly` **[measured]**.
+1. **A backgrounded DictusApp *can* reach the Neural Engine.** On the phone,
+   backgrounded, Core ML's compute plan is byte-for-byte the Mac's: **1,166 ANE
+   operations against 13 CPU** in the transformer chunk, **0 GPU** everywhere
+   **[measured]**. It does not silently re-plan onto the CPU when the app leaves
+   the foreground. That mechanism was the predecessor's largest open question.
 
-3. **The decisive cost is decode, not prefill, and no prompt redesign touches
-   it.** On an M4 Pro, ANE-resident, thinking off: prefill of the real French
-   polish prompt is **2.69–3.31 s**, decode of the 162-token answer is
-   **5.80–5.91 s**, total **8.49–9.15 s** per polish call **[measured]**. The
-   pre-registered budget is p50 ≤ 5 s. **Decode alone misses it**, so the one
-   lever the predecessor identified — shorten the 1,150-token instruction block —
-   cannot rescue this: it is arithmetic on the wrong term **[derived]**.
+2. **The ANE holds the prompt.** 1,680 tokens of prefill inside a 2048-context
+   ANEMLL build, EOS stop, coherent French **[measured]**.
 
-4. **The ANE is much better than the CPU at prefill and barely better at
-   decode.** Same model, same prompt, same process: prefill **6.5× faster**
-   (3.05 s median vs 19.78 s) but decode only **1.35× faster** (27.7 vs
-   20.8 tok/s) **[measured]**. Against the predecessor's Metal figures for the same
-   checkpoint, the GPU decodes roughly **4×** faster than the ANE does
-   **[derived]**. The Neural Engine is not a small GPU; it is a prefill engine.
+3. **And it costs 14 seconds.** Backgrounded on an `iPhone16,2` at `nominal`
+   thermal, three consecutive iterations: prefill **4.5–4.9 s**, decode
+   **9.3–9.5 s**, **total 13.8–14.4 s** per polish call **[measured]**. The
+   pre-registered budget is p50 ≤ 5 s; the Apple FM field baseline on this exact
+   device is p50 **1,654 ms** **[field]**. That is **2.8× the ceiling and 8.4×
+   the incumbent**.
 
-5. **No conversion was needed, and none was attempted.** ANEMLL publishes
-   `anemll-Qwen-Qwen3-1.7B-ctx2048_0.3.5` — the exact candidate, converted by the
-   toolchain's own authors at the version #268 names, with the conversion
-   parameters recorded in its `meta.yaml` **[source]**. This is a deliberate
-   deviation from the issue's step 1, and it is the reason the time-box the issue
-   set aside for toolchain trouble was not spent. See
-   [Deviations](#deviations-from-the-issue).
+4. **Memory is not the constraint, and the whole memory argument was measuring
+   the wrong thing.** With all 1.8 GB of weights loaded: **3,090 MB** of jetsam
+   headroom left and a `phys_footprint` of **284 MB** **[measured]**, against
+   D1's 3,369 MB baseline on the same device **[field]**. Core ML maps ANE
+   weights instead of allocating them, so **1.8 GB of model costs about 280 MB of
+   the budget jetsam enforces**. The pre-registered 1.2 GB ceiling, D1's
+   correction of it, and the addendum's "does 1.9 GB fit alongside Parakeet"
+   table all priced a quantity that does not bind.
 
-6. **Placing the model on the ANE costs 96–104 s of load, every process
-   launch.** Against 21.2 s for the same bundle under `.cpuOnly` **[measured]**. Not
-   fatal — DictusApp is long-lived and pre-loads at launch — but it is a real
-   number that a shipping integration would have to hide, and it is not one the
-   predecessor's Ollama load times (1.7–2.5 s) predict.
+5. **The binding term is decode, and no prompt redesign touches it.** Decode is
+   9.4 s of the 14 s. The one lever the predecessor identified — shorten the
+   1,150-token instruction block — moves prefill only, so even a prompt of length
+   zero leaves 9.4 s **[derived]**. A future candidate would need roughly **3×**
+   ANEMLL 0.3.5's decode rate on this checkpoint to land inside the budget.
 
-7. **The device measurement is not in this document yet.** Everything above is a
-   Mac. A Mac has no jetsam and no application lifecycle, so it cannot answer the
-   question in #268's title. The apparatus is built, installed on the iPhone, and
-   rehearsed end to end in a simulator with `allIterationsBackgrounded=true`; it
-   is blocked on one thing, which is that `devicectl` will not launch an app on a
-   locked phone. See [What is still missing](#what-is-still-missing).
+6. **Sustained ANE inference throttles the phone.** A first run that began at
+   `thermal=fair` crossed to `serious` within ninety seconds; decode fell from
+   13.5 to 7.0 tok/s and the call reached **33.9 s** **[measured]**. DictusApp
+   stays warm between dictations by design, which is the pattern that produces
+   this curve.
 
-**Reading so far: the ANE is reachable and the prompt fits, and the candidate
-still misses the latency budget on hardware faster than any iPhone.** The device
-run can move that from "indicated" to "measured"; on the evidence here it is
-unlikely to reverse it.
+7. **No conversion was needed and none was attempted.** ANEMLL publishes
+   `anemll-Qwen-Qwen3-1.7B-ctx2048_0.3.5` — the exact candidate, at the release
+   #268 names, conversion parameters recorded in its `meta.yaml` **[source]**. A
+   deliberate deviation from the issue's step 1; see
+   [Deviations](#deviations-from-the-issue). There is no toolchain failure to
+   report: the model converted, loaded, and ran.
+
+8. **Loading is a once-per-install cost, not a per-launch one.** 118.5 s the
+   first time on the device, **2.1 s** every time after **[measured]**.
+
+**Against the pre-registered rule this is the negative branch: close #268.** The
+detail, and what a future reopening would have to show, is in
+[The decision](#the-decision-against-the-rule-that-was-registered-before-the-measurement).
 
 ---
 
@@ -121,6 +122,13 @@ outputs contain no reasoning.
 asserting" records that the fallback mechanism was never investigated. So the
 harness reads `MLComputePlan.deviceUsage(for:)` per operation, and
 `--compute-units cpu` gives the contrast.
+
+**And the protocol was rehearsed before it was used.** The whole flow ran on an
+iPhone 17 Pro Max simulator first, backgrounded by launching Safari over it,
+ending on `allIterationsBackgrounded=true` **[measured]**. None of its numbers
+mean anything — a simulator has no Neural Engine, so it ran the CPU path that
+produces gibberish — but it meant the maintainer's phone was not the place where
+a crash-on-launch would be discovered.
 
 ---
 
@@ -193,7 +201,12 @@ which is the constraint the predecessor's Finding 1 established.
 The 1,448 operations Core ML declines to plan a device for are reported as
 undetermined rather than folded into any column. An absent count is not a zero.
 
-## Finding 4 — latency, and the term that decides
+## Finding 4 — latency on the Mac, and the term that decides
+
+This is the gate, not the answer; Finding 6 has the phone. It is kept because the
+Mac is where the shape of the problem became visible, and because the
+iPhone-to-Mac multiplier it establishes (1.65×) is useful to anyone reading the
+predecessor's Mac-only tables.
 
 Measured on **Apple M4 Pro, 14 cores, 24 GB, macOS 26.5.1**, `temperature: 0`,
 thinking off, the real French polish prompt, ANEMLL Swift runtime **[measured]**:
@@ -216,7 +229,8 @@ Against the two numbers the decision rule names:
   **p50 1,654 ms**, p90 4,842 ms **[field]**.
 
 **8.5 s on an M4 Pro is 5× the Apple FM baseline and 1.7× the budget ceiling.**
-The predecessor establishes that a Mac figure is a *floor* for any iPhone.
+The predecessor establishes that a Mac figure is a *floor* for any iPhone, and
+Finding 6 measures the multiplier: **1.65×**, for 14.0 s on the phone.
 
 ### Why the prompt-shortening lever does not apply
 
@@ -252,14 +266,15 @@ Model load, same bundle, same machine **[measured]**:
 | `.cpuAndNeuralEngine` | **95,827 ms** and **103,636 ms**, two separate processes |
 | `.cpuOnly` | 21,227 ms |
 
-Some 75–82 seconds of that is ANE placement. It is paid per process launch, and
-it did not shrink on a later launch from the same path — ANEMLL's README says
-"subsequent loads will be instantaneous" **[source]**, and that was not observed
-here. DictusApp is long-lived and
-already pre-loads its STT model at launch, so this is an engineering problem
-rather than a blocker — but a first dictation after an app cold start would find
-the model still loading, and no Ollama figure in the predecessor (1.7–2.5 s
-load) hints at it.
+Some 75–82 seconds of that is ANE placement, and on the Mac it did not shrink on
+a later launch from the same path — ANEMLL's README says "subsequent loads will
+be instantaneous" **[source]** and that was not observed here.
+
+**On the phone it is.** Finding 6 measures 118.5 s the first time and 2.1 s every
+time after, so the Mac behaviour above is a macOS quirk and not a property of the
+model. It is recorded rather than dropped because it is what the Mac gate saw,
+and because it would otherwise look like an unexplained discrepancy with the
+device figures.
 
 ## Finding 5 — the CPU is not a fallback for this artifact
 
@@ -277,82 +292,182 @@ if the ANE is unavailable or busy.
 
 ---
 
-## What is still missing
+## Finding 6 — the device, backgrounded: the measurement #268 asked for
 
-**The device run.** This is D2's actual question and it is the one thing a Mac
-cannot stand in for: there is no jetsam on a Mac, and no `applicationState` to be
-in the background of.
+`iPhone16,2`, iOS 26.6, 8 GB, `AneHarness.app` backgrounded, three iterations,
+same prompt, same `temperature: 0`, thinking off. Collected 2026-08-22
+**[measured]**. Two runs, and the difference between them is itself a finding.
 
-The apparatus is complete and installed:
-
-- `AneHarness.app`, bundle id `com.pivi.dictus.anebench`, built from this branch,
-  installed on `iPhone16,2` on 2026-08-22 **[measured]**. It is not a target of
-  `Dictus.xcodeproj`, so the "Generate build info" phase never runs for it and
-  its output reads `rev unknown` — there is no revision line to check on this
-  one, unlike every other build the maintainer validates.
-- It stays alive backgrounded the same way DictusApp does — `UIBackgroundModes:
-  audio` plus a running `AVAudioEngine` — because reproducing that state is the
-  measurement, not a workaround.
-- It loads in the foreground, waits to be backgrounded rather than counting down
-  at the person holding the phone, then runs three iterations on its own.
-- Every reading carries `os_proc_available_memory()`, `phys_footprint`, thermal
-  state **and the lifecycle state it was taken in**. The report prints
-  `allIterationsBackgrounded`, so a run that was not backgrounded reports itself
-  as invalid rather than as a number.
-
-**The apparatus itself has been run end to end**, on an iPhone 17 Pro Max
-simulator, backgrounded by launching Safari over it **[measured]**. Everything
-except the ANE worked: the app launched, the audio keep-alive kept it alive
-through eight minutes in the background, the model loaded from the bundle, the
-prompt built from DictusCore to the same 1,680 tokens, three iterations ran, the
-results were written and read back, and the file ends
+### Run B — the clean one, thermal `nominal` throughout
 
 ```text
+ane-bench — #268 D2
+rev unknown | iPhone16,2 | Version 26.6 (Build 23G71) | ramGB=8
+model ctx=2048 batch=64 computeUnits=cpuAndNeuralEngine
+prompt 3-long systemChars=5483 userChars=729
+modelLoadMs=2079
+computePlan qwen_FFN_PF_lut6_chunk_01of02.mlmodelc: ANE 1166 / CPU 13 / GPU 0
+iteration 1 prefillMs=4947 (340 tok/s) decodeMs=9480 generated=162 (17.1 tok/s) totalMs=14427 stop=eos_token
+  iteration1.start available=3091MB footprint=284MB thermal=nominal state=background
+  iteration1.done  available=3090MB footprint=285MB thermal=nominal state=background
+iteration 2 prefillMs=4463 (376 tok/s) decodeMs=9337 generated=162 (17.4 tok/s) totalMs=13800 stop=eos_token
+iteration 3 prefillMs=4476 (375 tok/s) decodeMs=9358 generated=162 (17.3 tok/s) totalMs=13834 stop=eos_token
 allIterationsBackgrounded=true
 ```
 
-with every sample reading `state=background`. **None of its numbers mean
-anything** — a simulator has no Neural Engine, so it ran the same CPU path that
-produces gibberish on the Mac, at 1.6–4.0 tok/s. It is a rehearsal of the
-protocol, not a measurement, and it is recorded here only because it removes
-"does the harness work" from the list of things the maintainer's unlock window
-could be spent discovering.
+Every sample in every iteration reads `state=background` and `thermal=nominal`.
+This is the number.
 
-It has not run on the phone, for one reason: `devicectl` cannot launch an app on
-a locked phone.
+### What it answers
 
-```text
-Unable to launch com.pivi.dictus.anebench because the device was not, or could
-not be, unlocked. (FBSOpenApplicationErrorDomain error 7)
-```
+**The ANE is reachable from a backgrounded app, and the compute plan proves it
+rather than implying it.** The on-device plan is byte-for-byte the Mac's — 1,166
+ANE operations against 13 CPU in the transformer chunk, 0 GPU in every row
+**[measured]**. Core ML does not silently re-plan onto the CPU when the app
+leaves the foreground. That was an open mechanism in the predecessor, named in
+its own "what I am not comfortable asserting", and it is now closed.
 
-Everything after "unlock the phone" is automatable from the Mac — the run needs
-no taps, and `devicectl device copy from --domain-type appDataContainer` fetches
-the results over Wi-Fi. The steps are in the PR and in
-`tools/ane-harness/README.md`.
+**The prompt fits.** 1,680 tokens of prefill, EOS stop after 162 generated
+tokens, coherent French identical in substance to the Mac's.
 
-**What the device run adds, beyond confirming or refusing the Mac figures:**
+**Memory is not the constraint, and it is not close.** This is the result that
+most contradicts the predecessor:
 
-- the iPhone multiplier on 8.3 s, which is the number the decision rule wants;
-- `os_proc_available_memory()` with the model resident, against D1's 3.33 GB
-  backgrounded headroom — how much of it a 1.8 GB tenant plus its KV cache
-  actually costs, and what is left for Parakeet's ~800 MB. **This one cannot be
-  guessed from the Mac readings, and the reason is worth stating**: with the
-  whole 1.8 GB model loaded, `phys_footprint` read **324 MB** on the Mac and
-  **100 MB** in the simulator **[measured]**. Core ML's weights are mapped, not
-  allocated, so the footprint number does not see most of them. Whether jetsam
-  does is exactly what `os_proc_available_memory()` answers, and it returns 0
-  anywhere but a device **[code]** `DictusCore/DeviceCapabilities.swift:103`;
-- whether the ANE is reachable at all from a backgrounded process for an LLM, or
-  whether Core ML silently re-plans onto the CPU there. The harness reads the
-  compute plan on device, so this is answerable rather than arguable.
+| | |
+| --- | --- |
+| Jetsam headroom with the whole model loaded | **3,090 MB** |
+| `phys_footprint` | **284–285 MB** |
+| D1's baseline, DictusApp at launch, same device | 3,369 MB **[field]** |
 
-**What was not attempted, and is not on the way to an answer:** running Parakeet
-and the LLM in the same process. D1 gives Parakeet's cost and this gives the
-LLM's; composing them is arithmetic, and the composition is only worth measuring
-if the latency question comes back positive.
+**1.8 GB of weights cost about 280 MB of jetsam headroom.** Core ML maps ANE
+weights rather than allocating them into the process, so almost none of the model
+lands in the budget jetsam enforces. The 280 MB is a comparison across two
+different processes — this harness against DictusApp in D1 — so read it as an
+order of magnitude; the load-bearing figure is the absolute one, **3,090 MB still
+available with the model fully loaded and running**, which needs no comparison at
+all. Every memory argument in the predecessor —
+the pre-registered 1.2 GB ceiling, the correction to 3.33 GB, the "does 1.9 GB
+fit alongside Parakeet's ~800 MB" arithmetic in the addendum — was measuring the
+wrong quantity. Neither the ceiling nor its falsification decides anything.
+
+The readings are also flat across three iterations (3,091 → 3,090 → 3,091 MB), so
+the KV cache does not grow between calls.
+
+### What it refuses
+
+| | Backgrounded, `nominal` | Budget | Apple FM field baseline |
+| --- | --- | --- | --- |
+| Prefill, 1,680 tokens | 4,463 – 4,947 ms | | |
+| Decode, 162 tokens | 9,337 – 9,480 ms | | |
+| **Total per polish call** | **13,800 – 14,427 ms** | **≤ 5,000 ms** | **1,654 ms** **[field]** |
+
+**2.8× the budget ceiling and 8.4× what Apple FM actually delivers on this
+device.** Not a near miss.
+
+And the term that decides is decode, as the Mac indicated: 9.4 s of a 14 s call.
+Prefill is 4.5 s. Even a prompt of length zero leaves 9.4 s, so the one lever the
+predecessor identified — shorten the 1,150-token instruction block — still
+cannot reach the budget **[derived]**.
+
+The iPhone-to-Mac multiplier is **1.65×** on the total (14.0 s against 8.5 s),
+which confirms the predecessor's "a Mac figure is a floor" framing without
+needing it to be conservative.
+
+### Run A — what thermal pressure does, and why it is not a footnote
+
+The first run started at `thermal=fair` and crossed to `serious` during it
+**[measured]**:
+
+| Iteration | Prefill | Decode | Total | Thermal |
+| --- | --- | --- | --- | --- |
+| 1 | 8,966 ms | 12,042 ms | **21,008 ms** | `fair` |
+| 2 | 9,743 ms | 17,370 ms | **27,113 ms** | `fair` → `serious` |
+| 3 | 10,725 ms | 23,158 ms | **33,883 ms** | `serious` |
+
+Decode falls from 13.5 to 7.0 tok/s across roughly ninety seconds of ANE work.
+**Sustained LLM inference on the ANE heats an iPhone until the SoC throttles**,
+and the throttled figure is 34 s — 6.8× the budget.
+
+This matters more for Dictus than a benchmark footnote suggests, because
+DictusApp runs under `UIBackgroundModes: audio` and stays warm between
+dictations. A user dictating repeatedly would be holding the ANE busy in exactly
+the pattern that produced this curve, and thermal state also throttles the
+transcription that has to happen first.
+
+Iterations 2 and 3 of run A carry `state=active` — the app came to the foreground
+mid-run — so run A does not qualify as a background measurement and its file says
+`allIterationsBackgrounded=false`. Its iteration 1 is clean and is quoted above
+on its own terms. Run B replaces it as the measurement; run A is kept because the
+thermal curve is real evidence and run B, being short and starting cold, does not
+show it.
+
+### The load cost, corrected
+
+| | |
+| --- | --- |
+| First load on the device, ever | **118,501 ms** |
+| Every load after that | **2,079 ms** |
+
+ANEMLL's README says "the first time the model loads, macOS will take some time
+to place it on the device. Subsequent loads will be instantaneous" **[source]**.
+On the phone that is exactly right. On the Mac it was not — two separate
+processes loading the same bundle from the same path both paid 96–104 s
+**[measured]**. Whatever caches the ANE placement works on iOS and did not here.
+
+So the two-minute load is a once-per-install cost, not a once-per-launch one, and
+it is not an argument against anything.
 
 ---
+
+## The decision, against the rule that was registered before the measurement
+
+#268 pre-registered this:
+
+> **Negative** — the ANE cannot hold the prompt, or backgrounded latency lands
+> above the p50 ≤ 5 s budget: **close this issue permanently**. Both rationales
+> are then answered and a second local backend is not a thing Dictus does.
+
+The first clause fails and the second holds. The ANE *does* hold the prompt, and
+memory turned out not to be a constraint at all — but backgrounded latency is
+**13.8–14.4 s at nominal thermal and up to 33.9 s under thermal pressure**,
+against a 5 s ceiling and a 1,654 ms incumbent.
+
+**That is the negative branch. #268 should be closed.**
+
+Two things are worth saying about *how* it is closed, because they are not the
+same as the reasons anyone expected.
+
+**It is not closed on memory.** The predecessor's whole arithmetic — a 1.2 GB
+ceiling, D1's correction to 3.33 GB, the table of which candidates fit — measured
+a quantity that does not bind. An ANE-resident Core ML model costs the app
+roughly 280 MB of jetsam headroom regardless of how many gigabytes of weights it
+has. If this question is ever reopened, that page of reasoning should not be
+reopened with it.
+
+**It is not closed on "the ANE is unreachable in the background" either.** It is
+reachable, it is planned, it works. A future reopening would need a decode rate
+roughly **three times** what ANEMLL 0.3.5 delivers on this checkpoint —
+17.3 tok/s measured, and about 55 tok/s needed to land 162 tokens plus prefill
+inside 5 s **[derived]**. That is the number to hold any future candidate to, and
+it is a measurement, not an argument.
+
+---
+
+## What was not measured, and does not need to be
+
+**Parakeet and the LLM resident in one process.** The composition is no longer
+interesting: the LLM costs ~280 MB of headroom, D1 showed Parakeet's whole
+transcription cycle moving the same reading by ~35 MB, and there is 3 GB of room
+**[derived]**. Memory was never going to be the deciding term and now demonstrably
+is not.
+
+**Whether a shorter prompt or a smaller model gets under the budget.** Out of
+scope: #268 is about `qwen3:1.7b`, and its decode rate misses by 3×. A different
+model is a different issue, opened for a named model with a named footprint, as
+the coverage half already requires.
+
+**Quality of this LUT6 build through `polish-harness eval`.** It would have
+mattered only if the latency had come back positive. See below.
 
 ## Deviations from the issue
 
@@ -384,18 +499,25 @@ The three profiles on this machine carrying that group are bound to
 capability enabled in the developer portal, which needs an authenticated Xcode.
 The substance of the requirement — self-running, self-recording, nothing to tap
 while backgrounded — is unaffected. The results land in the app's own Documents
-directory, which `devicectl` reads over Wi-Fi with no interaction at all, which
-is less work for the maintainer than an export would have been. The App Group
-write is still attempted and its outcome recorded.
+directory, which `devicectl device copy from --domain-type appDataContainer`
+reads over Wi-Fi. In practice this cost the maintainer *less* than the App Group
+route would have: the entire measurement — launch, background, three iterations,
+collection — was driven from the Mac, and the only human act in it was unlocking
+the phone. The App Group write is still attempted and its outcome recorded.
 
 ---
 
 ## What I am not comfortable asserting
 
-- **Any iPhone number.** Nothing in this document was measured on a phone. The
-  M4 Pro figures are floors with an unknown multiplier, exactly as the
-  predecessor's were, and the summary says "indicated", not "measured", for that
-  reason.
+- **That one device generalises.** Everything phone-shaped here is one
+  `iPhone16,2` on iOS 26.6. The conclusion survives a wide margin — 14 s against
+  a 5 s ceiling — so a faster phone does not flip it without a 3× improvement,
+  but the *numbers* are one device's.
+
+- **That the three iterations of run B are a p50.** They are three consecutive
+  calls on one fixture, minutes apart, in one thermal state. The spread is
+  narrow (13.8–14.4 s) and that is all it establishes. The budget is written as a
+  p50 and this is not one.
 
 - **That LUT6 inherits the 66/72 the predecessor measured.** That score is a
   Q4_K_M build of `Qwen3-1.7B` served by Ollama; this is a 6-bit look-up-table
@@ -416,17 +538,27 @@ write is still attempted and its outcome recorded.
   1,448 of them in the FFN chunk is more than the 1,166 that are named. They are
   reported as undetermined because that is what Core ML returned.
 
-- **That 95.8 s of load is inherent.** It is what this bundle costs on this
-  machine at this ANEMLL version. Whether a monolithic build, a smaller context
-  or a different chunking loads faster was not investigated.
+- **That the load numbers say anything about a shipping integration.** 118.5 s
+  once and 2.1 s after is what this bundle costs on this device at this ANEMLL
+  version, installed as an app resource. A real integration would download the
+  weights rather than bundle them, and whether the ANE placement cache survives
+  that, an OS update, or a device reboot was not tested.
 
-- **That 28 tok/s is the Neural Engine's ceiling rather than ANEMLL's.** What was
-  measured is one open-source runtime, at 0.3.5, on one LUT6 chunked build. Apple
-  runs its own model on the same silicon and does not publish how. The claim this
-  document makes is about the option available to this product today — an
-  MIT-licensed toolchain and a public checkpoint — not about what the hardware
+- **That 17.3 tok/s is the Neural Engine's ceiling rather than ANEMLL's.** What
+  was measured is one open-source runtime, at 0.3.5, on one LUT6 chunked build.
+  Apple runs its own model on the same silicon and does not publish how. The
+  claim this document makes is about the option available to this product today —
+  an MIT-licensed toolchain and a public checkpoint — not about what the hardware
   could do in principle. A future ANEMLL release could move this number; a
-  reopening of #268 on that basis would need it measured, not argued.
+  reopening of #268 on that basis would need it measured, not argued, against the
+  ~55 tok/s the budget implies.
+
+- **That the thermal curve in run A is characterised.** It is one run, and the
+  phone's starting state was not controlled — it read `fair` before any
+  measurement began. What it shows is that ANE inference at this duty cycle
+  reaches `serious` and that decode degrades roughly 2× when it does. How quickly
+  it recovers, and what a realistic dictation cadence would do, were not
+  measured.
 
 ---
 
@@ -453,7 +585,12 @@ xcrun devicectl device install app --device <device-id> \
   build/DerivedData/Build/Products/Debug-iphoneos/AneHarness.app
 xcrun devicectl device process launch --device <device-id> --terminate-existing \
   com.pivi.dictus.anebench
-# press Home, or launch any other app from the Mac, then:
+
+# Poll Documents/phase.txt until it reads waiting-for-background (~2 min the first
+# time, ~5 s after), then background the harness without touching the phone:
+xcrun devicectl device process launch --device <device-id> com.apple.Preferences
+
+# Poll again until phase.txt reads done (~45 s), then:
 xcrun devicectl device copy from --device <device-id> --domain-type appDataContainer \
   --domain-identifier com.pivi.dictus.anebench --source Documents --destination ./out
 ```
