@@ -78,6 +78,8 @@ class TranscriptionService {
 
         let config = WhisperKitConfig(
             modelFolder: modelPath,
+            // Issue #370: A12/A13 need the audio encoder off the Neural Engine.
+            computeOptions: WhisperComputeOptions.current(),
             verbose: false,
             prewarm: true,
             load: true,

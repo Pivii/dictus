@@ -26,6 +26,26 @@ extension ModelInfo {
     }
 }
 
+// MARK: - Incompatibility wording (issue #369)
+
+extension ModelInfo.IncompatibilityReason {
+    /// One short line telling the user which constraint they are looking at.
+    ///
+    /// WHY it names the hardware and not the app:
+    /// the row is greyed because of the phone, and the sentence has to carry that
+    /// or the user reads the disabled card as Dictus being broken or thin. It must
+    /// not sound like an error or like something they did.
+    var localizedText: String {
+        switch self {
+        case .hardwareGeneration:
+            return String(localized: "Not supported on this iPhone")
+        case .insufficientMemory(let requiredGB):
+            // Says what the requirement is rather than restating the refusal.
+            return String(localized: "Requires \(requiredGB) GB of memory or more")
+        }
+    }
+}
+
 // MARK: - Language support strings (issue #240)
 
 extension ModelLanguageSupport.Coverage {

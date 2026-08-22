@@ -270,6 +270,9 @@ class ModelManager: ObservableObject {
             let config = WhisperKitConfig(
                 model: identifier,
                 modelFolder: modelFolder.path,
+                // Issue #370: A12/A13 need the audio encoder off the Neural Engine.
+                // This is the site the onboarding hang happens at (prewarm/compile).
+                computeOptions: WhisperComputeOptions.current(),
                 verbose: false,
                 prewarm: true,
                 load: true,
