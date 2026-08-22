@@ -255,11 +255,16 @@ class DictationCoordinator: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
+                // `sessionConfigured` used to be a hardcoded `true` here, so
+                // every `sessionConfigured=true` in a device log was a literal
+                // rather than a measurement — including the one quoted as
+                // evidence in #293. Both fields are now read from the engine.
                 PersistentLog.log(.engineStateSnapshot(
                     engineRunning: self.audioEngine.isEngineRunning,
                     isRecording: self.audioEngine.isRecording,
                     hasWhisperKit: self.whisperKit != nil,
-                    sessionConfigured: true,
+                    sessionConfigured: self.audioEngine.sessionConfigured,
+                    allowsHaptics: self.audioEngine.allowsHapticsDuringRecording,
                     context: "didBecomeActive"
                 ))
 
