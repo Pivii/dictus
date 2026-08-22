@@ -13,6 +13,13 @@
 //
 // `--instructions <file>` overrides the system prompt (A/B a candidate without
 // recompiling). `ab` runs two prompt files side by side.
+//
+// SPIKE ADDITION (#268, throwaway): `--engine local --model <name> [--base-url <url>]`
+// on `show` and `eval` runs the same pipeline against an OpenAI-compatible server
+// on localhost instead of Apple FM, so a candidate open-weights model can be
+// scored on the shipping fixtures. `--engine apple-fm` is the default and the
+// baseline. See `LocalHTTPPolishEngine.swift` for what that measurement is and is
+// not worth.
 
 import Foundation
 import DictusCore
@@ -43,6 +50,11 @@ guard let command = args.first, ["show", "eval", "ab"].contains(command), args.c
       show <fixtures.json> [--runs N] [--instructions <prompt.txt>]
       eval <fixtures.json> [--instructions <prompt.txt>]
       ab   <fixtures.json> --a <promptA.txt> --b <promptB.txt>
+
+    show/eval also accept (#268 spike, throwaway):
+      --engine apple-fm | local   (default apple-fm)
+      --model <name>              required with --engine local
+      --base-url <url>            default http://127.0.0.1:11434
     """)
     exit(2)
 }
@@ -52,6 +64,10 @@ let runs = Int(optionValue("--runs", in: args) ?? "1") ?? 1
 let instructionsFile = optionValue("--instructions", in: args)
 let abA = optionValue("--a", in: args)
 let abB = optionValue("--b", in: args)
+// #268 spike, throwaway.
+let engineKind = optionValue("--engine", in: args) ?? "apple-fm"
+let localModel = optionValue("--model", in: args)
+let localBaseURL = optionValue("--base-url", in: args) ?? "http://127.0.0.1:11434"
 
 // MARK: - Load fixtures
 
@@ -79,13 +95,19 @@ guard #available(macOS 26.0, *) else {
     exit(1)
 }
 
+// Apple Intelligence is required only by the apple-fm engine. The #268 spike runs
+// candidate models through a local server on machines where the check would be
+// beside the point, so it is scoped to the engine that needs it rather than to
+// the process.
 #if canImport(FoundationModels)
-switch SystemLanguageModel.default.availability {
-case .available:
-    break
-default:
-    print("error: Apple Foundation Models not available (\(SystemLanguageModel.default.availability)). Enable Apple Intelligence in System Settings.")
-    exit(1)
+if engineKind == "apple-fm" {
+    switch SystemLanguageModel.default.availability {
+    case .available:
+        break
+    default:
+        print("error: Apple Foundation Models not available (\(SystemLanguageModel.default.availability)). Enable Apple Intelligence in System Settings.")
+        exit(1)
+    }
 }
 #else
 print("error: FoundationModels not importable on this toolchain.")
@@ -93,7 +115,25 @@ exit(1)
 #endif
 
 @available(macOS 26.0, *)
-func makeEngine(_ override: (@Sendable (PolishMode, SupportedLanguage) -> String)?) -> AppleFoundationModelsPolishEngine {
+func makeEngine(_ override: (@Sendable (PolishMode, SupportedLanguage) -> String)?) -> any PolishEngineProtocol {
+    // #268 spike, throwaway. `--instructions` has no meaning for the local engine:
+    // it is there to A/B prompts on one model, and the spike A/Bs models on one
+    // prompt. Refusing the combination beats silently ignoring the flag.
+    if engineKind != "apple-fm" {
+        guard engineKind == "local" else {
+            print("error: unknown --engine \(engineKind) (expected 'apple-fm' or 'local')")
+            exit(2)
+        }
+        guard let localModel else {
+            print("error: --engine local requires --model <name>")
+            exit(2)
+        }
+        if override != nil {
+            print("error: --instructions is not supported with --engine local")
+            exit(2)
+        }
+        return LocalHTTPPolishEngine(baseURL: localBaseURL, model: localModel)
+    }
     if let override { return AppleFoundationModelsPolishEngine(instructionsOverride: override) }
     return AppleFoundationModelsPolishEngine()
 }
@@ -129,7 +169,7 @@ struct RunOutcome {
 }
 
 @available(macOS 26.0, *)
-func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
+func runOnce(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcome {
     guard let target = fx.language else {
         return await runOnceAuto(fx, engine: engine)
     }
@@ -153,7 +193,7 @@ func runOnce(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> 
 /// floor (the pre-pass output). `target` below is the placeholder the engine
 /// API requires — the auto prompt and guardrails ignore it.
 @available(macOS 26.0, *)
-func runOnceAuto(_ fx: Fixture, engine: AppleFoundationModelsPolishEngine) async -> RunOutcome {
+func runOnceAuto(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcome {
     guard let detectedCode = PolishPipeline.detectLanguageCode(in: fx.raw) else {
         return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
     }
