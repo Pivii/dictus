@@ -35,6 +35,15 @@ public final class PolishCoordinator {
     private let metricsRing = PolishMetricsRing()
     private var inflight: Task<PolishPipeline.Result, Never>?
 
+    /// Whether polish is still calling its engine (#315).
+    ///
+    /// Deliberately in memory and nowhere else. Apple's background rate limit is
+    /// only refunded by a fresh process, so "reset on a fresh process" and "do not
+    /// persist" are the same instruction, and this property is the whole of the
+    /// implementation. Anything that re-armed it — a timer, a foreground
+    /// observer, a retry — would be theatre against the measurements on #315.
+    private var availabilityGate = PolishAvailabilityGate()
+
     private init() {
         self.defaults = AppGroup.defaults
         #if canImport(FoundationModels)
@@ -46,6 +55,12 @@ public final class PolishCoordinator {
         #else
         self.appleFMEngine = nil
         #endif
+        // The fresh-process reset, on the flag the other process reads (#315).
+        // Done from the same object that owns `availabilityGate` above, so what
+        // is on disk and what is in memory cannot describe different states.
+        // This singleton is created from `DictusApp.init()`, so "fresh process"
+        // and "this line ran" are the same moment.
+        PolishAvailabilityChannel.clear()
     }
 
     /// Resolve the engine for this call. Re-checked on every `polish()` so a
@@ -326,14 +341,16 @@ public final class PolishCoordinator {
         // delegated to `PolishPipeline` so the eval harness runs identical code.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
 
+        let gate = availabilityGate
         let task = Task {
             await PolishPipeline.transform(
-                preprocessed: preprocessed, engine: currentEngine, target: target, mode: mode
+                preprocessed: preprocessed, engine: currentEngine, target: target, mode: mode, gate: gate
             )
         }
         inflight = task
 
         let bundle = await task.value
+        recordAvailability(bundle, engine: currentEngine)
         // True total, methodStart → here. Any gap vs (pre+engine+post) is
         // Swift Task scheduling / actor-hop overhead — itself worth seeing.
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
@@ -441,14 +458,17 @@ public final class PolishCoordinator {
         announceEngineStage(currentEngine, to: onEngineWillRun)
         // Pre-engine work in auto mode: detection + detected-language pre-pass.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
+        let gate = availabilityGate
         let task = Task {
             await PolishPipeline.transform(
-                preprocessed: preprocessed, engine: currentEngine, target: contextLanguage, mode: .auto
+                preprocessed: preprocessed, engine: currentEngine, target: contextLanguage,
+                mode: .auto, gate: gate
             )
         }
         inflight = task
 
         let bundle = await task.value
+        recordAvailability(bundle, engine: currentEngine)
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let returned = PolishPipeline.resolvedOutput(
             bundle, preprocessed: preprocessed, target: contextLanguage, mode: .auto
@@ -512,9 +532,39 @@ public final class PolishCoordinator {
     /// worth announcing (#267). Both polish paths reach the engine by different
     /// routes and each has to make this call; the check lives here so neither can
     /// make it differently.
+    ///
+    /// The availability gate (#315) is read here for the same reason it is read
+    /// inside the transform: while polish is unavailable there is no wait to
+    /// announce — the transform returns in about a millisecond without touching
+    /// the engine — and a `.processing` stage raised for it would flash a label
+    /// and a new animation for a single frame. Both decisions come off the one
+    /// gate value, so they cannot drift apart.
     private func announceEngineStage(_ engine: PolishEngineProtocol, to callback: (() -> Void)?) {
+        guard availabilityGate.allowsCall(engine: engine.identifier) else { return }
         guard engine.announcesProcessingStage else { return }
         callback?()
+    }
+
+    /// Feed one completed transform outcome to the availability gate (#315), and
+    /// on the single call that flips it, say so where both the user and a future
+    /// capture can see it.
+    ///
+    /// Both polish paths call this with the result they just got, so the rule
+    /// runs once per engine-facing dictation whichever route it took.
+    private func recordAvailability(_ bundle: PolishPipeline.Result,
+                                    engine: PolishEngineProtocol) {
+        let becameUnavailable = availabilityGate.record(
+            outcome: bundle.outcome,
+            reason: bundle.failureReason,
+            engine: engine.identifier
+        )
+        guard becameUnavailable else { return }
+        PersistentLog.log(.polishEngineUnavailable(
+            engine: engine.identifier,
+            reason: bundle.failureReason?.slug ?? "-",
+            consecutiveRefusals: PolishAvailabilityGate.consecutiveRefusalsBeforeUnavailable
+        ))
+        PolishAvailabilityChannel.markUnavailable()
     }
 
     /// Log one metrics event and append it to the debug ring.

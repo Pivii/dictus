@@ -104,6 +104,14 @@ public enum SharedKeys {
     /// Whether the polish layer runs between STT final output and App Group write, default false.
     /// Off by default — round 1 is opt-in measurement. See ADR 0002.
     public static let polishEnabled = "dictus.polishEnabled"
+    /// Bool: whether polish has stopped calling its engine for the rest of this app
+    /// process (#315). Written only by DictusApp, read by whichever surface has to
+    /// say so — the keyboard toolbar today. Absent reads false, which is the
+    /// available state, so no registration and no migration are needed.
+    ///
+    /// Read and written only through `PolishAvailabilityChannel`, which is where
+    /// the rule about clearing it lives.
+    public static let polishUnavailable = "dictus.polishUnavailable"
 
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
