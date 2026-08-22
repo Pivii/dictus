@@ -194,13 +194,6 @@ final class AOSPTrieEngine {
         return (fullCorrection, Array(alts))
     }
 
-    /// No-op for trie engine. User words are checked separately via UserDictionary.
-    /// The mmap'd trie is read-only; user words are handled as a two-pass lookup
-    /// in TextPredictionEngine (user dict first, then trie).
-    func injectUserWord(_ word: String) {
-        // No-op: user dictionary is checked before trie in TextPredictionEngine
-    }
-
     /// Whether a dictionary is loaded and ready for lookups.
     var isLoaded: Bool { bridge.isLoaded() }
 

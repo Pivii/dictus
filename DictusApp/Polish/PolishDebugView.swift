@@ -15,6 +15,9 @@ struct PolishDebugView: View {
     @State private var exportURL: URL?
     @State private var exportError: String?
     @State private var isExporting = false
+    /// #357 spike, throwaway. Arms ONE Apple FM probe run inside the keyboard
+    /// extension; see `DictusKeyboard/AppleFMExtensionProbe.swift`.
+    @State private var probeArmed = false
 
     var body: some View {
         List {
@@ -47,6 +50,24 @@ struct PolishDebugView: View {
                             .onTapGesture { selectedEntry = entry }
                     }
                 }
+            }
+            // #357 spike, throwaway. Delete with the spike.
+            Section {
+                Toggle("Arm keyboard Apple FM probe", isOn: $probeArmed)
+                    .onChange(of: probeArmed) { _, armed in
+                        AppGroup.defaults.set(armed, forKey: SharedKeys.appleFMExtensionProbeArmed)
+                    }
+            } header: {
+                Text("#357 spike")
+            } footer: {
+                Text("Fires a burst of 10 Apple FM calls inside the keyboard "
+                     + "extension, the next time the keyboard appears, then "
+                     + "disarms itself. Takes about a minute, keyboard open. "
+                     + "Results land in the persistent log as diagnosticProbe / "
+                     + "AppleFMExtensionProbe. Arm this only once the app is "
+                     + "already being refused, otherwise the result proves nothing.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Polish debug")
@@ -117,6 +138,10 @@ struct PolishDebugView: View {
     private func refresh() async {
         entries = await PolishCoordinator.shared.metricsSnapshot()
         storedCount = await PolishCoordinator.shared.metricsStoredCount()
+        // #357 spike: read the flag back rather than trusting local state. The
+        // extension clears it when it fires, so a toggle that stays on would
+        // claim a run is still pending after it has already happened.
+        probeArmed = AppGroup.defaults.bool(forKey: SharedKeys.appleFMExtensionProbeArmed)
     }
 }
 
