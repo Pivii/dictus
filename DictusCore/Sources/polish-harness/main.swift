@@ -43,13 +43,14 @@ func optionValue(_ name: String, in args: [String]) -> String? {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard let command = args.first, ["show", "eval", "ab"].contains(command), args.count >= 2 else {
+guard let command = args.first, ["show", "eval", "ab", "prompt"].contains(command), args.count >= 2 else {
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
-      show <fixtures.json> [--runs N] [--instructions <prompt.txt>]
-      eval <fixtures.json> [--instructions <prompt.txt>]
-      ab   <fixtures.json> --a <promptA.txt> --b <promptB.txt>
+      show   <fixtures.json> [--runs N] [--instructions <prompt.txt>]
+      eval   <fixtures.json> [--instructions <prompt.txt>]
+      ab     <fixtures.json> --a <promptA.txt> --b <promptB.txt>
+      prompt <fixtures.json> [--id <fixtureID>] [--out <dir>]
 
     show/eval also accept (#268 spike, throwaway):
       --engine apple-fm | local   (default apple-fm)
@@ -68,6 +69,9 @@ let abB = optionValue("--b", in: args)
 let engineKind = optionValue("--engine", in: args) ?? "apple-fm"
 let localModel = optionValue("--model", in: args)
 let localBaseURL = optionValue("--base-url", in: args) ?? "http://127.0.0.1:11434"
+// #268 D2, throwaway. `prompt` only.
+let promptFixtureID = optionValue("--id", in: args)
+let promptOutputDir = optionValue("--out", in: args)
 
 // MARK: - Load fixtures
 
@@ -100,7 +104,9 @@ guard #available(macOS 26.0, *) else {
 // beside the point, so it is scoped to the engine that needs it rather than to
 // the process.
 #if canImport(FoundationModels)
-if engineKind == "apple-fm" {
+// `prompt` never runs a model — it prints the bytes one would be sent — so it is
+// usable on a machine with Apple Intelligence off, which is the point of it.
+if command != "prompt", engineKind == "apple-fm" {
     switch SystemLanguageModel.default.availability {
     case .available:
         break
@@ -256,6 +262,47 @@ func runHarness() async {
             let b = await runOnce(fx, engine: engineB)
             print("  A (\(a.engineMs)ms): \(a.final)")
             print("  B (\(b.engineMs)ms): \(b.final)")
+        }
+
+    // #268 D2, throwaway. Prints the exact two strings the polish engine sends —
+    // the resolved system instructions and the user turn — for a fixture, so the
+    // ANE measurement runs on the shipping prompt rather than on a paraphrase of
+    // it. The user turn carries the PRE-PASSED text, because that is what the
+    // engine receives: `runOnce` applies `VerbalPunctuationPrepass` first.
+    case "prompt":
+        let selected = promptFixtureID.map { id in fixtures.filter { $0.id == id } } ?? fixtures
+        if selected.isEmpty {
+            print("error: no fixture with id \(promptFixtureID ?? "-") in \(fixturesPath)")
+            exit(1)
+        }
+        for fx in selected {
+            guard let target = fx.language else {
+                print("error: [\(fx.id)] routes through auto mode, which has no per-language prompt")
+                exit(1)
+            }
+            let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
+            let mode: PolishMode = .natural
+            let system = AppleFoundationModelsPolishEngine.instructions(for: mode, language: target)
+            let user = LocalHTTPPolishEngine.userTurn(raw: preprocessed)
+            print("━━ [\(fx.id)] lang=\(fx.lang) mode=\(mode.rawValue) "
+                  + "systemChars=\(system.count) userChars=\(user.count)")
+            if let dir = promptOutputDir {
+                let base = URL(fileURLWithPath: dir).appendingPathComponent(fx.id)
+                do {
+                    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+                    try system.write(to: base.appendingPathComponent("system.txt"), atomically: true, encoding: .utf8)
+                    try user.write(to: base.appendingPathComponent("user.txt"), atomically: true, encoding: .utf8)
+                } catch {
+                    print("error: cannot write to \(base.path): \(error)")
+                    exit(1)
+                }
+                print("  wrote \(base.path)/{system,user}.txt")
+            } else {
+                print("──── system ────")
+                print(system)
+                print("──── user ────")
+                print(user)
+            }
         }
 
     default:
