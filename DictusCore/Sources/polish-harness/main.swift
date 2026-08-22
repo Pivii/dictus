@@ -268,7 +268,11 @@ func runHarness() async {
     // the resolved system instructions and the user turn — for a fixture, so the
     // ANE measurement runs on the shipping prompt rather than on a paraphrase of
     // it. The user turn carries the PRE-PASSED text, because that is what the
-    // engine receives: `runOnce` applies `VerbalPunctuationPrepass` first.
+    // engine receives: `runOnce` applies `VerbalPunctuationPrepass` first, and the
+    // mode is resolved the same way rather than assumed to be `.natural` — a
+    // Parakeet fixture whose detected language differs from its target resolves to
+    // `.repair`, and printing the Natural instructions for it would be printing a
+    // prompt the engine would never send.
     case "prompt":
         let selected = promptFixtureID.map { id in fixtures.filter { $0.id == id } } ?? fixtures
         if selected.isEmpty {
@@ -281,10 +285,16 @@ func runHarness() async {
                 exit(1)
             }
             let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
-            let mode: PolishMode = .natural
+            guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+                print("error: [\(fx.id)] language detection returned nil — the pipeline "
+                      + "would skip the engine entirely, so there is no prompt to print")
+                exit(1)
+            }
+            let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
             let system = AppleFoundationModelsPolishEngine.instructions(for: mode, language: target)
             let user = LocalHTTPPolishEngine.userTurn(raw: preprocessed)
-            print("━━ [\(fx.id)] lang=\(fx.lang) mode=\(mode.rawValue) "
+            print("━━ [\(fx.id)] lang=\(fx.lang) stt=\(fx.sttEngine ?? "PK") "
+                  + "detected=\(detected.rawValue) mode=\(mode.rawValue) "
                   + "systemChars=\(system.count) userChars=\(user.count)")
             if let dir = promptOutputDir {
                 let base = URL(fileURLWithPath: dir).appendingPathComponent(fx.id)

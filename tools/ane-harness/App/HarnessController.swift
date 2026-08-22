@@ -35,8 +35,18 @@ final class HarnessController: ObservableObject {
         guard !started else { return }
         started = true
 
-        let audioOutcome = keepAlive.start()
-        append(audioOutcome)
+        // Stop here on failure. A run without the keep-alive is not a backgrounded
+        // run — iOS would suspend the process — so continuing would produce numbers
+        // that look like an answer and are not one.
+        do {
+            append(try keepAlive.start())
+        } catch {
+            headline = "Audio keep-alive failed — the run cannot be trusted"
+            append("\(error)")
+            writePhase("failed")
+            record(text: "ane-bench ABORTED: audio keep-alive failed: \(error)", json: nil)
+            return
+        }
 
         guard let modelDirectory = Bundle.main.url(forResource: "model", withExtension: nil) else {
             headline = "No model in the bundle"
@@ -87,7 +97,7 @@ final class HarnessController: ObservableObject {
             }
             let rendered = report.rendered()
             resultText = rendered
-            headline = report.allIterationsBackgrounded
+            headline = report.backgroundVerdict == .yes
                 ? "Done — measured while backgrounded"
                 : "Done — but NOT fully backgrounded (see state= below)"
             record(text: rendered, json: try? JSONEncoder().encode(report))

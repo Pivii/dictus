@@ -19,14 +19,22 @@ public struct PolishPrompt: Sendable {
     public let user: String
     /// Which fixture the user turn was built from.
     public let fixtureID: String
+    /// The mode the pipeline resolved for this fixture, printed alongside the
+    /// numbers so the report says which instruction set was measured.
+    public let mode: String
 
     /// Build the prompt for a fixture id in the bundled copy of `seed.json`.
     ///
     /// Throws rather than falling back to a hardcoded string: a prompt that is
     /// almost the shipping one produces a number that looks like an answer and
-    /// is not one.
+    /// is not one. For the same reason the mode is resolved through
+    /// `PolishPipeline.mode` instead of assumed to be `.natural` — a Parakeet
+    /// fixture whose detected language differs from its target resolves to
+    /// `.repair`, whose instructions are less than half the length, and measuring
+    /// prefill on the wrong instruction set would measure the wrong prompt.
+    /// (`3-long`, the fixture D2 uses, resolves to `.natural`.)
     @available(iOS 26.0, macOS 26.0, *)
-    public static func natural(fixtureID: String = "3-long") throws -> PolishPrompt {
+    public static func resolved(fixtureID: String = "3-long") throws -> PolishPrompt {
         guard let url = Bundle.module.url(forResource: "seed", withExtension: "json") else {
             throw PromptError.fixturesMissing
         }
@@ -38,8 +46,14 @@ public struct PolishPrompt: Sendable {
             throw PromptError.unsupportedLanguage(fixture.lang)
         }
         let preprocessed = VerbalPunctuationPrepass.apply(fixture.raw, language: language)
+        guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+            throw PromptError.languageUndetected(fixture.id)
+        }
+        let mode = PolishPipeline.mode(sttEngine: fixture.speechEngine,
+                                       detected: detected,
+                                       target: language)
         return PolishPrompt(
-            system: AppleFoundationModelsPolishEngine.instructions(for: .natural, language: language),
+            system: AppleFoundationModelsPolishEngine.instructions(for: mode, language: language),
             // Byte-identical to `AppleFoundationModelsPolishEngine.polish`, which
             // builds this string inline, and to `LocalHTTPPolishEngine.userTurn`,
             // which the off-device spike measured through.
@@ -51,7 +65,8 @@ public struct PolishPrompt: Sendable {
 
             Polished output:
             """,
-            fixtureID: fixture.id
+            fixtureID: fixture.id,
+            mode: mode.rawValue
         )
     }
 
@@ -61,12 +76,17 @@ public struct PolishPrompt: Sendable {
         let id: String
         let raw: String
         let lang: String
+        let sttEngine: String?
+
+        /// Matches `polish-harness`'s `Fixture`: Parakeet unless stated.
+        var speechEngine: SpeechEngine { sttEngine == "WK" ? .whisperKit : .parakeet }
     }
 
     public enum PromptError: Error, CustomStringConvertible {
         case fixturesMissing
         case noSuchFixture(String)
         case unsupportedLanguage(String)
+        case languageUndetected(String)
 
         public var description: String {
             switch self {
@@ -76,6 +96,9 @@ public struct PolishPrompt: Sendable {
                 return "no fixture with id \(id) in seed.json"
             case .unsupportedLanguage(let code):
                 return "fixture language \(code) has no per-language polish prompt"
+            case .languageUndetected(let id):
+                return "language detection returned nil for \(id) — the pipeline would "
+                     + "skip the engine, so there is no prompt to measure"
             }
         }
     }

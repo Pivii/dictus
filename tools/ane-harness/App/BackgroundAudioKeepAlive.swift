@@ -17,10 +17,25 @@ final class BackgroundAudioKeepAlive {
     private let engine = AVAudioEngine()
     private var player: AVAudioPlayerNode?
 
-    /// Configure the session and start a silent tone. Returns a human-readable
-    /// outcome — a failure here invalidates the run rather than degrading it, so
-    /// it has to reach the report.
-    func start() -> String {
+    enum StartError: Error, CustomStringConvertible {
+        case silentBufferUnavailable
+        case session(String)
+
+        public var description: String {
+            switch self {
+            case .silentBufferUnavailable: return "could not build the silent buffer"
+            case .session(let message): return message
+            }
+        }
+    }
+
+    /// Configure the session and start a silent tone.
+    ///
+    /// Throws rather than reporting, because a failure here does not degrade the
+    /// measurement — it invalidates it. Without the audio background mode holding
+    /// the process, iOS suspends the app seconds after it leaves the foreground,
+    /// and whatever the benchmark then reports is not a backgrounded run.
+    func start() throws -> String {
         do {
             let session = AVAudioSession.sharedInstance()
             // `.playAndRecord` mirrors DictusApp, which records. `.mixWithOthers`
@@ -36,14 +51,16 @@ final class BackgroundAudioKeepAlive {
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: format)
             guard let buffer = Self.silentBuffer(format: format) else {
-                return "audio keep-alive: could not build the silent buffer"
+                throw StartError.silentBufferUnavailable
             }
             try engine.start()
             player.scheduleBuffer(buffer, at: nil, options: .loops)
             player.play()
             return "audio keep-alive: running (playAndRecord, silent loop)"
+        } catch let error as StartError {
+            throw error
         } catch {
-            return "audio keep-alive FAILED: \(error.localizedDescription)"
+            throw StartError.session(error.localizedDescription)
         }
     }
 

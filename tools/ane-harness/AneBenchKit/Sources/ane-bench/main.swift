@@ -31,7 +31,18 @@ let fixtureID = option("--fixture") ?? "3-long"
 // `--compute-units cpu` is the control: same model, same prompt, same process,
 // Core ML told not to use the Neural Engine. The gap between the two runs is
 // what makes "it ran on the ANE" a measurement rather than an assumption.
-let computeUnits: MLComputeUnits = (option("--compute-units") == "cpu") ? .cpuOnly : .cpuAndNeuralEngine
+//
+// Unknown values are rejected rather than defaulted. A typo silently producing an
+// ANE run labelled `computeUnits=cpuAndNeuralEngine` would look exactly like the
+// control it was meant to be, and the whole ANE claim rests on that pair differing.
+let computeUnits: MLComputeUnits
+switch option("--compute-units") {
+case nil, "ane": computeUnits = .cpuAndNeuralEngine
+case "cpu":      computeUnits = .cpuOnly
+case let other:
+    FileHandle.standardError.write(Data("error: --compute-units expects 'ane' or 'cpu', got '\(other ?? "")'\n".utf8))
+    exit(2)
+}
 
 let runner = AneBenchRunner(configuration: AneBenchRunner.Configuration(
     modelDirectory: modelDirectory,
@@ -46,9 +57,10 @@ do {
     try await runner.prepare { message in FileHandle.standardError.write(Data("… \(message)\n".utf8)) }
     let report = try await runner.run { message in FileHandle.standardError.write(Data("… \(message)\n".utf8)) }
     print(report.rendered())
-    if let json = try? JSONEncoder().encode(report),
-       let path = option("--json") {
-        try json.write(to: URL(fileURLWithPath: path))
+    // `try`, not `try?`: a caller who passed --json and got exit 0 would believe the
+    // file is there. And the encode only runs when a path was actually asked for.
+    if let path = option("--json") {
+        try JSONEncoder().encode(report).write(to: URL(fileURLWithPath: path))
         FileHandle.standardError.write(Data("wrote \(path)\n".utf8))
     }
 } catch {

@@ -52,11 +52,17 @@ public actor AneBenchRunner {
     public enum RunError: Error, CustomStringConvertible {
         case metaMissing(URL)
         case notLoaded
+        /// The shipping polish prompts are reached through an entry point gated on
+        /// iOS/macOS 26. Its own case, because "the OS is too old" and "you called
+        /// run() before prepare()" send a reader to different places.
+        case unsupportedOSVersion
 
         public var description: String {
             switch self {
             case .metaMissing(let url): return "meta.yaml not found at \(url.path)"
             case .notLoaded: return "prepare() must succeed before run()"
+            case .unsupportedOSVersion:
+                return "the shipping polish prompts need iOS 26 / macOS 26 or later"
             }
         }
     }
@@ -68,6 +74,7 @@ public actor AneBenchRunner {
     private var prompt: PolishPrompt?
     private var promptTokens: [Int] = []
     private var modelLoadMs = 0
+    private var modelRevision = "unknown"
     private var computePlans: [ComputePlanSummary] = []
     private var notes: [String] = []
 
@@ -86,6 +93,10 @@ public actor AneBenchRunner {
             throw RunError.metaMissing(metaURL)
         }
 
+        modelRevision = (try? String(contentsOf: configuration.modelDirectory
+            .appendingPathComponent("REVISION.txt"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+
         progress("Reading meta.yaml…")
         let config = try YAMLConfig.load(from: metaURL.path)
         self.config = config
@@ -98,9 +109,9 @@ public actor AneBenchRunner {
         guard #available(iOS 26.0, macOS 26.0, *) else {
             // The prompts are reached through the Apple FM engine's one entry
             // point, which carries that gate. Nothing here calls Apple's model.
-            throw RunError.notLoaded
+            throw RunError.unsupportedOSVersion
         }
-        let prompt = try PolishPrompt.natural(fixtureID: configuration.fixtureID)
+        let prompt = try PolishPrompt.resolved(fixtureID: configuration.fixtureID)
         self.prompt = prompt
         self.promptTokens = Self.tokens(for: prompt,
                                         tokenizer: tokenizer,
@@ -172,13 +183,23 @@ public actor AneBenchRunner {
             let totalSeconds = Date().timeIntervalSince(callStart)
             samples.append(await ProcessProbe.sample("iteration\(index).done", since: origin))
 
+            // Not clamped. The runtime reports prefill separately and this
+            // derives decode by subtraction, so a negative difference would mean
+            // the two clocks disagree — a measurement fault. Clamping it to zero
+            // would print a plausible decode time for a run that should be thrown
+            // away, which is the one thing a harness must never do.
             let prefillMs = Int(prefillSeconds * 1000)
+            let decodeMs = Int(totalSeconds * 1000) - prefillMs
+            if decodeMs < 0 {
+                notes.append("iteration \(index): prefill (\(prefillMs) ms) exceeds the "
+                             + "measured call (\(Int(totalSeconds * 1000)) ms) — timings are unreliable")
+            }
             iterations.append(IterationReport(
                 index: index,
                 promptTokens: promptTokens.count,
                 generatedTokens: tokens.count,
                 prefillMs: prefillMs,
-                decodeMs: max(0, Int(totalSeconds * 1000) - prefillMs),
+                decodeMs: decodeMs,
                 stopReason: stopReason,
                 output: tokenizer.detokenize(tokens),
                 samples: samples
@@ -194,11 +215,12 @@ public actor AneBenchRunner {
             systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             physicalMemoryGB: capabilities.physicalMemoryGB,
             modelBundle: configuration.modelDirectory.lastPathComponent,
+            modelRevision: modelRevision,
             computeUnits: Self.describe(configuration.computeUnits)
                 + (configuration.allowThinking ? " +thinking" : ""),
             contextLength: config.contextLength,
             batchSize: config.batchSize,
-            fixtureID: prompt.fixtureID,
+            fixtureID: "\(prompt.fixtureID) (\(prompt.mode))",
             systemPromptChars: prompt.system.count,
             userTurnChars: prompt.user.count,
             modelLoadMs: modelLoadMs,

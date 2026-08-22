@@ -65,8 +65,9 @@ reasons the spike expected.**
 5. **The binding term is decode, and no prompt redesign touches it.** Decode is
    9.4 s of the 14 s. The one lever the predecessor identified — shorten the
    1,150-token instruction block — moves prefill only, so even a prompt of length
-   zero leaves 9.4 s **[derived]**. A future candidate would need roughly **3×**
-   ANEMLL 0.3.5's decode rate on this checkpoint to land inside the budget.
+   zero leaves 9.4 s **[derived]**. The bar a future candidate has to clear is in
+   [The decision](#the-decision-against-the-rule-that-was-registered-before-the-measurement),
+   and it is **×2.8 on the whole pipeline** — not on decode alone.
 
 6. **Sustained ANE inference throttles the phone.** A first run that began at
    `thermal=fair` crossed to `serious` within ninety seconds; decode fell from
@@ -118,8 +119,14 @@ resolved instructions come through `AppleFoundationModelsPolishEngine.instructio
 is the same `Input:` / `Polished output:` framing, over text that has been
 through `VerbalPunctuationPrepass`, because that is what the engine receives.
 `setup.sh` copies `seed.json` in rather than letting a second copy of the fixture
-exist. A new `polish-harness prompt` command prints the same two strings, so the
-bytes can be checked by hand.
+exist, and pins the model to an immutable Hub revision so a re-run cannot quietly
+fetch different weights. The **mode** is resolved through `PolishPipeline.mode`
+rather than assumed: a Parakeet fixture whose detected language differs from its
+target resolves to `.repair`, whose instructions are less than half the length of
+Natural's. `3-long` resolves to `.natural`, so the measurement is unaffected — but
+it was assumed rather than resolved until review caught it, and on two of the
+fourteen fixtures the assumption is wrong. A new `polish-harness prompt` command
+prints the same two strings, so the bytes can be checked by hand.
 
 **Thinking is off, and that was checked rather than assumed.** Qwen 3 reasons
 before answering unless the chat template emits an empty `<think></think>`
@@ -146,12 +153,12 @@ a crash-on-launch would be discovered.
 
 | | |
 | --- | --- |
-| Bundle | `anemll/anemll-Qwen-Qwen3-1.7B-ctx2048_0.3.5` **[source]** |
-| Base checkpoint | `Qwen/Qwen3-1.7B` (Apache-2.0), snapshot `0060bc56` per `meta.yaml` **[source]** |
+| Bundle | `anemll/anemll-Qwen-Qwen3-1.7B-ctx2048_0.3.5`, revision `0977a61d` **[source]** — `huggingface.co/anemll/anemll-Qwen-Qwen3-1.7B-ctx2048_0.3.5` |
+| Base checkpoint | `Qwen/Qwen3-1.7B` (Apache-2.0), snapshot `0060bc56d46589041c1048efd1a397421b1142b5` **[source]** — recorded in the bundle's `meta.yaml`, `model_path:` line |
 | Context / batch | 2048 / 64 |
 | Quantization | LUT6 per-channel 4 on the FFN and LM head; embeddings FP16 |
 | On disk | 1.80 GB across four `.mlmodelc` bundles |
-| Conversion | ANEMLL 0.3.5, parameters recorded verbatim in `meta.yaml` **[source]** |
+| Conversion | ANEMLL 0.3.5, parameters recorded verbatim in the bundle's `meta.yaml` (`.deps/model/meta.yaml` after `setup.sh`) **[source]** |
 
 `meta.yaml` carries the full converter invocation — context length, batch size,
 chunk count, LUT settings, `argmax_in_model: false`, `prefill_dynamic_slice:
@@ -161,7 +168,8 @@ issue names.
 
 The 2048 context matters. #268's coverage half was closed partly on ANEMLL's
 documented "M1/A14 limitation: constrained to 512-context monolithic models"
-**[source]**, against a 1,704-token prompt. This bundle is neither monolithic nor
+**[source]** — `github.com/Anemll/Anemll` `README.md`, at the pinned commit
+`fb42f60b2e7a7b4709052c7146d37480bf21941e` — against a 1,704-token prompt. This bundle is neither monolithic nor
 512-context, and the A14 constraint is untouched by anything here — the coverage
 tier stays closed.
 
@@ -322,6 +330,15 @@ correctly reports that it has no revision to report rather than guessing
 commit and the run. So there is no revision line to check on this one, and the
 sha is recorded here instead.
 
+The harness was edited **after** the run, under review, and none of those edits
+touch what was measured: aborting when the audio keep-alive fails (it did not
+fail — the run recorded it running), rendering the background verdict in three
+states instead of two, carrying the model revision into the report, no longer
+clamping a negative decode time (it was never negative), and resolving the prompt
+mode instead of assuming it (`3-long` resolves to the mode that was assumed).
+Re-running would reproduce the same prompt and the same work; the numbers below
+are quoted from the run that happened.
+
 ### Run B — the clean one, thermal `nominal` throughout
 
 ```text
@@ -451,7 +468,8 @@ show it.
 | Every load after that | **2,079 ms** |
 
 ANEMLL's README says "the first time the model loads, macOS will take some time
-to place it on the device. Subsequent loads will be instantaneous" **[source]**.
+to place it on the device. Subsequent loads will be instantaneous" **[source]** —
+the bundle's own `README.md`, "How to Run" section.
 On the phone that is exactly right. On the Mac it was not — two separate
 processes loading the same bundle from the same path both paid 96–104 s
 **[measured]**. Whatever caches the ANE placement works on iOS and did not here.
@@ -553,7 +571,7 @@ Two consequences, neither of which changes this document's conclusion:
 
 ## The decision, against the rule that was registered before the measurement
 
-#268 pre-registered this:
+Issue #268 pre-registered this:
 
 > **Negative** — the ANE cannot hold the prompt, or backgrounded latency lands
 > above the p50 ≤ 5 s budget: **close this issue permanently**. Both rationales
@@ -578,10 +596,24 @@ reopened with it.
 
 **It is not closed on "the ANE is unreachable in the background" either.** It is
 reachable, it is planned, it works. A future reopening would need a decode rate
-roughly **three times** what ANEMLL 0.3.5 delivers on this checkpoint —
-17.3 tok/s measured, and about 55 tok/s needed to land 162 tokens plus prefill
-inside 5 s **[derived]**. That is the number to hold any future candidate to, and
-it is a measurement, not an argument.
+a **×2.8 speed-up of the whole pipeline**, not of decode alone. Stated two ways,
+both from the measured medians of run B **[derived]**:
+
+| | Measured | Needed for a 5 s call |
+| --- | --- | --- |
+| **Whole pipeline scaled uniformly** — 13,834 ms → 5,000 ms | prefill 375 tok/s, decode 17.3 tok/s | prefill **~1,040 tok/s**, decode **~48 tok/s** (**×2.8** on both) |
+| **Decode alone, prefill unchanged** — 4,476 ms of prefill leaves 524 ms | decode 17.3 tok/s | decode **~309 tok/s** (**×18**) |
+
+The first form assumes nothing: it is 13,834 ms against 5,000 ms. The second is
+what "improve the decode rate" costs on its own, and it is the more useful figure
+for anyone reading a new runtime's tokens-per-second headline, because a
+tokens-per-second number says nothing about prefill.
+
+**An earlier draft of this report, and the closing comment on #268, quoted
+~55 tok/s of decode as the bar.** That was wrong: 162 tokens at 55 tok/s is
+2.95 s of decode, which on top of an unchanged 4.48 s prefill is 7.43 s — still
+1.5× over the ceiling. The figure only worked if prefill improved by the same
+factor, which was not stated. Corrected here and on the issue.
 
 ---
 
@@ -594,9 +626,9 @@ transcription cycle moving the same reading by ~35 MB, and there is 3 GB of room
 is not.
 
 **Whether a shorter prompt or a smaller model gets under the budget.** Out of
-scope: #268 is about `qwen3:1.7b`, and its decode rate misses by 3×. A different
-model is a different issue, opened for a named model with a named footprint, as
-the coverage half already requires.
+scope: issue #268 is about `qwen3:1.7b`, and the whole call misses by 2.8×. A
+different model is a different issue, opened for a named model with a named
+footprint, as the coverage half already requires.
 
 **Quality of this LUT6 build through the full 72-check suite.** Finding 7 settles
 the question the suite would have been asked — the build returns its input
@@ -647,7 +679,7 @@ the phone. The App Group write is still attempted and its outcome recorded.
 
 - **That one device generalises.** Everything phone-shaped here is one
   `iPhone16,2` on iOS 26.6. The conclusion survives a wide margin — 14 s against
-  a 5 s ceiling — so a faster phone does not flip it without a 3× improvement,
+  a 5 s ceiling — so a faster phone does not flip it without a 2.8× improvement,
   but the *numbers* are one device's.
 
 - **That the three iterations of run B are a p50.** They are three consecutive
@@ -663,8 +695,9 @@ the phone. The App Group write is still attempted and its outcome recorded.
   untested, and so is whether LUT6 costs anything against the 66/72 the
   predecessor measured on a Q4_K_M build. ANEMLL's own README does warn that
   "Quantization should be improved. LUT4 quality is fairly low due to lack of
-  Block Quantization on Apple Neural Engine" **[source]** — a reason to suspect
-  it, not evidence that it bit here.
+  Block Quantization on Apple Neural Engine" **[source]** (`github.com/Anemll/Anemll`
+  `README.md` at `fb42f60`, "Pre-converted Models") — a reason to suspect it, not
+  evidence that it bit here.
 
 - **That one fixture characterises the quality gap.** Finding 7 is `3-long`, the
   largest shipping fixture. A shorter input leaves more of the window free and
@@ -693,7 +726,9 @@ the phone. The App Group write is still attempted and its outcome recorded.
   an MIT-licensed toolchain and a public checkpoint — not about what the hardware
   could do in principle. A future ANEMLL release could move this number; a
   reopening of #268 on that basis would need it measured, not argued, against the
-  ~55 tok/s the budget implies.
+  bar in [The decision](#the-decision-against-the-rule-that-was-registered-before-the-measurement)
+  — and measured on the whole call, because a decode-rate headline alone cannot
+  clear it.
 
 - **That the thermal curve in run A is characterised.** It is one run, and the
   phone's starting state was not controlled — it read `fair` before any

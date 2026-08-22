@@ -77,6 +77,10 @@ public struct BenchReport: Codable, Sendable {
     public let systemVersion: String
     public let physicalMemoryGB: Int
     public let modelBundle: String
+    /// The Hugging Face revision `setup.sh` pinned, read from the bundle. "unknown"
+    /// when the file is absent — a bundle fetched some other way, which is exactly
+    /// the case a reader needs to be told about rather than left to assume.
+    public let modelRevision: String
     /// The `MLComputeUnits` the models were loaded with — the independent
     /// variable of the whole experiment, so it travels with the numbers.
     public let computeUnits: String
@@ -90,19 +94,31 @@ public struct BenchReport: Codable, Sendable {
     public let iterations: [IterationReport]
     public let notes: [String]
 
-    /// True only when every sample in every iteration was taken with the app
-    /// backgrounded. The whole point of D2.
-    public var allIterationsBackgrounded: Bool {
-        !iterations.isEmpty && iterations.allSatisfy { iteration in
-            !iteration.samples.isEmpty && iteration.samples.allSatisfy { $0.appState == "background" }
-        }
+    /// Whether every sample in every iteration was taken with the app
+    /// backgrounded — the whole point of D2.
+    ///
+    /// Three states, not two. macOS has no application lifecycle, so
+    /// `ProcessProbe` reports `n/a` there and a two-state flag would render
+    /// `false` on every Mac run — indistinguishable from a device run that
+    /// measured the wrong thing. This report is read to decide whether a run
+    /// counts, so "not applicable" must not look like "failed".
+    public enum BackgroundVerdict: String, Codable, Sendable {
+        case yes, no, notApplicable = "n/a (no application lifecycle)"
+    }
+
+    public var backgroundVerdict: BackgroundVerdict {
+        let samples = iterations.flatMap(\.samples)
+        guard !samples.isEmpty else { return .no }
+        if samples.allSatisfy({ $0.appState == "n/a" }) { return .notApplicable }
+        return samples.allSatisfy({ $0.appState == "background" }) ? .yes : .no
     }
 
     public func rendered() -> String {
         var out: [String] = []
         out.append("ane-bench — #268 D2")
         out.append("rev \(codeRevision) | \(deviceModel) | \(systemVersion) | ramGB=\(physicalMemoryGB)")
-        out.append("model \(modelBundle) ctx=\(contextLength) batch=\(batchSize) computeUnits=\(computeUnits)")
+        out.append("model \(modelBundle) rev=\(modelRevision) ctx=\(contextLength) "
+                   + "batch=\(batchSize) computeUnits=\(computeUnits)")
         out.append("prompt \(fixtureID) systemChars=\(systemPromptChars) userChars=\(userTurnChars)")
         out.append("modelLoadMs=\(modelLoadMs)")
         for plan in computePlans { out.append("computePlan \(plan.line)") }
@@ -116,7 +132,7 @@ public struct BenchReport: Codable, Sendable {
             for sample in iteration.samples { out.append("  \(sample.line)") }
             out.append("  output: \(iteration.output)")
         }
-        out.append("allIterationsBackgrounded=\(allIterationsBackgrounded)")
+        out.append("allIterationsBackgrounded=\(backgroundVerdict.rawValue)")
         for note in notes { out.append("note: \(note)") }
         return out.joined(separator: "\n")
     }
