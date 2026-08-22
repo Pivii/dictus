@@ -96,12 +96,14 @@ final class ModelInfoTests: XCTestCase {
     }
 
     func testTurboGatedOutOnLowRamDevices() {
-        // iPhone 12 / iPhone SE tier: 4 GB RAM — Turbo must not be offered.
+        // iPhone 12 / iPhone SE tier: 4 GB RAM — Turbo must not be runnable.
+        // Issue #369: it stays LISTED, disabled with a reason, instead of vanishing.
         let iphone12 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
         let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")
         XCTAssertNotNil(turbo)
         XCTAssertFalse(turbo!.isSupported(on: iphone12))
-        XCTAssertFalse(ModelInfo.available(on: iphone12).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertEqual(turbo!.incompatibilityReason(on: iphone12), .insufficientMemory(requiredGB: 6))
+        XCTAssertTrue(ModelInfo.available(on: iphone12).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
     }
 
     func testTurboAvailableOnSixGBPlusDevices() {
@@ -171,25 +173,78 @@ final class ModelInfoTests: XCTestCase {
 
     // MARK: - Issue #362: A12/A13 catalog gating
 
-    /// Every model Settings would offer on an iPhone 11 must be one Argmax lists for
-    /// that tier. Before the fix, Small/Medium/Parakeet were all offered and picking
-    /// any of them reproduced the Core ML optimization hang.
-    func testA12A13IPhonesAreOfferedOnlyArgmaxSupportedVariants() {
+    /// On an iPhone 11 only the Argmax-listed variants may be RUNNABLE. Before the
+    /// fix, Small/Medium/Parakeet were all downloadable and picking any of them
+    /// reproduced the Core ML optimization hang.
+    ///
+    /// Issue #369: they must still be LISTED. The row is what tells the user their
+    /// phone is the limit; an empty section reads as Dictus being thin.
+    func testA12A13IPhonesCanRunOnlyArgmaxSupportedVariants() {
         for identifier in ["iPhone11,2", "iPhone11,8", "iPhone12,1", "iPhone12,8"] {
             let device = makeCapabilities(ramGB: 4, model: identifier)
-            let offered = Set(ModelInfo.available(on: device).map(\.identifier))
+            let rows = ModelInfo.available(on: device)
+            let runnable = Set(rows.filter { $0.isSupported(on: device) }.map(\.identifier))
 
-            XCTAssertTrue(offered.isSubset(of: ModelInfo.a12a13SupportedIdentifiers),
-                          "\(identifier) offers \(offered.subtracting(ModelInfo.a12a13SupportedIdentifiers))")
+            XCTAssertTrue(runnable.isSubset(of: ModelInfo.a12a13SupportedIdentifiers),
+                          "\(identifier) can run \(runnable.subtracting(ModelInfo.a12a13SupportedIdentifiers))")
             for unsupported in ["openai_whisper-small",
                                 "openai_whisper-small_216MB",
                                 "openai_whisper-medium",
                                 "parakeet-tdt-0.6b-v3",
                                 "openai_whisper-large-v3_turbo_954MB"] {
-                XCTAssertFalse(offered.contains(unsupported),
-                               "\(identifier) must not offer \(unsupported)")
+                XCTAssertFalse(runnable.contains(unsupported),
+                               "\(identifier) must not be able to run \(unsupported)")
+                XCTAssertTrue(rows.map(\.identifier).contains(unsupported),
+                              "\(identifier) must still LIST \(unsupported) (issue #369)")
             }
         }
+    }
+
+    /// Issue #369's headline: the section an iPhone 11 owner opens is the full
+    /// catalogue with one usable entry, not a one-line list.
+    func testA12A13AvailableSectionKeepsTheWholeCatalogue() {
+        let iphone11 = makeCapabilities(ramGB: 4, model: "iPhone12,1")
+        let rows = ModelInfo.available(on: iphone11)
+        let identifiers = Set(rows.map(\.identifier))
+
+        // Everything visible, plus Base via the #362 recommendation exception.
+        XCTAssertEqual(identifiers, Set(ModelInfo.all.map(\.identifier)).union(["openai_whisper-base"]))
+        XCTAssertEqual(rows.filter { $0.isSupported(on: iphone11) }.map(\.identifier),
+                       ["openai_whisper-base"])
+        // Tiny is deprecated AND not recommended: superseded, not unrunnable, so it
+        // has nothing to explain and stays out.
+        XCTAssertFalse(identifiers.contains("openai_whisper-tiny"))
+    }
+
+    /// Every disabled row must be able to say why. A row greyed with no sentence is
+    /// the failure mode issue #369 exists to remove.
+    func testEveryUnrunnableRowCarriesAReason() {
+        let devices = [
+            makeCapabilities(ramGB: 4, model: "iPhone12,1"),
+            makeCapabilities(ramGB: 4, model: "iPhone13,2"),
+            makeCapabilities(ramGB: 8, model: "iPhone16,2")
+        ]
+        for device in devices {
+            for model in ModelInfo.available(on: device) {
+                XCTAssertEqual(model.incompatibilityReason(on: device) == nil,
+                               model.isSupported(on: device),
+                               "\(model.identifier) on \(device.deviceModelIdentifier): reason and gate disagree")
+            }
+        }
+    }
+
+    func testIncompatibilityReasonNamesTheRightConstraint() {
+        let iphone11 = makeCapabilities(ramGB: 4, model: "iPhone12,1")
+        let a14 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
+        let small = ModelInfo.forIdentifier("openai_whisper-small")!
+        let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")!
+
+        // Old chip, not memory: an iPhone 11 has the RAM, it lacks the generation.
+        XCTAssertEqual(small.incompatibilityReason(on: iphone11), .hardwareGeneration)
+        XCTAssertEqual(turbo.incompatibilityReason(on: iphone11), .hardwareGeneration)
+        // Right generation, not enough memory.
+        XCTAssertEqual(turbo.incompatibilityReason(on: a14), .insufficientMemory(requiredGB: 6))
+        XCTAssertNil(small.incompatibilityReason(on: a14))
     }
 
     func testIsSupportedOnA12A13AcceptsOnlyTinyAndBase() {
@@ -240,6 +295,8 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertTrue(offered.contains("openai_whisper-small"))
         XCTAssertFalse(offered.contains("openai_whisper-base"))
         XCTAssertFalse(offered.contains("openai_whisper-tiny"))
+        // Issue #369: Turbo is present but disabled here, not absent.
+        XCTAssertTrue(offered.contains("openai_whisper-large-v3_turbo_954MB"))
     }
 
     /// Guards the >= 6 GB path against collateral damage from the A12/A13 branch.
@@ -250,6 +307,16 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(offered, Set(ModelInfo.all.map(\.identifier)))
         XCTAssertTrue(offered.contains("parakeet-tdt-0.6b-v3"))
         XCTAssertTrue(offered.contains("openai_whisper-large-v3_turbo_954MB"))
+    }
+
+    /// Issue #369 criterion: on a 8 GB+ device nothing is disabled and the section
+    /// looks exactly as it does today.
+    func testNothingIsDisabledOnEightGBDevices() {
+        let iphone15ProMax = makeCapabilities(ramGB: 8, model: "iPhone16,2")
+        let rows = ModelInfo.available(on: iphone15ProMax)
+
+        XCTAssertEqual(rows.map(\.identifier), ModelInfo.all.map(\.identifier))
+        XCTAssertTrue(rows.allSatisfy { $0.isSupported(on: iphone15ProMax) })
     }
 
     // MARK: - Supported identifiers

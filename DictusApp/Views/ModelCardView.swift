@@ -34,6 +34,12 @@ struct ModelCardView: View {
     @ObservedObject var modelManager: ModelManager
     let onDownloadError: (String) -> Void
 
+    /// Why this device cannot run the model, or nil when it can (issue #369).
+    /// Non-nil greys the card out, drops its download control, and prints the
+    /// reason under the description. Defaults to nil so the Downloaded section
+    /// and the onboarding card keep their existing call sites untouched.
+    var incompatibilityReason: ModelInfo.IncompatibilityReason?
+
     /// Called when the user asks to delete this model from the overflow menu
     /// (issue #193). The parent owns the confirmation alert so the menu and
     /// swipe-to-delete share the exact same deletion path. Nil hides the menu
@@ -72,8 +78,10 @@ struct ModelCardView: View {
         modelManager.activeModel == model.identifier
     }
 
-    /// Whether the card should be tappable (disabled during download/prewarming).
+    /// Whether the card should be tappable (disabled during download/prewarming,
+    /// and permanently when the device cannot run the model — issue #369).
     private var isCardDisabled: Bool {
+        if incompatibilityReason != nil { return true }
         switch state {
         case .downloading, .prewarming:
             return true
@@ -118,6 +126,14 @@ struct ModelCardView: View {
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.95))
         .disabled(isCardDisabled)
+        // Issue #369: recess an incompatible card rather than hiding it. Opacity
+        // over the finished glass card keeps the Liquid Glass language already in
+        // this file instead of introducing a second disabled style; `.disabled`
+        // above is what actually blocks interaction, this only signals it.
+        .opacity(incompatibilityReason == nil ? 1 : 0.55)
+        // VoiceOver reads the disabled state from `.disabled` ("dimmed"); the hint
+        // carries the reason, which the visual row shows as text.
+        .accessibilityHint(incompatibilityReason.map { Text($0.localizedText) } ?? Text(""))
         // Overflow menu and language-info button live in an overlay OUTSIDE
         // the Button label: interactive controls nested inside a Button label
         // never receive taps (the whole label belongs to the button), so both
@@ -256,6 +272,15 @@ struct ModelCardView: View {
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
 
+            // Row 2b (issue #369): why this device cannot run the model. Sits
+            // directly under the description so the reason reads as part of the
+            // model's identity, not as an error banner bolted onto the card.
+            if let incompatibilityReason {
+                Label(incompatibilityReason.localizedText, systemImage: "exclamationmark.triangle")
+                    .font(.dictusCaption)
+                    .foregroundStyle(.secondary)
+            }
+
             // Row 3: Gauge bars OR full-width progress during download/prewarming
             if case .downloading = state, let progress = modelManager.downloadProgress[model.identifier] {
                 // Full-width progress bar replaces gauges during download
@@ -333,6 +358,11 @@ struct ModelCardView: View {
     /// Multiple state branches with different async/sync behavior.
     /// A named function keeps the Button action clean and testable.
     private func handleCardTap() {
+        // Issue #369 acceptance criterion: a disabled row must not start a download
+        // by ANY route. `.disabled` already blocks the tap; this guard also covers
+        // an accessibility activation or any future call site that forgets to pass
+        // the reason through to the modifier.
+        guard incompatibilityReason == nil else { return }
         switch state {
         case .ready:
             if !isActive {

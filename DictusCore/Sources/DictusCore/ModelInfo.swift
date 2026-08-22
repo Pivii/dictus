@@ -269,27 +269,58 @@ public struct ModelInfo: Identifiable {
         "openai_whisper-base.en"
     ]
 
-    public func isSupported(on capabilities: DeviceCapabilities) -> Bool {
+    /// Why a model cannot run on a given device, or `nil` when it can.
+    ///
+    /// WHY the reason is modelled here and not phrased here:
+    /// the UI has to tell the user which constraint they are looking at (issue #369),
+    /// and that sentence must be localized. DictusCore owns the policy; the app layer
+    /// maps each case to its French/English wording in `ModelInfo+Localized.swift`.
+    public enum IncompatibilityReason: Equatable, Sendable {
+        /// The chip predates the variant. Argmax's support matrix, not memory.
+        case hardwareGeneration
+        /// The device has less RAM than the variant needs.
+        case insufficientMemory(requiredGB: Int)
+    }
+
+    /// The reason this model cannot run on the given device, or `nil` if it can.
+    ///
+    /// WHY `isSupported(on:)` delegates here rather than duplicating the rules:
+    /// issue #369 renders the reason next to a disabled row, so a divergence between
+    /// "is it gated" and "why is it gated" would be visible as a greyed card with no
+    /// explanation, or an explanation on a tappable card. One function, no drift.
+    public func incompatibilityReason(on capabilities: DeviceCapabilities) -> IncompatibilityReason? {
         // WHY this branch comes first: on A12/A13 the limit is the Core ML support
         // matrix, not memory. Falling through to the RAM rule would leave Small,
-        // Small (Quantized) and Medium offered in Settings on an iPhone 11, and
+        // Small (Quantized) and Medium selectable in Settings on an iPhone 11, and
         // downloading any of them reproduces the issue #362 optimization hang.
         // Parakeet is excluded here too — it is absent from Argmax's matrix and
         // needs ~800 MB of headroom these 3-4 GB devices do not have.
         if capabilities.isA12OrA13iPhone {
-            return Self.a12a13SupportedIdentifiers.contains(identifier)
+            return Self.a12a13SupportedIdentifiers.contains(identifier) ? nil : .hardwareGeneration
         }
         switch identifier {
         case "openai_whisper-large-v3_turbo_954MB":
-            return capabilities.physicalMemoryGB >= 6
+            return capabilities.physicalMemoryGB >= 6 ? nil : .insufficientMemory(requiredGB: 6)
         default:
-            return true
+            return nil
         }
     }
 
-    /// The subset of the catalog that is both visible and gated-in for this device,
-    /// plus the device's recommended model even when that model is deprecated.
-    /// This is the list the Settings "Available" section should render.
+    public func isSupported(on capabilities: DeviceCapabilities) -> Bool {
+        incompatibilityReason(on: capabilities) == nil
+    }
+
+    /// The rows the Settings "Available" section should render for this device:
+    /// the visible catalog, plus the device's recommended model even when that model
+    /// is deprecated.
+    ///
+    /// WHY incompatible models are NOT filtered out (issue #369, reversing #104):
+    /// hiding them told the user nothing, and the absence read as a property of
+    /// Dictus rather than of their phone. On an A12/A13 iPhone the gating from
+    /// issue #362 would collapse this list to a single entry. They stay in the list
+    /// and the card renders them disabled with a reason; `incompatibilityReason(on:)`
+    /// is what the view asks. Deprecation still filters — deprecated means superseded,
+    /// not unrunnable, so those rows would have nothing to explain.
     ///
     /// WHY the recommendation is force-included (issue #362):
     /// On A12/A13 iPhones the recommendation is Base, which is `.deprecated` and so
@@ -311,7 +342,6 @@ public struct ModelInfo: Identifiable {
         let recommended = recommendedIdentifier(for: capabilities)
         let visibleIdentifiers = Set(all.map(\.identifier))
         return allIncludingDeprecated.filter { model in
-            guard model.isSupported(on: capabilities) else { return false }
             if visibleIdentifiers.contains(model.identifier) { return true }
             return model.visibility == .deprecated && model.identifier == recommended
         }

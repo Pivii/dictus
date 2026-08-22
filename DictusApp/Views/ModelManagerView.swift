@@ -8,8 +8,9 @@ import DictusCore
 
 /// Displays WhisperKit models organized in two sections:
 /// - "Downloaded" — models on device, including deprecated ones
-/// - "Available" — models available for download; excludes deprecated ones except
-///   the device's own recommended model (issue #362)
+/// - "Available" — models offered for download; excludes deprecated ones except the
+///   device's own recommended model (issue #362). Models this device cannot run stay
+///   listed and are rendered disabled with a reason (issue #369)
 ///
 /// WHY two sections instead of a flat list:
 /// Users need to quickly see what's on their device vs. what they can download.
@@ -49,6 +50,17 @@ struct ModelManagerView: View {
     /// "ready" celebration moment after the model state flips back to .ready.
     @State private var preparingModelID: String?
 
+    // MARK: - Device snapshot
+
+    /// Read once and reused by the Available section (issue #369).
+    ///
+    /// WHY stored rather than calling `DeviceCapabilities.current()` per row:
+    /// `current()` is explicitly not cached — it re-reads jetsam headroom and thermal
+    /// state each call — so per-row calls could disagree with each other inside a
+    /// single render. The fields the gating rule reads (model identifier, physical
+    /// RAM) cannot change while the view is alive.
+    private let deviceCapabilities = DeviceCapabilities.current()
+
     // MARK: - Computed model lists
 
     /// Downloaded models — includes deprecated (Tiny/Base) if user has them on device,
@@ -70,12 +82,14 @@ struct ModelManagerView: View {
     /// `available(on:)` keeps the device's recommended model even when deprecated, so
     /// an A12/A13 iPhone can always reinstall Base after deleting it (issue #362).
     ///
-    /// Phase 37 (issue #104): uses `ModelInfo.available(on:)` so per-device gated
-    /// models (e.g. Whisper Turbo on low-RAM devices) are completely hidden rather
-    /// than shown disabled. The "Downloaded" section above stays ungated so a user
-    /// who obtained a gated model under a permissive build can still manage/delete it.
+    /// Issue #369 REVERSES the Phase 37 (#104) decision quoted here before: per-device
+    /// gated models are no longer hidden. They stay in this list and `ModelCardView`
+    /// renders them disabled with a reason, because an absent row told the user
+    /// nothing and read as Dictus being thin rather than their phone being limited.
+    /// The "Downloaded" section above stays ungated so a user who obtained a gated
+    /// model under a permissive build can still manage/delete it.
     private var availableModels: [ModelInfo] {
-        ModelInfo.available(on: DeviceCapabilities.current()).filter { model in
+        ModelInfo.available(on: deviceCapabilities).filter { model in
             let state = modelManager.modelStates[model.identifier] ?? .notDownloaded
             switch state {
             case .downloading, .prewarming, .ready, .error:
@@ -198,7 +212,10 @@ struct ModelManagerView: View {
                             onDownloadError: { error in
                                 downloadError = error
                                 showErrorAlert = true
-                            }
+                            },
+                            // Issue #369: nil for a model this device can run, which
+                            // leaves the card fully interactive as before.
+                            incompatibilityReason: model.incompatibilityReason(on: deviceCapabilities)
                         )
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
