@@ -286,7 +286,10 @@ in the background of.
 The apparatus is complete and installed:
 
 - `AneHarness.app`, bundle id `com.pivi.dictus.anebench`, built from this branch,
-  installed on `iPhone16,2` on 2026-08-22 **[measured]**.
+  installed on `iPhone16,2` on 2026-08-22 **[measured]**. It is not a target of
+  `Dictus.xcodeproj`, so the "Generate build info" phase never runs for it and
+  its output reads `rev unknown` — there is no revision line to check on this
+  one, unlike every other build the maintainer validates.
 - It stays alive backgrounded the same way DictusApp does — `UIBackgroundModes:
   audio` plus a running `AVAudioEngine` — because reproducing that state is the
   measurement, not a workaround.
