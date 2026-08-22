@@ -72,6 +72,41 @@ public struct DeviceCapabilities: Sendable, Equatable {
         deviceModelIdentifier.hasPrefix("iPhone11,") || deviceModelIdentifier.hasPrefix("iPhone12,")
     }
 
+    /// Which Core ML compute units the Whisper audio encoder should be compiled for
+    /// on this device (issue #370).
+    ///
+    /// WHY this enum carries no WhisperKit type:
+    /// `ModelComputeOptions` lives in WhisperKit, which DictusCore deliberately does
+    /// not link — pulling it in here would drag the dependency into the keyboard
+    /// extension's link graph, and that extension runs under a ~50 MB ceiling nobody
+    /// has measured this against. Keeping the decision as a plain enum lets it be
+    /// unit tested by `swift test` (the repo's only suite, DictusCore-only) while
+    /// DictusApp does the one-line translation at the initialisation sites.
+    public enum AudioEncoderComputePolicy: Equatable, Sendable {
+        /// Pass no compute options and let WhisperKit choose. On iOS 17+ that means
+        /// the Neural Engine for the audio encoder.
+        case whisperKitDefault
+        /// Force the audio encoder onto CPU + GPU.
+        case cpuAndGPU
+    }
+
+    /// The compute policy this device needs.
+    ///
+    /// WHY only A12/A13 deviate:
+    /// Argmax documents Tiny/Base on that tier as requiring `.cpuAndGPU`; with no
+    /// options supplied WhisperKit picks the Neural Engine on iOS 17+, which is the
+    /// suspected reason Base can still stall in Core ML optimization there even after
+    /// issue #362 stops those devices being handed Small. Every other device keeps
+    /// today's configuration: forcing CPU+GPU across the install base would move the
+    /// transcription hot path for everyone at an unmeasured latency cost, to fix a
+    /// problem two hardware generations old.
+    ///
+    /// NOTE: Argmax's requirement is documentation. It has not been measured on an
+    /// iPhone 11 by anyone here, and only the reporter's device can confirm it.
+    public var audioEncoderComputePolicy: AudioEncoderComputePolicy {
+        isA12OrA13iPhone ? .cpuAndGPU : .whisperKitDefault
+    }
+
     /// Number of concurrent decoding workers WhisperKit should use for parallel
     /// chunk processing. Scales with physical RAM tier and de-rates under thermal
     /// pressure. Tiers match Apple's marketed iPhone RAM lineup (6/8/12 GB).
