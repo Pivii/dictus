@@ -8,7 +8,8 @@ import DictusCore
 
 /// Displays WhisperKit models organized in two sections:
 /// - "Downloaded" — models on device, including deprecated ones
-/// - "Available" — models available for download, excludes deprecated
+/// - "Available" — models available for download; excludes deprecated ones except
+///   the device's own recommended model (issue #362)
 ///
 /// WHY two sections instead of a flat list:
 /// Users need to quickly see what's on their device vs. what they can download.
@@ -65,7 +66,9 @@ struct ModelManagerView: View {
     }
 
     /// Available models — excludes downloaded, downloading, and prewarming models.
-    /// Users won't see Tiny/Base here since they're deprecated.
+    /// Users won't see Tiny/Base here since they're deprecated, with one exception:
+    /// `available(on:)` keeps the device's recommended model even when deprecated, so
+    /// an A12/A13 iPhone can always reinstall Base after deleting it (issue #362).
     ///
     /// Phase 37 (issue #104): uses `ModelInfo.available(on:)` so per-device gated
     /// models (e.g. Whisper Turbo on low-RAM devices) are completely hidden rather

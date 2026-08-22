@@ -169,6 +169,89 @@ final class ModelInfoTests: XCTestCase {
                        "openai_whisper-small")
     }
 
+    // MARK: - Issue #362: A12/A13 catalog gating
+
+    /// Every model Settings would offer on an iPhone 11 must be one Argmax lists for
+    /// that tier. Before the fix, Small/Medium/Parakeet were all offered and picking
+    /// any of them reproduced the Core ML optimization hang.
+    func testA12A13IPhonesAreOfferedOnlyArgmaxSupportedVariants() {
+        for identifier in ["iPhone11,2", "iPhone11,8", "iPhone12,1", "iPhone12,8"] {
+            let device = makeCapabilities(ramGB: 4, model: identifier)
+            let offered = Set(ModelInfo.available(on: device).map(\.identifier))
+
+            XCTAssertTrue(offered.isSubset(of: ModelInfo.a12a13SupportedIdentifiers),
+                          "\(identifier) offers \(offered.subtracting(ModelInfo.a12a13SupportedIdentifiers))")
+            for unsupported in ["openai_whisper-small",
+                                "openai_whisper-small_216MB",
+                                "openai_whisper-medium",
+                                "parakeet-tdt-0.6b-v3",
+                                "openai_whisper-large-v3_turbo_954MB"] {
+                XCTAssertFalse(offered.contains(unsupported),
+                               "\(identifier) must not offer \(unsupported)")
+            }
+        }
+    }
+
+    func testIsSupportedOnA12A13AcceptsOnlyTinyAndBase() {
+        let iphone11 = makeCapabilities(ramGB: 4, model: "iPhone12,1")
+        for model in ModelInfo.allIncludingDeprecated {
+            let expected = ModelInfo.a12a13SupportedIdentifiers.contains(model.identifier)
+            XCTAssertEqual(model.isSupported(on: iphone11), expected,
+                           "\(model.identifier) gating on iPhone 11")
+        }
+    }
+
+    /// The dead-end guard. Base is `.deprecated` and therefore absent from `all`, so
+    /// without the exception in `available(on:)` an iPhone 11 user who deleted Base
+    /// had no way to reinstall it and no usable model left.
+    func testRecommendedModelIsAlwaysOfferedEvenWhenDeprecated() {
+        let iphone11 = makeCapabilities(ramGB: 4, model: "iPhone12,1")
+
+        XCTAssertEqual(ModelInfo.recommendedIdentifier(for: iphone11), "openai_whisper-base")
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-base")?.visibility, .deprecated)
+        XCTAssertFalse(ModelInfo.all.map(\.identifier).contains("openai_whisper-base"))
+        XCTAssertTrue(ModelInfo.available(on: iphone11).map(\.identifier).contains("openai_whisper-base"))
+    }
+
+    /// The same invariant stated once for every tier: whatever the app tells a device
+    /// to install must be reachable from the Settings "Available" list on that device.
+    func testEveryTierCanReachItsOwnRecommendation() {
+        let devices = [
+            makeCapabilities(ramGB: 4, model: "iPhone11,2"),
+            makeCapabilities(ramGB: 4, model: "iPhone12,1"),
+            makeCapabilities(ramGB: 4, model: "iPhone13,2"),
+            makeCapabilities(ramGB: 6, model: "iPhone15,4"),
+            makeCapabilities(ramGB: 8, model: "iPhone16,2"),
+            makeCapabilities(ramGB: 12, model: "iPhone18,1")
+        ]
+        for device in devices {
+            let recommended = ModelInfo.recommendedIdentifier(for: device)
+            XCTAssertTrue(ModelInfo.available(on: device).map(\.identifier).contains(recommended),
+                          "\(device.deviceModelIdentifier) recommends \(recommended) but cannot install it")
+        }
+    }
+
+    /// The deprecation exception must not leak: an A14 iPhone still sees Small, and
+    /// Base stays hidden there because Small is the better model on that hardware.
+    func testDeprecationExceptionDoesNotLeakToA14Devices() {
+        let iphone12 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
+        let offered = ModelInfo.available(on: iphone12).map(\.identifier)
+
+        XCTAssertTrue(offered.contains("openai_whisper-small"))
+        XCTAssertFalse(offered.contains("openai_whisper-base"))
+        XCTAssertFalse(offered.contains("openai_whisper-tiny"))
+    }
+
+    /// Guards the >= 6 GB path against collateral damage from the A12/A13 branch.
+    func testSixGBDeviceCatalogUnchanged() {
+        let iphone15 = makeCapabilities(ramGB: 6, model: "iPhone15,4")
+        let offered = Set(ModelInfo.available(on: iphone15).map(\.identifier))
+
+        XCTAssertEqual(offered, Set(ModelInfo.all.map(\.identifier)))
+        XCTAssertTrue(offered.contains("parakeet-tdt-0.6b-v3"))
+        XCTAssertTrue(offered.contains("openai_whisper-large-v3_turbo_954MB"))
+    }
+
     // MARK: - Supported identifiers
 
     func testSupportedIdentifiersMatchesAllIncludingDeprecated() {

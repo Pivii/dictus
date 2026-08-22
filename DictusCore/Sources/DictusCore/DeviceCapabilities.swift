@@ -52,6 +52,26 @@ public struct DeviceCapabilities: Sendable, Equatable {
         )
     }
 
+    /// Whether this device is an A12- or A13-class iPhone (iPhone XS/XR through
+    /// iPhone 11 and iPhone SE 2nd gen).
+    ///
+    /// WHY a hardware-family test and not a RAM test:
+    /// These devices ship 3-4 GB, the same tier as the A14 iPhone 12 family, so RAM
+    /// alone cannot tell them apart. Argmax's WhisperKit Core ML support matrix draws
+    /// the line on the chip, not the memory: A12/A13 list only Tiny and Base, while
+    /// A14 adds Small. Recommending or offering Small here traps the app in Core ML
+    /// optimization during onboarding and can jetsam it (issue #362).
+    ///
+    /// WHY it lives on DeviceCapabilities rather than ModelInfo:
+    /// This type states facts about the hardware; ModelInfo decides what those facts
+    /// mean for the catalog. Keeping the prefix list here gives the recommendation
+    /// rule and the per-device gate one shared definition instead of two copies.
+    ///
+    /// Source of truth: https://huggingface.co/argmaxinc/whisperkit-coreml/raw/main/config.json
+    public var isA12OrA13iPhone: Bool {
+        deviceModelIdentifier.hasPrefix("iPhone11,") || deviceModelIdentifier.hasPrefix("iPhone12,")
+    }
+
     /// Number of concurrent decoding workers WhisperKit should use for parallel
     /// chunk processing. Scales with physical RAM tier and de-rates under thermal
     /// pressure. Tiers match Apple's marketed iPhone RAM lineup (6/8/12 GB).
