@@ -20,6 +20,7 @@ func option(_ name: String) -> String? {
 let defaultModel = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()   // ane-bench
     .deletingLastPathComponent()   // Sources
+    .deletingLastPathComponent()   // AneBenchKit
     .deletingLastPathComponent()   // ane-harness
     .appendingPathComponent(".deps/model")
 
