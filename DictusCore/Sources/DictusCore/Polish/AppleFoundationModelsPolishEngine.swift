@@ -56,8 +56,8 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         )
         // A session lives exactly one polish call. `prewarm()` (fired at
         // recording start) leaves a fresh, warmed session in the cache; we use
-        // it here on a cache hit, or create one if no prewarm ran. The `defer`
-        // drops it afterward so the NEXT call never inherits this turn.
+        // it here on a cache hit, or create one if no prewarm ran, and drop it
+        // afterward so the NEXT call never inherits this turn.
         //
         // WHY this matters: `LanguageModelSession` is stateful — every
         // `respond()` is appended to a transcript the session re-prefills on
@@ -69,7 +69,6 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
             for: key,
             instructions: resolvedInstructions(mode: mode, language: targetLanguage)
         )
-        defer { Task { await cache.drop(key) } }
         // Wrap the input with explicit Input/Output framing. Without this Apple
         // FM treats the raw as a conversational turn and emits chat-reply
         // acknowledgements ("I'll polish it for you") instead of the polished
@@ -83,8 +82,23 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
 
         Polished output:
         """
-        let response = try await session.respond(to: prompt)
-        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The drop is awaited on both exits rather than deferred into an
+        // unstructured `Task` (#315). A detached task is ordered against
+        // nothing, and the captures on that issue show two dictations chaining
+        // inside a single second: `polish` A takes session S1, the next
+        // recording's `prewarm()` drops S1 and installs a warmed S2, then A's
+        // deferred task fires and drops S2. The next call gets a cache miss and
+        // builds a cold session, so the prewarm is wasted on every chained
+        // dictation. Awaiting here means the drop cannot outlive the call that
+        // owns it.
+        do {
+            let response = try await session.respond(to: prompt)
+            await cache.drop(key)
+            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            await cache.drop(key)
+            throw error
+        }
     }
 
     /// Create a FRESH session for `(mode, targetLanguage)` and prewarm it.
