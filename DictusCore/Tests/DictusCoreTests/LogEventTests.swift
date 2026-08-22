@@ -199,6 +199,55 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .audio)
     }
 
+    // MARK: - Haptics allowance (issue #293)
+
+    func testHapticsAllowanceIsInfoAudio() {
+        let event = LogEvent.audioHapticsAllowance(context: "startRecording", allowed: true)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(event.name, "audioHapticsAllowance")
+    }
+
+    /// The value is the whole point of the line: `allowed=false` while the
+    /// session is active is the device-wide haptics mute (#293). It must be
+    /// greppable verbatim, not encoded in the event's presence.
+    func testHapticsAllowanceCarriesTheEffectiveValue() {
+        let denied = LogEvent.audioHapticsAllowance(context: "warmUp-alreadyRunning", allowed: false)
+        XCTAssertEqual(denied.message, "context=warmUp-alreadyRunning allowed=false")
+
+        let granted = LogEvent.audioHapticsAllowance(context: "configureAudioSession", allowed: true)
+        XCTAssertEqual(granted.message, "context=configureAudioSession allowed=true")
+    }
+
+    /// Before #293 the setter was a bare `try?`, so a throw produced the same
+    /// (empty) evidence as a success. A failure now has its own level.
+    func testHapticsAllowanceFailedIsWarningAudio() {
+        let event = LogEvent.audioHapticsAllowanceFailed(context: "startEngine-warmUp", error: "boom")
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(event.name, "audioHapticsAllowanceFailed")
+        XCTAssertEqual(event.message, "context=startEngine-warmUp error=boom")
+    }
+
+    /// The snapshot is the periodic line a reader scans; #293 added the
+    /// allowance to it so a regression is visible without correlating two events.
+    func testEngineStateSnapshotReportsHapticsAllowance() {
+        let event = LogEvent.engineStateSnapshot(
+            engineRunning: true,
+            isRecording: false,
+            hasWhisperKit: true,
+            sessionConfigured: true,
+            allowsHaptics: false,
+            context: "didBecomeActive"
+        )
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(
+            event.message,
+            "engineRunning=true isRecording=false hasWhisperKit=true "
+                + "sessionConfigured=true allowsHaptics=false context=didBecomeActive"
+        )
+    }
+
     // MARK: - Transcription events
 
     func testTranscriptionStartedIsInfoTranscription() {
