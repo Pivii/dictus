@@ -181,9 +181,11 @@ Q4_K_M build of the same checkpoint.
 | `qwen_embeddings` | ANE 0 / **CPU 4** | ANE 0 / CPU 4 |
 
 Two things to read here. The transformer body and the LM head are planned
-entirely for the Neural Engine — the 13 CPU operations are the same 13 in both
-columns. And the embedding table is a CPU gather in both, which is expected and
-is 622 MB of FP16 weights that the ANE never touches.
+essentially entirely for the Neural Engine: 1,179 = 1,166 + 13, so the 13
+operations that stay on the CPU under `.cpuAndNeuralEngine` are ones the planner
+never offers to the ANE **[derived]**. And the embedding table is a CPU gather in
+both columns, which is expected — it is 622 MB of FP16 weights the ANE never
+touches.
 
 **The GPU column is zero in every row.** Nothing in this path asks for Metal,
 which is the constraint the predecessor's Finding 1 established.
@@ -229,9 +231,12 @@ leaves **5.8 s**, which is still over the budget **[derived]**.
 
 The control makes the shape of the hardware visible. Moving from CPU to ANE buys
 **6.5×** on prefill and **1.35×** on decode. Set against the predecessor's Metal
-figures for the same checkpoint — 1.37 s warm total, of which ~1.25 s decoded
-~160 tokens — the GPU decodes roughly **4×** faster than the ANE does
-**[derived]**.
+figures for the same checkpoint — 1.25 s of decode inside a 3.82 s cold run — the
+GPU decodes roughly **4×** faster than the ANE does **[derived]**. That factor
+rests on an assumption the predecessor does not state: that its Metal run
+generated about as many tokens as this one's 162. Same prompt, same
+`temperature: 0`, different quantization and a different server, so treat the
+factor as an order of magnitude and not a measurement.
 
 That is a coherent picture rather than an anomaly: decode is one token at a time
 against the whole weight matrix, so it is bound by memory bandwidth, which is
