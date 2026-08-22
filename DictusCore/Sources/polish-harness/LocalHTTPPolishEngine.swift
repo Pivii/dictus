@@ -64,12 +64,12 @@ struct LocalHTTPPolishEngine: PolishEngineProtocol {
         self.session = URLSession(configuration: configuration)
     }
 
-    func polish(raw: String,
-                targetLanguage: SupportedLanguage,
-                mode: PolishMode) async throws -> String {
-        let instructions = AppleFoundationModelsPolishEngine.instructions(for: mode, language: targetLanguage)
-        // Byte-identical to the Apple FM engine's user turn.
-        let userPrompt = """
+    /// Byte-identical to the Apple FM engine's user turn, which builds the same
+    /// string inline. Exposed as a function because #268's D2 sends these exact
+    /// bytes to a Core ML model outside this process, and a second hand-copy of
+    /// the framing would silently measure a different prompt.
+    static func userTurn(raw: String) -> String {
+        """
         Polish this text. Output only the polished version, nothing else.
 
         Input:
@@ -77,6 +77,13 @@ struct LocalHTTPPolishEngine: PolishEngineProtocol {
 
         Polished output:
         """
+    }
+
+    func polish(raw: String,
+                targetLanguage: SupportedLanguage,
+                mode: PolishMode) async throws -> String {
+        let instructions = AppleFoundationModelsPolishEngine.instructions(for: mode, language: targetLanguage)
+        let userPrompt = Self.userTurn(raw: raw)
         var body: [String: Any] = [
             "model": model,
             "temperature": temperature,
