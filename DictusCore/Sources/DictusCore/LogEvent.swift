@@ -62,6 +62,18 @@ public enum LogEvent: Sendable {
     case audioMediaServicesReset
     case warmStateReleased(idleSeconds: Int)
     case warmStateRestored(context: String)
+    /// The value `AVAudioSession` actually reports for
+    /// `allowHapticsAndSystemSoundsDuringRecording` after a session transition
+    /// (#293). `allowed=false` while the session is active is the bug itself:
+    /// iOS then mutes system haptics device-wide, on every keyboard including
+    /// Apple's, for as long as we hold the session. Emitted on every path that
+    /// activates or tears down the session so a regression shows up in the log
+    /// instead of being inferred from timing.
+    case audioHapticsAllowance(context: String, allowed: Bool)
+    /// `setAllowHapticsAndSystemSoundsDuringRecording` threw. Before #293 this
+    /// call site was a bare `try?`, so a failure was indistinguishable from a
+    /// success.
+    case audioHapticsAllowanceFailed(context: String, error: String)
 
     // MARK: Transcription
     case transcriptionStarted(modelName: String)
@@ -145,7 +157,7 @@ public enum LogEvent: Sendable {
     case engineWarmUpAttempt(context: String)
     case engineWarmUpSuccess(context: String)
     case engineWarmUpFailed(context: String, error: String)
-    case engineStateSnapshot(engineRunning: Bool, isRecording: Bool, hasWhisperKit: Bool, sessionConfigured: Bool, context: String)
+    case engineStateSnapshot(engineRunning: Bool, isRecording: Bool, hasWhisperKit: Bool, sessionConfigured: Bool, allowsHaptics: Bool, context: String)
     case engineCollectResult(sampleCount: Int, engineRunning: Bool)
     case engineDarwinStartReceived(appState: String, engineRunning: Bool)
 
@@ -247,7 +259,8 @@ public enum LogEvent: Sendable {
             return .dictation
         case .audioEngineStarted, .audioEngineStopped, .audioSessionConfigured, .audioSessionFailed,
              .audioInterruptionBegan, .audioInterruptionEnded, .audioRouteChanged,
-             .audioMediaServicesReset, .warmStateReleased, .warmStateRestored:
+             .audioMediaServicesReset, .warmStateReleased, .warmStateRestored,
+             .audioHapticsAllowance, .audioHapticsAllowanceFailed:
             return .audio
         case .transcriptionStarted, .transcriptionCompleted, .transcriptionFailed, .recordingTooShort,
              .transcriptionPerformance:
@@ -322,7 +335,7 @@ public enum LogEvent: Sendable {
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
-             .modelDownloadStalled:
+             .modelDownloadStalled, .audioHapticsAllowanceFailed:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -347,7 +360,7 @@ public enum LogEvent: Sendable {
              .waveformAppeared, .waveformDisappeared, .waveformRefreshIDChanged,
              .waveformEnergyTransition, .overlayBodyEvaluated, .overlayRecreated,
              .audioInterruptionEnded, .audioRouteChanged,
-             .warmStateReleased, .warmStateRestored,
+             .warmStateReleased, .warmStateRestored, .audioHapticsAllowance,
              .userDictionaryEvicted, .userDictionaryReset, .userDictionaryMigrated,
              .userDictionaryStaleDiscarded, .userDictionaryPruned:
             return .info
@@ -396,6 +409,8 @@ public enum LogEvent: Sendable {
         case .audioMediaServicesReset: return "audioMediaServicesReset"
         case .warmStateReleased: return "warmStateReleased"
         case .warmStateRestored: return "warmStateRestored"
+        case .audioHapticsAllowance: return "audioHapticsAllowance"
+        case .audioHapticsAllowanceFailed: return "audioHapticsAllowanceFailed"
         case .transcriptionStarted: return "transcriptionStarted"
         case .transcriptionCompleted: return "transcriptionCompleted"
         case .transcriptionFailed: return "transcriptionFailed"
@@ -519,6 +534,10 @@ public enum LogEvent: Sendable {
             return "idleSeconds=\(idleSeconds)"
         case .warmStateRestored(let context):
             return "context=\(context)"
+        case .audioHapticsAllowance(let context, let allowed):
+            return "context=\(context) allowed=\(allowed)"
+        case .audioHapticsAllowanceFailed(let context, let error):
+            return "context=\(context) error=\(error)"
 
         // Transcription
         case .transcriptionStarted(let modelName):
@@ -570,8 +589,8 @@ public enum LogEvent: Sendable {
             return "context=\(context)"
         case .engineWarmUpFailed(let context, let error):
             return "context=\(context) error=\(error)"
-        case .engineStateSnapshot(let engineRunning, let isRecording, let hasWhisperKit, let sessionConfigured, let context):
-            return "engineRunning=\(engineRunning) isRecording=\(isRecording) hasWhisperKit=\(hasWhisperKit) sessionConfigured=\(sessionConfigured) context=\(context)"
+        case .engineStateSnapshot(let engineRunning, let isRecording, let hasWhisperKit, let sessionConfigured, let allowsHaptics, let context):
+            return "engineRunning=\(engineRunning) isRecording=\(isRecording) hasWhisperKit=\(hasWhisperKit) sessionConfigured=\(sessionConfigured) allowsHaptics=\(allowsHaptics) context=\(context)"
         case .engineCollectResult(let sampleCount, let engineRunning):
             return "sampleCount=\(sampleCount) engineRunning=\(engineRunning)"
         case .engineDarwinStartReceived(let appState, let engineRunning):

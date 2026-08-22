@@ -87,6 +87,18 @@ class UnifiedAudioEngine: ObservableObject {
     /// Current accumulated sample count (for zombie engine health check).
     var currentSampleCount: Int { audioSamples.count }
 
+    /// What AVAudioSession actually reports for the system-haptics allowance.
+    ///
+    /// WHY this is read rather than tracked: `setAllowHapticsAndSystemSoundsDuringRecording`
+    /// is a request, not an assignment — the session is free to report something
+    /// else, and the SDK documents the default as NO. When this is false while we
+    /// hold an active session, iOS mutes system haptics device-wide: every
+    /// keyboard including Apple's stops tapping, in every app, for as long as the
+    /// session lives (issue #293).
+    var allowsHapticsDuringRecording: Bool {
+        AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording
+    }
+
     // MARK: - Private
 
     private var engine = AVAudioEngine()
@@ -117,7 +129,12 @@ class UnifiedAudioEngine: ObservableObject {
     /// Whether the audio session has been configured at least once.
     /// WHY: iOS forbids changing AVAudioSession category from background.
     /// We configure once and keep the category set forever.
-    private var sessionConfigured = false
+    ///
+    /// WHY `private(set)` rather than `private` (#293): the `engineStateSnapshot`
+    /// diagnostic used to pass a hardcoded `true` for this field, so every
+    /// `sessionConfigured=true` in a device log was a literal, not a measurement.
+    /// The snapshot now reads the real value.
+    private(set) var sessionConfigured = false
 
     /// True when an AVAudioSession interruption is currently in flight.
     ///
@@ -327,6 +344,7 @@ class UnifiedAudioEngine: ObservableObject {
             engine.stop()
 
             PersistentLog.log(.audioInterruptionBegan(reason: reason))
+            logHapticsAllowance(context: "interruptionBegan")
 
             // Notify in-process listeners (LiveActivityManager, DictationCoordinator)
             // immediately. Darwin notification mirrors for cross-process consumers
@@ -391,6 +409,7 @@ class UnifiedAudioEngine: ObservableObject {
     /// before any future start() call.
     private func handleMediaServicesReset() {
         PersistentLog.log(.audioMediaServicesReset)
+        logHapticsAllowance(context: "mediaServicesReset")
 
         cancelIdleRelease()
         engine.inputNode.removeTap(onBus: 0)
@@ -438,10 +457,52 @@ class UnifiedAudioEngine: ObservableObject {
             try session.setCategory(.playAndRecord, options: [.allowBluetoothA2DP, .defaultToSpeaker, .duckOthers])
         }
         try session.setActive(true)
-        try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
         sessionConfigured = true
 
         PersistentLog.log(.audioSessionConfigured(category: "playAndRecord"))
+        applyHapticsAllowance(context: "configureAudioSession")
+    }
+
+    // MARK: - System Haptics Allowance (issue #293)
+
+    /// Ask the session to keep system haptics and system sounds alive while we
+    /// hold audio input, then log what it actually reports back.
+    ///
+    /// WHY this is called from every activation path rather than once in
+    /// `configureAudioSession()`: the allowance defaults to NO and belongs to the
+    /// session, not to us. Any path that reaches an active session without
+    /// passing through `configureAudioSession()` — `warmUp()` short-circuiting on
+    /// an already-running engine, `startRecording()` on a warm engine, a
+    /// `startEngine()` that implicitly reactivated the session — would leave it
+    /// unset, and a single such path is enough to mute the whole device.
+    /// Re-asserting is one setter call; not re-asserting is a device-wide bug the
+    /// user cannot attribute to us.
+    ///
+    /// WHY the throw is logged instead of `try?`: before #293 this was a bare
+    /// `try?`, which made a failed call and a successful one produce exactly the
+    /// same (empty) evidence. Three investigations ran blind on that.
+    private func applyHapticsAllowance(context: String) {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setAllowHapticsAndSystemSoundsDuringRecording(true)
+        } catch {
+            PersistentLog.log(.audioHapticsAllowanceFailed(
+                context: context,
+                error: error.localizedDescription
+            ))
+        }
+        logHapticsAllowance(context: context)
+    }
+
+    /// Log the session's current haptics allowance without touching it. Used on
+    /// the teardown paths, where re-asserting would be meaningless — but where
+    /// the value still matters, because "haptics came back" is the observation
+    /// the user reports and this is the line that dates it.
+    private func logHapticsAllowance(context: String) {
+        PersistentLog.log(.audioHapticsAllowance(
+            context: context,
+            allowed: AVAudioSession.sharedInstance().allowHapticsAndSystemSoundsDuringRecording
+        ))
     }
 
     /// Check and request microphone permission if needed.
@@ -484,13 +545,17 @@ class UnifiedAudioEngine: ObservableObject {
 
         guard !engine.isRunning else {
             PersistentLog.log(.engineWarmUpSuccess(context: "already running"))
+            // This short circuit never reaches `startEngine()`, so it is one of
+            // the paths that would otherwise leave the allowance untouched
+            // (issue #293).
+            applyHapticsAllowance(context: "warmUp-alreadyRunning")
             // Re-arm before returning. `cancelIdleRelease()` above dropped
             // whatever was pending, and leaving without re-arming is how the
             // engine used to end up warm forever.
             scheduleIdleRelease(after: Self.warmUpIdleReleaseInterval)
             return
         }
-        try startEngine()
+        try startEngine(context: "warmUp")
         PersistentLog.log(.engineWarmUpSuccess(context: "unifiedEngine-warmUp"))
 
         // NOT in a `defer`: on a `startEngine()` throw we are not warm, and
@@ -506,12 +571,19 @@ class UnifiedAudioEngine: ObservableObject {
         cancelIdleRelease()
 
         if !engine.isRunning {
-            try startEngine()
+            try startEngine(context: "startRecording")
         }
         purgeState()
         isRecording = true
         isRecordingFlag = true
+
         PersistentLog.log(.audioEngineStarted)
+
+        // A warm engine skips `startEngine()` entirely, so this is the second
+        // path that would otherwise never re-assert the allowance — and it is the
+        // one that matters most, because it is the moment iOS starts treating us
+        // as actively recording (issue #293).
+        applyHapticsAllowance(context: "startRecording")
     }
 
     /// Collect recorded samples WITHOUT stopping the engine.
@@ -583,6 +655,7 @@ class UnifiedAudioEngine: ObservableObject {
         PersistentLog.log(.audioEngineStopped)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         sessionConfigured = false
+        logHapticsAllowance(context: "deactivateSession")
 
         bufferEnergy = []
         bufferSeconds = 0
@@ -599,7 +672,7 @@ class UnifiedAudioEngine: ObservableObject {
 
         do {
             try configureAudioSession()
-            try startEngine()
+            try startEngine(context: "forceRestart")
             PersistentLog.log(.engineWarmUpSuccess(context: "forceRestart"))
         } catch {
             PersistentLog.log(.engineWarmUpFailed(context: "forceRestart", error: error.localizedDescription))
@@ -717,6 +790,11 @@ class UnifiedAudioEngine: ObservableObject {
         idleReleaseWorkItem = nil
 
         PersistentLog.log(.warmStateReleased(idleSeconds: idleSeconds))
+
+        // The user-visible claim of #293 is "haptics came back on their own about
+        // ten minutes later". This line is what dates the other end of that
+        // window against the release that supposedly caused it.
+        logHapticsAllowance(context: "releaseWarmState-\(reason)")
         if #available(iOS 14.0, *) {
             DictusLogger.app.info("Warm state released after \(idleSeconds, privacy: .public)s idle (reason: \(reason, privacy: .public))")
         }
@@ -728,7 +806,11 @@ class UnifiedAudioEngine: ObservableObject {
     // MARK: - Private Helpers
 
     /// Start the AVAudioEngine with a tap on the input node.
-    private func startEngine() throws {
+    ///
+    /// - Parameter context: names the path that started the engine, so the
+    ///   haptics-allowance line emitted on success says which one it came from
+    ///   (issue #293).
+    private func startEngine(context: String) throws {
         audioSamples = []
         audioThreadEnergy = []
         audioThreadWaveformBins = []
@@ -840,6 +922,14 @@ class UnifiedAudioEngine: ObservableObject {
         // .ended interruption resume) ends up healthy without each caller having
         // to remember to flip the flag.
         isInterrupted = false
+
+        // Re-assert the system-haptics allowance now that the session is truly
+        // carrying input. `configureAudioSession()` sets it before the engine
+        // exists, and `startEngine()` is reachable without it — after a
+        // `releaseWarmState()` deactivation, or when `engine.start()` reactivates
+        // the session implicitly. This is the funnel every start path goes
+        // through (issue #293).
+        applyHapticsAllowance(context: "startEngine-\(context)")
 
         if #available(iOS 14.0, *) {
             DictusLogger.app.info("UnifiedAudioEngine started (hw: \(hwFormat.sampleRate, privacy: .public)Hz -> 16kHz)")
