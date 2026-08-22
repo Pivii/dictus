@@ -77,8 +77,10 @@ Same scheme as the predecessor, because the two documents are read together.
 
 7. **The device measurement is not in this document yet.** Everything above is a
    Mac. A Mac has no jetsam and no application lifecycle, so it cannot answer the
-   question in #268's title. The apparatus is built, signed and installed on the
-   iPhone; see [What is still missing](#what-is-still-missing).
+   question in #268's title. The apparatus is built, installed on the iPhone, and
+   rehearsed end to end in a simulator with `allIterationsBackgrounded=true`; it
+   is blocked on one thing, which is that `devicectl` will not launch an app on a
+   locked phone. See [What is still missing](#what-is-still-missing).
 
 **Reading so far: the ANE is reachable and the prompt fits, and the candidate
 still misses the latency budget on hardware faster than any iPhone.** The device
@@ -290,8 +292,26 @@ The apparatus is complete and installed:
   `allIterationsBackgrounded`, so a run that was not backgrounded reports itself
   as invalid rather than as a number.
 
-It has not run, for one reason: `devicectl` cannot launch an app on a locked
-phone.
+**The apparatus itself has been run end to end**, on an iPhone 17 Pro Max
+simulator, backgrounded by launching Safari over it **[measured]**. Everything
+except the ANE worked: the app launched, the audio keep-alive kept it alive
+through eight minutes in the background, the model loaded from the bundle, the
+prompt built from DictusCore to the same 1,680 tokens, three iterations ran, the
+results were written and read back, and the file ends
+
+```text
+allIterationsBackgrounded=true
+```
+
+with every sample reading `state=background`. **None of its numbers mean
+anything** — a simulator has no Neural Engine, so it ran the same CPU path that
+produces gibberish on the Mac, at 1.6–4.0 tok/s. It is a rehearsal of the
+protocol, not a measurement, and it is recorded here only because it removes
+"does the harness work" from the list of things the maintainer's unlock window
+could be spent discovering.
+
+It has not run on the phone, for one reason: `devicectl` cannot launch an app on
+a locked phone.
 
 ```text
 Unable to launch com.pivi.dictus.anebench because the device was not, or could
@@ -308,7 +328,13 @@ the results over Wi-Fi. The steps are in the PR and in
 - the iPhone multiplier on 8.3 s, which is the number the decision rule wants;
 - `os_proc_available_memory()` with the model resident, against D1's 3.33 GB
   backgrounded headroom — how much of it a 1.8 GB tenant plus its KV cache
-  actually costs, and what is left for Parakeet's ~800 MB;
+  actually costs, and what is left for Parakeet's ~800 MB. **This one cannot be
+  guessed from the Mac readings, and the reason is worth stating**: with the
+  whole 1.8 GB model loaded, `phys_footprint` read **324 MB** on the Mac and
+  **100 MB** in the simulator **[measured]**. Core ML's weights are mapped, not
+  allocated, so the footprint number does not see most of them. Whether jetsam
+  does is exactly what `os_proc_available_memory()` answers, and it returns 0
+  anywhere but a device **[code]** `DictusCore/DeviceCapabilities.swift:103`;
 - whether the ANE is reachable at all from a backgrounded process for an LLM, or
   whether Core ML silently re-plans onto the CPU there. The harness reads the
   compute plan on device, so this is answerable rather than arguable.
