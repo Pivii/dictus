@@ -36,6 +36,11 @@ swift run polish-harness show fixtures/seed.json --instructions /tmp/candidate.t
 
 # A/B two prompt files side by side
 swift run polish-harness ab fixtures/seed.json --a /tmp/baseline.txt --b /tmp/candidate.txt
+
+# Print the exact bytes the engine sends for a fixture: the resolved system
+# instructions and the Input/"Polished output:" user turn over pre-passed text.
+# Runs no model, so it needs no Apple Intelligence. --out writes them as files.
+swift run polish-harness prompt Sources/polish-harness/fixtures/seed.json --id 3-long
 ```
 
 ## Fixtures

@@ -160,6 +160,18 @@ public final class UserDictionary {
         learnedWords
     }
 
+    /// All learned words with the epoch-second stamp of their last use.
+    ///
+    /// WHY a second accessor next to `allLearnedWords` rather than a richer
+    /// value: the completion merge (#346) ranks its candidates by recency and
+    /// never by usage count, so handing it the count map would mean handing it
+    /// the wrong number and asking it not to use it. The two maps carry the same
+    /// keys — that is the invariant `lastUsed` states and
+    /// `stampEntriesMissingATimestamp()` repairs on every load.
+    public var learnedWordsByLastUsed: [String: Int] {
+        lastUsed
+    }
+
     /// Number of learned words.
     public var count: Int { learnedWords.count }
 

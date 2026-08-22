@@ -509,10 +509,8 @@ final class DictusKeyboardBridge: NSObject,
         // The check belongs here rather than inside UserDictionary because the undo
         // site must NOT be subject to it — see `UserDictionary.recordUsage`.
         if let state = suggestionState, !freshWord.isEmpty, wordWasEvaluated,
-           state.isUnknownToDictionary(freshWord),
-           UserDictionary.shared.recordUsage(freshWord) {
-            // Word just crossed the learning threshold — notify prediction engine
-            state.learnWord(freshWord)
+           state.isUnknownToDictionary(freshWord) {
+            UserDictionary.shared.recordUsage(freshWord)
         }
 
         // Normal space handling with double-space period detection
