@@ -4,7 +4,7 @@ How an agent gets DictusApp running on an iOS Simulator and produces a screensho
 
 Every command below was executed on this machine (Xcode 26.4.1, iOS 26.5 runtime, iPhone 17). The outputs shown are the ones they produced.
 
-**`open -a Simulator` is forbidden.** Pierre works on this machine and any window steals his focus. `xcrun simctl` drives a booted device without a UI; that is the whole toolkit. If a command opens a window anyway, stop and record it here.
+**Never bring a Simulator window to the front.** Pierre works on this machine and a foregrounded window steals his focus. `open -a Simulator` is therefore forbidden — but `open -g -a Simulator` is not, and section 5 needs it: `-g` starts the app without foregrounding it. Verified 2026-08-22 by reading the frontmost process before and after; it did not change. If a command foregrounds a window anyway, stop and record it here.
 
 ## 1. Choose and boot a device
 
@@ -176,7 +176,56 @@ Recording completed. Writing to disk.
 Wrote video to: /…/demo.mp4
 ```
 
-## 5. Control the frame
+## 5. Drive the UI
+
+`simctl` has no touch injection. **`axe` does** — it is installed on this machine (`/opt/homebrew/bin/axe`, v1.8.0, `brew install cameroncooke/axe/axe`) and it taps, swipes, types and dumps the accessibility tree.
+
+**The catch, and it is the whole section:** every point-based command needs Simulator.app to be running *with the target device attached*. Simulator.app merely being alive is not enough — a device booted after it started is not attached to it. Boot the device, then run:
+
+```bash
+open -g -a Simulator
+```
+
+`-g` keeps it in the background. Without that step, every point-based command fails with a message that misattributes its own cause:
+
+```
+Error: No translation object returned for simulator. This means you have likely
+specified a point onscreen that is invalid or invisible due to a fullscreen dialog
+```
+
+There is no dialog. The point-translation bridge is simply not connected. Measured 2026-08-22 on Xcode 26.4.1 / iOS 26.5, on a clean Home screen, by label and by coordinates, with `--tap-style simulator` and `physical` alike. Run `open -g -a Simulator` and the same command succeeds.
+
+| Needs Simulator.app attached | Works with `simctl` alone |
+| --- | --- |
+| `tap`, `touch`, `swipe`, `drag`, `describe-ui`, `slider` | `button`, `key`, `key-sequence`, `type`, `gesture`, `screenshot`, `record-video` |
+
+Read the screen before you tap it. `describe-ui` returns the full accessibility tree as JSON, with an `AXFrame` per element in **points** (402×874 on an iPhone 17, not the 1206×2622 pixels a screenshot has):
+
+```bash
+axe describe-ui --udid <udid>
+```
+
+Tap by accessibility label rather than by coordinate wherever the label is stable — it survives layout changes:
+
+```bash
+axe tap --label "Commencer" --udid <udid>
+```
+
+```
+✓ Tap at resolved tap point at (201.0, 716.0) completed successfully
+```
+
+Coordinates still work when there is no usable label, and the tab bar is the usual case:
+
+```bash
+axe tap -x 201 -y 815 --udid <udid>    # Models tab
+```
+
+Verified end to end on 2026-08-22: installing DictusApp, tapping through the onboarding pages by label, and reaching the Models and Settings tabs by coordinate. The frontmost application stayed the terminal throughout.
+
+Xcode 27 replaces this attachment dance with Device Hub and drops the Simulator.app requirement, per AXe's own compatibility notes. Until this machine moves to it, `open -g -a Simulator` is the price of a tap.
+
+## 6. Control the frame
 
 This project ships a dark-first design in French and English, so all three of these matter.
 
@@ -220,7 +269,7 @@ Two traps here, both observed while writing this file. `defaults write` from the
 
 Put the device back the way you found it. This one is `fr_FR` with `AppleLanguages = (fr-FR, en-GB)`.
 
-## 6. Clean up
+## 7. Clean up
 
 ```bash
 xcrun simctl status_bar <udid> clear
@@ -238,11 +287,11 @@ Leaving a device booted between runs is fine and is the cheaper default; boot is
 xcrun simctl shutdown <udid>
 ```
 
-## 7. What the simulator cannot show
+## 8. What the simulator cannot show
 
-**There is no way to tap or type.** `simctl` has no touch injection: no tap, no swipe, no text entry. Everything reachable is reachable by launching, by a preference written before launch, or not at all. Driving the UI needs a UI test target, which this repo does not have.
+**Tapping and typing are no longer on this list.** They were, until 2026-08-22, on the grounds that `simctl` has no touch injection. That is still true of `simctl` and was never true of the machine: see section 5. Do not re-derive the old limit from the `simctl` man page.
 
-**The Dictus keyboard cannot be enabled.** This was established by experiment, not assumed. The extension does register with the plug-in system on install:
+**Whether the Dictus keyboard can be enabled is OPEN, not settled.** It was recorded here as impossible on the strength of the four attempts below. Two of them no longer stand, so the conclusion does not either. The extension does register with the plug-in system on install:
 
 ```bash
 xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
@@ -252,14 +301,31 @@ xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
      com.pivi.dictus.keyboard(1.8.0)	657D5A4D-…	/Users/…/DictusApp.app/PlugIns/DictusKeyboard.appex
 ```
 
-Registering is not enabling. Four attempts, all failed:
+Registering is not enabling. Four attempts were made:
 
 | Attempt | Result |
 | --- | --- |
-| `defaults write com.apple.Preferences AppleKeyboards -array … "com.pivi.dictus.keyboard"`, then reboot the device | The value persists and reads back, but `UITextInputMode.activeInputModes` never contains the keyboard |
+| `defaults write com.apple.Preferences AppleKeyboards …`, then reboot | ⚠️ **Invalid.** Wrong domain — `AppleKeyboards` lives in `.GlobalPreferences`, not `com.apple.Preferences` — and a host-side `defaults write` never reaches the device, which is the trap section 6 documents. It read back because the *host's* domain was read back. Nothing was ever written to the device. |
 | `pluginkit -e use -i com.pivi.dictus.keyboard` | Exits 0, flips the pluginkit flag to `+`, changes nothing for the app, and the flag is lost on the next boot |
 | Settings deep link `prefs:root=General&path=Keyboard/KEYBOARDS` | `LSApplicationWorkspaceErrorDomain error 115`. `App-prefs:` opens Settings at its root only |
-| Toggling it in Settings by hand | Needs a tap |
+| Toggling it in Settings by hand | ⚠️ **No longer blocked.** It needed a tap, and section 5 taps. Untried. |
+
+The first attempt has since been done properly, and the write does land. Editing the device's own `.GlobalPreferences.plist` with `plistlib` while it is shut down — the same technique section 6 uses for language — puts a keyboard into the list, and the device reads it back:
+
+```bash
+xcrun simctl spawn <udid> defaults read -g AppleKeyboards
+```
+
+```
+(
+    "fr_FR@sw=AZERTY-French;hw=Automatic",
+    "en_US@sw=QWERTY;hw=Automatic",
+    "de_DE@sw=QWERTZ-German;hw=Automatic",
+    "emoji@sw=Emoji"
+)
+```
+
+What remains unknown is whether `UITextInputMode.activeInputModes` follows the list. The cheap decisive test is the `modeCount` carried by DictusApp's own check: if adding a fourth entry to `AppleKeyboards` turns `modeCount=3` into `modeCount=4`, the list drives the modes and `com.pivi.dictus.keyboard` belongs in it. That experiment has not been run — reaching the onboarding keyboard page by writing `dictus.onboardingCurrentPage` did not work on 2026-08-22, and section 5's taps are the obvious way in now.
 
 The verification was DictusApp's own check on the onboarding keyboard page, reached by writing `dictus.onboardingCurrentPage = 2` into the App Group preferences before launch. With both writes applied and the device rebooted, `dictus_debug.log` says:
 
@@ -268,9 +334,9 @@ The verification was DictusApp's own check on the onboarding keyboard page, reac
 […] DEBUG   [lifecycle] <APP> onboardingKeyboardNotFound modeCount=3
 ```
 
-**Anything behind the keyboard is therefore off the table in a simulator** — layout, dead zones, the height constraint, the globe key, keyboard memory, keyboard-to-app handoff. Most of this repo's open bugs are keyboard bugs, and they still need a device.
+**Until that experiment is run, treat the keyboard as unavailable in a simulator but do not call it impossible** — layout, dead zones, the height constraint, the globe key, keyboard memory and keyboard-to-app handoff are unreachable today. Note that even a keyboard that could be *enabled* would still tell you nothing about memory or timing: those are device numbers. Most of this repo's open bugs are keyboard bugs, and they still need a device.
 
-**Custom-scheme URLs prompt.** `simctl openurl` cannot stand in for a tap:
+**Custom-scheme URLs prompt.** `simctl openurl` raises a confirmation the user must accept — though section 5 can now accept it:
 
 ```bash
 xcrun simctl openurl <udid> "dictus://dictate?source=keyboard"
