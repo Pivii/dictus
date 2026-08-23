@@ -351,4 +351,42 @@ final class ModelInfoTests: XCTestCase {
             XCTAssertFalse(model.sizeLabel.isEmpty, "\(model.identifier) has empty sizeLabel")
         }
     }
+
+    // MARK: - Announced size (issue #372)
+
+    /// The label and the byte count can no longer disagree, because there is only
+    /// one number. This pins the rendering so the card keeps printing the same MB
+    /// figure the download progress counts down from.
+    func testSizeLabelIsDerivedFromSizeBytes() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertEqual(model.sizeLabel, "~\(model.sizeBytes / 1_000_000) MB",
+                           "\(model.identifier) label and byte count disagree")
+        }
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-small")?.sizeLabel, "~486 MB")
+    }
+
+    /// A zero or negative size would render as "~0 MB" on the card and would make
+    /// the download-time reconciliation in `ModelRepoDownloader` skip the entry.
+    func testEveryCatalogueEntryDeclaresAPositiveSize() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertGreaterThan(model.sizeBytes, 0, "\(model.identifier) declares no size")
+        }
+    }
+
+    /// The predicate behind the `modelDownloadSizeMismatch` log line. The 250 MB case
+    /// is the bug this issue was filed for: that was the announced size while the
+    /// repository served 486 MB, and it has to read as drift.
+    func testSizeDriftIsJudgedAgainstTheAnnouncedSize() {
+        guard let small = ModelInfo.forIdentifier("openai_whisper-small") else {
+            XCTFail("openai_whisper-small is missing from the catalogue")
+            return
+        }
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: small.sizeBytes))
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 1.04)))
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 0.96)))
+        XCTAssertTrue(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 1.10)))
+        XCTAssertTrue(small.sizeHasDrifted(fromMeasured: 250_000_000))
+        // A repository that reports no sizes is a missing measurement, not drift.
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: 0))
+    }
 }
