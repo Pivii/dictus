@@ -150,7 +150,7 @@ extension DictationCoordinator {
         polishHandoffPreview = preview
         polishHandoffWatchdog?.invalidate()
         polishHandoffWatchdog = Timer.scheduledTimer(
-            withTimeInterval: Self.polishHandoffTimeout,
+            withTimeInterval: PolishTimeBudget.handoffCeiling(forCharacters: preview.count),
             repeats: false
         ) { [weak self] _ in
             DispatchQueue.main.async { self?.polishHandoffTimedOut() }
@@ -210,18 +210,19 @@ extension DictationCoordinator {
 
     /// The keyboard never got back to us.
     ///
-    /// WHY 10 seconds (decision 14): a watchdog has to exceed the legitimate duration
-    /// of the thing it watches, and the field p90 of a polish generation is 4,842 ms
-    /// with a maximum of 12,528 ms over 196 successes (#315). The twenty-call
-    /// extension burst measured on 2026-08-23 ran 4,292 to 5,067 ms, flat, which is
-    /// what settled the number rather than an arbitration.
+    /// Decision 14 put this at a flat 10 s and said to recalibrate it once real
+    /// extension-side timings existed. They do, they are longer, and the number now
+    /// comes from `PolishTimeBudget` — see there for the measurements and why a fixed
+    /// timeout is the wrong shape when the input length is known before the call.
     ///
-    /// The house style is more aggressive than this — the recording watchdog is at
-    /// 2 s — and the asymmetry is what allows it: the keyboard owns insertion now, so
-    /// it types its text whether or not this fires. A false positive costs a Dynamic
-    /// Island that returned to standby a second early. Compare #60, where a stuck
-    /// Island was visible and costly. Without it, the measurement on #357 Q4 says the
-    /// wait would be forty-four minutes.
+    /// **Firing early is not benign, which is what decision 14 got wrong.** Its
+    /// reasoning was that a false positive costs an Island returning to standby a
+    /// second early, because the keyboard types its text regardless. Both halves of
+    /// that are false: this also clears `dictationStatus`, which takes the keyboard's
+    /// overlay down, and since this round it withdraws the dictation's right to be
+    /// typed at all. On device (`fe8223c`) a 1,015-character dictation was lost
+    /// exactly this way — the watchdog fired at 10 s, the overlay came down, the user
+    /// left the field, and the generation returned eleven seconds later.
     func polishHandoffTimedOut() {
         guard let session = polishHandoffSession,
               mayReport(session, "polish handoff watchdog") else { return }
@@ -240,9 +241,21 @@ extension DictationCoordinator {
         if status == .ready {
             updateStatus(.idle)
         }
+        // And it withdraws the dictation, which is the half that was missing. Telling
+        // the user it is over and then typing into their field a few seconds later is
+        // a resurrection, and decision 7's principle covers it: a result nobody is
+        // waiting for any more may not be inserted. Clearing the record is how that
+        // reaches the keyboard — its own run sees the record gone and stops, with no
+        // new IPC and no second source of truth.
+        //
+        // This is the second app-side writer of a record the keyboard otherwise owns;
+        // the other is the launch sweep. Both are the app concluding something the
+        // keyboard did not.
+        if let pending = PendingDictationChannel.current {
+            PendingDictationChannel.clear()
+            PersistentLog.log(.polishHandoff(
+                step: "watchdog", outcome: "withdrawn", chars: pending.raw.count
+            ))
+        }
     }
-
-    /// How long the app waits for `polishDidFinish` before bringing the Live Activity
-    /// home by itself. Provisional by construction — see `polishHandoffTimedOut`.
-    static var polishHandoffTimeout: TimeInterval { 10 }
 }

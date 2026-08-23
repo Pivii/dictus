@@ -116,9 +116,7 @@ class KeyboardViewController: UIInputViewController {
     /// `UIInputViewController` extension so the probes that report them cannot
     /// drift from the predicate that acts on them; this line is the only place
     /// they are composed.
-    private var isOnScreen: Bool {
-        isViewInWindow || isInputViewInWindow
-    }
+    private var isOnScreen: Bool { isAttachedToWindow }
 
     /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
     /// census, so `deinit` decrements exactly once and only for instances that

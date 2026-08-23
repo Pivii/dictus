@@ -158,7 +158,9 @@ final class KeyboardPolishCoordinator {
     func recoverPendingIfNeeded() {
         guard !isPolishing, let pending = PendingDictationChannel.current else { return }
         let current = KeyboardState.shared.currentDocumentIdentifier
-        guard pending.mayRecover(into: current) else {
+        guard pending.mayRecover(
+            into: current, keyboardIsAttached: KeyboardState.shared.keyboardIsAttached
+        ) else {
             guard pending.isExpired() else { return }
             PendingDictationChannel.clear()
             PersistentLog.log(.polishHandoff(step: "recovered", outcome: "expired", chars: pending.raw.count))
@@ -203,15 +205,21 @@ final class KeyboardPolishCoordinator {
         PendingDictationChannel.clear()
 
         let current = KeyboardState.shared.currentDocumentIdentifier
-        guard pending.mayInsert(into: current) else {
+        let attached = KeyboardState.shared.keyboardIsAttached
+        guard pending.mayInsert(into: current, keyboardIsAttached: attached) else {
             // Not a lost dictation so much as a refused one. The user left the field —
             // switched app, dismissed the keyboard — or the host will not name the
             // document, and typing into a document they did not choose is the thing
-            // this product refuses everywhere else.
-            PersistentLog.log(.polishInsertionRefused(
-                reason: current == nil ? "no-identifier" : "different-document",
-                ageMs: pending.ageMs
-            ))
+            // this product refuses everywhere else. `off-screen` is the third way and
+            // the one that has to be told apart in a log: the field is still named the
+            // same, and this keyboard is simply no longer in front of it.
+            let reason: String
+            if !attached {
+                reason = "off-screen"
+            } else {
+                reason = current == nil ? "no-identifier" : "different-document"
+            }
+            PersistentLog.log(.polishInsertionRefused(reason: reason, ageMs: pending.ageMs))
             finish(text: nil, insert: false)
             return
         }
@@ -223,19 +231,19 @@ final class KeyboardPolishCoordinator {
 
     /// How long the keyboard draws the LLM stage before declaring it stuck.
     ///
-    /// **This is not a new threshold.** Before #361 the polish call ran in DictusApp
-    /// under `DictationCoordinator.stageWatchdogTimeout(for: .processing)`, which is
-    /// 60 s, and the keyboard's own overlay was covered by it because the app tore the
+    /// **The timer is not a new threshold.** Before #361 the polish call ran in
+    /// DictusApp under `DictationCoordinator.stageWatchdogTimeout(for: .processing)`,
+    /// and the keyboard's own overlay was covered by it because the app tore the
     /// session down. Moving the call here made that timer unreachable on the keyboard
     /// path, and left a stuck generation able to hold the overlay for as long as it
-    /// ran — #357 Q4 measured forty-three minutes. Same number, same job, now in the
-    /// process that owns the stage.
+    /// ran — #357 Q4 measured forty-three minutes. Same job, now in the process that
+    /// owns the stage.
     ///
-    /// It is deliberately far above the app's ten-second Live Activity watchdog: that
-    /// one can fire early for free, because the keyboard types its text regardless.
-    /// This one takes the overlay away from a user who may still be about to get their
-    /// text, so it is a last-resort unfreeze rather than a latency budget — the same
-    /// distinction the app's own comment draws.
+    /// **The number is `PolishTimeBudget`**, which scales with the input, because a
+    /// flat one cannot be right at both ends: a 1,015-character generation measured
+    /// 21,182 ms on device and a 50-character one about a second. It is deliberately
+    /// shorter than the app's watchdog over the same call, so the clean ending —
+    /// this one, which posts `polishDidFinish` — is the one that normally happens.
     ///
     /// Decision 15's "no second timeout" is about queueing N+1 behind N, and is
     /// unaffected: nothing here waits for anything.
@@ -244,15 +252,12 @@ final class KeyboardPolishCoordinator {
     /// is in another document the overlay comes down, but the generation keeps running
     /// on purpose — it may still be typed if the user comes back. Something has to
     /// bound that, or a session sits in a ~50 MB process for as long as the generation
-    /// takes, and #357 Q4 measured forty-three minutes. Sixty seconds is well past the
-    /// thirty-second recovery window, so by the time this fires the raw was already
-    /// unrecoverable and cancelling costs nothing that was still available.
-    private static let stageTimeout: TimeInterval = 60
-
+    /// takes.
+    ///
     private func startStageWatchdog(for pending: PendingDictation) {
         stopStageWatchdog()
         stageWatchdog = Timer.scheduledTimer(
-            withTimeInterval: Self.stageTimeout,
+            withTimeInterval: PolishTimeBudget.generationCeiling(forCharacters: pending.raw.count),
             repeats: false
         ) { [weak self] _ in
             DispatchQueue.main.async {
@@ -268,8 +273,15 @@ final class KeyboardPolishCoordinator {
 
     /// The generation has not come back. Conclude the dictation: take down the overlay
     /// if one is still up, tell DictusApp, and stop paying for a call whose result
-    /// nothing may now use. The record goes with it — at sixty seconds it is double
-    /// its recovery window, so clearing it destroys nothing that was still reachable.
+    /// nothing may now use.
+    ///
+    /// The record goes with it, and that is load-bearing rather than hygiene: while it
+    /// exists the stage rule reads the hand-off as outstanding and holds the overlay
+    /// up, so releasing the one without the other would leave the keyboard exactly as
+    /// stuck as before. On a short dictation the budget can now expire inside the
+    /// thirty-second recovery window, so this can destroy a raw that was still
+    /// nominally recoverable — nominally, because measurement 4 established that path
+    /// cannot fire anyway, and an overlay that never comes down is the worse outcome.
     private func stageTimedOut(_ pending: PendingDictation) {
         guard activePolish == pending else { return }
         PersistentLog.log(.polishHandoff(

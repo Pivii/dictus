@@ -541,7 +541,8 @@ public final class PolishService {
     /// measurement on #357 Q4 is why: a generation the keyboard dismissed part-way
     /// through resumed and completed forty-four minutes later, so "N+1 waits for N"
     /// can mean forty-four minutes of a user's next dictation blocked behind a
-    /// generation `PendingDictation.mayInsert(into:)` is going to refuse anyway. A
+    /// generation `PendingDictation.mayInsert(into:keyboardIsAttached:)` will refuse
+    /// anyway. A
     /// bounded wait was the alternative and was rejected for inventing a second
     /// temporal threshold to calibrate when the design already has one.
     ///

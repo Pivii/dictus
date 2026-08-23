@@ -160,17 +160,17 @@ final class KeyboardHandoffStageTests: XCTestCase {
         ), "the overlay stays up where the dictation belongs")
 
         // 2. iOS rebuilds the keyboard in transit: no document it can name.
-        XCTAssertFalse(pending.mayInsert(into: nil))
+        XCTAssertFalse(pending.mayInsert(into: nil, keyboardIsAttached: true))
         XCTAssertTrue(KeyboardHandoffStage.adopts(
             stored: .ready, drawing: .processing, handoff: .elsewhere
         ), "the overlay comes down")
         // And that is all it does — the record is still there to act on.
-        XCTAssertTrue(pending.mayRecover(into: fieldX, now: claimedAt + 1.3))
+        XCTAssertTrue(pending.mayRecover(into: fieldX, keyboardIsAttached: true, now: claimedAt + 1.3))
 
         // 3. Back in field X a second later. Either route delivers: the generation
         //    still in flight inserts, or a rebuilt process recovers the raw.
-        XCTAssertTrue(pending.mayInsert(into: fieldX), "the generation may insert")
-        XCTAssertTrue(pending.mayRecover(into: fieldX, now: claimedAt + 2),
+        XCTAssertTrue(pending.mayInsert(into: fieldX, keyboardIsAttached: true), "the generation may insert")
+        XCTAssertTrue(pending.mayRecover(into: fieldX, keyboardIsAttached: true, now: claimedAt + 2),
                       "and the recovery path is reachable")
         XCTAssertFalse(KeyboardHandoffStage.adopts(
             stored: .ready, drawing: .processing, handoff: .here
@@ -193,8 +193,8 @@ final class KeyboardHandoffStageTests: XCTestCase {
             documentIdentifier: fieldX,
             claimedAt: 1_000
         )
-        XCTAssertFalse(pending.mayRecover(into: fieldX, now: 1_045))
-        XCTAssertTrue(pending.mayInsert(into: fieldX))
+        XCTAssertFalse(pending.mayRecover(into: fieldX, keyboardIsAttached: true, now: 1_045))
+        XCTAssertTrue(pending.mayInsert(into: fieldX, keyboardIsAttached: true))
     }
 
     // MARK: - Drawing a locally-owned stage on a freshly mounted controller

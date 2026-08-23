@@ -37,7 +37,7 @@ import Foundation
 /// text that would never be typed there (`eae6c68`, second finding of the same run).
 ///
 /// So the hold is scoped to the document the dictation came from. That is the same
-/// identity `PendingDictation.mayInsert(into:)` decides insertion by, asked one stage
+/// identity `PendingDictation.addressesSameDocument(as:)` names, asked one stage
 /// earlier — and asking it here rather than acting on it is what keeps the two apart.
 /// **Dropping the overlay must never cost the dictation.** The first attempt at this
 /// cancelled the generation and cleared the record when the field changed, and on

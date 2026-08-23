@@ -77,6 +77,16 @@ extension UIInputViewController {
     /// genuinely disagree — which is the whole reason `isOnScreen` tests both.
     var isInputViewInWindow: Bool { inputView?.window != nil }
 
+    /// The two halves composed: whether UIKit currently has this controller on screen.
+    ///
+    /// The only composition site, so the probes that report the halves cannot drift
+    /// from the predicates that act on them. `KeyboardViewController.isOnScreen` is
+    /// this, and since #361 so is the second half of the insertion gate — a proxy goes
+    /// on answering with the same `documentIdentifier` between `viewDidDisappear` and
+    /// `deinit`, so identity alone let a dictation be typed into a keyboard that had
+    /// already gone.
+    var isAttachedToWindow: Bool { isViewInWindow || isInputViewInWindow }
+
     /// Both halves of the #260 claim predicate, in the shared key=value format.
     ///
     /// The predicate itself is `hasWindow || hasInputWindow`. Read them together:

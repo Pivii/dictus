@@ -132,7 +132,7 @@ extension KeyboardState {
     /// path of keyboard presentation.
     var outstandingHandoff: KeyboardHandoffStage.Handoff {
         if let pending = PendingDictationChannel.current {
-            return pending.mayInsert(into: currentDocumentIdentifier) ? .here : .elsewhere
+            return pending.addressesSameDocument(as: currentDocumentIdentifier) ? .here : .elsewhere
         }
         return AppGroup.defaults.data(forKey: SharedKeys.lastTranscriptionPolicy) != nil
             ? .here
@@ -151,6 +151,15 @@ extension KeyboardState {
         guard let proxy = controller?.textDocumentProxy else { return nil }
         return DictusTextProxyIdentity.documentIdentifier(of: proxy)?.uuidString
     }
+
+    /// Whether UIKit currently has this keyboard on screen.
+    ///
+    /// The second half of the insertion gate. Read from window attachment rather than
+    /// from this object's own bookkeeping, because the bookkeeping is what is wrong in
+    /// the case it exists to catch: `registerControllerDisappearance` is deliberately
+    /// skipped while a dictation owns the keyboard area (#142), so `isKeyboardVisible`
+    /// stays true across exactly the dismissal that matters.
+    var keyboardIsAttached: Bool { controller?.isAttachedToWindow ?? false }
 
     /// Decide what a transcription DictusApp just published is, and act on it.
     ///

@@ -132,9 +132,43 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// **Nil fails closed on either side.** A host that names no document cannot
     /// prove the field is the same one, and "we could not tell" must not read as
     /// "yes" on the path that types into somebody's message.
-    public func mayInsert(into currentIdentifier: String?) -> Bool {
+    ///
+    /// This is identity alone, deliberately. It is what the *stage* rule asks — see
+    /// `KeyboardHandoffStage` — and the stage is decided from `viewWillAppear`, before
+    /// the view is reliably in a window. Folding window attachment in here would drop
+    /// the overlay on every ordinary controller rebuild. The insertion gate below adds
+    /// it; the stage does not.
+    public func addressesSameDocument(as currentIdentifier: String?) -> Bool {
         guard let documentIdentifier, let currentIdentifier else { return false }
         return documentIdentifier == currentIdentifier
+    }
+
+    /// Whether a finished generation may actually be typed **now**.
+    ///
+    /// Identity is necessary and was assumed sufficient until 2026-08-23 on
+    /// `fe8223c`, where a 1,015-character dictation was typed into a keyboard that
+    /// had already gone:
+    ///
+    /// ```text
+    /// 19:02:39  keyboardDidDisappear
+    /// 19:02:41  keyboardTextInserted                       <-- no refusal logged
+    /// 19:02:44  dictationUndoInvalidated reason=revalidate-truncated-mismatch
+    /// ```
+    ///
+    /// `viewDidDisappear` fired at :39 and `deinit` only at :43, and in between the
+    /// proxy went on answering with the same `documentIdentifier` while no longer
+    /// being able to receive text. The undo revalidation two seconds later looked for
+    /// the inserted string in the document and did not find it — the insertion went
+    /// nowhere.
+    ///
+    /// So the identifier says *which* field, and nothing about whether this keyboard
+    /// is still in front of it. `keyboardIsAttached` is the second half, and it has to
+    /// come from UIKit window attachment rather than from bookkeeping — the same
+    /// ground truth #260 settled on, and for the same reason: the bookkeeping is what
+    /// is wrong in exactly these cases.
+    public func mayInsert(into currentIdentifier: String?, keyboardIsAttached: Bool) -> Bool {
+        guard keyboardIsAttached else { return false }
+        return addressesSameDocument(as: currentIdentifier)
     }
 
     /// Whether a keyboard that found this record lying around may insert the raw.
@@ -147,8 +181,11 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// because the case it covers is one no capture has produced rather than one that
     /// is impossible, and because the alternative is a raw with no path back at all.
     public func mayRecover(into currentIdentifier: String?,
+                           keyboardIsAttached: Bool,
                            now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
-        guard mayInsert(into: currentIdentifier) else { return false }
+        guard mayInsert(into: currentIdentifier, keyboardIsAttached: keyboardIsAttached) else {
+            return false
+        }
         return now - claimedAt <= Self.recoveryWindow
     }
 
@@ -164,10 +201,14 @@ public struct PendingDictation: Codable, Equatable, Sendable {
 /// WHY a named contract rather than three `UserDefaults` calls, the same argument
 /// `DictationErrorChannel` and `PolishAvailabilityChannel` make: the rule is not in
 /// the key, it is in who clears it and when. Stated once here — **the keyboard owns
-/// this record for its whole life.** It writes it the moment it claims the raw, and
-/// it is the only thing that clears it, on exactly three outcomes: the text was
-/// inserted, the insertion was refused, or the record expired. DictusApp's launch
-/// sweep is a backstop for a keyboard process that died between two of those.
+/// this record for its whole life.** It writes it the moment it claims the raw, and it
+/// normally clears it, on exactly three outcomes: the text was inserted, the insertion
+/// was refused, or the record expired.
+///
+/// DictusApp clears it in two places, and both are the app concluding something the
+/// keyboard did not: the launch sweep, for a keyboard process that died mid-dictation,
+/// and the hand-off watchdog, which has just told the user the dictation is over and
+/// must therefore also withdraw its right to be typed.
 public enum PendingDictationChannel {
 
     public static var current: PendingDictation? {
