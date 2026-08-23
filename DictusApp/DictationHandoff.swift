@@ -175,14 +175,28 @@ extension DictationCoordinator {
     }
 
     /// The keyboard says the dictation is over — polished or not, typed or refused.
+    ///
+    /// **Called at most once per dictation, and safe to call more than once.** The
+    /// keyboard sends `polishDidFinish` when the tail completes, and also earlier when
+    /// it knows the result can no longer be inserted anywhere: a generation still
+    /// running for a document the user has left has no outcome to wait for, and the
+    /// Live Activity was announcing "processing" for up to seven seconds after the
+    /// keyboard had gone back to a normal keyboard (measured on `c5c226c`). The
+    /// generation is still running and will still post when it returns; the guard
+    /// below is what makes that second post a no-op rather than a second
+    /// `endWithResult` on an Island that has moved on.
     func polishHandoffFinished() {
         guard let session = polishHandoffSession,
               mayReport(session, "polish handoff completion") else { return }
         let typed = defaults.string(forKey: SharedKeys.lastPolishedTranscription)
+        // Captured before `endPolishHandoff` clears it. On the early path there is no
+        // typed text and there never will be, so the raw this dictation handed over is
+        // the only honest preview.
+        let raw = polishHandoffPreview
         endPolishHandoff(abandonedAs: nil)
-        // `typed` is nil when the keyboard refused to insert (decision 7). The
-        // dictation still ended, so the Island still comes home — it just comes home
-        // on the raw preview, because nothing was typed to preview.
+        // `typed` is nil when the keyboard refused to insert (decision 7), or when it
+        // has not tried yet. The dictation still ended for display purposes, so the
+        // Island still comes home — on the raw, because nothing was typed to preview.
         if let typed {
             lastResult = typed
         }
@@ -191,7 +205,7 @@ extension DictationCoordinator {
             outcome: typed == nil ? "not-inserted" : "inserted",
             chars: typed?.count ?? 0
         ))
-        LiveActivityManager.shared.endWithResult(preview: typed ?? lastResult)
+        LiveActivityManager.shared.endWithResult(preview: typed ?? raw ?? lastResult)
     }
 
     /// The keyboard never got back to us.

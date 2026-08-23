@@ -49,6 +49,10 @@ final class KeyboardPolishCoordinator {
     /// Unfreezes the overlay when a generation never comes back.
     private var stageWatchdog: Timer?
 
+    /// Whether DictusApp has already been told this dictation is over for display
+    /// purposes. Reset per claim; see `concludeDisplayForUnreachableDocument`.
+    private var hasConcludedDisplay = false
+
     /// Whether a generation is on its way back. Read by the recovery path, which must
     /// not insert a raw whose polish is still coming — that would type it twice.
     var isPolishing: Bool { activePolish != nil }
@@ -87,6 +91,7 @@ final class KeyboardPolishCoordinator {
         PersistentLog.log(.polishHandoff(step: "claimed", outcome: "pending", chars: raw.count))
 
         activePolish = pending
+        hasConcludedDisplay = false
         startStageWatchdog(for: pending)
         Task { await run(pending) }
     }
@@ -275,6 +280,46 @@ final class KeyboardPolishCoordinator {
         stageWatchdog = nil
         PendingDictationChannel.clear()
         finish(text: nil, insert: false)
+    }
+
+    /// Tell DictusApp the dictation is over for display purposes, without touching the
+    /// generation.
+    ///
+    /// Called when the keyboard drops the stage because it is in a document this
+    /// dictation can no longer reach. The generation keeps running and is still judged
+    /// at insertion — that separation is round 3's fix and must not be undone — but the
+    /// app was left deferring `endWithResult` on a result nobody will ever see. Measured
+    /// on `c5c226c`: the Dynamic Island announced "processing" for **two, six and seven
+    /// seconds** after the keyboard had gone back to a normal keyboard. #352 is the
+    /// issue that names an Island out of step with the dictation as the failure.
+    ///
+    /// **This does not weaken decision 6.** The app still defers `endWithResult` until
+    /// `polishDidFinish`; what this adds is the moment the keyboard is entitled to send
+    /// it — when the answer is known rather than when the call returns, which is the
+    /// same principle decision 15 already applies to a superseded call.
+    ///
+    /// The app ends on the raw it handed over, which is the only text this dictation
+    /// will ever have. It tolerates the real `polishDidFinish` arriving later: it has
+    /// already forgotten the session by then, so the second post is a no-op.
+    ///
+    /// Once per claim. `refreshFromDefaults` runs many times per dictation and would
+    /// otherwise post on each of them.
+    ///
+    /// The one case this gets slightly wrong is a document identifier that reads
+    /// unavailable transiently and then matches again, where the generation would go on
+    /// to insert after the Island had come home. The cost is a raw preview instead of a
+    /// polished one, once; the device captures show identifiers readable throughout
+    /// ordinary dictations, and decision 14's watchdog would have produced the same
+    /// outcome ten seconds later anyway.
+    func concludeDisplayForUnreachableDocument() {
+        guard let pending = activePolish, !hasConcludedDisplay else { return }
+        hasConcludedDisplay = true
+        PersistentLog.log(.polishHandoff(
+            step: "displayConcluded",
+            outcome: "unreachable-document",
+            chars: pending.raw.count
+        ))
+        DarwinNotificationCenter.post(DarwinNotificationName.polishDidFinish)
     }
 
     /// Move the keyboard's own overlay to the LLM stage, and tell DictusApp to move

@@ -57,7 +57,19 @@ extension KeyboardState {
             stored: stored,
             drawing: dictationStatus,
             handoff: handoff
-        ) else { return false }
+        ) else {
+            // Adopting, and if that takes down a stage this keyboard was drawing for a
+            // document it can no longer reach, DictusApp is deferring its Live Activity
+            // on a generation whose result nobody will see. Tell it now rather than
+            // leaving decision 14's ten-second watchdog to do it — the Island was
+            // announcing "processing" up to seven seconds after the overlay had gone.
+            if handoff == .elsewhere, DictationSessionLivenessPolicy.isActive(dictationStatus) {
+                MainActor.assumeIsolated {
+                    KeyboardPolishCoordinator.shared.concludeDisplayForUnreachableDocument()
+                }
+            }
+            return false
+        }
         stopWatchdog()
         logProbe(
             "handoffStageHeld",
