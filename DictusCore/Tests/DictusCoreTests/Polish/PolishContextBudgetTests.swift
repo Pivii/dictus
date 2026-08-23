@@ -171,8 +171,7 @@ final class PolishContextBudgetTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: String(repeating: "a", count: 20_000),
             engine: engine,
-            target: .french,
-            mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .exceededContextBudget)
         XCTAssertEqual(engine.polishCallCount, 0, "the engine must never be called on an overflow")
@@ -184,7 +183,7 @@ final class PolishContextBudgetTests: XCTestCase {
         let engine = CeilingStubEngine(window: 4096)
         let input = "une dictée de longueur parfaitement ordinaire"
         let result = await PolishPipeline.transform(
-            preprocessed: input, engine: engine, target: .french, mode: .natural
+            preprocessed: input, engine: engine, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .success)
         XCTAssertEqual(engine.polishCallCount, 1)
@@ -197,13 +196,13 @@ final class PolishContextBudgetTests: XCTestCase {
         let oversized = String(repeating: "a", count: 20_000)
         let refused = await PolishPipeline.transform(
             preprocessed: oversized, engine: CeilingStubEngine(window: 200),
-            target: .french, mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         // Same oversized input through an engine with no ceiling that throws:
         // the pipeline records the generic failure it always did.
         let failed = await PolishPipeline.transform(
             preprocessed: oversized, engine: ThrowingStubEngine(),
-            target: .french, mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(refused.outcome, .exceededContextBudget)
         XCTAssertEqual(failed.outcome, .engineFailed)
@@ -218,7 +217,7 @@ final class PolishContextBudgetTests: XCTestCase {
             engineOutput: nil, outcome: .exceededContextBudget, engineMs: 0, postprocessMs: 0
         )
         let out = PolishPipeline.resolvedOutput(
-            result, preprocessed: preprocessed, target: .french, mode: .natural
+            result, preprocessed: preprocessed, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(out, "Ok, petit test\u{00A0}?", "the floor still applies French typography")
     }
@@ -231,7 +230,7 @@ final class PolishContextBudgetTests: XCTestCase {
         let engine = PassthroughPolishEngine()
         let fit = engine.contextFit(input: String(repeating: "a", count: 500_000),
                                     targetLanguage: .french,
-                                    mode: .natural)
+                                    task: .natural)
         XCTAssertEqual(fit, .fits)
     }
 
@@ -239,7 +238,7 @@ final class PolishContextBudgetTests: XCTestCase {
         // 40 000 characters — well past the Apple FM ceiling, irrelevant here.
         let input = String(repeating: "une phrase de dictée ordinaire. ", count: 1250)
         let result = await PolishPipeline.transform(
-            preprocessed: input, engine: PassthroughPolishEngine(), target: .french, mode: .natural
+            preprocessed: input, engine: PassthroughPolishEngine(), job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .success)
         XCTAssertEqual(result.engineOutput, input)
@@ -293,7 +292,7 @@ final class PolishContextBudgetTests: XCTestCase {
         let input = "bonjour, on se voit demain matin pour parler du projet"
         for mode in [PolishMode.natural, .repair, .auto] {
             for language in SupportedLanguage.allCases {
-                XCTAssertEqual(engine.contextFit(input: input, targetLanguage: language, mode: mode),
+                XCTAssertEqual(engine.contextFit(input: input, targetLanguage: language, task: .polish(mode)),
                                .fits,
                                "\(mode)/\(language) refused a one-line dictation")
             }
@@ -327,7 +326,7 @@ private final class CeilingStubEngine: PolishEngineProtocol, @unchecked Sendable
                                           safetyMargin: 1.2)
     }
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         lock.lock()
         calls += 1
         lock.unlock()
@@ -336,7 +335,7 @@ private final class CeilingStubEngine: PolishEngineProtocol, @unchecked Sendable
 
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
-                    mode: PolishMode) -> PolishContextFit {
+                    task: PolishTask) -> PolishContextFit {
         budget.fit(instructions: "", input: input)
     }
 }
@@ -348,7 +347,7 @@ private struct ThrowingStubEngine: PolishEngineProtocol {
 
     struct Failure: Error {}
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         throw Failure()
     }
 }

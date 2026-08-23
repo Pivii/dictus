@@ -10,7 +10,7 @@ final class PolishEventWriterTests: XCTestCase {
     private func metrics() -> PolishMetrics {
         PolishMetrics(
             engine: "apple-fm",
-            mode: .natural,
+            mode: "natural",
             targetLanguage: .french,
             detectedLanguage: "fr",
             rawCharCount: 21,

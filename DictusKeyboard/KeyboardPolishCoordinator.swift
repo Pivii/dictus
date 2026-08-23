@@ -88,6 +88,7 @@ final class KeyboardPolishCoordinator {
         let pending = PendingDictation(
             raw: raw,
             policy: policy,
+            smartMode: storedSmartMode(),
             recordingDuration: duration,
             documentIdentifier: KeyboardState.shared.currentDocumentIdentifier
         )
@@ -95,6 +96,7 @@ final class KeyboardPolishCoordinator {
         handoffToken = defaults.string(forKey: SharedKeys.handoffToken)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
         defaults.removeObject(forKey: SharedKeys.handoffToken)
         PersistentLog.log(.polishHandoff(step: "claimed", outcome: "pending", chars: raw.count))
 
@@ -191,9 +193,10 @@ final class KeyboardPolishCoordinator {
     // MARK: - The run
 
     private func run(_ pending: PendingDictation) async {
-        let polished = await service.polish(
+        let outcome = await service.polish(
             raw: pending.raw,
             languagePolicy: pending.policy,
+            smartMode: pending.smartMode,
             recordingDuration: pending.recordingDuration,
             onEngineWillRun: { [weak self] in
                 self?.announceProcessingStage()
@@ -237,6 +240,20 @@ final class KeyboardPolishCoordinator {
                 reason = current == nil ? "no-identifier" : "different-document"
             }
             PersistentLog.log(.polishInsertionRefused(reason: reason, ageMs: pending.ageMs))
+            finish(text: nil, insert: false)
+            return
+        }
+
+        // An armed Smart Mode that produced nothing insertable ends here with an
+        // empty hand (#79). The raw is on DictusApp's result card either way, and
+        // inserting it would be the worst outcome available: the user asked for
+        // bullets, or for English, and would silently get neither.
+        //
+        // What is deliberately NOT here is the message that says so. The toolbar's
+        // centre slot is where #79 puts it, and that slot is block B's work — until
+        // it lands, nothing can arm a mode, so this branch is unreachable in a
+        // shipped build rather than silently swallowing a dictation.
+        guard let polished = outcome.text else {
             finish(text: nil, insert: false)
             return
         }
@@ -408,6 +425,25 @@ final class KeyboardPolishCoordinator {
             return TranscriptionLanguagePolicy.snapshot()
         }
         return policy
+    }
+
+    /// The Smart Mode DictusApp wrote beside the raw text, or nil for Normal (#79).
+    ///
+    /// Unlike `storedPolicy()` there is no fallback to a fresh read, and that is the
+    /// point: an absent key legitimately means no mode was armed, and the only other
+    /// thing it could mean — the record failed to encode — must degrade to the free
+    /// polish rather than to a mode this keyboard resolved for itself. Reading the
+    /// armed mode here is exactly the mid-dictation change the snapshot exists to
+    /// prevent, because this process's toolbar is where the mode is armed.
+    private func storedSmartMode() -> SmartMode? {
+        guard let data = defaults.data(forKey: SharedKeys.lastTranscriptionSmartMode) else {
+            return nil
+        }
+        guard let mode = try? JSONDecoder().decode(SmartMode.self, from: data) else {
+            PersistentLog.log(.polishHandoff(step: "claimed", outcome: "mode-undecodable", chars: 0))
+            return nil
+        }
+        return mode
     }
 
 }

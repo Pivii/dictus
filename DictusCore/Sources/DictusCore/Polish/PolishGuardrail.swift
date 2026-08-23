@@ -13,18 +13,27 @@ import NaturalLanguage
 ///    when the user dictated French).
 public enum PolishGuardrail {
 
-    /// Returns `true` when `polished` is within the allowed ratio band for `mode`.
-    /// Natural: `[0.5, 2.0]`. Repair: `[0.3, 3.0]`. Auto (#239): same band as
-    /// Natural — the auto prompt is light-corrections-only, so anything outside
-    /// the Natural band is over/under-generation. Empty raw → only empty
-    /// polished accepted.
-    public static func accepts(raw: String, polished: String, mode: PolishMode) -> Bool {
+    /// Returns `true` when `polished` is within the length band `contract` allows.
+    /// Empty raw → only empty polished accepted.
+    ///
+    /// The band comes off the contract rather than off a table keyed by mode since
+    /// #79: `[0.5, 2.0]` is the ADR 0003 band for faithful polish, and it rejects
+    /// Notes — which condenses on purpose — by construction. Each task carries the
+    /// band its own transformation can legitimately produce. See
+    /// `PolishAcceptanceContract`.
+    public static func accepts(raw: String,
+                               polished: String,
+                               contract: PolishAcceptanceContract) -> Bool {
         guard !raw.isEmpty else { return polished.isEmpty }
         let ratio = Double(polished.count) / Double(raw.count)
-        switch mode {
-        case .natural, .auto: return (0.5...2.0).contains(ratio)
-        case .repair:         return (0.3...3.0).contains(ratio)
-        }
+        return contract.lengthBand.contains(ratio)
+    }
+
+    /// Free-polish convenience. Natural: `[0.5, 2.0]`. Repair: `[0.3, 3.0]`. Auto
+    /// (#239): same band as Natural — the auto prompt is light-corrections-only, so
+    /// anything outside the Natural band is over/under-generation.
+    public static func accepts(raw: String, polished: String, mode: PolishMode) -> Bool {
+        accepts(raw: raw, polished: polished, contract: PolishTask.polish(mode).contract)
     }
 
     /// Returns `true` when the top language hypothesis of `polished` matches `target`

@@ -22,29 +22,30 @@ public protocol PolishEngineProtocol: Sendable {
     /// generation takes time, so a new engine gets the stage without opting in.
     var announcesProcessingStage: Bool { get }
 
-    /// Polish `raw` STT output in `targetLanguage` under the given `mode`.
-    /// Throws on cancellation or backend failure — the coordinator falls back
-    /// to the raw text and emits an `engineFailed` metric.
+    /// Run `task` over `raw` STT output, with instructions resolved for
+    /// `targetLanguage`. Throws on cancellation or backend failure — the pipeline
+    /// records an `engineFailed` metric, and the caller falls back to the raw text
+    /// for the free polish or inserts nothing for a Smart Mode (#79).
     func polish(raw: String,
                 targetLanguage: SupportedLanguage,
-                mode: PolishMode) async throws -> String
+                task: PolishTask) async throws -> String
 
-    /// Warm up backend state for `(mode, targetLanguage)` (e.g. preload
+    /// Warm up backend state for `(task, targetLanguage)` (e.g. preload
     /// weights, prime the session with the matching instructions). Called at
-    /// app launch and at recording start by `PolishCoordinator`, which passes
-    /// `.natural` on the per-language path and `.auto` in Auto-detect mode
-    /// (#239). Default implementation is a no-op for engines that have
-    /// nothing to warm.
-    func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async
+    /// app launch and at recording start by `PolishService`, which passes
+    /// `.natural` on the per-language path, `.auto` in Auto-detect mode
+    /// (#239), and the armed Smart Mode when there is one (#79). Default
+    /// implementation is a no-op for engines that have nothing to warm.
+    func prewarm(task: PolishTask, targetLanguage: SupportedLanguage) async
 
-    /// Whether a `polish(raw:targetLanguage:mode:)` call with this exact input
+    /// Whether a `polish(raw:targetLanguage:task:)` call with this exact input
     /// would fit inside the backend's context window (#270).
     ///
     /// Asked by `PolishPipeline` immediately before the call, so an overflow is
     /// an explicit, named refusal instead of a mid-call throw the pipeline can
     /// only record as a generic engine failure. The engine answers because the
     /// ceiling is a property of the backend — its window size, its system
-    /// prompt for `(mode, targetLanguage)`, its prompt scaffolding. No caller
+    /// prompt for `(task, targetLanguage)`, its prompt scaffolding. No caller
     /// hardcodes a number.
     ///
     /// `input` is the string that will be passed as `raw`, i.e. already through
@@ -54,7 +55,7 @@ public protocol PolishEngineProtocol: Sendable {
     /// valid and stays unaffected.
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
-                    mode: PolishMode) -> PolishContextFit
+                    task: PolishTask) -> PolishContextFit
 
     /// Name the failure `error` — thrown by this engine's own `polish(...)` —
     /// so an engine failure stops being one opaque bucket (#315).
@@ -76,11 +77,11 @@ public protocol PolishEngineProtocol: Sendable {
 public extension PolishEngineProtocol {
     var announcesProcessingStage: Bool { true }
 
-    func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async {}
+    func prewarm(task: PolishTask, targetLanguage: SupportedLanguage) async {}
 
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
-                    mode: PolishMode) -> PolishContextFit { .fits }
+                    task: PolishTask) -> PolishContextFit { .fits }
 
     func failureReason(for error: Error) -> PolishFailureReason { .other(error) }
 }

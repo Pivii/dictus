@@ -107,14 +107,13 @@ final class PolishFailureReasonTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: "une dictée parfaitement ordinaire qu'il faudrait polir",
             engine: ClassifyingStubEngine(reason: .rateLimited),
-            target: .french,
-            mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .engineFailed)
         XCTAssertEqual(result.failureReason, .rateLimited)
 
         let metric = PolishMetrics(
-            engine: "classifying-stub", mode: .natural, targetLanguage: .french,
+            engine: "classifying-stub", mode: "natural", targetLanguage: .french,
             detectedLanguage: "fr", rawCharCount: 54, polishedCharCount: 54,
             latencyMs: 20, outcome: result.outcome, failureReason: result.failureReason
         )
@@ -127,7 +126,7 @@ final class PolishFailureReasonTests: XCTestCase {
     /// of the .jsonl expects.
     func testReasonSurvivesTheMetricJSONRoundTrip() throws {
         let metric = PolishMetrics(
-            engine: "apple-fm", mode: .natural, targetLanguage: .french,
+            engine: "apple-fm", mode: "natural", targetLanguage: .french,
             detectedLanguage: "fr", rawCharCount: 354, polishedCharCount: 354,
             latencyMs: 20, outcome: .engineFailed,
             timings: PolishTimings(preprocessMs: 16, engineMs: 4, postprocessMs: 0),
@@ -170,13 +169,12 @@ final class PolishFailureReasonTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: preprocessed,
             engine: ClassifyingStubEngine(reason: .rateLimited),
-            target: .french,
-            mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .engineFailed)
         XCTAssertNil(result.engineOutput)
         let out = PolishPipeline.resolvedOutput(
-            result, preprocessed: preprocessed, target: .french, mode: .natural
+            result, preprocessed: preprocessed, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(out, "Ok, petit test\u{00A0}?")
     }
@@ -188,8 +186,7 @@ final class PolishFailureReasonTests: XCTestCase {
             await PolishPipeline.transform(
                 preprocessed: "une dictée que l'on va interrompre avant la fin",
                 engine: SlowStubEngine(),
-                target: .french,
-                mode: .natural
+                job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
             )
         }
         task.cancel()
@@ -204,8 +201,7 @@ final class PolishFailureReasonTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: String(repeating: "a", count: 20_000),
             engine: NarrowStubEngine(),
-            target: .french,
-            mode: .natural
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .exceededContextBudget)
         XCTAssertNil(result.failureReason)
@@ -226,7 +222,7 @@ private struct ClassifyingStubEngine: PolishEngineProtocol {
 
     struct Failure: Error {}
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         throw Failure()
     }
 
@@ -237,7 +233,7 @@ private struct ClassifyingStubEngine: PolishEngineProtocol {
 private struct SlowStubEngine: PolishEngineProtocol {
     let identifier = "slow-stub"
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         try await Task.sleep(nanoseconds: 500_000_000)
         try Task.checkCancellation()
         return raw
@@ -248,14 +244,14 @@ private struct SlowStubEngine: PolishEngineProtocol {
 private struct NarrowStubEngine: PolishEngineProtocol {
     let identifier = "narrow-stub"
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         XCTFail("the engine must not be called on a context overflow")
         return raw
     }
 
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
-                    mode: PolishMode) -> PolishContextFit {
+                    task: PolishTask) -> PolishContextFit {
         PolishContextBudget(contextWindowTokens: 200, scaffoldingTokens: 0,
                             outputReserveRatio: 1.1, safetyMargin: 1.2)
             .fit(instructions: "", input: input)

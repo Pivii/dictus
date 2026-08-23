@@ -136,7 +136,7 @@ final class PolishGuardrailTests: XCTestCase {
     func testPolishMetricsRoundTripJSON() throws {
         let original = PolishMetrics(
             engine: "apple-fm",
-            mode: .repair,
+            mode: "repair",
             targetLanguage: .french,
             detectedLanguage: "en",
             rawCharCount: 42,
@@ -176,5 +176,61 @@ final class PolishGuardrailTests: XCTestCase {
         XCTAssertNil(decoded.mode)
         XCTAssertNil(decoded.detectedLanguage)
         XCTAssertEqual(decoded.outcome, .skipped)
+    }
+
+    // MARK: - Per-mode acceptance contracts (#79)
+
+    /// The reason the band had to stop being a table keyed by mode: a good
+    /// three-bullet synthesis of a long dictation is far below the ADR 0003 floor,
+    /// and the faithful-polish contract rejects it by construction.
+    func testNotesAcceptsACondensationTheNaturalBandRejects() {
+        let raw = String(repeating: "a", count: 400)
+        let condensed = String(repeating: "a", count: 60)   // ratio 0.15
+        XCTAssertFalse(PolishGuardrail.accepts(raw: raw, polished: condensed, mode: .natural))
+        XCTAssertTrue(PolishGuardrail.accepts(
+            raw: raw, polished: condensed, contract: SmartModeCatalogue.notes.contract
+        ))
+    }
+
+    /// Widening the floor is not removing it: an empty or near-empty answer is still
+    /// a failure, not a synthesis.
+    func testNotesStillRejectsARunawayOrACollapse() {
+        let raw = String(repeating: "a", count: 400)
+        let contract = SmartModeCatalogue.notes.contract
+        XCTAssertFalse(PolishGuardrail.accepts(
+            raw: raw, polished: String(repeating: "a", count: 5), contract: contract
+        ))
+        XCTAssertFalse(PolishGuardrail.accepts(
+            raw: raw, polished: String(repeating: "a", count: 1_000), contract: contract
+        ))
+    }
+
+    /// Translation changes length by a lot in either direction, so the band is wide
+    /// — the check that guards this mode is the language one.
+    func testTranslationAcceptsALargeLengthSwing() {
+        let raw = String(repeating: "a", count: 100)
+        let contract = SmartModeCatalogue.translate(to: .german).contract
+        XCTAssertTrue(PolishGuardrail.accepts(
+            raw: raw, polished: String(repeating: "a", count: 250), contract: contract
+        ))
+        XCTAssertTrue(PolishGuardrail.accepts(
+            raw: raw, polished: String(repeating: "a", count: 45), contract: contract
+        ))
+    }
+
+    func testAnEmptyRawStillOnlyAcceptsAnEmptyOutputWhateverTheContract() {
+        XCTAssertTrue(PolishGuardrail.accepts(
+            raw: "", polished: "", contract: SmartModeCatalogue.notes.contract
+        ))
+        XCTAssertFalse(PolishGuardrail.accepts(
+            raw: "", polished: "x", contract: SmartModeCatalogue.notes.contract
+        ))
+    }
+
+    /// The free-polish convenience must keep reporting the ADR 0003 bands exactly.
+    func testTheModeConvenienceStillReportsTheHistoricalBands() {
+        XCTAssertEqual(PolishTask.natural.contract.lengthBand, 0.5...2.0)
+        XCTAssertEqual(PolishTask.repair.contract.lengthBand, 0.3...3.0)
+        XCTAssertEqual(PolishTask.auto.contract.lengthBand, 0.5...2.0)
     }
 }
