@@ -82,21 +82,24 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
 
         Polished output:
         """
-        // The drop is awaited on both exits rather than deferred into an
-        // unstructured `Task` (#315). A detached task is ordered against
-        // nothing, and the captures on that issue show two dictations chaining
-        // inside a single second: `polish` A takes session S1, the next
-        // recording's `prewarm()` drops S1 and installs a warmed S2, then A's
-        // deferred task fires and drops S2. The next call gets a cache miss and
-        // builds a cold session, so the prewarm is wasted on every chained
-        // dictation. Awaiting here means the drop cannot outlive the call that
-        // owns it.
+        // The drop names the session it is dropping (#315). `respond()` suspends
+        // for four to five seconds, and the captures on that issue show two
+        // dictations chaining inside a single second — so the next recording's
+        // `prewarm()` can install a warmed replacement under this same key while
+        // this call is still suspended. Dropping by key alone on resume would
+        // evict that replacement and waste the prewarm on every chained
+        // dictation. See `SessionCache.dropIfStillCurrent`.
+        //
+        // It is also awaited on both exits rather than deferred into an
+        // unstructured `Task`, so the drop cannot outlive the call that owns it.
+        // That part is ordering; the identity check above is what closes the
+        // window, and neither substitutes for the other.
         do {
             let response = try await session.respond(to: prompt)
-            await cache.drop(key)
+            await cache.dropIfStillCurrent(key, session: session)
             return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
-            await cache.drop(key)
+            await cache.dropIfStillCurrent(key, session: session)
             throw error
         }
     }
@@ -252,14 +255,36 @@ private actor SessionCache {
         return session
     }
 
-    /// Remove the session for `key` (if any). Used to enforce the one-session-
-    /// per-call lifecycle: `polish()` drops after `respond()`, `prewarm()` drops
-    /// before recreating. Freeing a session releases only its small instruction
-    /// KV-cache — the model weights stay resident in memory, shared across
-    /// sessions, so re-creating a session when the model is already warm is cheap.
+    /// Remove the session for `key` (if any), whatever it is. Used by
+    /// `prewarm()`, which is deliberately installing a replacement and so has no
+    /// reason to care what it displaces. Freeing a session releases only its
+    /// small instruction KV-cache — the model weights stay resident in memory,
+    /// shared across sessions, so re-creating a session when the model is
+    /// already warm is cheap.
     func drop(_ key: SessionKey) {
         sessions.removeValue(forKey: key)
         lru.removeAll { $0 == key }
+    }
+
+    /// Remove the session for `key` only while it is still `session`.
+    ///
+    /// WHY this exists (#315): `polish()` suspends inside `respond()` for four
+    /// to five seconds, and the captures on that issue show two dictations
+    /// chaining inside a single second. So the next recording's `prewarm()` can
+    /// drop S1 and install a warmed S2 under the same key *while the first call
+    /// is still suspended*. An unconditional drop on resume then evicts S2, the
+    /// next call takes a cache miss and builds a cold session, and the prewarm
+    /// is wasted on every chained dictation.
+    ///
+    /// Ordering the drop does not help: the window is the removal itself, not
+    /// when it is scheduled. Only checking what is being removed does.
+    ///
+    /// Identity, not equality: `LanguageModelSession` is a class, and two
+    /// sessions built from the same instructions are equally valid and still
+    /// distinct objects — which is exactly the case that has to be told apart.
+    func dropIfStillCurrent(_ key: SessionKey, session: LanguageModelSession) {
+        guard sessions[key] === session else { return }
+        drop(key)
     }
 
     private func touch(_ key: SessionKey) {

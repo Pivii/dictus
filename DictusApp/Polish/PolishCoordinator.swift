@@ -341,10 +341,15 @@ public final class PolishCoordinator {
         // delegated to `PolishPipeline` so the eval harness runs identical code.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
 
-        let gate = availabilityGate
         let task = Task {
+            // Read inside the task, not snapshotted above (#315): a polish call
+            // that overlaps this one can flip the gate between the two, and a
+            // snapshot taken at creation time would send one more request to an
+            // engine already known to be refusing. Whether two polish calls
+            // should overlap at all is #361's question, not this one.
             await PolishPipeline.transform(
-                preprocessed: preprocessed, engine: currentEngine, target: target, mode: mode, gate: gate
+                preprocessed: preprocessed, engine: currentEngine, target: target,
+                mode: mode, gate: self.availabilityGate
             )
         }
         inflight = task
@@ -458,11 +463,12 @@ public final class PolishCoordinator {
         announceEngineStage(currentEngine, to: onEngineWillRun)
         // Pre-engine work in auto mode: detection + detected-language pre-pass.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
-        let gate = availabilityGate
         let task = Task {
+            // Read inside the task rather than snapshotted — same reason as the
+            // per-language path above (#315).
             await PolishPipeline.transform(
                 preprocessed: preprocessed, engine: currentEngine, target: contextLanguage,
-                mode: .auto, gate: gate
+                mode: .auto, gate: self.availabilityGate
             )
         }
         inflight = task
