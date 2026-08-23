@@ -62,10 +62,18 @@ enum AppleFMExtensionProbe {
     /// specific to the density — and would need the slower, once-a-minute
     /// protocol before concluding.
     ///
-    /// Ten is enough to land inside the refusal regime measured on the app (the
+    /// Ten was enough to land inside the refusal regime measured on the app (the
     /// 2026-08-13 capture refused 55 of 133 calls) while keeping the run under
     /// about a minute, which is as long as a human will hold a keyboard open.
-    private static let burstSize = 10
+    ///
+    /// Raised to twenty for #361, which needs the stronger reading. Ten
+    /// successes are consistent with an extension that escapes the limit *and*
+    /// with a process that simply had budget left, and the app latches after
+    /// roughly twelve calls — so a burst that clears twelve without degrading is
+    /// what separates the two. The run now takes about ninety seconds at the
+    /// four-to-five second latency measured on 2026-08-23, which is still a
+    /// keyboard a human will hold open.
+    private static let burstSize = 20
 
     /// Fixed synthetic input, never the user's text.
     ///
