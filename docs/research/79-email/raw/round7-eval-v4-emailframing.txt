@@ -1,0 +1,21 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.12s)
+✓ [E1-relance-devis]  (success, 5073ms)
+✓ [E2-dispo]  (success, 4275ms)
+✓ [E3-court]  (success, 3545ms)
+✓ [E4-reclamation]  (success, 4397ms)
+✗ [E5-long-projet]  (success, 5450ms)
+    – matched forbidden /(?i)\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\b/
+    – matched forbidden /(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)/
+    → Bonjour,
+Je fais le point sur le projet. La partie design est finie, nous avons validé les maquettes vendredi dernier. Cependant, le développement a pris du retard en raison d'un souci avec l'API du prestataire. Nous sommes en train de voir si nous pouvons décaler la livraison d'une semaine. Je ne sais pas si cela est envisageable de votre côté, et sinon, il faudrait qu'on en parle assez vite, car cela commence à presser.
+Merci d'avance.
+[Votre Nom]
+✓ [E6-demande-fichier]  (success, 4010ms)
+✓ [E7-controle-salutation-seule]  (success, 3998ms)
+✓ [E8-controle-signature-seule]  (success, 3921ms)
+✓ [E9-controle-prenom]  (success, 4138ms)
+✓ [E10-controle-deja-formel]  (success, 3766ms)
+
+Summary: 9/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)

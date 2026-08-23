@@ -1,0 +1,133 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.09s)
+
+━━ [E1-relance-devis] lang=fr stt=PK
+  raw:      alors euh je voulais revenir sur le devis que j'ai envoyé la semaine dernière j'ai toujours pas eu de retour et là ça commence à être un peu juste par rapport au planning donc si vous pouvez me dire où ça en est ça m'arrangerait
+  polished #1: Alors, euh, je voulais revenir sur le devis que j'ai envoyé la semaine dernière. J'ai toujours pas eu de retour, et là, ça commence à être un peu juste par rapport au planning. Donc, si vous pouvez me dire où ça en est, ça m'arrangerait.
+            (success, 5072ms, detected=fr→natural)
+  polished #2: Alors, euh, je voulais revenir sur le devis que j'ai envoyé la semaine dernière. J'ai toujours pas eu de retour, et là, ça commence à être un peu juste par rapport au planning. Donc, si vous pourriez me dire où ça en est, ça me serait utile.
+            (success, 4549ms, detected=fr→natural)
+  polished #3: Alors, euh, je voulais revenir sur le devis que j'ai envoyé la semaine dernière. Je n'ai toujours pas eu de retour, et là ça commence à être un peu juste par rapport au planning. Si vous pouvez me dire où ça en est, ça me serait utile.
+            (success, 4463ms, detected=fr→natural)
+  polished #4: Alors, euh, je voulais revenir sur le devis que j'ai envoyé la semaine dernière. J'ai toujours pas eu de retour, et là, ça commence à être un peu juste par rapport au planning. Donc, si vous pouvez me dire où ça en est, ça me ferait vraiment plaisir.
+            (success, 4497ms, detected=fr→natural)
+  polished #5: Alors, euh, je voulais revenir sur le devis que j'ai envoyé la semaine dernière. J'ai toujours pas eu de retour, et là, ça commence à être un peu juste par rapport au planning. Donc, si vous pouvez me dire où ça en est, ça me serait utile.
+            (success, 4515ms, detected=fr→natural)
+
+━━ [E2-dispo] lang=fr stt=PK
+  raw:      ouais alors moi je suis dispo mardi après-midi ou jeudi matin par contre le mercredi c'est mort j'ai un truc toute la journée dis moi ce qui t'arrange
+  polished #1: Oui, alors, je suis disponible mardi après-midi ou jeudi matin. Par contre, le mercredi, c'est mort, j'ai un truc toute la journée. Dis-moi ce qui te convient.
+            (success, 4125ms, detected=fr→natural)
+  polished #2: Oui, alors, je suis disponible mardi après-midi ou jeudi matin. Par contre, le mercredi, c'est mort, j'ai un truc toute la journée. Dis-moi ce qui te convient.
+            (success, 4126ms, detected=fr→natural)
+  polished #3: Oui, alors moi je suis disponible mardi après-midi ou jeudi matin, mais le mercredi c'est trop chargé. J'ai un engagement toute la journée. Dis-moi ce qui te convient.
+            (success, 4208ms, detected=fr→natural)
+  polished #4: Oui, alors, je suis disponible mardi après-midi ou jeudi matin. Par contre, le mercredi, c'est mort. J'ai un truc toute la journée. Dis-moi ce qui te convient.
+            (success, 4156ms, detected=fr→natural)
+  polished #5: Oui, alors, je suis disponible mardi après-midi ou jeudi matin, mais le mercredi, c'est mort. J'ai un truc toute la journée. Dis-moi ce qui te convient.
+            (success, 4240ms, detected=fr→natural)
+
+━━ [E3-court] lang=fr stt=PK
+  raw:      je confirme pour la réunion de lundi à 14h
+  polished #1: Je vous confirme ma présence à la réunion de lundi à 14 heures.
+            (success, 3640ms, detected=fr→natural)
+  polished #2: Je vous confirme ma présence à la réunion de lundi à 14h.
+            (success, 3593ms, detected=fr→natural)
+  polished #3: Je vous confirme ma présence à la réunion de lundi à 14 heures.
+            (success, 3596ms, detected=fr→natural)
+  polished #4: Je vous confirme ma présence à la réunion de lundi à 14 heures.
+            (success, 3595ms, detected=fr→natural)
+  polished #5: Je vous confirme ma présence à la réunion de lundi à 14 h.
+            (success, 3631ms, detected=fr→natural)
+
+━━ [E4-reclamation] lang=fr stt=PK
+  raw:      donc en fait ça fait trois fois que j'appelle pour le même problème et à chaque fois on me dit que ça va être réglé sous 48h et ça fait deux semaines que ça dure là franchement j'en ai marre je veux qu'on me rappelle
+  polished #1: Donc, en fait, ça fait trois fois que j'appelle pour le même problème, et à chaque fois, on me dit que ça va être réglé sous 48 heures, et ça fait deux semaines que ça dure. Franchement, j'en ai marre, je veux qu'on me rappelle.
+            (success, 4385ms, detected=fr→natural)
+  polished #2: Donc, en fait, ça fait trois fois que j'appelle pour le même problème, et à chaque fois, on me dit que ça va être réglé sous 48 heures. Ça fait maintenant deux semaines que ça dure, et franchement, j'en ai marre. Je veux qu'on me rappelle.
+            (success, 4463ms, detected=fr→natural)
+  polished #3: Donc, en fait, ça fait trois fois que j'appelle pour le même problème, et à chaque fois, on me dit que ça va être réglé sous 48 heures, mais ça fait maintenant deux semaines que ça dure. Franchement, j'en ai marre. Je veux qu'on me rappelle.
+            (success, 4426ms, detected=fr→natural)
+  polished #4: Donc, en fait, cela fait trois fois que j'appelle pour le même problème, et à chaque fois, on me dit que ça va être réglé sous 48 heures. Ça fait maintenant deux semaines que ça dure, et franchement, j'en ai marre. Je veux qu'on me rappelle.
+            (success, 4541ms, detected=fr→natural)
+  polished #5: Donc, en fait, cela fait trois fois que j'appelle pour le même problème, et à chaque fois, on me dit que cela va être réglé sous 48 heures, et cela fait deux semaines que cela dure. Franchement, j'en ai marre, je veux qu'on me rappelle.
+            (success, 4472ms, detected=fr→natural)
+
+━━ [E5-long-projet] lang=fr stt=PK
+  raw:      alors euh je fais le point sur le projet donc euh la partie design elle est finie on a validé les maquettes vendredi dernier par contre le dev il a pris du retard parce qu'on a eu un souci avec l'API du prestataire et euh du coup on est en train de voir si on peut décaler la livraison d'une semaine je sais pas si c'est jouable de ton côté et sinon faudrait qu'on en parle assez vite parce que là ça commence à presser
+  polished #1: Alors, je fais le point sur le projet. Donc, la partie design est finie, nous avons validé les maquettes vendredi dernier. Cependant, le développement a pris du retard en raison d'un souci avec l'API du prestataire. En conséquence, nous sommes en train de voir si nous pouvons décaler la livraison d'une semaine. Je ne sais pas si cela est envisageable de votre côté, et sinon, il faudrait qu'on en parle assez vite, car cela commence à presser.
+            (success, 5322ms, detected=fr→natural)
+  polished #2: Allez, je vais faire le point sur le projet. Donc, la partie design est terminée, nous avons validé les maquettes vendredi dernier. Cependant, le développement a pris du retard en raison d'un souci avec l'API du prestataire. Nous sommes actuellement en train de voir si nous pouvons reporter la livraison d'une semaine. Je ne sais pas si cela est envisageable de votre côté, et sinon, nous devrions en discuter assez rapidement, car cela commence à presser.
+            (success, 5576ms, detected=fr→natural)
+  polished #3: Alors, je fais le point sur le projet. Donc, la partie design est finie. On a validé les maquettes vendredi dernier. Par contre, le développement a pris du retard parce qu'on a eu un souci avec l'API du prestataire. Donc, on est en train de voir si on peut décaler la livraison d'une semaine. Je ne sais pas si c'est envisageable de votre côté, et sinon, on devrait en parler assez vite, parce que là ça commence à presser.
+            (success, 5464ms, detected=fr→natural)
+  polished #4: Alors, je fais le point sur le projet. Donc, la partie design est finie. On a validé les maquettes vendredi dernier. Cependant, le développement a pris du retard parce qu'on a eu un souci avec l'API du prestataire. Donc, on est en train de voir si on peut décaler la livraison d'une semaine. Je ne sais pas si c'est envisageable de ton côté, et sinon, il faudrait qu'on en parle assez vite, parce que là, ça commence à presser.
+            (success, 5487ms, detected=fr→natural)
+  polished #5: Alors, je fais le point sur le projet. Donc, la partie design est finie, et on a validé les maquettes vendredi dernier. Cependant, le développement a pris du retard parce qu'on a eu un souci avec l'API du prestataire. Du coup, on est en train de voir si on peut décaler la livraison d'une semaine. Je ne sais pas si c'est envisageable de votre côté, et sinon, il faudrait qu'on en parle assez vite, parce que là ça commence à presser.
+            (success, 5423ms, detected=fr→natural)
+
+━━ [E6-demande-fichier] lang=fr stt=PK
+  raw:      est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre j'arrive pas à le retrouver dans mes mails et j'en ai besoin pour demain matin
+  polished #1: Est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre ? Je n’arrive pas à le retrouver dans mes e-mails et j’en ai besoin pour demain matin.
+            (success, 4033ms, detected=fr→natural)
+  polished #2: Est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre ? Je n'arrive pas à le retrouver dans mes e-mails, et j'en ai besoin pour demain matin.
+            (success, 4044ms, detected=fr→natural)
+  polished #3: Est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre ? Je n’arrive pas à le retrouver dans mes mails et j’en ai besoin pour demain matin.
+            (success, 4006ms, detected=fr→natural)
+  polished #4: Est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre ? Je n'arrive pas à le retrouver dans mes e-mails et j'en ai besoin pour demain matin.
+            (success, 4000ms, detected=fr→natural)
+  polished #5: Est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre ? Je n'arrive pas à le retrouver dans mes e-mails et j'en ai besoin pour demain matin.
+            (success, 4021ms, detected=fr→natural)
+
+━━ [E7-controle-salutation-seule] lang=fr stt=PK
+  raw:      bonjour alors je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier il y a une ligne que je comprends pas
+  polished #1: Bonjour, je vous écris pour obtenir un renseignement sur ma facture du mois dernier. Il y a une ligne que je ne comprends pas.
+            (success, 3949ms, detected=fr→natural)
+  polished #2: Bonjour, je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier. Il y a une ligne que je ne comprends pas.
+            (success, 4019ms, detected=fr→natural)
+  polished #3: Bonjour, je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier. Il y a une ligne que je comprends pas.
+            (success, 4176ms, detected=fr→natural)
+  polished #4: Bonjour, je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier. Il y a une ligne que je ne comprends pas.
+            (success, 4308ms, detected=fr→natural)
+  polished #5: Bonjour, je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier. Il y a une ligne que je comprends pas.
+            (success, 4574ms, detected=fr→natural)
+
+━━ [E8-controle-signature-seule] lang=fr stt=PK
+  raw:      du coup je pense qu'on peut valider comme ça je te laisse me confirmer et on lance la prod merci d'avance
+  polished #1: Du coup, je pense qu'on peut valider comme ça. Je te laisse me confirmer et on lance la production. Merci d'avance.
+            (success, 4367ms, detected=fr→natural)
+  polished #2: Du coup, je pense qu'on peut valider comme ça. Je te laisse me confirmer et on lance la production. Merci d'avance.
+            (success, 4389ms, detected=fr→natural)
+  polished #3: Du coup, je pense qu'on peut valider comme ça. Je te laisse me confirmer et on lance la production. Merci d'avance.
+            (success, 4323ms, detected=fr→natural)
+  polished #4: Du coup, je pense qu'on peut valider comme ça. Je te laisse me confirmer et on lance la production. Merci d'avance.
+            (success, 3927ms, detected=fr→natural)
+  polished #5: Du coup, je pense qu'on peut valider comme ça. Je te laisse me confirmer et on lance la production. Merci d'avance.
+            (success, 3951ms, detected=fr→natural)
+
+━━ [E9-controle-prenom] lang=fr stt=PK
+  raw:      écoute Julien j'ai regardé ce que tu m'as envoyé et globalement c'est bon il y a juste deux trois trucs à reprendre sur la partie budget je te fais un retour détaillé demain
+  polished #1: J'ai regardé ce que tu m'as envoyé, et globalement, c'est bon. Il y a juste deux ou trois trucs à reprendre sur la partie budget. Je te fais un retour détaillé demain.
+            (success, 4343ms, detected=fr→natural)
+  polished #2: Écoute Julien, j'ai regardé ce que tu m'as envoyé, et globalement, c'est bon. Il y a juste deux ou trois trucs à reprendre sur la partie budgétaire. Je te fais un retour détaillé demain.
+            (success, 4362ms, detected=fr→natural)
+  polished #3: Écoute Julien, j'ai examiné ce que tu m'as envoyé, et globalement, c'est bon. Il y a juste deux ou trois éléments à reprendre sur la partie budgétaire. Je te fais un retour détaillé demain.
+            (success, 4218ms, detected=fr→natural)
+  polished #4: Julien, j'ai examiné ce que tu m'as envoyé, et globalement, c'est bon. Il y a juste deux ou trois éléments à reprendre concernant la partie budgétaire. Je te fais un retour détaillé demain.
+            (success, 4246ms, detected=fr→natural)
+  polished #5: Écoute Julien, j'ai regardé ce que tu m'as envoyé et globalement c'est bon. Il y a juste deux ou trois trucs à reprendre sur la partie budgétaire. Je te fais un retour détaillé demain.
+            (success, 4217ms, detected=fr→natural)
+
+━━ [E10-controle-deja-formel] lang=fr stt=PK
+  raw:      je vous prie de bien vouloir trouver ci-joint les documents demandés je reste à votre disposition pour toute information complémentaire
+  polished #1: Je vous prie de bien vouloir trouver ci-joint les documents demandés. Je reste à votre disposition pour toute information complémentaire.
+            (success, 3716ms, detected=fr→natural)
+  polished #2: Je vous prie de bien vouloir trouver ci-joint les documents demandés. Je reste à votre disposition pour toute information complémentaire.
+            (success, 3822ms, detected=fr→natural)
+  polished #3: Je vous prie de bien vouloir trouver ci-joint les documents demandés. Je reste à votre disposition pour toute information complémentaire.
+            (success, 3976ms, detected=fr→natural)
+  polished #4: Je vous prie de bien vouloir trouver ci-joint les documents demandés. Je reste à votre disposition pour toute information complémentaire.
+            (success, 3927ms, detected=fr→natural)
+  polished #5: Je vous prie de bien vouloir trouver ci-joint les documents demandés. Je reste à votre disposition pour toute information complémentaire.
+            (success, 3732ms, detected=fr→natural)

@@ -1,0 +1,6 @@
+Polish this text. Output only the polished version, nothing else.
+
+Input:
+{{INPUT}}
+
+Polished output:
