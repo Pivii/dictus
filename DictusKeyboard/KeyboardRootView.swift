@@ -104,6 +104,12 @@ struct KeyboardRootView: View {
         guard state.activeControllerID == controllerID, state.isKeyboardVisible else {
             return .keys
         }
+        // Owning the area is not the same as having checked what to draw (#361). A
+        // stage this process set on its own authority outlives the controller that
+        // justified it, and a freshly mounted one would otherwise render it before
+        // `viewWillAppear` has reconciled anything — a flash of the polish overlay on
+        // returning to an app where a dictation was made.
+        guard state.mayDrawLocalStage(from: controllerID) else { return .keys }
         return mode
     }
 

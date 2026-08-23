@@ -25,6 +25,9 @@ extension KeyboardState {
     /// millisecond, would flash a label and a new animation for a single frame.
     func beginLocalProcessingStage() {
         holdsLocalProcessingStage = true
+        // The controller on screen when the stage opens has current state by
+        // construction — it is the one that just handed us the dictation.
+        stageReconciledFor = activeControllerID
         dictationStatus = .processing
     }
 
@@ -39,6 +42,38 @@ extension KeyboardState {
         guard holdsLocalProcessingStage else { return }
         holdsLocalProcessingStage = false
         refreshFromDefaults()
+    }
+
+    /// Whether `controllerID` may draw a stage this process set on its own authority.
+    ///
+    /// Read from `KeyboardRootView.presentedMode`, which is the last gate before the
+    /// overlay is committed. The rule is in DictusCore, where it is tested.
+    func mayDrawLocalStage(from controllerID: String) -> Bool {
+        KeyboardHandoffStage.drawsLocalStage(
+            isLocallyOwned: holdsLocalProcessingStage,
+            hasGenerationInFlight: MainActor.assumeIsolated {
+                KeyboardPolishCoordinator.shared.isPolishing
+            },
+            reconciledForThisController: stageReconciledFor == controllerID
+        )
+    }
+
+    /// Throw away a `.processing` this process is holding with nothing behind it.
+    ///
+    /// The invariant, stated so a violation is findable: **a locally-owned stage exists
+    /// only while a generation does.** One occurrence on `a4e7fa7` showed
+    /// `status=processing storedStatus=ready` on a keyboard mount with no `claimed`
+    /// anywhere in the window, so something can leave one standing. Rather than let the
+    /// drawing rule quietly absorb that, this names it and writes a line.
+    @MainActor
+    func discardStaleLocalStage() {
+        guard dictationStatus == .processing,
+              !KeyboardPolishCoordinator.shared.isPolishing else { return }
+        logProbe("staleProcessingDiscarded", details: sessionDetails())
+        holdsLocalProcessingStage = false
+        // `.idle` rather than leaving it to the refresh below: the refresh can decide to
+        // hold, and a hold would preserve exactly the value being discarded.
+        dictationStatus = .idle
     }
 
     /// Whether `stored` must not be drawn right now, and the side effect that implies.

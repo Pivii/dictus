@@ -89,6 +89,56 @@ public enum KeyboardHandoffStage {
         case elsewhere
     }
 
+    /// Whether a controller may draw a stage this process set on its own authority.
+    ///
+    /// ### The frame this exists to suppress
+    ///
+    /// `KeyboardState` is a process-wide singleton and its `dictationStatus` outlives
+    /// any one controller, so a freshly mounted `KeyboardRootView` renders whatever the
+    /// singleton is holding. Device capture on `a4e7fa7`, three times in three minutes,
+    /// on returning to an app where a dictation had been made:
+    ///
+    /// ```text
+    /// KeyboardRootView 2DACE7B5 onAppear  status=processing visible=true
+    /// viewWillAppear_entry                status=processing storedStatus=ready
+    /// statusChanged from=processing to=ready
+    /// ```
+    ///
+    /// A flash of the polish overlay before the normal keyboard appears. It is this
+    /// issue's residue rather than a pre-existing bug: `status=processing
+    /// storedStatus=ready` is exactly the state #361 created, because the stage became
+    /// keyboard-local while the App Group kept saying `ready`. Before the move both
+    /// said the same thing and there was nothing to be stale about.
+    ///
+    /// ### Why owning the keyboard area is not enough
+    ///
+    /// `KeyboardRootView` already refuses to draw for a controller that does not own
+    /// the area. But ownership can be taken by a path that never reconciles:
+    /// `KeyboardState.claimOwnership` deliberately does not call
+    /// `refreshFromDefaults`, because it runs inside the area-mode subscription and
+    /// refreshing there would re-enter it (#260). So a controller can become the owner,
+    /// and draw, having never evaluated `adopts(stored:drawing:handoff:)` above.
+    ///
+    /// - Parameters:
+    ///   - isLocallyOwned: whether the stage was set by this process rather than read
+    ///     from the App Group.
+    ///   - hasGenerationInFlight: whether a polish call is actually running.
+    ///   - reconciledForThisController: whether the state has been read against the App
+    ///     Group since this controller took the area.
+    public static func drawsLocalStage(isLocallyOwned: Bool,
+                                       hasGenerationInFlight: Bool,
+                                       reconciledForThisController: Bool) -> Bool {
+        // A stage that came from the App Group cannot be stale in this way: whatever
+        // wrote it is the authority, and every controller reads the same value. Only a
+        // locally-owned one can outlive the facts that justified it. Keeping this case
+        // permissive is also what leaves #260's reclaim path working — a controller
+        // claiming an ownerless area mid-recording draws immediately, as it must.
+        guard isLocallyOwned else { return true }
+        // No generation behind it means it is stale by construction, whoever asks.
+        guard hasGenerationInFlight else { return false }
+        return reconciledForThisController
+    }
+
     /// Whether the keyboard should adopt `stored` as its stage.
     ///
     /// - Parameters:

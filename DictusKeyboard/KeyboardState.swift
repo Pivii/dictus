@@ -251,6 +251,27 @@ class KeyboardState: ObservableObject {
     /// `KeyboardPolishStage.swift` and Swift scopes `private` to the file.
     var holdsLocalProcessingStage = false
 
+    /// The controller for which the locally-owned stage above has been read against
+    /// the App Group (#361).
+    ///
+    /// A freshly mounted controller has not, and must not draw a stage it has not
+    /// checked — see `KeyboardHandoffStage.drawsLocalStage`. Owning the keyboard area
+    /// is not the same fact: `claimOwnership` hands ownership over without refreshing,
+    /// deliberately (#260).
+    ///
+    /// WHY `didSet` rather than `@Published`, the same reason `areaMode` gives above:
+    /// `@Published` notifies in `willSet`, while the property still holds the old
+    /// value, and this one is read from `KeyboardRootView.presentedMode` during the
+    /// layout pass a mode change forces.
+    /// Not `private(set)`: `beginLocalProcessingStage` sets it from
+    /// `KeyboardPolishStage.swift`, and Swift scopes that to the file.
+    var stageReconciledFor: String? {
+        didSet {
+            guard oldValue != stageReconciledFor else { return }
+            objectWillChange.send()
+        }
+    }
+
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
@@ -1115,9 +1136,20 @@ class KeyboardState: ObservableObject {
         )
         ownership = ownership.appearing(controllerID: controllerID)
 
+        // A locally-owned stage with no generation behind it is stale by construction
+        // (#361). Discarded here rather than narrowed by the drawing rule alone, so a
+        // future path that fails to clear one shows up as a log line instead of a
+        // flash.
+        MainActor.assumeIsolated { discardStaleLocalStage() }
+
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.
         refreshFromDefaults()
+
+        // Read against the App Group as of now, so this controller may draw a stage
+        // this process owns. Ordered after the refresh because that is what the word
+        // means.
+        stageReconciledFor = controllerID
     }
 
     /// Called when a controller disappears. Only the current owner may hide the keyboard.

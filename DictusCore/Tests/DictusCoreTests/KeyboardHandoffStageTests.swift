@@ -197,6 +197,62 @@ final class KeyboardHandoffStageTests: XCTestCase {
         XCTAssertTrue(pending.mayInsert(into: fieldX))
     }
 
+    // MARK: - Drawing a locally-owned stage on a freshly mounted controller
+
+    /// The flash on `a4e7fa7`: a controller mounts, the singleton is still holding
+    /// `.processing`, and the root view renders it before anything has reconciled.
+    func testAFreshControllerDoesNotDrawAnUnreconciledLocalStage() {
+        XCTAssertFalse(KeyboardHandoffStage.drawsLocalStage(
+            isLocallyOwned: true,
+            hasGenerationInFlight: true,
+            reconciledForThisController: false
+        ))
+    }
+
+    /// The legitimate case that must keep working with no flicker: iOS rebuilds the
+    /// controller in the same document while a generation is genuinely running. That
+    /// path goes through `viewWillAppear`, so it is reconciled by the time it draws.
+    func testAReconciledControllerDrawsTheStage() {
+        XCTAssertTrue(KeyboardHandoffStage.drawsLocalStage(
+            isLocallyOwned: true,
+            hasGenerationInFlight: true,
+            reconciledForThisController: true
+        ))
+    }
+
+    /// A stage with no generation behind it is stale whoever asks, reconciled or not.
+    /// One occurrence on device had exactly this shape, with no `claimed` in the window.
+    func testAStageWithNoGenerationIsNeverDrawn() {
+        for reconciled in [true, false] {
+            XCTAssertFalse(
+                KeyboardHandoffStage.drawsLocalStage(
+                    isLocallyOwned: true,
+                    hasGenerationInFlight: false,
+                    reconciledForThisController: reconciled
+                ),
+                "reconciled=\(reconciled)"
+            )
+        }
+    }
+
+    /// A stage read from the App Group is not local and cannot be stale this way. This
+    /// is what keeps #260's reclaim path working: a controller claiming an ownerless
+    /// area mid-recording draws immediately, and `claimOwnership` never reconciles.
+    func testAppDrivenStagesAreAlwaysDrawable() {
+        for inFlight in [true, false] {
+            for reconciled in [true, false] {
+                XCTAssertTrue(
+                    KeyboardHandoffStage.drawsLocalStage(
+                        isLocallyOwned: false,
+                        hasGenerationInFlight: inFlight,
+                        reconciledForThisController: reconciled
+                    ),
+                    "inFlight=\(inFlight) reconciled=\(reconciled)"
+                )
+            }
+        }
+    }
+
     // MARK: - #309's floor, which the flash was also costing
 
     /// The point of suppressing the `.ready` frame is that the keyboard then sees
