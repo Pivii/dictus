@@ -46,6 +46,9 @@ final class KeyboardPolishCoordinator {
     /// take that dictation's overlay and Live Activity down with it.
     private var activePolish: PendingDictation?
 
+    /// Unfreezes the overlay when a generation never comes back.
+    private var stageWatchdog: Timer?
+
     /// Whether a generation is on its way back. Read by the recovery path, which must
     /// not insert a raw whose polish is still coming — that would type it twice.
     var isPolishing: Bool { activePolish != nil }
@@ -84,7 +87,36 @@ final class KeyboardPolishCoordinator {
         PersistentLog.log(.polishHandoff(step: "claimed", outcome: "pending", chars: raw.count))
 
         activePolish = pending
+        startStageWatchdog(for: pending)
         Task { await run(pending) }
+    }
+
+    /// Abandon a generation whose document the user has left (#361, device finding).
+    ///
+    /// Returns whether it acted, so the caller knows to drop the stage with it.
+    ///
+    /// **Judgement call, taken here:** the generation is cancelled, not merely
+    /// detached. Decision 15's argument applies unchanged — a generation nobody may
+    /// insert has no claim on blocking anything — and it holds a `LanguageModelSession`
+    /// in a process under a ~50 MB ceiling for as long as it runs, which #357 Q4
+    /// measured at up to forty-three minutes. Keeping it would have cost only a
+    /// suspended task, so this is a preference rather than a necessity.
+    ///
+    /// `polishDidFinish` is posted, so DictusApp's Live Activity comes home now rather
+    /// than at the ten-second watchdog.
+    @discardableResult
+    func releaseIfFieldChanged() -> Bool {
+        guard let pending = activePolish else { return false }
+        guard !pending.mayInsert(into: currentDocumentIdentifier()) else { return false }
+        PersistentLog.log(.polishInsertionRefused(reason: "left-document", ageMs: pending.ageMs))
+        service.cancelInflight()
+        activePolish = nil
+        PendingDictationChannel.clear()
+        stopStageWatchdog()
+        defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
+        defaults.synchronize()
+        DarwinNotificationCenter.post(DarwinNotificationName.polishDidFinish)
+        return true
     }
 
     /// Give up on the previous dictation because a new one is starting
@@ -109,6 +141,7 @@ final class KeyboardPolishCoordinator {
         service.cancelInflight()
         guard let abandoned = activePolish else { return }
         activePolish = nil
+        stopStageWatchdog()
         PendingDictationChannel.clear()
         KeyboardState.shared.endLocalProcessingStage()
         PersistentLog.log(.polishHandoff(
@@ -162,6 +195,7 @@ final class KeyboardPolishCoordinator {
             return
         }
         activePolish = nil
+        stopStageWatchdog()
 
         // Or the record went while nothing replaced it: the recovery path typed the
         // raw, or DictusApp's launch sweep found it expired. Either way the dictation
@@ -188,6 +222,60 @@ final class KeyboardPolishCoordinator {
         }
 
         finish(text: DictationTail.apply(polished, policy: pending.policy), insert: true)
+    }
+
+    // MARK: - The backstop this move would otherwise have removed
+
+    /// How long the keyboard draws the LLM stage before declaring it stuck.
+    ///
+    /// **This is not a new threshold.** Before #361 the polish call ran in DictusApp
+    /// under `DictationCoordinator.stageWatchdogTimeout(for: .processing)`, which is
+    /// 60 s, and the keyboard's own overlay was covered by it because the app tore the
+    /// session down. Moving the call here made that timer unreachable on the keyboard
+    /// path, and left a stuck generation able to hold the overlay for as long as it
+    /// ran — #357 Q4 measured forty-three minutes. Same number, same job, now in the
+    /// process that owns the stage.
+    ///
+    /// It is deliberately far above the app's ten-second Live Activity watchdog: that
+    /// one can fire early for free, because the keyboard types its text regardless.
+    /// This one takes the overlay away from a user who may still be about to get their
+    /// text, so it is a last-resort unfreeze rather than a latency budget — the same
+    /// distinction the app's own comment draws.
+    ///
+    /// Decision 15's "no second timeout" is about queueing N+1 behind N, and is
+    /// unaffected: nothing here waits for anything.
+    private static let stageTimeout: TimeInterval = 60
+
+    private func startStageWatchdog(for pending: PendingDictation) {
+        stopStageWatchdog()
+        stageWatchdog = Timer.scheduledTimer(
+            withTimeInterval: Self.stageTimeout,
+            repeats: false
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.stageTimedOut(pending) }
+            }
+        }
+    }
+
+    private func stopStageWatchdog() {
+        stageWatchdog?.invalidate()
+        stageWatchdog = nil
+    }
+
+    /// The generation has not come back. Take the overlay down and conclude the
+    /// dictation, but leave the pending record: it is past its recovery window by
+    /// definition, so nothing will type it, and the next keyboard to notice sweeps it.
+    private func stageTimedOut(_ pending: PendingDictation) {
+        guard activePolish == pending else { return }
+        PersistentLog.log(.polishHandoff(
+            step: "watchdog", outcome: "stage-stuck", chars: pending.raw.count
+        ))
+        service.cancelInflight()
+        activePolish = nil
+        stageWatchdog = nil
+        PendingDictationChannel.clear()
+        finish(text: nil, insert: false)
     }
 
     /// Move the keyboard's own overlay to the LLM stage, and tell DictusApp to move
