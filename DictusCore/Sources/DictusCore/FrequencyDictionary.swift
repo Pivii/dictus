@@ -1,5 +1,5 @@
 // DictusCore/Sources/DictusCore/FrequencyDictionary.swift
-// Loads word frequency rankings from JSON and provides rank-based lookup.
+// Loads word frequency counts from JSON and provides count-based lookup.
 import Foundation
 
 /// A dictionary that maps words to frequency counts (higher count = more common).
@@ -29,8 +29,8 @@ public struct FrequencyDictionary {
         do {
             let decoded = try JSONDecoder().decode([String: Int].self, from: data)
             // Keep only the top N most frequent words to save memory.
-            // Words not in this dictionary get rank 0 (lowest priority in sorting),
-            // which is the correct behavior for rare words.
+            // Words not in this dictionary get a count of 0 (lowest priority in
+            // sorting), which is the correct behavior for rare words.
             if decoded.count > Self.maxWords {
                 let top = decoded.sorted { $0.value > $1.value }.prefix(Self.maxWords)
                 counts = [:]
@@ -68,7 +68,11 @@ public struct FrequencyDictionary {
     /// Returns the word frequency count (higher = more common).
     /// Returns 0 if the word is not in the dictionary.
     /// Lookup is case-insensitive.
-    public func rank(of word: String) -> Int {
+    ///
+    /// WHY not `frequency(of:)`: `FrequencyProvider.frequency(of:)` answers with
+    /// the AOSP trie's log-normalized `UInt16`, a different number from a
+    /// different source. Two names for one word would invite mixing them.
+    public func frequencyCount(of word: String) -> Int {
         return counts[word.lowercased()] ?? 0
     }
 

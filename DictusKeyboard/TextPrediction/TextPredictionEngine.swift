@@ -158,7 +158,8 @@ class TextPredictionEngine {
     ///
     /// HOW IT WORKS:
     /// 1. UITextChecker.completions() returns all possible completions from the system dictionary
-    /// 2. We sort those completions by our frequency dictionary (lower rank = more common = first)
+    /// 2. We order those completions by our frequency dictionary, most common first
+    ///    (the dictionary answers with a frequency count: higher = more common)
     /// 3. LearnedWordCompletions gives one word the user taught us the first slot (#346)
     /// 4. We return only the top 3 to fill the suggestion bar's 3 slots
     ///
@@ -185,7 +186,9 @@ class TextPredictionEngine {
             language: language
         ) ?? []
 
-        let ranked = completions.sorted { frequencyDict.rank(of: $0) > frequencyDict.rank(of: $1) }
+        let ranked = completions.sorted {
+            frequencyDict.frequencyCount(of: $0) > frequencyDict.frequencyCount(of: $1)
+        }
         return LearnedWordCompletions.merge(
             typedPrefix: partialWord,
             learnedWords: UserDictionary.shared.learnedWordsByLastUsed,
