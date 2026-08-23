@@ -186,9 +186,7 @@ class TextPredictionEngine {
             language: language
         ) ?? []
 
-        let ranked = completions.sorted {
-            frequencyDict.frequencyCount(of: $0) > frequencyDict.frequencyCount(of: $1)
-        }
+        let ranked = frequencyDict.sortedMostCommonFirst(completions)
         return LearnedWordCompletions.merge(
             typedPrefix: partialWord,
             learnedWords: UserDictionary.shared.learnedWordsByLastUsed,

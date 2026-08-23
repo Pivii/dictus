@@ -76,6 +76,19 @@ public struct FrequencyDictionary {
         return counts[word.lowercased()] ?? 0
     }
 
+    /// Returns `words` ordered most common first.
+    ///
+    /// WHY the ordering lives here and not at the call site: the direction is the
+    /// whole contract, and it used to be a bare `>` in a closure sitting under a
+    /// comment that described it backwards (#365). Spelled out once, in a name
+    /// that says which way it goes, it can be read without reading the count's
+    /// documentation — and the only test suite the repo has can reach it.
+    ///
+    /// Words the dictionary does not know count 0 and therefore land last.
+    public func sortedMostCommonFirst(_ words: [String]) -> [String] {
+        return words.sorted { frequencyCount(of: $0) > frequencyCount(of: $1) }
+    }
+
     /// Returns the top N most frequent words, sorted by count descending.
     /// Used as fallback when n-gram predictions return no results.
     ///

@@ -54,4 +54,28 @@ final class FrequencyDictionaryTests: XCTestCase {
         XCTAssertEqual(dict.frequencyCount(of: "de"), 1)
         XCTAssertTrue(dict.frequencyCount(of: "le") < dict.frequencyCount(of: "anticonstitutionnellement"))
     }
+
+    // MARK: - Ordering
+
+    func testSortedMostCommonFirstPutsTheMostCommonWordFirst() {
+        // The suggestion bar's contract, pinned (#365): typing "le" must offer
+        // "les" before "lesparre". UITextChecker hands its completions over in
+        // alphabetical order, so this ordering is the whole value we add.
+        var dict = FrequencyDictionary()
+        let json = #"{"les": 9000, "lesparre": 3}"#
+        dict.load(from: json.data(using: .utf8)!)
+        XCTAssertEqual(dict.sortedMostCommonFirst(["lesparre", "les"]), ["les", "lesparre"])
+    }
+
+    func testSortedMostCommonFirstSinksWordsTheDictionaryDoesNotKnow() {
+        // Only the top 10K words are kept in memory, so a rare completion counts
+        // 0 and must land last rather than wherever the caller passed it.
+        var dict = FrequencyDictionary()
+        let json = #"{"les": 9000, "lesparre": 3}"#
+        dict.load(from: json.data(using: .utf8)!)
+        XCTAssertEqual(
+            dict.sortedMostCommonFirst(["lesquiller", "lesparre", "les"]),
+            ["les", "lesparre", "lesquiller"]
+        )
+    }
 }
