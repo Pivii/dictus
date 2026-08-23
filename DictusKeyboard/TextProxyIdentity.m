@@ -19,6 +19,12 @@
 // forty-four minutes later. Without an identity check, that result would be typed into
 // whatever document held focus at that moment. This is how the keyboard asks whether
 // the field in front of the user is still the one the dictation came from.
+//
+// Measured on 2026-08-23: the property identifies an **input session**, not a
+// document. It is stable across the controller churn iOS does in place, and changes
+// when the keyboard is dismissed and re-presented even in the same field of the same
+// app. `PendingDictation.documentIdentifier` records what that costs, why the check is
+// kept anyway, and why nothing looser may replace it.
 #import "TextProxyIdentity.h"
 
 @implementation DictusTextProxyIdentity

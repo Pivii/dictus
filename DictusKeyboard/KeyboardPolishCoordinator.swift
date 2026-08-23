@@ -135,6 +135,21 @@ final class KeyboardPolishCoordinator {
     /// record survives a change of document: this is the path that catches a keyboard
     /// whose *process* died mid-generation, and it can only run if nothing tore the
     /// record down on the way out.
+    ///
+    /// ### It has never fired, and probably cannot
+    ///
+    /// Four device sessions on this branch, `step=recovered` zero times. Two measured
+    /// facts close it off from both ends. Measurement 3 on #361 found the extension is
+    /// *suspended* rather than killed, so the process it exists for usually survives
+    /// and the generation resolves normally. And a process that genuinely did die was
+    /// necessarily dismissed and re-presented, which mints a new
+    /// `documentIdentifier` — see that property — so `mayRecover` would refuse on
+    /// identity even if this ran.
+    ///
+    /// Kept rather than deleted because "no capture has produced it" is not "it cannot
+    /// happen", and what it guards is the whole point of writing the raw down first:
+    /// a dictation degrades to raw insertion, never to nothing. Do not read its
+    /// presence as evidence that the raw is recoverable in practice.
     func recoverPendingIfNeeded() {
         guard !isPolishing, let pending = PendingDictationChannel.current else { return }
         let current = KeyboardState.shared.currentDocumentIdentifier

@@ -47,6 +47,13 @@ import Foundation
 /// issue's own principle is that a dictation degrades to raw insertion, never to
 /// nothing.
 ///
+/// The follow-up run (`c5c226c`) confirmed this rule behaves: the generation ran its
+/// full 4,860 ms and the identity check decided at insertion time. It also showed the
+/// identity check itself is coarser than decision 7 assumed — see
+/// `PendingDictation.documentIdentifier`. That does not change anything here: this
+/// rule decides what is drawn, and its correctness does not depend on how the identity
+/// question is answered.
+///
 /// ### Why the rule is not "ignore .ready"
 ///
 /// `.ready` is a real end for a dictation started inside DictusApp, and for one this
@@ -71,8 +78,14 @@ public enum KeyboardHandoffStage {
         /// from, so the wait is one the user is here to see through.
         case here
         /// A raw is outstanding but this keyboard is somewhere else. The generation
-        /// keeps running and may still be typed if the user comes back — what must
-        /// not happen is drawing its wait over a document that will not receive it.
+        /// keeps running and is left to resolve on its own terms — what must not
+        /// happen is drawing its wait over a document that will not receive it.
+        ///
+        /// Note that "somewhere else" is decided by an identifier scoped to the input
+        /// session, so re-presenting the keyboard in the same field lands here too.
+        /// That costs the dictation, which is accepted — see
+        /// `PendingDictation.documentIdentifier`. What this case must never do is make
+        /// it worse by tearing the record down on the way past.
         case elsewhere
     }
 

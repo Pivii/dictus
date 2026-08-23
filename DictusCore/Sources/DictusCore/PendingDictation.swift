@@ -48,6 +48,31 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// to, as a string, or nil when the host would not name one.
     ///
     /// Nil is not a wildcard — see `mayInsert(into:)`.
+    ///
+    /// ### Measured scope, 2026-08-23 on `c5c226c`
+    ///
+    /// **It identifies an input session, not a document.** It is stable across the
+    /// in-place controller churn decision 7 was written around — the ~9 rebuilds per
+    /// dictation (#281) — which is why ordinary dictations insert normally. But
+    /// dismissing the keyboard and re-presenting it mints a new one, *even in the same
+    /// field of the same app*: three runs in that capture returned
+    /// `different-document` (a non-nil identifier that did not match) at 4,860,
+    /// 8,356 and 7,406 ms, after the maintainer left Notes and came straight back to
+    /// the same note.
+    ///
+    /// So half of decision 7's stated reasoning is falsified. It does not separate
+    /// "the user left the field" from "iOS rebuilt the controller while the user did
+    /// not move" — it separates them only *within* one input session, and reads
+    /// "left" across any dismissal whether or not the user came back.
+    ///
+    /// The half that matters survives intact: it is a sound guard against typing a
+    /// resurrected generation into a document the user did not choose, which is the
+    /// forty-three-minute case #357 Q4 measured. The maintainer tested the resulting
+    /// behaviour deliberately and accepted it — the raw is on DictusApp's result card
+    /// either way, and a user who leaves mid-polish can reasonably expect no text.
+    ///
+    /// **Do not replace this with something looser.** Anything that matched more
+    /// readily would reintroduce exactly the risk the check exists to prevent.
     public let documentIdentifier: String?
 
     /// When the keyboard claimed the raw, seconds since 1970.
@@ -65,6 +90,13 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// of 12,528 ms over 196 successes (#315 export). 30 s clears that with margin
     /// while staying far under the five-minute App Group sweep that is the outer
     /// bound. A judgement call, not a measurement.
+    ///
+    /// **And it has never been reached.** `mayRecover` needs the identity check to
+    /// pass first, and the scope finding recorded on `documentIdentifier` above means
+    /// it cannot: a process that died before its generation resolved was necessarily
+    /// dismissed and re-presented, which mints a new identifier. `step=recovered`
+    /// appears in none of the four device sessions on this branch. The number is kept
+    /// as it is rather than tuned, because tuning it would imply it decides something.
     public static let recoveryWindow: TimeInterval = 30
 
     public init(raw: String,
@@ -92,6 +124,11 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// order of nine instances per dictation (#281), and there the field is still
     /// present and the user is still waiting.
     ///
+    /// The identifier separates those two **only within one input session**, which
+    /// covers the churn above and nothing beyond it. A user who dismisses the keyboard
+    /// and comes back to the very same field reads as "left", and their dictation is
+    /// refused. That is measured, accepted, and recorded on `documentIdentifier`.
+    ///
     /// **Nil fails closed on either side.** A host that names no document cannot
     /// prove the field is the same one, and "we could not tell" must not read as
     /// "yes" on the path that types into somebody's message.
@@ -105,6 +142,10 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// Same identity rule, plus the window: a record older than that belongs to a
     /// dictation the user has stopped waiting for, and the honest outcome there is
     /// that it is lost.
+    ///
+    /// Measured as unreachable — see `recoveryWindow` and `documentIdentifier`. Kept
+    /// because the case it covers is one no capture has produced rather than one that
+    /// is impossible, and because the alternative is a raw with no path back at all.
     public func mayRecover(into currentIdentifier: String?,
                            now: TimeInterval = Date().timeIntervalSince1970) -> Bool {
         guard mayInsert(into: currentIdentifier) else { return false }

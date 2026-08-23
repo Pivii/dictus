@@ -122,8 +122,9 @@ final class KeyboardHandoffStageTests: XCTestCase {
 
     // MARK: - The sequence that lost a dictation on 1bed468
 
-    /// Claim in field X, iOS rebuilds the keyboard somewhere else while the user is in
-    /// transit, the user comes straight back to field X. The text must land.
+    /// Claim in field X, the keyboard is rebuilt somewhere it cannot insert, and then
+    /// it is back where the identifier matches again. Dropping the overlay must not
+    /// have destroyed anything on the way.
     ///
     /// The first attempt at the `elsewhere` rule cancelled the generation and cleared
     /// the pending record at step 2 — on device it fired 1.25 s after the claim, on a
@@ -131,7 +132,13 @@ final class KeyboardHandoffStageTests: XCTestCase {
     /// screen, and nothing arrived when he came back a second later. Dropping the
     /// overlay and abandoning the dictation are different acts; this walks the two
     /// pure rules together to prove they stay different.
-    func testLeavingAndReturningToTheSameFieldStillDelivers() {
+    ///
+    /// **What this does not claim.** Step 3 supplies a matching identifier, and on
+    /// device a dismissal does not produce one — `documentIdentifier` is scoped to the
+    /// input session, so a user who leaves and returns to the same field is refused.
+    /// That is measured and accepted. What is asserted here is the property the round-2
+    /// regression broke: the rules leave the dictation intact for whoever can act on it.
+    func testTheStageDroppingLeavesTheDictationIntact() {
         let fieldX = "1D6E6C1C-0000-0000-0000-00000000000A"
         let claimedAt: TimeInterval = 1_000
         let pending = PendingDictation(
@@ -170,10 +177,9 @@ final class KeyboardHandoffStageTests: XCTestCase {
         ), "a keyboard still drawing the stage keeps it")
     }
 
-    /// The same sequence, but the user takes longer than the recovery window to come
-    /// back. The generation may still insert — the window bounds only the degraded
-    /// path, never the identity check.
-    func testReturningPastTheWindowStillLetsTheGenerationInsert() {
+    /// The window bounds only the degraded path, never the identity check: past it a
+    /// recovery is refused while a returning generation is not.
+    func testTheWindowBoundsRecoveryAndNotInsertion() {
         let fieldX = "1D6E6C1C-0000-0000-0000-00000000000B"
         let pending = PendingDictation(
             raw: "texte",
