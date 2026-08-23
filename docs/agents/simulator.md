@@ -339,9 +339,11 @@ xcrun simctl shutdown <udid>
 
 **Tapping and typing are no longer on this list.** They were, until 2026-08-22, on the grounds that `simctl` has no touch injection. That is still true of `simctl` and was never true of the machine: see section 5. Do not re-derive the old limit from the `simctl` man page.
 
-**The Dictus keyboard CAN be enabled in a simulator.** This file said the opposite until 2026-08-23. It was wrong. Enabling it takes taps, and section 5 taps: Settings → Général → Clavier → Claviers → Ajouter un clavier → Dictus. Read each screen with `describe-ui` and tap the row centre from the reported `AXFrame` — these rows carry labels but no identifiers, so coordinates are what work.
+**The Dictus keyboard renders in a simulator, takes Full Access, and drives the whole dictation chain.** This file said the rendering was unresolved until 2026-08-23. It was wrong, and the reason was in how the keyboard was being reached: the globe key was being *tapped*, and a tap cycles past the third-party keyboards. Long-press it and pick Dictus from the menu — section 5 has the sequence, `axe batch` included.
 
-The extension does register on install, which was never the question:
+Measured end to end on 2026-08-23. The keyboard draws its own AZERTY layout, with the `espace` bar, the hamburger panel button and the mic button.
+
+**Registering.** The extension registers on install, which was never the question:
 
 ```bash
 xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
@@ -351,28 +353,39 @@ xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
      com.pivi.dictus.keyboard(1.8.0)	657D5A4D-…	/Users/…/DictusApp.app/PlugIns/DictusKeyboard.appex
 ```
 
-After the taps, the device's own keyboard list carries it:
+`pkd` logs `Created plugin` for `com.pivi.dictus.keyboard(1.8.0)`, and SpringBoard lists it under `com.apple.keyboard-service`.
+
+**Enabling, without tapping through Settings.** The device's keyboard list is `AppleKeyboards` in its `.GlobalPreferences.plist`, and a third-party keyboard is a bare bundle identifier there, not the `locale@sw=` shape the built-ins use. Write it with `plistlib` while the device is shut down — section 6's technique:
+
+```python
+d['AppleKeyboards'] = [
+    'fr_FR@sw=AZERTY-French;hw=Automatic',
+    'en_US@sw=QWERTY;hw=Automatic',
+    'emoji@sw=Emoji',
+    'com.pivi.dictus.keyboard',
+]
+```
+
+Then boot, attach Simulator.app (section 5), install, and open any text field. Tapping through Settings → Général → Clavier → Claviers → Ajouter un clavier → Dictus reaches the same state and also works. `defaults write` from the host does not land, and neither does the `com.apple.Preferences` domain — `AppleKeyboards` does not live there; the version of this file before #378 made both mistakes at once and concluded from them that the keyboard could not be enabled at all.
+
+**Full Access.** Granted by tap, in Réglages → Général → Clavier → Claviers → Dictus. The switch is not in the accessibility tree, so `axe`'s default `automatic` style falls back to a simulator tap and the toggle does not move; `--tap-style physical` moves it:
 
 ```bash
-xcrun simctl spawn <udid> defaults read -g AppleKeyboards
+axe tap -x 337 -y 161 --tap-style physical --udid <udid>   # the Full Access switch
+axe tap --label "Autoriser" --udid <udid>                  # the confirmation alert
 ```
 
+The log then carries `fullAccess=true`.
+
+**What the extension then gives you.** It runs, and it writes: `<KBD> diagnosticProbe` lines carrying `inputBounds`, `keyboardFrame`, `hostingConst`, `heightConst`, `memMB`, `status`, `mode` and `coldStart`. Tapping the mic fires the whole keyboard → app dictation chain, which on a device with no model installed ends where it should:
+
 ```
-(
-    "fr_FR@sw=AZERTY-French;hw=Automatic",
-    "en_US@sw=QWERTY;hw=Automatic",
-    "emoji@sw=Emoji",
-    "com.pivi.dictus.keyboard"
-)
+dictationFailed error=No model downloaded
+statusChanged from=idle to=failed
+dictationMessageCleared reason=appError-timeout
 ```
 
-Note the format: a third-party keyboard is a bare bundle identifier, not the `locale@sw=` shape the built-ins use. That is the entry to write if you want to skip the tapping. `AppleKeyboards` lives in the device's `.GlobalPreferences.plist`, and editing it with `plistlib` while the device is shut down lands — section 6's technique. Writing it from the host with `defaults write` does not, and neither does the `com.apple.Preferences` domain; the previous version of this file made both mistakes at once and concluded from them that the keyboard could not be enabled.
-
-iOS loads the extension too. `pkd` logs `Created plugin` for `com.pivi.dictus.keyboard(1.8.0)`, and SpringBoard lists it under `com.apple.keyboard-service`.
-
-**What is not proven is the keyboard rendering.** With it enabled, tapping the globe key cycled French → English → French and never reached Dictus, and `dictus_debug.log` gained no `<KBD>` line, so the extension's own code never ran. Undiagnosed: it may want Full Access, it may need selecting from the globe long-press picker rather than the cycle, or it may be failing to launch. Start there, with the log open.
-
-Enabling is solved. Rendering is the open question. Neither is impossible.
+That is most of the keyboard surface this repo debugs, reachable without a device.
 
 **The software keyboard appears, and `Connect Hardware Keyboard` did not stop it.** A widely repeated claim says a connected hardware keyboard suppresses the on-screen one and that this is why keyboard testing fails in simulators. Measured here with `ConnectHardwareKeyboard = 1`: tapping Safari's address bar brought up the full AZERTY keyboard, globe key included. The setting is real and headless-controllable —
 
@@ -382,7 +395,7 @@ defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 
 — but on Xcode 26.4.1 / iOS 26.5 it is not what stands between an agent and a software keyboard. Check section 5's attachment first.
 
-**Even a rendering keyboard would not give you the numbers.** Memory and timing are device figures. Dead zones, the declared height constraint and the keyboard-to-app handoff still need a physical iPhone.
+**The keyboard renders and still does not give you the numbers.** Memory and timing are device figures. `memMB=50` was observed for the extension in this run; simulator memory is not device memory and no verdict belongs in that number. Dead zones, the declared height constraint and the keyboard-to-app handoff still need a physical iPhone.
 
 **Custom-scheme URLs prompt.** `simctl openurl` raises a confirmation the user must accept — though section 5 can now accept it:
 
@@ -392,14 +405,14 @@ xcrun simctl openurl <udid> "dictus://dictate?source=keyboard"
 
 exits 0 and raises an `Ouvrir dans « Dictus » ?` confirmation alert, which needs a tap. It behaves the same whether Dictus is frontmost or the device is on the Home screen.
 
-**Microphone and dictation were not exercised, and the reason is structural.** The audio session does configure:
+**The dictation chain runs; the capture at the end of it does not.** Tapping the keyboard's mic reaches DictusApp and comes back with the `No model downloaded` failure quoted in the keyboard entry above. Past that point nothing was exercised, and the reason is structural. The audio session does configure:
 
 ```
 […] INFO    [audio] <APP> audioSessionConfigured category=playAndRecord
 […] WARNING [audio] <APP> engineWarmUpFailed context=didBecomeActive error=modelReady=false
 ```
 
-No transcription model is installed, and installing one means the Models tab — a tap — plus a download. Recording never starts, so nothing was proven about capture. `xcrun simctl privacy <udid> grant microphone com.pivi.dictus` exits 0, but it was never put to use.
+No transcription model is installed, and installing one means the Models tab — a tap — plus a download. Recording never starts, so nothing is proven about capture. `xcrun simctl privacy <udid> grant microphone com.pivi.dictus` exits 0, but it was never put to use.
 
 Two things to know before trying: the simulator captures the **Mac's** input device, so a recording started here records the room Pierre is sitting in; and transcription runs on Mac silicon, so any timing measured in a simulator says nothing about the phone.
 
