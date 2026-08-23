@@ -289,6 +289,29 @@ public enum LogEvent: Sendable {
     /// reader needs to see both numbers to tell that from a stall.
     case polishCallSuperseded(inflightMs: Int)
 
+    /// Issue #79: a Smart Mode's output was refused, so nothing was inserted.
+    ///
+    /// **Fail closed is the point of the line.** For the free polish, falling back to
+    /// the deterministic floor is invisible and harmless; for a mode it would mean
+    /// French sent to an American client, or two minutes of rambling pasted where
+    /// three bullets were expected. So a refused mode inserts nothing — and an
+    /// insertion that does not happen is an absence, which is only readable against
+    /// the reason it did not.
+    ///
+    /// `outcome` is the `PolishMetrics.Outcome` that refused it (the contract
+    /// rejected the output, the engine threw, the input did not fit); `reason` is the
+    /// engine's own name for what it threw, or "-".
+    case smartModeRefused(mode: String, outcome: String, reason: String)
+
+    /// Issue #79: an armed Smart Mode was cleared without the user asking.
+    ///
+    /// Two causes, both meaning the armed mode describes a transformation this build
+    /// on this device cannot perform: the identifier belongs to no mode this build
+    /// ships, or Apple Foundation Models is no longer available. The dictation falls
+    /// back to Normal, which is the honest degradation — leaving it armed would fail
+    /// closed on every dictation from then on.
+    case smartModeDisarmed(mode: String, reason: String)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -349,7 +372,8 @@ public enum LogEvent: Sendable {
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
         case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
-             .polishInsertionRefused, .polishCallSuperseded:
+             .polishInsertionRefused, .polishCallSuperseded,
+             .smartModeRefused, .smartModeDisarmed:
             return .transcription
         }
     }
@@ -440,6 +464,14 @@ public enum LogEvent: Sendable {
         // A superseded call is likewise the documented behaviour of decision 15.
         case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded:
             return .info
+
+        // Warning: a Smart Mode that refused its own output cost the user a
+        // dictation they asked to be transformed, and one that was disarmed
+        // silently changed what the next dictation will do. Neither is an error --
+        // both are the design holding -- but both are the kind of thing a reader
+        // scanning a capture for "why did nothing happen" needs to see.
+        case .smartModeRefused, .smartModeDisarmed:
+            return .warning
         }
     }
 
@@ -546,6 +578,8 @@ public enum LogEvent: Sendable {
         case .polishHandoff: return "polishHandoff"
         case .polishInsertionRefused: return "polishInsertionRefused"
         case .polishCallSuperseded: return "polishCallSuperseded"
+        case .smartModeRefused: return "smartModeRefused"
+        case .smartModeDisarmed: return "smartModeDisarmed"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -789,6 +823,10 @@ public enum LogEvent: Sendable {
             return "reason=\(reason) ageMs=\(ageMs)"
         case .polishCallSuperseded(let inflightMs):
             return "inflightMs=\(inflightMs)"
+        case .smartModeRefused(let mode, let outcome, let reason):
+            return "mode=\(mode) outcome=\(outcome) reason=\(reason)"
+        case .smartModeDisarmed(let mode, let reason):
+            return "mode=\(mode) reason=\(reason)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }

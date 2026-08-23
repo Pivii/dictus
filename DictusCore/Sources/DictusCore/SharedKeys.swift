@@ -150,6 +150,36 @@ public enum SharedKeys {
     /// String: the token the keyboard echoes beside `lastPolishedTranscription`.
     public static let lastPolishedHandoffToken = "dictus.lastPolishedHandoffToken"
 
+    // MARK: - Smart Modes (issue #79)
+    /// String: identifier of the armed Smart Mode, or absent for Normal. Sticky —
+    /// it survives keyboard and app restarts, like the keyboard language, and is
+    /// cleared by selecting Normal.
+    ///
+    /// An identifier rather than a record, so a built-in's prompt is never frozen at
+    /// the version that was current when the user armed it. Read and written only
+    /// through `SmartModeStore`, which is where the rule about when a read may
+    /// disarm lives.
+    ///
+    /// Distinct from `smartModeEnabled` below, which is the per-feature Pro toggle:
+    /// that one says whether the feature is switched on at all, this one says which
+    /// mode the next dictation runs.
+    public static let smartModeArmed = "dictus.smartModeArmed"
+    /// [String]: identifiers of the modes pinned to the keyboard's long-press fan,
+    /// in the user's own order. Absent means they have never chosen, which seeds
+    /// from `SmartModeCatalogue.defaultPinnedIdentifiers`; an empty array is a real
+    /// choice and is honoured.
+    public static let smartModePinned = "dictus.smartModePinned"
+    /// Data: the JSON-encoded `SmartMode` armed for the transcription sitting in
+    /// `lastTranscription`, or absent when the dictation runs Normal.
+    ///
+    /// Written by DictusApp beside the raw text and the language policy, read by the
+    /// keyboard, which applies it. The whole record travels rather than the
+    /// identifier for the same reason `lastTranscriptionPolicy` carries values
+    /// instead of keys: re-resolving on the far side would let a mode change made
+    /// while transcription was running reach a dictation that was started under a
+    /// different one — and the keyboard is exactly where the mode is armed.
+    public static let lastTranscriptionSmartMode = "dictus.lastTranscriptionSmartMode"
+
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
     /// during active recording. The keyboard watchdog reads this as a fallback
