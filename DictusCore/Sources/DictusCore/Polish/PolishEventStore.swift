@@ -94,8 +94,12 @@ public enum PolishEventStore {
     /// Append one event. Never reads the file, never prunes it, never allocates
     /// more than the one encoded line — the contract the keyboard depends on.
     public static func append(_ entry: PolishDebugEntry) {
-        guard let url = fileURL,
-              let data = try? encoder.encode(entry),
+        guard let url = fileURL else { return }
+        append(entry, to: url)
+    }
+
+    static func append(_ entry: PolishDebugEntry, to url: URL) {
+        guard let data = try? encoder.encode(entry),
               let json = String(data: data, encoding: .utf8),
               let payload = (json + "\n").data(using: .utf8) else { return }
 
@@ -117,8 +121,70 @@ public enum PolishEventStore {
     /// Every decodable event in the file, optionally dropping those outside the
     /// retention window.
     public static func readAll(applyingRetention: Bool) -> [PolishDebugEntry] {
-        guard let url = fileURL,
-              let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let url = fileURL else { return [] }
+        return readAll(applyingRetention: applyingRetention, from: url)
+    }
+
+    static func readAll(applyingRetention: Bool, from url: URL) -> [PolishDebugEntry] {
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        var out: [PolishDebugEntry] = []
+        coordinator.coordinate(readingItemAt: url, options: [], error: &error) { coordURL in
+            out = decodeAll(applyingRetention: applyingRetention, at: coordURL)
+        }
+        return out
+    }
+
+    /// Rewrite the file dropping entries older than the retention window.
+    ///
+    /// **Read and write inside one coordination block.** They used to be two
+    /// uncoordinated steps, which is a lost-write race now that the ring has two
+    /// writers: the keyboard's `append` takes the coordinator, so it can land on the
+    /// old file between this read and its replacement and vanish with it. That
+    /// `append` is coordinated and this was not is exactly the shape of the bug —
+    /// coordination only serialises against other coordinated access.
+    ///
+    /// Decision 8's "only the app performs destructive operations" is what makes the
+    /// two-writer ring safe, and this is what makes that sentence true rather than
+    /// merely intended.
+    public static func pruneOldEntries() {
+        guard let url = fileURL else { return }
+        pruneOldEntries(at: url)
+    }
+
+    static func pruneOldEntries(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { coordURL in
+            var rewritten = ""
+            for entry in decodeAll(applyingRetention: true, at: coordURL) {
+                guard let data = try? encoder.encode(entry),
+                      let json = String(data: data, encoding: .utf8) else { continue }
+                rewritten += json + "\n"
+            }
+            try? rewritten.write(to: coordURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    public static func clear() {
+        guard let url = fileURL else { return }
+        clear(at: url)
+    }
+
+    static func clear(at url: URL) {
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { coordURL in
+            try? "".write(to: coordURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Decode without coordinating. Only ever called from inside a coordination
+    /// block — re-entering the coordinator on the same file from the same process
+    /// deadlocks.
+    private static func decodeAll(applyingRetention: Bool, at url: URL) -> [PolishDebugEntry] {
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let cutoff = Date().addingTimeInterval(-retentionPeriod)
         var out: [PolishDebugEntry] = []
         for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -128,24 +194,6 @@ public enum PolishEventStore {
             out.append(entry)
         }
         return out
-    }
-
-    /// Rewrite the file dropping entries older than the retention window.
-    public static func pruneOldEntries() {
-        guard let url = fileURL,
-              FileManager.default.fileExists(atPath: url.path) else { return }
-        var rewritten = ""
-        for entry in readAll(applyingRetention: true) {
-            guard let data = try? encoder.encode(entry),
-                  let json = String(data: data, encoding: .utf8) else { continue }
-            rewritten += json + "\n"
-        }
-        try? rewritten.write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    public static func clear() {
-        guard let url = fileURL else { return }
-        try? "".write(to: url, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Coding

@@ -161,6 +161,32 @@ extension KeyboardState {
     /// stays true across exactly the dismissal that matters.
     var keyboardIsAttached: Bool { controller?.isAttachedToWindow ?? false }
 
+    /// Claim a hand-off whose `transcriptionReady` never arrived.
+    ///
+    /// Darwin notifications are best-effort, and the keyboard's only insertion trigger
+    /// is that one post. Before #361 a missed post simply lost the text; now it also
+    /// leaves `handoffIsOutstanding` true, so `holdsHandoffStage` keeps the overlay up
+    /// until DictusApp's watchdog writes `.idle`. Bounded, but the dictation is gone
+    /// for no better reason than a dropped signal.
+    ///
+    /// Checked on appearance, which is when a keyboard is in front of the user with a
+    /// document to type into — the same moment `recoverPendingIfNeeded` uses, one step
+    /// earlier in the sequence. It cannot double-claim: the raw is removed from the App
+    /// Group before the claim, exactly as the Darwin path does, and both run on the
+    /// main queue in this one process.
+    @MainActor
+    func claimUnclaimedHandoff() {
+        let defaults = AppGroup.defaults
+        guard defaults.data(forKey: SharedKeys.lastTranscriptionPolicy) != nil,
+              PendingDictationChannel.current == nil,
+              let raw = defaults.string(forKey: SharedKeys.lastTranscription),
+              !raw.isEmpty else { return }
+        defaults.removeObject(forKey: SharedKeys.lastTranscription)
+        defaults.synchronize()
+        logProbe("claimedMissedHandoff", details: "chars=\(raw.count)")
+        takeTranscription(raw)
+    }
+
     /// Decide what a transcription DictusApp just published is, and act on it.
     ///
     /// A hand-off carries the policy snapshot the keyboard needs to polish with; a

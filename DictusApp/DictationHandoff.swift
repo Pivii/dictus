@@ -119,6 +119,9 @@ extension DictationCoordinator {
             PersistentLog.log(.dictationFailed(error: "language policy did not encode for hand-off"))
         }
         defaults.set(audioDuration, forKey: SharedKeys.lastTranscriptionDuration)
+        let token = UUID().uuidString
+        polishHandoffToken = token
+        defaults.set(token, forKey: SharedKeys.handoffToken)
         defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
         defaults.set(DictationStatus.ready.rawValue, forKey: SharedKeys.dictationStatus)
         // The previous dictation's polished text, if the keyboard left one behind.
@@ -153,7 +156,13 @@ extension DictationCoordinator {
             withTimeInterval: PolishTimeBudget.handoffCeiling(forCharacters: preview.count),
             repeats: false
         ) { [weak self] _ in
-            DispatchQueue.main.async { self?.polishHandoffTimedOut() }
+            // The session is captured, not read at execution time. `invalidate()` does
+            // not unschedule a block already enqueued on the main queue, so a timer
+            // cancelled a hair too late would otherwise time out whichever hand-off is
+            // current when it runs — which, after round 7, withdraws that dictation.
+            // Same device as the stage watchdog in `DictationCoordinator`, which
+            // captures the status it was armed for.
+            DispatchQueue.main.async { self?.polishHandoffTimedOut(armedFor: session) }
         }
     }
 
@@ -169,6 +178,7 @@ extension DictationCoordinator {
         polishHandoffWatchdog = nil
         polishHandoffSession = nil
         polishHandoffPreview = nil
+        polishHandoffToken = nil
         if let reason {
             PersistentLog.log(.polishHandoff(step: "abandoned", outcome: reason, chars: 0))
         }
@@ -188,6 +198,14 @@ extension DictationCoordinator {
     func polishHandoffFinished() {
         guard let session = polishHandoffSession,
               mayReport(session, "polish handoff completion") else { return }
+        // Which hand-off is this post about? The keyboard may legitimately post twice
+        // for one dictation, and a post from a dictation that is over must not end the
+        // one that replaced it — since round 7 that would also withdraw it.
+        let posted = defaults.string(forKey: SharedKeys.lastPolishedHandoffToken)
+        guard posted == polishHandoffToken else {
+            PersistentLog.log(.polishHandoff(step: "finished", outcome: "stale-token", chars: 0))
+            return
+        }
         let typed = defaults.string(forKey: SharedKeys.lastPolishedTranscription)
         // Captured before `endPolishHandoff` clears it. On the early path there is no
         // typed text and there never will be, so the raw this dictation handed over is
@@ -223,8 +241,8 @@ extension DictationCoordinator {
     /// typed at all. On device (`fe8223c`) a 1,015-character dictation was lost
     /// exactly this way — the watchdog fired at 10 s, the overlay came down, the user
     /// left the field, and the generation returned eleven seconds later.
-    func polishHandoffTimedOut() {
-        guard let session = polishHandoffSession,
+    func polishHandoffTimedOut(armedFor session: Int) {
+        guard polishHandoffSession == session,
               mayReport(session, "polish handoff watchdog") else { return }
         let preview = polishHandoffPreview
         endPolishHandoff(abandonedAs: nil)

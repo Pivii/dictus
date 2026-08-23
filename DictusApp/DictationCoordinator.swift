@@ -92,6 +92,11 @@ class DictationCoordinator: ObservableObject {
     /// the watchdog below falls back to. Cleared with `polishHandoffSession`.
     var polishHandoffPreview: String?
 
+    /// Names the hand-off this process is waiting on, so a `polishDidFinish` from an
+    /// earlier one cannot end a later one. Written to the App Group with the raw and
+    /// echoed back by the keyboard.
+    var polishHandoffToken: String?
+
     /// Fires when the keyboard never says it finished (#361 decision 14).
     var polishHandoffWatchdog: Timer?
 

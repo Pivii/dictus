@@ -137,6 +137,18 @@ public enum SharedKeys {
     /// insertion so DictusApp can show the polished version rather than the raw one
     /// in its Live Activity preview and its last-transcription card (#361 decision 6).
     public static let lastPolishedTranscription = "dictus.lastPolishedTranscription"
+    /// String: a fresh identifier DictusApp writes with each hand-off, which the
+    /// keyboard carries and echoes back on `polishDidFinish`.
+    ///
+    /// Darwin notifications carry no payload, so a bare post says only "some polish
+    /// finished". The keyboard is allowed to post more than once for one dictation —
+    /// early when the answer is known, again when the generation returns — and since
+    /// the app's watchdog started withdrawing dictations, accepting a post from the
+    /// wrong one can end a *live* dictation. The token is what makes the post name
+    /// which hand-off it belongs to.
+    public static let handoffToken = "dictus.handoffToken"
+    /// String: the token the keyboard echoes beside `lastPolishedTranscription`.
+    public static let lastPolishedHandoffToken = "dictus.lastPolishedHandoffToken"
 
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz

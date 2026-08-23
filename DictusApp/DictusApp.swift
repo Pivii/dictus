@@ -282,7 +282,15 @@ struct DictusApp: App {
             }
 
             Self.hasBeenActive = true
-            coordinator.startDictation(fromURL: true, origin: .keyboard)
+            // `dictate` is not only the keyboard's URL. `KeyboardDictationURL.intent`
+            // returns nil for the widget's `dictus://dictate`, which carries no
+            // `source=keyboard`, and that dictation completes in the app like any
+            // other. Handing it off would write a hand-off record no keyboard is there
+            // to claim, and the result would wait out the watchdog unpolished.
+            coordinator.startDictation(
+                fromURL: true,
+                origin: isFromKeyboard ? .keyboard : .app
+            )
 
             // On cold start, the swipe-back overlay (Plan 02) guides the user back.
             // Auto-return was removed because there's no public API to detect which app

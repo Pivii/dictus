@@ -53,6 +53,12 @@ final class KeyboardPolishCoordinator {
     /// purposes. Reset per claim; see `concludeDisplayForUnreachableDocument`.
     private var hasConcludedDisplay = false
 
+    /// The token DictusApp minted for the hand-off being polished, echoed back on
+    /// every `polishDidFinish` so the app can tell which dictation a post is about.
+    /// In memory rather than on the record: it only has to outlive the generation, and
+    /// if this process dies no post happens at all.
+    private var handoffToken: String?
+
     /// Whether a generation is on its way back. Read by the recovery path, which must
     /// not insert a raw whose polish is still coming — that would type it twice.
     var isPolishing: Bool { activePolish != nil }
@@ -86,12 +92,15 @@ final class KeyboardPolishCoordinator {
             documentIdentifier: KeyboardState.shared.currentDocumentIdentifier
         )
         PendingDictationChannel.store(pending)
+        handoffToken = defaults.string(forKey: SharedKeys.handoffToken)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
+        defaults.removeObject(forKey: SharedKeys.handoffToken)
         PersistentLog.log(.polishHandoff(step: "claimed", outcome: "pending", chars: raw.count))
 
         activePolish = pending
         hasConcludedDisplay = false
+        // `handoffToken` was read above, from the key this hand-off wrote.
         startStageWatchdog(for: pending)
         Task { await run(pending) }
     }
@@ -156,6 +165,14 @@ final class KeyboardPolishCoordinator {
     /// a dictation degrades to raw insertion, never to nothing. Do not read its
     /// presence as evidence that the raw is recoverable in practice.
     func recoverPendingIfNeeded() {
+        // Two rescues in the order a dictation would have reached them, behind one
+        // call because `KeyboardRootView.onAppear` is a SwiftUI closure the type
+        // checker already struggles with. First a hand-off whose `transcriptionReady`
+        // was dropped and which nobody has claimed; then, below, a claimed one nobody
+        // finished. Both return immediately when there is nothing outstanding.
+        guard !isPolishing else { return }
+        KeyboardState.shared.claimUnclaimedHandoff()
+
         guard !isPolishing, let pending = PendingDictationChannel.current else { return }
         let current = KeyboardState.shared.currentDocumentIdentifier
         guard pending.mayRecover(
@@ -331,6 +348,16 @@ final class KeyboardPolishCoordinator {
             outcome: "unreachable-document",
             chars: pending.raw.count
         ))
+        postDidFinish()
+    }
+
+    /// Tell DictusApp the tail is over, naming which hand-off it was.
+    ///
+    /// The token is written before the post, never after: a bare Darwin notification
+    /// says only "some polish finished", and the app decides on what it reads next.
+    private func postDidFinish() {
+        defaults.set(handoffToken, forKey: SharedKeys.lastPolishedHandoffToken)
+        defaults.synchronize()
         DarwinNotificationCenter.post(DarwinNotificationName.polishDidFinish)
     }
 
@@ -355,8 +382,7 @@ final class KeyboardPolishCoordinator {
         } else {
             defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
         }
-        defaults.synchronize()
-        DarwinNotificationCenter.post(DarwinNotificationName.polishDidFinish)
+        postDidFinish()
 
         guard let text, insert else {
             KeyboardState.shared.endLocalProcessingStage()
