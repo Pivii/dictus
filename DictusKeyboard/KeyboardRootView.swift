@@ -359,9 +359,13 @@ struct KeyboardRootView: View {
             // Language is set in KeyboardViewController.viewWillAppear, which fires
             // on every keyboard appearance and picks up any App Group preference changes.
 
-            // #357 spike, throwaway. Returns immediately unless deliberately armed
-            // from the hidden polish debug screen; see AppleFMExtensionProbe.
-            AppleFMExtensionProbe.runIfArmed()
+            // A dictation a previous keyboard claimed and never typed (#361 decision
+            // 7). Checked on appearance because that is the moment the two facts it
+            // needs are both true: the controller is wired, so the document can be
+            // identified, and the keyboard is on screen, so the user is here to
+            // receive the text. Returns immediately when there is nothing pending,
+            // which is every ordinary appearance.
+            KeyboardPolishCoordinator.shared.recoverPendingIfNeeded()
 
             syncWaveformDriver()
         }
