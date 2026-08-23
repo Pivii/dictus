@@ -639,18 +639,6 @@ class KeyboardState: ObservableObject {
         // must not be skipped by an unrelated exit.
         refreshPolishAvailability()
 
-        // While this process is running the polish engine, the stage it is drawing is
-        // its own (#361 decision 6). The App Group still says `ready`: DictusApp wrote
-        // that when it handed the raw text over, and it is telling the truth about
-        // itself -- the transcription IS ready, the dictation is not over. Adopting it
-        // here would drop the overlay out from under a generation the user is waiting
-        // on, and it takes no unusual event to get here: iOS builds around nine
-        // controllers per dictation and every appearance refreshes.
-        if holdsLocalProcessingStage {
-            logProbe("refreshSkippedDuringPolish", details: sessionDetails())
-            return
-        }
-
         // Before adopting what the App Group says, check that somebody is still
         // writing it (#261). This is the read a rebuilt extension performs from its
         // own `init`, so an app terminated mid-dictation is caught here -- at the
@@ -1126,12 +1114,6 @@ class KeyboardState: ObservableObject {
             details: "controllerID=\(controllerID) previousOwner=\(activeControllerID ?? "none") ownership=\(ownership.logDescription) wasVisible=\(isKeyboardVisible) \(sessionDetails())"
         )
         ownership = ownership.appearing(controllerID: controllerID)
-
-        // Before the refresh, because the refresh is what would put the overlay back
-        // up: a polish still running for a field the user has left has no claim on
-        // this keyboard (#361). Runs ahead of `applyAreaMode` too, so the overlay is
-        // never drawn and then taken down again.
-        MainActor.assumeIsolated { releasePolishStageIfFieldChanged() }
 
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.

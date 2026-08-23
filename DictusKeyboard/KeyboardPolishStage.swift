@@ -1,6 +1,7 @@
 // DictusKeyboard/KeyboardPolishStage.swift
 // The `.processing` stage, held on the keyboard's own authority (issue #361).
 import Foundation
+import UIKit
 import DictusCore
 
 /// Since #361 the keyboard runs the polish engine, so it also owns the stage that
@@ -36,44 +37,8 @@ extension KeyboardState {
     /// point — nothing is coming to fill it.
     func endLocalProcessingStage() {
         guard holdsLocalProcessingStage else { return }
-        clearLocalProcessingStage()
-        refreshFromDefaults()
-    }
-
-    /// Drop the stage when this keyboard is no longer in the document the generation
-    /// belongs to (#361, device finding on `eae6c68`).
-    ///
-    /// `KeyboardState` is one singleton for the whole extension process, and the
-    /// process follows the user from host app to host app. So a generation started in
-    /// Messages survived a switch to another app, `refreshFromDefaults` short-circuited
-    /// on the stage this process was still holding, and the polish overlay opened over
-    /// a text field the insertion was then refused for:
-    ///
-    /// ```text
-    /// KeyboardState BDD7111B refreshSkippedDuringPolish status=processing
-    /// showsOverlayChanged isShowing=true status=processing
-    /// polishInsertionRefused reason=different-document ageMs=7778
-    /// ```
-    ///
-    /// Decision 7 refused the insertion; nothing refused the stage. The wait it draws
-    /// is a lie the moment the answer is known, and the bound on it is the generation
-    /// rather than anything in our control — #357 Q4 measured one resuming after
-    /// forty-three minutes.
-    ///
-    /// Same reasoning decision 15 already applies to a superseded call: release at the
-    /// moment the answer is known, not when the call returns.
-    @MainActor
-    func releasePolishStageIfFieldChanged() {
-        guard KeyboardPolishCoordinator.shared.releaseIfFieldChanged() else { return }
-        // Cleared without refreshing: this runs inside `registerControllerAppearance`,
-        // which refreshes immediately afterwards. Refreshing here would re-enter it.
-        clearLocalProcessingStage()
-    }
-
-    /// Forget the stage without re-reading the App Group. For callers that are about
-    /// to refresh anyway.
-    func clearLocalProcessingStage() {
         holdsLocalProcessingStage = false
+        refreshFromDefaults()
     }
 
     /// Whether `stored` must not be drawn right now, and the side effect that implies.
@@ -87,26 +52,57 @@ extension KeyboardState {
     /// before a typical generation returns. There is nothing left for it to watch:
     /// the work is in this process now.
     func holdsHandoffStage(against stored: DictationStatus) -> Bool {
+        let handoff = outstandingHandoff
         guard !KeyboardHandoffStage.adopts(
             stored: stored,
             drawing: dictationStatus,
-            handoffOutstanding: handoffIsOutstanding
+            handoff: handoff
         ) else { return false }
         stopWatchdog()
-        logProbe("handoffStageHeld", details: "stored=\(stored.rawValue) \(sessionDetails())")
+        logProbe(
+            "handoffStageHeld",
+            details: "stored=\(stored.rawValue) handoff=\(handoff) \(sessionDetails())"
+        )
         return true
     }
 
-    /// Whether a raw transcription is still this keyboard's to finish (#361).
+    /// What this keyboard still owes the current dictation, and whether it is in the
+    /// document it owes it to (#361).
     ///
-    /// True from the moment DictusApp writes the hand-off until the keyboard has
-    /// typed it or refused to: first the policy blob beside the unclaimed raw, then
-    /// the pending record while the generation runs. Both are needed — the window
+    /// Outstanding from the moment DictusApp writes the hand-off until the keyboard
+    /// has typed it or refused to: first the policy blob beside the unclaimed raw,
+    /// then the pending record while the generation runs. Both are needed — the window
     /// between them is one main-queue turn wide, and a `.ready` adopted inside it is
     /// the same flash.
-    var handoffIsOutstanding: Bool {
-        AppGroup.defaults.data(forKey: SharedKeys.lastTranscriptionPolicy) != nil
-            || PendingDictationChannel.current != nil
+    ///
+    /// The document is only compared once there is a record to compare against. In the
+    /// unclaimed window there is no document on it yet, and the keyboard about to
+    /// claim it is this one.
+    ///
+    /// **This reads nothing from the host unless something is outstanding.** The proxy
+    /// read is a synchronous round trip, and this runs on every refresh — including
+    /// from `viewWillAppear`, which `KeyboardLifecycleProbe` warns is the critical
+    /// path of keyboard presentation.
+    var outstandingHandoff: KeyboardHandoffStage.Handoff {
+        if let pending = PendingDictationChannel.current {
+            return pending.mayInsert(into: currentDocumentIdentifier) ? .here : .elsewhere
+        }
+        return AppGroup.defaults.data(forKey: SharedKeys.lastTranscriptionPolicy) != nil
+            ? .here
+            : .none
+    }
+
+    /// Whether a raw transcription is still this keyboard's to finish, wherever it is.
+    var handoffIsOutstanding: Bool { outstandingHandoff != .none }
+
+    /// The document this keyboard is editing right now, as a string, or nil.
+    ///
+    /// Goes through the ObjC shim: `documentIdentifier` imports into Swift as a
+    /// non-optional `UUID` while the host is free to return nil, and reading it
+    /// directly traps before the input session exists. See `TextProxyIdentity.m`.
+    var currentDocumentIdentifier: String? {
+        guard let proxy = controller?.textDocumentProxy else { return nil }
+        return DictusTextProxyIdentity.documentIdentifier(of: proxy)?.uuidString
     }
 
     /// Decide what a transcription DictusApp just published is, and act on it.

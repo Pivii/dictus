@@ -4,7 +4,8 @@
 
 import Foundation
 
-/// Keeps the keyboard from drawing the end of a dictation that is not over.
+/// Keeps the keyboard from drawing the end of a dictation that is not over, and from
+/// drawing the middle of one it cannot finish here.
 ///
 /// ### The frame this exists to suppress
 ///
@@ -28,6 +29,24 @@ import Foundation
 /// stage* follows, and `.ready` is terminal, so the #309 floor never armed and a
 /// 154-395 ms Parakeet transcription was drawn for a handful of frames.
 ///
+/// ### And the frame that has to be let through
+///
+/// `KeyboardState` is one singleton for the whole extension process, and the process
+/// follows the user from host app to host app. Holding on "a hand-off is outstanding"
+/// alone therefore kept the overlay up in a stranger's document, drawing a wait for
+/// text that would never be typed there (`eae6c68`, second finding of the same run).
+///
+/// So the hold is scoped to the document the dictation came from. That is the same
+/// identity `PendingDictation.mayInsert(into:)` decides insertion by, asked one stage
+/// earlier — and asking it here rather than acting on it is what keeps the two apart.
+/// **Dropping the overlay must never cost the dictation.** The first attempt at this
+/// cancelled the generation and cleared the record when the field changed, and on
+/// device (`1bed468`) it fired 1.25 s after the claim, on a controller iOS rebuilt
+/// while the user was still in transit to the home screen. He came straight back to
+/// the same field and nothing arrived — neither the polished text nor the raw. The
+/// issue's own principle is that a dictation degrades to raw insertion, never to
+/// nothing.
+///
 /// ### Why the rule is not "ignore .ready"
 ///
 /// `.ready` is a real end for a dictation started inside DictusApp, and for one this
@@ -44,17 +63,32 @@ import Foundation
 /// a typical generation returns.
 public enum KeyboardHandoffStage {
 
+    /// What this keyboard still owes the dictation the App Group is describing.
+    public enum Handoff: Equatable, Sendable {
+        /// Nothing outstanding: no raw is waiting to be polished or typed.
+        case none
+        /// A raw is outstanding **and** this keyboard is in the document it came
+        /// from, so the wait is one the user is here to see through.
+        case here
+        /// A raw is outstanding but this keyboard is somewhere else. The generation
+        /// keeps running and may still be typed if the user comes back — what must
+        /// not happen is drawing its wait over a document that will not receive it.
+        case elsewhere
+    }
+
     /// Whether the keyboard should adopt `stored` as its stage.
     ///
     /// - Parameters:
     ///   - stored: what `SharedKeys.dictationStatus` says.
     ///   - drawing: the stage this keyboard is currently showing.
-    ///   - handoffOutstanding: whether a raw transcription is still this keyboard's to
-    ///     finish — claimed and being polished, or written and not yet claimed.
+    ///   - handoff: what this keyboard still owes, and whether it is in the right
+    ///     document to owe it.
     public static func adopts(stored: DictationStatus,
                               drawing current: DictationStatus,
-                              handoffOutstanding: Bool) -> Bool {
-        guard handoffOutstanding else { return true }
+                              handoff: Handoff) -> Bool {
+        // Somewhere else, or nothing owed: adopting is what takes the overlay down,
+        // which is exactly what both cases want.
+        guard handoff == .here else { return true }
         // Only `.ready` is held back. `.failed` and `.idle` are real terminations that
         // have to reach the user or the keyboard would keep an overlay up over a
         // dictation that has been cancelled, interrupted or reconciled away — the

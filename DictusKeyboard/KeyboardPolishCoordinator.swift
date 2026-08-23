@@ -79,7 +79,7 @@ final class KeyboardPolishCoordinator {
             raw: raw,
             policy: policy,
             recordingDuration: duration,
-            documentIdentifier: currentDocumentIdentifier()
+            documentIdentifier: KeyboardState.shared.currentDocumentIdentifier
         )
         PendingDictationChannel.store(pending)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
@@ -89,34 +89,6 @@ final class KeyboardPolishCoordinator {
         activePolish = pending
         startStageWatchdog(for: pending)
         Task { await run(pending) }
-    }
-
-    /// Abandon a generation whose document the user has left (#361, device finding).
-    ///
-    /// Returns whether it acted, so the caller knows to drop the stage with it.
-    ///
-    /// **Judgement call, taken here:** the generation is cancelled, not merely
-    /// detached. Decision 15's argument applies unchanged — a generation nobody may
-    /// insert has no claim on blocking anything — and it holds a `LanguageModelSession`
-    /// in a process under a ~50 MB ceiling for as long as it runs, which #357 Q4
-    /// measured at up to forty-three minutes. Keeping it would have cost only a
-    /// suspended task, so this is a preference rather than a necessity.
-    ///
-    /// `polishDidFinish` is posted, so DictusApp's Live Activity comes home now rather
-    /// than at the ten-second watchdog.
-    @discardableResult
-    func releaseIfFieldChanged() -> Bool {
-        guard let pending = activePolish else { return false }
-        guard !pending.mayInsert(into: currentDocumentIdentifier()) else { return false }
-        PersistentLog.log(.polishInsertionRefused(reason: "left-document", ageMs: pending.ageMs))
-        service.cancelInflight()
-        activePolish = nil
-        PendingDictationChannel.clear()
-        stopStageWatchdog()
-        defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
-        defaults.synchronize()
-        DarwinNotificationCenter.post(DarwinNotificationName.polishDidFinish)
-        return true
     }
 
     /// Give up on the previous dictation because a new one is starting
@@ -159,10 +131,13 @@ final class KeyboardPolishCoordinator {
     /// is lost.
     ///
     /// Does nothing while this process is polishing — the generation is still coming
-    /// back, and inserting here would type the dictation twice.
+    /// back, and inserting here would type the dictation twice. That is also why the
+    /// record survives a change of document: this is the path that catches a keyboard
+    /// whose *process* died mid-generation, and it can only run if nothing tore the
+    /// record down on the way out.
     func recoverPendingIfNeeded() {
         guard !isPolishing, let pending = PendingDictationChannel.current else { return }
-        let current = currentDocumentIdentifier()
+        let current = KeyboardState.shared.currentDocumentIdentifier
         guard pending.mayRecover(into: current) else {
             guard pending.isExpired() else { return }
             PendingDictationChannel.clear()
@@ -207,7 +182,7 @@ final class KeyboardPolishCoordinator {
         }
         PendingDictationChannel.clear()
 
-        let current = currentDocumentIdentifier()
+        let current = KeyboardState.shared.currentDocumentIdentifier
         guard pending.mayInsert(into: current) else {
             // Not a lost dictation so much as a refused one. The user left the field —
             // switched app, dismissed the keyboard — or the host will not name the
@@ -244,6 +219,14 @@ final class KeyboardPolishCoordinator {
     ///
     /// Decision 15's "no second timeout" is about queueing N+1 behind N, and is
     /// unaffected: nothing here waits for anything.
+    ///
+    /// **It also answers the open question the stage rule leaves.** Once the keyboard
+    /// is in another document the overlay comes down, but the generation keeps running
+    /// on purpose — it may still be typed if the user comes back. Something has to
+    /// bound that, or a session sits in a ~50 MB process for as long as the generation
+    /// takes, and #357 Q4 measured forty-three minutes. Sixty seconds is well past the
+    /// thirty-second recovery window, so by the time this fires the raw was already
+    /// unrecoverable and cancelling costs nothing that was still available.
     private static let stageTimeout: TimeInterval = 60
 
     private func startStageWatchdog(for pending: PendingDictation) {
@@ -263,9 +246,10 @@ final class KeyboardPolishCoordinator {
         stageWatchdog = nil
     }
 
-    /// The generation has not come back. Take the overlay down and conclude the
-    /// dictation, but leave the pending record: it is past its recovery window by
-    /// definition, so nothing will type it, and the next keyboard to notice sweeps it.
+    /// The generation has not come back. Conclude the dictation: take down the overlay
+    /// if one is still up, tell DictusApp, and stop paying for a call whose result
+    /// nothing may now use. The record goes with it — at sixty seconds it is double
+    /// its recovery window, so clearing it destroys nothing that was still reachable.
     private func stageTimedOut(_ pending: PendingDictation) {
         guard activePolish == pending else { return }
         PersistentLog.log(.polishHandoff(
@@ -328,15 +312,6 @@ final class KeyboardPolishCoordinator {
         return policy
     }
 
-    /// The document the keyboard is editing right now, as a string, or nil.
-    ///
-    /// Goes through the ObjC shim: `documentIdentifier` imports into Swift as a
-    /// non-optional `UUID` while the host is free to return nil, and reading it
-    /// directly traps before the input session exists. See `TextProxyIdentity.m`.
-    private func currentDocumentIdentifier() -> String? {
-        guard let proxy = KeyboardState.shared.controller?.textDocumentProxy else { return nil }
-        return DictusTextProxyIdentity.documentIdentifier(of: proxy)?.uuidString
-    }
 }
 
 private extension PendingDictation {
