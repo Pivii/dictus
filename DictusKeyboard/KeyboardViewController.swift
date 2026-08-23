@@ -116,9 +116,7 @@ class KeyboardViewController: UIInputViewController {
     /// `UIInputViewController` extension so the probes that report them cannot
     /// drift from the predicate that acts on them; this line is the only place
     /// they are composed.
-    private var isOnScreen: Bool {
-        isViewInWindow || isInputViewInWindow
-    }
+    private var isOnScreen: Bool { isAttachedToWindow }
 
     /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
     /// census, so `deinit` decrements exactly once and only for instances that
@@ -388,11 +386,18 @@ class KeyboardViewController: UIInputViewController {
             details: "animated=\(animated) status=\(entryStatus) storedStatus=\(entryStoredStatus) coldStart=\(entryColdStart) inputBounds=\(Int(entryBounds.width))x\(Int(entryBounds.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) memMB=\(MemoryFootprint.residentMB())"
         ))
         PersistentLog.log(.keyboardDidAppear)
-        KeyboardState.shared.registerControllerAppearance(controllerID: controllerID)
         // Point KeyboardState's weak controller ref at the currently-visible controller
         // so call sites in KeyboardRootView and KeyboardState can access textDocumentProxy.
         // Previously set from KeyboardRootView.onAppear, which held a strong ref → #134.
+        //
+        // WHY before `registerControllerAppearance` since #361: that call refreshes from
+        // the App Group, and the refresh now has to be able to ask which document this
+        // keyboard is looking at — a polish still running for a field the user has left
+        // must not reopen its overlay here. The read goes through the proxy, so the ref
+        // has to be in place first. Nothing in the registration path reads it, so the
+        // swap is an ordering change and not a behavioural one.
         KeyboardState.shared.controller = self
+        KeyboardState.shared.registerControllerAppearance(controllerID: controllerID)
         hasAppeared = true
         isAttached = true
 

@@ -23,10 +23,10 @@
 		AA000005 /* DictationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* DictationCoordinator.swift */; };
 		AA000264 /* ColdStartLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100264 /* ColdStartLaunch.swift */; };
 		AA000311 /* ColdStartResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100311 /* ColdStartResolution.swift */; };
+		AA000361 /* DictationHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100361 /* DictationHandoff.swift */; };
 		AA000006 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000A /* DictationView.swift */; };
 		AA000007 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000B /* KeyboardState.swift */; };
 		AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F6 /* KeyboardLifecycleProbe.swift */; };
-		AA357002 /* AppleFMExtensionProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA357001 /* AppleFMExtensionProbe.swift */; };
 		AA000008 /* MicButtonDisabled.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000C /* MicButtonDisabled.swift */; };
 		AA000010 /* DictusCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA900010 /* DictusCore */; };
 		AA000011 /* DictusCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA900011 /* DictusCore */; };
@@ -42,6 +42,9 @@
 		AA000043 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100043 /* RecordingView.swift */; };
 		AA000045 /* UnifiedAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100045 /* UnifiedAudioEngine.swift */; };
 		AA000200 /* ObjCExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = AA100200 /* ObjCExceptionCatcher.m */; };
+		AA361002 /* TextProxyIdentity.m in Sources */ = {isa = PBXBuildFile; fileRef = AA361001 /* TextProxyIdentity.m */; };
+		AA361004 /* KeyboardPolishCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA361003 /* KeyboardPolishCoordinator.swift */; };
+		AA361008 /* KeyboardPolishStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA361007 /* KeyboardPolishStage.swift */; };
 		AA000050 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100050 /* ModelManager.swift */; };
 		AA000052 /* ModelRepoDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100052 /* ModelRepoDownloader.swift */; };
 		AA000051 /* ModelManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100051 /* ModelManagerView.swift */; };
@@ -188,10 +191,10 @@
 		AA100009 /* DictationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCoordinator.swift; sourceTree = "<group>"; };
 		AA100264 /* ColdStartLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartLaunch.swift; sourceTree = "<group>"; };
 		AA100311 /* ColdStartResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartResolution.swift; sourceTree = "<group>"; };
+		AA100361 /* DictationHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHandoff.swift; sourceTree = "<group>"; };
 		AA10000A /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		AA10000B /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
 		AA1000F6 /* KeyboardLifecycleProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLifecycleProbe.swift; sourceTree = "<group>"; };
-		AA357001 /* AppleFMExtensionProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleFMExtensionProbe.swift; sourceTree = "<group>"; };
 		AA10000C /* MicButtonDisabled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicButtonDisabled.swift; sourceTree = "<group>"; };
 		AA100030 /* InputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputView.swift; sourceTree = "<group>"; };
 		AA100035 /* FullAccessBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAccessBanner.swift; sourceTree = "<group>"; };
@@ -203,6 +206,10 @@
 		AA100043 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		AA100045 /* UnifiedAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedAudioEngine.swift; sourceTree = "<group>"; };
 		AA100200 /* ObjCExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ObjCExceptionCatcher.m; sourceTree = "<group>"; };
+		AA361001 /* TextProxyIdentity.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TextProxyIdentity.m; sourceTree = "<group>"; };
+		AA361005 /* TextProxyIdentity.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TextProxyIdentity.h; sourceTree = "<group>"; };
+		AA361003 /* KeyboardPolishCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardPolishCoordinator.swift; sourceTree = "<group>"; };
+		AA361007 /* KeyboardPolishStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardPolishStage.swift; sourceTree = "<group>"; };
 		AA100201 /* ObjCExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ObjCExceptionCatcher.h; sourceTree = "<group>"; };
 		AA100202 /* DictusApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "DictusApp-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA100050 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
@@ -369,6 +376,7 @@
 				AA100009 /* DictationCoordinator.swift */,
 				AA100264 /* ColdStartLaunch.swift */,
 				AA100311 /* ColdStartResolution.swift */,
+				AA100361 /* DictationHandoff.swift */,
 				AA10000A /* DictationView.swift */,
 				AA1000F5 /* LiveActivityManager.swift */,
 				SS400001 /* Subscription */,
@@ -398,7 +406,10 @@
 				AA100004 /* KeyboardRootView.swift */,
 				AA10000B /* KeyboardState.swift */,
 				AA1000F6 /* KeyboardLifecycleProbe.swift */,
-				AA357001 /* AppleFMExtensionProbe.swift */,
+				AA361003 /* KeyboardPolishCoordinator.swift */,
+				AA361007 /* KeyboardPolishStage.swift */,
+				AA361005 /* TextProxyIdentity.h */,
+				AA361001 /* TextProxyIdentity.m */,
 				AA100030 /* InputView.swift */,
 				CC100030 /* KeyboardMetrics.swift */,
 				CC100050 /* KeySoundPolicy.swift */,
@@ -947,6 +958,7 @@
 				AA000005 /* DictationCoordinator.swift in Sources */,
 				AA000264 /* ColdStartLaunch.swift in Sources */,
 				AA000311 /* ColdStartResolution.swift in Sources */,
+				AA000361 /* DictationHandoff.swift in Sources */,
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
 				AA00P201 /* PolishAvailability.swift in Sources */,
@@ -1005,7 +1017,9 @@
 				AA000004 /* KeyboardRootView.swift in Sources */,
 				AA000007 /* KeyboardState.swift in Sources */,
 				AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */,
-				AA357002 /* AppleFMExtensionProbe.swift in Sources */,
+				AA361004 /* KeyboardPolishCoordinator.swift in Sources */,
+				AA361008 /* KeyboardPolishStage.swift in Sources */,
+				AA361002 /* TextProxyIdentity.m in Sources */,
 				AA000008 /* MicButtonDisabled.swift in Sources */,
 				AA000030 /* InputView.swift in Sources */,
 				AA000035 /* FullAccessBanner.swift in Sources */,

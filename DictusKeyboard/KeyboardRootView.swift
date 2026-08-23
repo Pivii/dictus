@@ -104,6 +104,12 @@ struct KeyboardRootView: View {
         guard state.activeControllerID == controllerID, state.isKeyboardVisible else {
             return .keys
         }
+        // Owning the area is not the same as having checked what to draw (#361). A
+        // stage this process set on its own authority outlives the controller that
+        // justified it, and a freshly mounted one would otherwise render it before
+        // `viewWillAppear` has reconciled anything — a flash of the polish overlay on
+        // returning to an app where a dictation was made.
+        guard state.mayDrawLocalStage(from: controllerID) else { return .keys }
         return mode
     }
 
@@ -359,9 +365,13 @@ struct KeyboardRootView: View {
             // Language is set in KeyboardViewController.viewWillAppear, which fires
             // on every keyboard appearance and picks up any App Group preference changes.
 
-            // #357 spike, throwaway. Returns immediately unless deliberately armed
-            // from the hidden polish debug screen; see AppleFMExtensionProbe.
-            AppleFMExtensionProbe.runIfArmed()
+            // A dictation a previous keyboard claimed and never typed (#361 decision
+            // 7). Checked on appearance because that is the moment the two facts it
+            // needs are both true: the controller is wired, so the document can be
+            // identified, and the keyboard is on screen, so the user is here to
+            // receive the text. Returns immediately when there is nothing pending,
+            // which is every ordinary appearance.
+            KeyboardPolishCoordinator.shared.recoverPendingIfNeeded()
 
             syncWaveformDriver()
         }

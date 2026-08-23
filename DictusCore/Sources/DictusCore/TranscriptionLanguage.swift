@@ -146,7 +146,13 @@ public enum PolishPromptSelection: Equatable, Sendable {
 /// (polish toward the keyboard language, normal separators) — otherwise
 /// selecting Auto-detect would silently degrade Parakeet flows that the
 /// setting cannot influence in the first place.
-public struct TranscriptionLanguagePolicy: Equatable, Sendable {
+///
+/// WHY it is `Codable` since #361: polish moved into the keyboard extension, so the
+/// snapshot has to cross the App Group with the raw text it describes. Re-reading
+/// the mode on the other side would reintroduce the exact bug the snapshot exists
+/// to prevent, and reintroduce it in the worst place — the keyboard toolbar is
+/// where the language change comes from.
+public struct TranscriptionLanguagePolicy: Equatable, Sendable, Codable {
     /// The user's transcription language mode at snapshot time.
     public let mode: TranscriptionLanguageMode
     /// The keyboard language at snapshot time.
@@ -166,6 +172,60 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable {
         self.keyboardLanguage = keyboardLanguage
         self.engine = engine
         self.modelIdentifier = modelIdentifier
+    }
+
+    // MARK: - App Group transport (#361)
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, keyboardLanguage, engine, modelIdentifier
+    }
+
+    /// Encoded by hand rather than synthesised, because `mode` mixes two namespaces
+    /// (the markers "follow"/"auto" and a language code) and already has one
+    /// canonical spelling — `storedValue`, the same string the App Group holds for
+    /// the user's setting. Reusing it means the transport and the setting cannot
+    /// disagree about what "auto" is, and an unrecognised value degrades to
+    /// `.followKeyboard` on the far side exactly as it does on this one.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mode = TranscriptionLanguageMode(
+            storedValue: try container.decode(String.self, forKey: .mode)
+        )
+        // These two throw rather than falling back, unlike `mode` above. The mode
+        // has a documented degradation (an unknown value IS `.followKeyboard`,
+        // which is how #226 shipped without a migration); a language and an engine
+        // do not. Both are written from the enums themselves, so an unrecognised
+        // value means the record is corrupt — and guessing a language here is
+        // guessing what to translate the user's speech into.
+        self.keyboardLanguage = try Self.decode(
+            SupportedLanguage.self, from: container, forKey: .keyboardLanguage
+        )
+        self.engine = try Self.decode(SpeechEngine.self, from: container, forKey: .engine)
+        self.modelIdentifier = try container.decode(String.self, forKey: .modelIdentifier)
+    }
+
+    /// Decode a string-raw enum, naming the key that failed instead of reporting a
+    /// bare type mismatch.
+    private static func decode<T: RawRepresentable>(
+        _ type: T.Type,
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) throws -> T where T.RawValue == String {
+        let raw = try container.decode(String.self, forKey: key)
+        guard let value = T(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key, in: container, debugDescription: "unrecognised value '\(raw)'"
+            )
+        }
+        return value
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mode.storedValue, forKey: .mode)
+        try container.encode(keyboardLanguage.rawValue, forKey: .keyboardLanguage)
+        try container.encode(engine.rawValue, forKey: .engine)
+        try container.encode(modelIdentifier, forKey: .modelIdentifier)
     }
 
     /// Capture the current App Group state. Call once per dictation, at

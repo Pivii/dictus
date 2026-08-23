@@ -89,6 +89,14 @@ class KeyboardState: ObservableObject {
             if dictationStatus != .failed {
                 presentedErrorMessage = nil
             }
+            // Fifth (#361): the local `.processing` stage cannot outlive the status
+            // that justifies it. The funnel argument again -- a cancel, a watchdog
+            // reset and an insertion all write this property by different routes, and
+            // a stage left held after any of them would make `refreshFromDefaults`
+            // ignore the App Group for the rest of the process.
+            if dictationStatus != .processing {
+                holdsLocalProcessingStage = false
+            }
         }
     }
 
@@ -225,6 +233,45 @@ class KeyboardState: ObservableObject {
     /// that dictation posts, and again whenever a controller appears.
     @Published private(set) var polishUnavailable = false
 
+    /// Whether this process is holding `.processing` on its own authority (#361).
+    ///
+    /// Polish runs here now, so the stage is set locally with no round trip through
+    /// the App Group — this process draws the overlay, so there is nobody to ask, and
+    /// it is faster than what it replaces rather than slower.
+    ///
+    /// The flag exists because the App Group does NOT say `processing` while it holds:
+    /// it says `ready`, which is what DictusApp wrote when it handed the raw over.
+    /// Writing `processing` there instead was the obvious alternative and is a trap —
+    /// `refreshFromDefaults` starts the 5 s waveform watchdog on any active status,
+    /// and the app has stopped writing both waveform and heartbeat by then, so the
+    /// watchdog would reconcile a healthy dictation into "Recording interrupted"
+    /// one second before a typical generation returns.
+    ///
+    /// Not `private` because the two methods that drive it live in
+    /// `KeyboardPolishStage.swift` and Swift scopes `private` to the file.
+    var holdsLocalProcessingStage = false
+
+    /// The controller for which the locally-owned stage above has been read against
+    /// the App Group (#361).
+    ///
+    /// A freshly mounted controller has not, and must not draw a stage it has not
+    /// checked — see `KeyboardHandoffStage.drawsLocalStage`. Owning the keyboard area
+    /// is not the same fact: `claimOwnership` hands ownership over without refreshing,
+    /// deliberately (#260).
+    ///
+    /// WHY `didSet` rather than `@Published`, the same reason `areaMode` gives above:
+    /// `@Published` notifies in `willSet`, while the property still holds the old
+    /// value, and this one is read from `KeyboardRootView.presentedMode` during the
+    /// layout pass a mode change forces.
+    /// Not `private(set)`: `beginLocalProcessingStage` sets it from
+    /// `KeyboardPolishStage.swift`, and Swift scopes that to the file.
+    var stageReconciledFor: String? {
+        didSet {
+            guard oldValue != stageReconciledFor else { return }
+            objectWillChange.send()
+        }
+    }
+
     @Published var waveformEnergy: [Float] = []
     @Published var recordingElapsed: Double = 0
 
@@ -315,6 +362,12 @@ class KeyboardState: ObservableObject {
             action: "init",
             details: ""
         ))
+        // The fresh-process reset for the #315 availability flag, which this process
+        // owns since #361 -- it is the one that calls the polish engine now, and
+        // Apple's background rate limit is refunded by nothing but a fresh process.
+        // Done before the first read below so the notice cannot be restored from a
+        // state that belonged to a process that is gone.
+        PolishAvailabilityChannel.clear()
         // Read initial state from App Group
         refreshFromDefaults()
 
@@ -473,7 +526,11 @@ class KeyboardState: ObservableObject {
     }
 
     /// Invalidate and nil the watchdog timer.
-    private func stopWatchdog() {
+    ///
+    /// Not `private` because `KeyboardPolishStage.swift` has to stop it when this
+    /// process takes over the tail of a dictation, and Swift scopes `private` to the
+    /// file. The reason is written at that call site.
+    func stopWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = nil
     }
@@ -599,9 +656,9 @@ class KeyboardState: ObservableObject {
 
         // Read BEFORE the reconcile guard below (#315): that guard returns early
         // on an abandoned dictation, and the polish state has nothing to do with
-        // whether this one was abandoned. A state that can last the whole app
-        // process must not be skipped by an unrelated exit.
-        polishUnavailable = PolishAvailabilityChannel.isUnavailable
+        // whether this one was abandoned. A state that can last the whole process
+        // must not be skipped by an unrelated exit.
+        refreshPolishAvailability()
 
         // Before adopting what the App Group says, check that somebody is still
         // writing it (#261). This is the read a rebuilt extension performs from its
@@ -612,6 +669,10 @@ class KeyboardState: ObservableObject {
 
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
+            // The `.ready` DictusApp writes when it hands a dictation over is true
+            // about the app and false about the dictation, which is not over until
+            // this process has typed it (#361). See `holdsHandoffStage(against:)`.
+            if holdsHandoffStage(against: status) { return }
             let oldStatus = dictationStatus
             // The statusChanged line this used to emit here now comes from
             // dictationStatus's didSet (#255), which fires for this write and for
@@ -727,7 +788,13 @@ class KeyboardState: ObservableObject {
             defaults.removeObject(forKey: SharedKeys.lastTranscription)
             defaults.synchronize()
 
-            insertTranscription(transcription)
+            // `assumeIsolated` rather than a `Task` hop: every path into this method
+            // is already on the main queue (the Darwin observers below dispatch there
+            // explicitly), and the hop would put the durable write of the raw text one
+            // run-loop turn after the claim. The raw has to be on disk before anything
+            // else can happen to it -- that is the principle the whole relocation
+            // rests on -- so the cheap ordering guarantee is worth the annotation.
+            MainActor.assumeIsolated { takeTranscription(transcription) }
         } else {
             // Retry after 100ms — mitigates UserDefaults race condition.
             // Darwin notifications are posted immediately after synchronize(),
@@ -739,26 +806,33 @@ class KeyboardState: ObservableObject {
                     self.defaults.removeObject(forKey: SharedKeys.lastTranscription)
                     self.defaults.synchronize()
 
-                    self.insertTranscription(transcription)
+                    MainActor.assumeIsolated { self.takeTranscription(transcription) }
                 }
             }
         }
     }
 
-    /// Insert a transcription into the host field and return the keyboard to idle.
+    /// Re-read whether polish has given up on its engine (#315), and publish it.
     ///
-    /// WHY this is a single function called from two places: `handleTranscriptionReady`
-    /// has two insertion sites — the direct one and the 100 ms retry that absorbs the
-    /// App Group propagation race — and they used to hold two copies of this block.
-    /// Anything the keyboard has to remember about an insertion (#266: what it was, so
-    /// it can be undone) has to be remembered on both, and the retry path is the one
-    /// that loses the race, so a copy that forgets it would fail intermittently and
-    /// only on slow devices. One funnel, no copy to forget.
+    /// Stays in the class body, unlike its siblings in `KeyboardPolishStage.swift`,
+    /// because `polishUnavailable` is `private(set)` and Swift scopes that to the
+    /// file — which is the property doing its job.
+    func refreshPolishAvailability() {
+        polishUnavailable = PolishAvailabilityChannel.isUnavailable
+    }
+
+    /// Insert a finished dictation into the host field and return the keyboard to idle.
+    ///
+    /// WHY this is a single function: anything the keyboard has to remember about an
+    /// insertion (#266: what it was, so it can be undone) has to be remembered
+    /// wherever text is typed, and there are three such places since #361 — a polished
+    /// result, a refused-and-recovered raw, and the 100 ms retry that absorbs the App
+    /// Group propagation race. One funnel, no copy to forget.
     ///
     /// The App Group key is deliberately NOT read here: the caller clears it before
     /// calling, which is what stops a redelivered Darwin notification from inserting
     /// the same text twice.
-    private func insertTranscription(_ transcription: String) {
+    func insertDictation(_ transcription: String) {
         controller?.textDocumentProxy.insertText(transcription)
         PersistentLog.log(.keyboardTextInserted)
         HapticFeedback.textInserted()
@@ -1062,9 +1136,20 @@ class KeyboardState: ObservableObject {
         )
         ownership = ownership.appearing(controllerID: controllerID)
 
+        // A locally-owned stage with no generation behind it is stale by construction
+        // (#361). Discarded here rather than narrowed by the drawing rule alone, so a
+        // future path that fails to clear one shows up as a log line instead of a
+        // flash.
+        MainActor.assumeIsolated { discardStaleLocalStage() }
+
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.
         refreshFromDefaults()
+
+        // Read against the App Group as of now, so this controller may draw a stage
+        // this process owns. Ordered after the refresh because that is what the word
+        // means.
+        stageReconciledFor = controllerID
     }
 
     /// Called when a controller disappears. Only the current owner may hide the keyboard.
@@ -1251,6 +1336,12 @@ class KeyboardState: ObservableObject {
         // A new dictation ends the previous one's undo offer, whatever comes of it.
         invalidateDictationUndo(reason: "new-dictation")
 
+        // And gives up on a polish still running for the previous one (#361
+        // decision 15): N+1 cancels N and takes its place.
+        MainActor.assumeIsolated {
+            KeyboardPolishCoordinator.shared.cancelForNewDictation()
+        }
+
         // Issue #262: a model load is now a prepare-only handoff. Opening Dictus
         // lets the app show truthful preparation feedback instead of leaving the
         // user with a refusal message in the keyboard. The app still prevents a
@@ -1366,12 +1457,14 @@ class KeyboardState: ObservableObject {
         HapticFeedback.recordingStarted()
     }
 
-    private func sessionDetails() -> String {
+    func sessionDetails() -> String {
         let sessionID = activeSessionID ?? "none"
         return "sessionID=\(sessionID) status=\(dictationStatus.rawValue) energyCount=\(waveformEnergy.count)"
     }
 
-    private func logProbe(_ action: String, details: String = "") {
+    /// Not `private` for the reason `stopWatchdog` above is not: the polish-stage
+    /// extension lives in another file. It only writes a log line.
+    func logProbe(_ action: String, details: String = "") {
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardState",
             instanceID: instanceID,

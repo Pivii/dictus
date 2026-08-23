@@ -196,7 +196,7 @@ struct HomeView: View {
     /// A Button just starts dictation — the MainTabView overlay handles the full UI.
     private var testDictationLink: some View {
         Button {
-            coordinator.startDictation()
+            coordinator.startDictation(origin: .app)
         } label: {
             HStack {
                 Image(systemName: "waveform")
