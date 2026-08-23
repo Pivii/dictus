@@ -243,6 +243,28 @@ axe tap -x 201 -y 815 --udid <udid>    # Models tab
 
 Verified end to end on 2026-08-22: installing DictusApp, tapping through the onboarding pages by label, and reaching the Models and Settings tabs by coordinate. The frontmost application stayed the terminal throughout.
 
+**A long press needs one HID session, which means `batch`.** A held press is what opens iOS's own menus — the globe key's keyboard picker above all — and `axe` holds the press only inside a single batch:
+
+```bash
+axe batch --udid <udid> \
+  --step "touch -x 42 -y 840 --down" \
+  --step "sleep 1.8" \
+  --step "touch -x 42 -y 840 --up"
+```
+
+Those coordinates are this device's globe key. Read the real one from `describe-ui` rather than trusting them: the globe is labelled `Clavier suivant`, and its `AXFrame` gives the centre to press.
+
+A menu opened that way **stays open after the release**, so there is no race — read it, then tap the row by label:
+
+```bash
+axe describe-ui --udid <udid>
+axe tap --label "Dictus, français" --udid <udid>
+```
+
+**Never tap the globe to change keyboard.** A tap cycles through the enabled keyboards and skips the third-party ones, so it never lands on Dictus. That single mistake is what produced the wrong conclusion this file carried until 2026-08-23 (section 8).
+
+**A control missing from the accessibility tree needs `--tap-style physical`.** With the default `automatic` style, `axe` falls back to a simulator tap and such a control does not react. Measured 2026-08-23 on the Full Access switch, which `describe-ui` does not report at all (section 8); expect the same wherever a control you can see in a screenshot has no element in the tree.
+
 Xcode 27 replaces this attachment dance with Device Hub and drops the Simulator.app requirement, per AXe's own compatibility notes. Until this machine moves to it, `open -g -a Simulator` is the price of a tap.
 
 ## 6. Control the frame
@@ -286,6 +308,12 @@ xcrun simctl boot <udid>
 ```
 
 Two traps here, both observed while writing this file. `defaults write` from the host against a plist inside a device's data directory silently does not stick — the host `cfprefsd` owns the write and it never reaches the file. `plutil -replace` fails on a key the file does not have yet. Editing the plist with `plistlib` while the device is shut down is what works.
+
+**`plutil -extract` rewrites the file it reads.** Reading one key out of a plist looks like a read and is not: `plutil -extract <keypath> json <file>` writes the extracted value back over `<file>` unless `-o -` sends it to stdout instead. Observed 2026-08-23, on a built `Info.plist` it destroyed; the keys that then appeared to be missing looked like a build bug and were not. Whatever you are inspecting, pass `-o -`:
+
+```bash
+plutil -extract <keypath> json -o - <file>
+```
 
 Put the device back the way you found it. This one is `fr_FR` with `AppleLanguages = (fr-FR, en-GB)`.
 
