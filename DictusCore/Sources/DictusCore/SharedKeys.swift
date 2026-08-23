@@ -119,6 +119,11 @@ public enum SharedKeys {
     /// raw text, read by the keyboard, which polishes with it instead of re-reading
     /// the live settings — see `PendingDictation.policy` for why that distinction is
     /// the whole point.
+    ///
+    /// **Its presence is also the marker that says the text is a hand-off.** DictusApp
+    /// posts `transcriptionReady` for its own dictations too, and has since long
+    /// before #361; those carry finished text and clear this key, so the keyboard
+    /// types them without running the pipeline a second time.
     public static let lastTranscriptionPolicy = "dictus.lastTranscriptionPolicy"
     /// Double: how many seconds of audio produced `lastTranscription`. The keyboard
     /// cannot measure this — it never saw the audio — and the polish duration gate

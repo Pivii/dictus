@@ -61,6 +61,17 @@ extension DictationCoordinator {
         defaults.set(finalText, forKey: SharedKeys.lastTranscription)
         defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
         defaults.set(DictationStatus.ready.rawValue, forKey: SharedKeys.dictationStatus)
+        // Not a hand-off, and the absence of the policy blob is what says so.
+        //
+        // This path still posts `transcriptionReady`, as it has since long before
+        // #361 — a keyboard that happens to be on screen types the app's result. But
+        // the text is already finished, and a keyboard that re-polished it would put
+        // an app-origin event into the `<KBD>` half of the debug ring, which is the
+        // one thing the writer marker exists to keep clean. Cleared rather than
+        // merely not written, because the previous dictation's blob could still be
+        // lying here if no keyboard ever claimed it.
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
         defaults.synchronize()
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
@@ -98,9 +109,12 @@ extension DictationCoordinator {
         if let policyData = try? JSONEncoder().encode(languagePolicy) {
             defaults.set(policyData, forKey: SharedKeys.lastTranscriptionPolicy)
         } else {
-            // Unreachable — the policy encodes four strings — but silence here would
-            // mean the keyboard falls back to reading the live settings, which is the
-            // one behaviour the snapshot exists to prevent.
+            // Unreachable — the policy encodes four strings. If it ever happened, the
+            // keyboard reads the absent blob as "not a hand-off" and types the raw
+            // text unpolished, which is the honest degradation: the alternative would
+            // be polishing against re-read live settings, and transcribing in one
+            // language while polishing in another is the bug the snapshot exists to
+            // prevent.
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
             PersistentLog.log(.dictationFailed(error: "language policy did not encode for hand-off"))
         }
