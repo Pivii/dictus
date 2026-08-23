@@ -71,6 +71,12 @@ struct DictusApp: App {
         // a fresh start.
         LiveActivityManager.shared.cleanupStaleActivities()
 
+        // Retire App Group keys nothing reads any more (#361 removed the #357 probe's
+        // arming flag). A device where the debug toggle was left on carries a `true`
+        // for a key that no longer exists in code, and this is the only process that
+        // owns hygiene over shared state.
+        SharedKeys.clearRetiredKeys()
+
         let result = AppGroupDiagnostic.run()
         DictusLogger.app.info(
             "AppGroup diagnostic: healthy=\(result.isHealthy, privacy: .public)"
@@ -276,7 +282,7 @@ struct DictusApp: App {
             }
 
             Self.hasBeenActive = true
-            coordinator.startDictation(fromURL: true)
+            coordinator.startDictation(fromURL: true, origin: .keyboard)
 
             // On cold start, the swipe-back overlay (Plan 02) guides the user back.
             // Auto-return was removed because there's no public API to detect which app

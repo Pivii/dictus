@@ -37,7 +37,10 @@ class DictationCoordinator: ObservableObject {
 
     // MARK: - Private
 
-    private let defaults = AppGroup.defaults
+    /// Not `private` only because `DictationHandoff.swift` writes the hand-off keys
+    /// through it and Swift scopes `private` to the file. Read-only reference, one
+    /// owner.
+    let defaults = AppGroup.defaults
     private let audioEngine = UnifiedAudioEngine()
     private let transcriptionService = TranscriptionService()
 
@@ -65,6 +68,32 @@ class DictationCoordinator: ObservableObject {
     /// Held so it can be cancelled if the user stops before it fires. See
     /// `schedulePolishPrewarm()`.
     private var polishPrewarmTask: Task<Void, Never>?
+
+    /// Who asked for the dictation currently in flight (#361).
+    ///
+    /// Set by `startDictation` and read by `stopDictation`, which is the whole
+    /// reason it exists: the two are seconds apart, `stopDictation` is reached
+    /// identically from both origins, and the answer decides which process polishes.
+    private var dictationOrigin: DictationOrigin = .app
+
+    /// The session whose polish DictusApp is waiting for the keyboard to finish
+    /// (#361 decision 6), or nil when it is waiting for none.
+    ///
+    /// The Live Activity is app-owned and the stage that paces it now happens in the
+    /// other process, so `endWithResult` is deferred until `polishDidFinish` arrives.
+    /// Holding the session generation rather than a bare flag is what stops a late
+    /// notification from driving the Island of a dictation that has been superseded.
+    /// Not `private` for the same reason as `defaults` above: the three properties
+    /// below are the hand-off's whole state and they are driven from
+    /// `DictationHandoff.swift`. Single writer, one concern.
+    var polishHandoffSession: Int?
+
+    /// The raw text handed to the keyboard, kept only as the Live Activity preview
+    /// the watchdog below falls back to. Cleared with `polishHandoffSession`.
+    var polishHandoffPreview: String?
+
+    /// Fires when the keyboard never says it finished (#361 decision 14).
+    var polishHandoffWatchdog: Timer?
 
     /// Which dictation the app is currently in. Moves when one starts and when one
     /// is abandoned -- see `DictationSessionGeneration` for why both matter.
@@ -150,11 +179,25 @@ class DictationCoordinator: ObservableObject {
 
         // Clear stale transcription left over from a previous crash or missed pickup.
         // 5-minute threshold: if the keyboard didn't read it by now, it never will.
+        //
+        // Since #361 the sweep covers the whole hand-off, not just the text: the
+        // policy snapshot and the duration are meaningless without it, and a
+        // `PendingDictation` still sitting here means a keyboard process died between
+        // claiming a raw and either typing it or refusing to. The keyboard's own
+        // expiry window is thirty seconds, so anything this sweep still finds is long
+        // past every path that could have acted on it.
         if let ts = defaults.object(forKey: SharedKeys.lastTranscriptionTimestamp) as? Double,
            Date().timeIntervalSince1970 - ts > 300 {
             defaults.removeObject(forKey: SharedKeys.lastTranscription)
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionTimestamp)
+            defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
+            defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
+            defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
             defaults.synchronize()
+        }
+        if let pending = PendingDictationChannel.current, pending.isExpired() {
+            PendingDictationChannel.clear()
+            PersistentLog.log(.polishHandoff(step: "swept", outcome: "expired", chars: pending.raw.count))
         }
 
         // Audit the shared dictation state before anything reads it (issue #261).
@@ -295,7 +338,7 @@ class DictationCoordinator: ObservableObject {
                     let keyboardStatus = self.defaults.string(forKey: SharedKeys.dictationStatus) ?? "nil"
                     PersistentLog.log(.coldStartRetry(keyboardStatus: keyboardStatus))
                     if keyboardStatus == DictationStatus.requested.rawValue {
-                        self.startDictation(fromURL: true)
+                        self.startDictation(fromURL: true, origin: .keyboard)
                     }
                     return
                 }
@@ -339,7 +382,16 @@ class DictationCoordinator: ObservableObject {
     /// The `status == .recording` guard drops the prewarm if the user already
     /// stopped. `PolishCoordinator.prewarm()` is itself a no-op when the toggle
     /// is off, so we don't load the model into memory for nothing.
+    ///
+    /// WHY only for in-app dictations since #361: a keyboard dictation is polished
+    /// in the extension, which holds its own `LanguageModelSession` cache. Warming a
+    /// session here could not be used over there — the two are separate processes —
+    /// so the call would cost model residency in a backgrounded app for nothing.
+    /// Keyboard-side prewarm was deliberately not added in its place: measured at
+    /// 1.4% on PR #373, inside the spread of both arms, against holding a session in
+    /// a process under a ~50 MB ceiling while the user is still speaking.
     private func schedulePolishPrewarm() {
+        guard dictationOrigin == .app else { return }
         polishPrewarmTask?.cancel()
         polishPrewarmTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -364,7 +416,13 @@ class DictationCoordinator: ObservableObject {
     ///     from whatever state the app is in. Set only by
     ///     `resolvePendingColdStartOnBackground()`, which is the last chance a parked
     ///     start gets (#311) — deferring a second time there would park it forever.
-    func startDictation(fromURL: Bool = false, allowInactiveStart: Bool = false) {
+    ///   - origin: who asked (#361). Deliberately without a default: it decides which
+    ///     process polishes the result, and a call site that did not think about it
+    ///     would silently pick one. `fromURL` does not answer the question on its own
+    ///     — the keyboard also starts dictations over Darwin, with no URL involved.
+    func startDictation(fromURL: Bool = false,
+                        allowInactiveStart: Bool = false,
+                        origin: DictationOrigin) {
         // Clear previous recording state before starting new recording.
         // WHY here (not in stopDictation): DI tap and lockscreen paths call
         // startDictation directly without going through stopDictation first.
@@ -397,6 +455,11 @@ class DictationCoordinator: ObservableObject {
         // New session supersedes any pending delayed reset (issue #60) and any
         // outstanding work from the previous one (#267).
         sessionGeneration.beginSession()
+        // Assigned after the duplicate guard above, so a rejected tap cannot
+        // repoint a dictation that is already running at the other origin.
+        dictationOrigin = origin
+        // Whatever the previous dictation was waiting for, it is over (#361).
+        endPolishHandoff(abandonedAs: "new-dictation")
 
         // WHY this early return (only for Darwin notification path, NOT URL scheme):
         // iOS forbids starting an audio engine from background. If the engine isn't
@@ -672,66 +735,37 @@ class DictationCoordinator: ObservableObject {
                     languagePolicy: languagePolicy
                 )
 
-                // Polish layer (#141) — passes raw through when toggle off, when language
-                // detection skips, when the engine throws/cancels, or when the guardrail rejects.
+                // Where the tail of the dictation happens, since #361.
                 //
-                // The status moves to `.processing` from inside the call rather than
-                // before it (#267): every one of those pass-through paths returns in
-                // about a millisecond, and announcing a stage for them would flash a
-                // label and a new animation for a single frame. `onEngineWillRun`
-                // fires only once an engine worth waiting for is about to run.
-                let text = await PolishCoordinator.shared.polish(
-                    raw: rawText,
-                    languagePolicy: languagePolicy,
-                    recordingDuration: audioDuration,
-                    // Gated like every other write this task makes: the callback
-                    // fires from inside `polish`, which a cancel does not interrupt,
-                    // so an abandoned dictation would otherwise reopen the keyboard
-                    // overlay on "Traitement..." and drive the Live Activity into a
-                    // stage it had already left (#267).
-                    onEngineWillRun: { [weak self] in
-                        guard let self, self.mayReport(session, "processing stage") else { return }
-                        self.updateStatus(.processing)
-                        LiveActivityManager.shared.transitionToProcessing()
-                    }
-                )
-
-                // Append trailing separator so chained dictations don't stick together.
-                // Whisper Auto-detect mode (#226) inserts the transcription as-is: the
-                // output language is unknown, and coercing Western punctuation/spacing
-                // onto e.g. Chinese ("你好。" + ". ") would corrupt the text. Follow and
-                // explicit modes — and Parakeet in every mode — keep the historical
-                // separator behavior unchanged.
-                let finalText: String
-                if languagePolicy.insertsTranscriptionAsIs {
-                    finalText = text
-                } else if let last = text.last, ".!?…".contains(last) {
-                    finalText = text + " "
-                } else {
-                    finalText = text + ". "
-                }
-
-                // The gate that matters most. Everything below is irreversible from
-                // the user's point of view: it writes the transcription to the App
-                // Group and posts `transcriptionReady`, which is what makes the
-                // keyboard type it into their document. A dictation the user
-                // cancelled must not insert text a few seconds later (#267).
-                guard mayReport(session, "transcription result") else { return }
-
-                // Write result to App Group
-                lastResult = finalText
-                status = .ready
-                defaults.set(finalText, forKey: SharedKeys.lastTranscription)
-                defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
-                defaults.set(DictationStatus.ready.rawValue, forKey: SharedKeys.dictationStatus)
-                defaults.synchronize()
-
-                DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
-                DarwinNotificationCenter.post(DarwinNotificationName.transcriptionReady)
-                LiveActivityManager.shared.endWithResult(preview: finalText)
-
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.info("Transcription complete: \(finalText, privacy: .private)")
+                // A keyboard dictation is polished by the keyboard extension, which
+                // is in the foreground at exactly the moment the model runs — the
+                // one state Apple does not deprioritise, and the whole reason for
+                // that issue. This process writes the RAW text, hands over the
+                // policy snapshot with it, and stops there. An in-app dictation is
+                // already foreground and has never had the problem, so it keeps
+                // polishing in place (decision 4).
+                switch dictationOrigin {
+                case .app:
+                    await finishInApp(
+                        rawText: rawText,
+                        languagePolicy: languagePolicy,
+                        audioDuration: audioDuration,
+                        session: session
+                    )
+                case .keyboard:
+                    // The gate that matters most. Everything below is irreversible
+                    // from the user's point of view: it writes the transcription to
+                    // the App Group and posts `transcriptionReady`, which is what
+                    // makes the keyboard type it into their document. A dictation
+                    // the user cancelled must not insert text a few seconds later
+                    // (#267).
+                    guard mayReport(session, "transcription result") else { return }
+                    handOffToKeyboard(
+                        rawText: rawText,
+                        languagePolicy: languagePolicy,
+                        audioDuration: audioDuration,
+                        session: session
+                    )
                 }
 
                 cleanupRecordingKeys()
@@ -771,6 +805,8 @@ class DictationCoordinator: ObservableObject {
         bufferEnergy = []
         bufferSeconds = 0
         cleanupRecordingKeys()
+        // Nothing is coming back from the keyboard for a dictation that is over (#361).
+        endPolishHandoff(abandonedAs: "cancelled")
         SoundFeedbackService.playRecordCancel()
         // Return Dynamic Island to standby (cancel = no transcription, go back to "On")
         Task { await LiveActivityManager.shared.returnToStandby() }
@@ -839,6 +875,7 @@ class DictationCoordinator: ObservableObject {
         bufferEnergy = []
         bufferSeconds = 0
         cleanupRecordingKeys()
+        endPolishHandoff(abandonedAs: "interrupted")
 
         // updateStatus(.failed) handles both the App Group write and the Darwin
         // statusChanged post — no manual duplication needed (issue #106 review).
@@ -885,7 +922,25 @@ class DictationCoordinator: ObservableObject {
                     appState: "\(appState.rawValue)",
                     engineRunning: self.audioEngine.isEngineRunning
                 ))
-                self.startDictation()
+                self.startDictation(origin: .keyboard)
+            }
+        }
+
+        // The reverse pair (#361 decision 6). The keyboard runs the polish engine
+        // now, and sets its own `.processing` stage locally — it draws the overlay.
+        // What it cannot reach from its process is the Live Activity, so these two
+        // notifications carry that and nothing else.
+        DarwinNotificationCenter.addObserver(for: DarwinNotificationName.polishWillRun) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, let session = self.polishHandoffSession,
+                      self.mayReport(session, "keyboard processing stage") else { return }
+                LiveActivityManager.shared.transitionToProcessing()
+            }
+        }
+
+        DarwinNotificationCenter.addObserver(for: DarwinNotificationName.polishDidFinish) { [weak self] in
+            DispatchQueue.main.async {
+                self?.polishHandoffFinished()
             }
         }
     }
@@ -1021,7 +1076,7 @@ class DictationCoordinator: ObservableObject {
     /// - `pendingColdStartDictation` is retried from `didBecomeActive` only when the
     ///   App Group still reads `.requested`; a cancel writes `.idle` first, so the
     ///   deferred start does not resurrect.
-    private func mayReport(_ session: Int, _ what: String) -> Bool {
+    func mayReport(_ session: Int, _ what: String) -> Bool {
         guard sessionGeneration.mayReport(from: session) else {
             PersistentLog.log(.dictationDeferred(
                 reason: "abandoned session dropped \(what) (gen \(session) != \(sessionGeneration.current))"
@@ -1084,7 +1139,11 @@ class DictationCoordinator: ObservableObject {
     }
 
     /// Write dictation status to App Group so the keyboard can observe it.
-    private func updateStatus(_ newStatus: DictationStatus) {
+    ///
+    /// **Still the single funnel every status write goes through**, and the reason it
+    /// is no longer `private` is narrow: `DictationHandoff.swift` needs it, and Swift
+    /// scopes `private` to the file. Nothing outside this type may call it.
+    func updateStatus(_ newStatus: DictationStatus) {
         // Invariant (issue #60): entering .idle while the engine is still capturing
         // means some path skipped the teardown. Stop capture (engine stays warm per
         // #106), force the Live Activity out of .recording, and log the violation so
