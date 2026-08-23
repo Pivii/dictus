@@ -84,8 +84,30 @@ public enum PolishTask: Equatable, Sendable {
     /// The imperative that opens the user turn.
     ///
     /// Per task since #79. `AppleFoundationModelsPolishEngine` hardcoded the polish
-    /// framing around every input, and asking the model to produce notes under an
+    /// framing around every input, and asking the model to condense under an
     /// instruction that says "polish" is self-defeating.
+    ///
+    /// ### The wording of this string is load-bearing, and it was measured
+    ///
+    /// **Name the transformation, never the artefact.** The Email harness run
+    /// (PR #388) held the instructions constant and swapped only this string:
+    /// under `Polish this text. Output only the polished version, nothing else.`,
+    /// zero hallucinated openers, closers or names in 190 calls; under
+    /// `Rewrite this dictation as the body of an email`, 6 in 40 — including a
+    /// literal `[Votre Nom]` from a prompt whose instructions explicitly banned
+    /// `[Your Name]`, `[Nom]` and `[Signature]`.
+    ///
+    /// The mechanism is the model's genre prior: naming a written genre in the user
+    /// turn pulls in that genre's furniture, and an instruction-level ban does not
+    /// stop it. So every mode's framing follows the shape measured at zero —
+    /// *"\<verb\> this text. Output only the \<result\>, nothing else."* — and none
+    /// of them names a document type. That is why the Notes mode's framing says
+    /// "condense into a bulleted list" and never the word "notes", which is a genre
+    /// with a title line, headers and section names of its own.
+    ///
+    /// A new mode copies the shape. If it needs a placeholder guard, match the
+    /// bracket **shape** `[…]`, not a vocabulary: banning `[Your Name]` is what
+    /// produced `[Votre Nom]`.
     public var userInstruction: String {
         switch self {
         case .polish: return "Polish this text. Output only the polished version, nothing else."

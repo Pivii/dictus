@@ -78,6 +78,19 @@ public enum PolishOutputLanguage: Equatable, Sendable, Codable {
 /// translation. So the contract travels with the task instead of being looked up
 /// from a global table (#79).
 ///
+/// ### The length band is a backstop, not a guard
+///
+/// It catches catastrophic over- and under-generation — an empty answer, a runaway.
+/// It does not catch a bad transformation. Measured on the Email harness run
+/// (PR #388): the Natural band of `0.5...2.0` rejected **nothing in 240 calls**,
+/// including outputs carrying an invented greeting and signature that accounted for
+/// roughly a quarter of the added length.
+///
+/// So do not size a new mode's band as though it were protecting anything, and do
+/// not let a wide band read as a weakened contract — the check that actually guards
+/// a mode is `outputLanguage`. If a mode needs a real guard, it has to be a real
+/// one.
+///
 /// The bands below are judgement calls sized against what each transformation does
 /// to length, not measurements. They are the first thing to revisit if the harness
 /// shows a mode's own output being rejected.

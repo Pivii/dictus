@@ -26,11 +26,17 @@ import Foundation
 /// touches the transcription-language setting (#226).
 enum SmartModeTranslatePrompt {
 
+    /// Shaped like the polish framing that measured 0 hallucinated openers, closers
+    /// or names in 190 calls (PR #388), and naming an operation rather than a
+    /// written genre. "Translate" was already the safe shape — a translation has no
+    /// document furniture the way an email or a set of notes does — but the three
+    /// framings follow one template so the next mode added has one to copy. See
+    /// `SmartModeNotesPrompt` for the measurement.
     static func userInstruction(target: SupportedLanguage) -> String {
-        "Translate this text into \(englishName(of: target))."
+        "Translate this text into \(englishName(of: target)). Output only the translation, nothing else."
     }
 
-    static let outputMarker = "Translation:"
+    static let outputMarker = "Translated output:"
 
     /// English name of the target, for the prompt text. Local to this file rather
     /// than a property on `SupportedLanguage`: it exists only because these
@@ -74,6 +80,7 @@ enum SmartModeTranslatePrompt {
         FORBIDDEN:
         - Do NOT output any language other than \(name).
         - Do NOT add words or content that were not in the input. No greetings, no sign-offs, no inventing endings, no completing cut-off sentences.
+        - Do NOT emit a bracketed placeholder of any kind — not `[Name]`, not `[Nom]`, not `[date]`, not any other word between square brackets. Banning a list of words does not work; nothing between square brackets belongs in the output.
         - Do NOT explain a term instead of translating it, and do NOT add a gloss in brackets.
         - Do NOT shift the register up. A casual message must not come back formal.
 

@@ -56,7 +56,7 @@ final class PolishTaskTests: XCTestCase {
     // MARK: - The user turn
 
     /// The framing used to be hardcoded to the polish wording. Asking the model to
-    /// produce notes under an instruction that says "polish" is self-defeating.
+    /// condense under an instruction that says "polish" is self-defeating.
     func testTheUserTurnCarriesTheTasksOwnImperativeAndMarker() {
         let polish = PolishTask.natural.userTurn(raw: "salut")
         XCTAssertTrue(polish.hasPrefix("Polish this text."))
@@ -64,15 +64,50 @@ final class PolishTaskTests: XCTestCase {
         XCTAssertTrue(polish.contains("Input:\nsalut"))
 
         let notes = PolishTask.smart(SmartModeCatalogue.notes).userTurn(raw: "salut")
-        XCTAssertTrue(notes.hasPrefix("Turn this text into notes."))
-        XCTAssertTrue(notes.hasSuffix("Notes:"))
+        XCTAssertTrue(notes.hasPrefix("Condense this text into a bulleted list."))
+        XCTAssertTrue(notes.hasSuffix("Condensed output:"))
         XCTAssertFalse(notes.contains("Polish this text"))
 
         let translate = PolishTask
             .smart(SmartModeCatalogue.translate(to: .english))
             .userTurn(raw: "salut")
         XCTAssertTrue(translate.hasPrefix("Translate this text into English."))
-        XCTAssertTrue(translate.hasSuffix("Translation:"))
+        XCTAssertTrue(translate.hasSuffix("Translated output:"))
+    }
+
+    /// The genre-prior finding, pinned so a later edit cannot reintroduce it.
+    ///
+    /// PR #388 measured that naming a written genre in the user turn pulls in that
+    /// genre's furniture — 0 hallucinated openers/closers/names in 190 calls under
+    /// the polish framing, 6 in 40 under "as the body of an email", including a
+    /// `[Votre Nom]` the instructions had banned by name. So no mode's framing may
+    /// name a document type, and all of them keep the shape measured at zero.
+    func testNoModesFramingNamesAWrittenGenre() {
+        let genres = ["email", "e-mail", "note", "memo", "letter", "report", "essay"]
+        for mode in SmartModeCatalogue.builtIns {
+            let framing = PolishTask.smart(mode).userTurn(raw: "x").lowercased()
+            for genre in genres {
+                XCTAssertFalse(
+                    framing.contains(genre),
+                    "\(mode.id) names the genre '\(genre)' in its user turn"
+                )
+            }
+            XCTAssertTrue(
+                framing.contains("output only"),
+                "\(mode.id) does not follow the framing shape measured at zero"
+            )
+        }
+    }
+
+    /// A placeholder ban has to match the bracket shape, not a vocabulary: banning
+    /// `[Your Name]` is exactly what produced `[Votre Nom]` (PR #388).
+    func testEveryModesPromptBansTheBracketShapeRatherThanAWordList() {
+        for mode in SmartModeCatalogue.builtIns {
+            XCTAssertTrue(
+                mode.prompt.instructions.contains("square brackets"),
+                "\(mode.id) has no shape-matched placeholder ban"
+            )
+        }
     }
 
     // MARK: - Session-key normalisation
