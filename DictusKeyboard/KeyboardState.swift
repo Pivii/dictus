@@ -505,7 +505,11 @@ class KeyboardState: ObservableObject {
     }
 
     /// Invalidate and nil the watchdog timer.
-    private func stopWatchdog() {
+    ///
+    /// Not `private` because `KeyboardPolishStage.swift` has to stop it when this
+    /// process takes over the tail of a dictation, and Swift scopes `private` to the
+    /// file. The reason is written at that call site.
+    func stopWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = nil
     }
@@ -656,6 +660,10 @@ class KeyboardState: ObservableObject {
 
         if let rawStatus = defaults.string(forKey: SharedKeys.dictationStatus),
            let status = DictationStatus(rawValue: rawStatus) {
+            // The `.ready` DictusApp writes when it hands a dictation over is true
+            // about the app and false about the dictation, which is not over until
+            // this process has typed it (#361). See `holdsHandoffStage(against:)`.
+            if holdsHandoffStage(against: status) { return }
             let oldStatus = dictationStatus
             // The statusChanged line this used to emit here now comes from
             // dictationStatus's didSet (#255), which fires for this write and for
@@ -777,9 +785,7 @@ class KeyboardState: ObservableObject {
             // run-loop turn after the claim. The raw has to be on disk before anything
             // else can happen to it -- that is the principle the whole relocation
             // rests on -- so the cheap ordering guarantee is worth the annotation.
-            MainActor.assumeIsolated {
-                KeyboardPolishCoordinator.shared.handle(raw: transcription)
-            }
+            MainActor.assumeIsolated { takeTranscription(transcription) }
         } else {
             // Retry after 100ms — mitigates UserDefaults race condition.
             // Darwin notifications are posted immediately after synchronize(),
@@ -791,9 +797,7 @@ class KeyboardState: ObservableObject {
                     self.defaults.removeObject(forKey: SharedKeys.lastTranscription)
                     self.defaults.synchronize()
 
-                    MainActor.assumeIsolated {
-                        KeyboardPolishCoordinator.shared.handle(raw: transcription)
-                    }
+                    MainActor.assumeIsolated { self.takeTranscription(transcription) }
                 }
             }
         }
@@ -1123,6 +1127,12 @@ class KeyboardState: ObservableObject {
         )
         ownership = ownership.appearing(controllerID: controllerID)
 
+        // Before the refresh, because the refresh is what would put the overlay back
+        // up: a polish still running for a field the user has left has no claim on
+        // this keyboard (#361). Runs ahead of `applyAreaMode` too, so the overlay is
+        // never drawn and then taken down again.
+        MainActor.assumeIsolated { releasePolishStageIfFieldChanged() }
+
         // Refresh state from App Group — picks up status changes that
         // happened while the keyboard extension was suspended.
         refreshFromDefaults()
@@ -1433,12 +1443,14 @@ class KeyboardState: ObservableObject {
         HapticFeedback.recordingStarted()
     }
 
-    private func sessionDetails() -> String {
+    func sessionDetails() -> String {
         let sessionID = activeSessionID ?? "none"
         return "sessionID=\(sessionID) status=\(dictationStatus.rawValue) energyCount=\(waveformEnergy.count)"
     }
 
-    private func logProbe(_ action: String, details: String = "") {
+    /// Not `private` for the reason `stopWatchdog` above is not: the polish-stage
+    /// extension lives in another file. It only writes a log line.
+    func logProbe(_ action: String, details: String = "") {
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardState",
             instanceID: instanceID,
