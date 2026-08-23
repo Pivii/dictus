@@ -260,6 +260,35 @@ public enum LogEvent: Sendable {
     /// was told and what the keyboard was showing at the time.
     case polishEngineUnavailable(engine: String, reason: String, consecutiveRefusals: Int)
 
+    /// Issue #361: one step of the raw-text hand-off between the two processes.
+    ///
+    /// The tail of a dictation now spans DictusApp and DictusKeyboard, and every
+    /// interesting failure of it is an *absence* — the keyboard never claimed the
+    /// raw, the app never heard that polish finished. An absence is only readable
+    /// against the steps that did happen, so each one says what it was and how big
+    /// the text was: `handedOff` (app wrote the raw), `claimed` (keyboard took it),
+    /// `finished` (keyboard is done, whatever the outcome), `watchdog` (the app gave
+    /// up waiting), `recovered` (a keyboard came back to an unclaimed record).
+    case polishHandoff(step: String, outcome: String, chars: Int)
+
+    /// Issue #361 decision 7: a finished generation was not typed, because the
+    /// keyboard is no longer looking at the field the dictation was claimed from.
+    ///
+    /// `reason` says which half of the identity test failed — the document changed,
+    /// or the host would not name one — and `ageMs` how long the generation took to
+    /// come back, which is the measurement that says whether this was routine
+    /// controller churn or the forty-four-minute resurrection #357 Q4 found.
+    case polishInsertionRefused(reason: String, ageMs: Int)
+
+    /// Issue #361 decisions 10 and 15: a new polish call cancelled one still in
+    /// flight and took its place.
+    ///
+    /// Logged because the serialisation is explicit rather than incidental, and
+    /// because a generation can sit suspended for tens of minutes — so "N+1
+    /// cancelled N" is a normal event with an abnormal-looking `inflightMs`, and a
+    /// reader needs to see both numbers to tell that from a stall.
+    case polishCallSuperseded(inflightMs: Int)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -319,7 +348,8 @@ public enum LogEvent: Sendable {
         // Polish is the stage after the STT result and before the App Group
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
-        case .polishEngineFailed, .polishEngineUnavailable:
+        case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
+             .polishInsertionRefused, .polishCallSuperseded:
             return .transcription
         }
     }
@@ -404,6 +434,12 @@ public enum LogEvent: Sendable {
         // because nothing broke and no text was lost.
         case .polishEngineFailed, .polishEngineUnavailable:
             return .warning
+
+        // Info: the hand-off steps describe a dictation working as designed, and
+        // the refusal is the guard doing its job rather than something going wrong.
+        // A superseded call is likewise the documented behaviour of decision 15.
+        case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded:
+            return .info
         }
     }
 
@@ -507,6 +543,9 @@ public enum LogEvent: Sendable {
         case .modelDownloadStalled: return "modelDownloadStalled"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
+        case .polishHandoff: return "polishHandoff"
+        case .polishInsertionRefused: return "polishInsertionRefused"
+        case .polishCallSuperseded: return "polishCallSuperseded"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -744,6 +783,12 @@ public enum LogEvent: Sendable {
         // Polish (#315)
         case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
             return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
+        case .polishHandoff(let step, let outcome, let chars):
+            return "step=\(step) outcome=\(outcome) chars=\(chars)"
+        case .polishInsertionRefused(let reason, let ageMs):
+            return "reason=\(reason) ageMs=\(ageMs)"
+        case .polishCallSuperseded(let inflightMs):
+            return "inflightMs=\(inflightMs)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }

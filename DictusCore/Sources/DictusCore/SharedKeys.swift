@@ -113,6 +113,26 @@ public enum SharedKeys {
     /// the rule about clearing it lives.
     public static let polishUnavailable = "dictus.polishUnavailable"
 
+    // Polish in the keyboard extension (issue #361)
+    /// Data: the JSON-encoded `TranscriptionLanguagePolicy` snapshot for the
+    /// transcription sitting in `lastTranscription`. Written by DictusApp beside the
+    /// raw text, read by the keyboard, which polishes with it instead of re-reading
+    /// the live settings — see `PendingDictation.policy` for why that distinction is
+    /// the whole point.
+    public static let lastTranscriptionPolicy = "dictus.lastTranscriptionPolicy"
+    /// Double: how many seconds of audio produced `lastTranscription`. The keyboard
+    /// cannot measure this — it never saw the audio — and the polish duration gate
+    /// (#141) is decided on it.
+    public static let lastTranscriptionDuration = "dictus.lastTranscriptionDuration"
+    /// Data: the JSON-encoded `PendingDictation` the keyboard has claimed and not
+    /// yet typed. Read and written only through `PendingDictationChannel`, which is
+    /// where the rule about who clears it lives.
+    public static let pendingDictation = "dictus.pendingDictation"
+    /// String: the final text the keyboard typed, written back just before the
+    /// insertion so DictusApp can show the polished version rather than the raw one
+    /// in its Live Activity preview and its last-transcription card (#361 decision 6).
+    public static let lastPolishedTranscription = "dictus.lastPolishedTranscription"
+
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
     /// during active recording. The keyboard watchdog reads this as a fallback
@@ -162,17 +182,25 @@ public enum SharedKeys {
     /// Bool: per-feature toggle for Vocabulary, default true (registered by ProStatusManager)
     public static let vocabularyEnabled = "dictus.vocabularyEnabled"
 
-    // MARK: - #357 spike (throwaway)
-    /// Bool: arms exactly ONE Apple Foundation Models probe run inside the
-    /// keyboard extension. Written by the hidden polish debug screen, read and
-    /// immediately cleared by `AppleFMExtensionProbe` in DictusKeyboard.
+    // MARK: - Retired keys
+    /// The #357 probe's arming flag, removed with the probe in #361. Kept as a
+    /// literal, and only here, so DictusApp can delete it from the App Group on
+    /// devices that armed it once — the flag defaults to false, but a device where
+    /// the toggle was left on would carry a `true` no code reads any more.
     ///
-    /// WHY it lives here rather than next to the probe: the two processes that
-    /// have to agree on this string cannot see each other's targets, and a
-    /// literal duplicated across a process boundary is the kind of typo that
-    /// costs a device session to find. Absent — which is the shipped state —
-    /// it reads false and the probe never runs.
-    ///
-    /// Delete with the spike.
-    public static let appleFMExtensionProbeArmed = "dictus.debug.appleFMExtensionProbeArmed"
+    /// Drop this and its one caller once a release has shipped with the cleanup.
+    static let retiredAppleFMExtensionProbeArmed = "dictus.debug.appleFMExtensionProbeArmed"
+
+    /// Every key no live code reads, cleared once per app launch.
+    static let retiredKeys = [retiredAppleFMExtensionProbeArmed]
+
+    /// Remove the retired keys above. Called from DictusApp's launch, which is the
+    /// only process that owns hygiene over shared state.
+    public static func clearRetiredKeys() {
+        let defaults = AppGroup.defaults
+        for key in retiredKeys where defaults.object(forKey: key) != nil {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.synchronize()
+    }
 }
