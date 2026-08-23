@@ -133,6 +133,17 @@
         }
       }
     },
+    "Polish is temporarily unavailable." : {
+      "comment" : "Toolbar state shown when polish has stopped calling its engine for the rest of the app process (issue #315).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le polissage est temporairement indisponible."
+          }
+        }
+      }
+    },
     "Processing..." : {
       "comment" : "Recording overlay caption while the LLM stage runs on the transcript (issue #267).",
       "localizations" : {

@@ -46,6 +46,17 @@ public struct PolishMetrics: Sendable, Codable {
         case skippedAutoMode
         case cancelled
         case engineFailed
+        /// The engine was not called because polish is in its unavailable state
+        /// (#315). Reached when two consecutive `rateLimited` refusals have shown
+        /// that this process is on the wrong side of Apple's background rate
+        /// limit; every dictation after that takes the deterministic floor
+        /// without paying for a call that will be refused.
+        ///
+        /// Deliberately distinct from `engineFailed`: nothing failed here, we
+        /// declined to ask. Keeping the two apart is what lets an export say how
+        /// many dictations a single outage cost, rather than folding them into
+        /// the failure count and inflating it.
+        case engineUnavailable
         /// Refused BEFORE the engine call (#270): the estimated token cost of
         /// the resolved instructions + input + output reserve exceeds the
         /// backend's context window. Deliberately distinct from

@@ -249,6 +249,17 @@ public enum LogEvent: Sendable {
     /// insertion — and only this log has all of them on one page.
     case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int)
 
+    /// Issue #315: polish stopped calling its engine for the rest of this process,
+    /// after `consecutiveRefusals` `rateLimited` results in a row.
+    ///
+    /// Emitted once, on the transition. Every dictation after it records
+    /// `outcome = engineUnavailable` in the polish debug export, so the count of
+    /// what a single outage cost is already answerable there; a line per skipped
+    /// call here would only repeat it. What this log has that the export does not
+    /// is everything else the app was doing, which is what says whether the user
+    /// was told and what the keyboard was showing at the time.
+    case polishEngineUnavailable(engine: String, reason: String, consecutiveRefusals: Int)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -308,7 +319,7 @@ public enum LogEvent: Sendable {
         // Polish is the stage after the STT result and before the App Group
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
-        case .polishEngineFailed:
+        case .polishEngineFailed, .polishEngineUnavailable:
             return .transcription
         }
     }
@@ -386,7 +397,12 @@ public enum LogEvent: Sendable {
         // Warning, not error: the user still gets their text (the deterministic
         // floor), only the polish is lost — but silently, which is the failure
         // worth finding in a log (#315).
-        case .polishEngineFailed:
+        //
+        // The same level for the unavailable transition, and for the same reason:
+        // an enabled feature has stopped running. It is the more serious of the
+        // two — it holds for the rest of the process — but not an error either,
+        // because nothing broke and no text was lost.
+        case .polishEngineFailed, .polishEngineUnavailable:
             return .warning
         }
     }
@@ -490,6 +506,7 @@ public enum LogEvent: Sendable {
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
         case .polishEngineFailed: return "polishEngineFailed"
+        case .polishEngineUnavailable: return "polishEngineUnavailable"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -727,6 +744,8 @@ public enum LogEvent: Sendable {
         // Polish (#315)
         case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
             return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
+        case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
+            return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }
     }
 

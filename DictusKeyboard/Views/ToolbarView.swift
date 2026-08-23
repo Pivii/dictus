@@ -34,6 +34,14 @@ struct ToolbarView: View {
     /// site that does not care is unaffected; both current call sites supply them.
     var messageProbeRootViewID: String = "unknown"
     var messageProbeControllerID: String = "unknown"
+
+    /// Whether polish has stopped calling its engine for the rest of DictusApp's
+    /// process (#315). Declared next to `statusMessage` because it is the bar's
+    /// other way of saying something went wrong, and the opposite kind of thing:
+    /// a state, not a message. It carries no timer, is not dismissed, and goes
+    /// away only when a fresh app process clears it.
+    var showsPolishUnavailable: Bool = false
+
     var suggestions: [String] = []
     var suggestionMode: SuggestionMode = .idle
     var onSuggestionTap: ((Int) -> Void)?
@@ -104,6 +112,14 @@ struct ToolbarView: View {
     /// has typed nothing, so whatever the bar is showing was predicted from text
     /// that was just dictated — worth little, and worth less than a control that
     /// expires in seconds and is the only alternative to holding backspace.
+    ///
+    /// WHY the polish-unavailable notice sits LAST, beside the hamburger rather
+    /// than instead of anything (#315): it is the only occupant of this bar that
+    /// can last the whole app process. Above the suggestions it would suppress
+    /// completions and corrections for that entire time, which is the keyboard's
+    /// core job; in place of the hamburger it would make the panel unreachable
+    /// for the same duration. Sharing the slot costs visibility while the user is
+    /// mid-word, and that is the cheapest of the three prices.
     private var dictationBar: some View {
         HStack {
             if let message = statusMessage {
@@ -137,7 +153,11 @@ struct ToolbarView: View {
             } else if suggestions.isEmpty {
                 hamburgerButton
 
-                Spacer()
+                if showsPolishUnavailable {
+                    polishUnavailableNotice
+                } else {
+                    Spacer()
+                }
             } else {
                 SuggestionBarView(
                     suggestions: suggestions,
@@ -246,6 +266,31 @@ struct ToolbarView: View {
         }
         .buttonStyle(GlassPressStyle())
         .accessibilityLabel(Text("Undo dictation insertion"))
+    }
+
+    /// Polish is not running, and will not run again until DictusApp restarts (#315).
+    ///
+    /// WHY secondary and not the red of `statusMessage`: nothing failed for the
+    /// user. The dictation still arrives, as the deterministic floor it already
+    /// takes when a guardrail rejects the model's output — what is missing is the
+    /// polish on top. Red is this bar's colour for a dictation that did not
+    /// happen, and reusing it here would say something untrue.
+    ///
+    /// The copy names the state and stops. No cause, no remedy, no "try again
+    /// later": Apple's background rate limit is only refunded by a fresh app
+    /// process, so there is no action to offer, and an offer that does not work
+    /// is worse than none.
+    private var polishUnavailableNotice: some View {
+        Text("Polish is temporarily unavailable.")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            // The sentence is fixed and must not truncate; on the narrowest
+            // supported width it gives up a little size instead. Single line
+            // either way, so the bar keeps its 52 pt (#166 and family).
+            .minimumScaleFactor(0.75)
+            .padding(.leading, 6)
+            .frame(maxWidth: .infinity)
     }
 
     private var closeButton: some View {

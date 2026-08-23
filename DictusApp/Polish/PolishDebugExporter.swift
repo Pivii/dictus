@@ -139,7 +139,7 @@ enum PolishDebugExporter {
         var outcomes: [String: Int] = [
             "success": 0, "rejectedGuardrail": 0, "skipped": 0,
             "skippedShort": 0, "skippedAutoMode": 0, "cancelled": 0, "engineFailed": 0,
-            "exceededContextBudget": 0
+            "engineUnavailable": 0, "exceededContextBudget": 0
         ]
         var failureReasons: [String: Int] = [:]
         for e in entries {

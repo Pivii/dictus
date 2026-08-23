@@ -52,10 +52,24 @@ public enum PolishPipeline {
     /// CJK full-width punctuation must survive untouched), and the language
     /// guardrail compares the output's detected language against the INPUT's
     /// detected language instead of a target — the runtime never-translate check.
+    ///
+    /// `gate` (#315) is the caller's polish-availability state. It defaults to a
+    /// fresh gate, which allows everything, so a caller with no such state — the
+    /// off-device eval harness — is unaffected.
     public static func transform(preprocessed: String,
                                  engine: PolishEngineProtocol,
                                  target: SupportedLanguage,
-                                 mode: PolishMode) async -> Result {
+                                 mode: PolishMode,
+                                 gate: PolishAvailabilityGate = PolishAvailabilityGate()) async -> Result {
+        // Polish is in its unavailable state for this engine (#315): two
+        // consecutive `rateLimited` refusals said this process is on the wrong
+        // side of Apple's background rate limit, and only a fresh process
+        // changes that. Exit before the newline encode and before the context
+        // guard — the point is to pay nothing at all — and let `resolvedOutput`
+        // hand back the same deterministic floor a guardrail rejection gets.
+        guard gate.allowsCall(engine: engine.identifier) else {
+            return Result(engineOutput: nil, outcome: .engineUnavailable, engineMs: 0, postprocessMs: 0)
+        }
         // Encode newlines as a marker so the model can't "naturalise" them into
         // ", " + capital — see `PolishPostpass`. Sub-millisecond, kept out of the
         // engine timing below.
@@ -142,7 +156,8 @@ public enum PolishPipeline {
     /// The string the user actually receives, given a transform `Result` and the
     /// deterministic pre-pass output. On `.success` it's the accepted engine
     /// output; on EVERY other outcome (gibberish-skip, engine failure, guardrail
-    /// rejection, cancellation, context overflow) it's the deterministic floor —
+    /// rejection, cancellation, context overflow, polish unavailable) it's the
+    /// deterministic floor —
     /// the pre-pass text with newline markers decoded and target-language
     /// typography applied.
     ///
