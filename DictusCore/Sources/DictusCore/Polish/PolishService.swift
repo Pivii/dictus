@@ -120,10 +120,11 @@ public final class PolishService {
     /// mode is armed: don't pay to load the model into memory if nothing will run.
     public func prewarm() {
         guard let engineToWarm = appleFMEngine else { return }
-        // The armed mode is resolved rather than merely read, so a device that has
-        // lost Apple Intelligence stops warming a session it can no longer use.
-        let armed = SmartModeStore.resolveArmedMode()
-        let task = armed.map(PolishTask.smart)
+        // Read, never resolve: `resolveArmedMode()` can clear the user's setting, and
+        // a warm-up is not a dictation. Warming the session of a mode that turns out
+        // to be unrunnable costs nothing — the engine only exists where the SDK does,
+        // and the dictation resolves the mode again from scratch.
+        let task = SmartModeStore.armedMode.map(PolishTask.smart)
         guard PolishGatePolicy.runsDespiteToggle(
             task: task ?? .natural,
             polishEnabled: defaults.bool(forKey: SharedKeys.polishEnabled)

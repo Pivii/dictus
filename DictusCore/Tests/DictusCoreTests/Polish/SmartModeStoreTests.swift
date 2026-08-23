@@ -59,12 +59,29 @@ final class SmartModeStoreTests: XCTestCase {
         XCTAssertEqual(SmartModeStore.armedIdentifier, "translate.klingon")
     }
 
-    /// A read that starts a dictation does: the stored state has to match the Normal
-    /// the user is actually getting.
+    /// A read that starts a dictation does, but only for a condition that can never
+    /// lift on its own. An identifier no mode answers to is one of those.
     func testResolveArmedModeClearsAnIdentifierThisBuildDoesNotKnow() {
         defaults.set("translate.klingon", forKey: SharedKeys.smartModeArmed)
         XCTAssertNil(SmartModeStore.resolveArmedMode())
         XCTAssertNil(SmartModeStore.armedIdentifier)
+    }
+
+    /// A recoverable outage must not cost the user their setting: a model still
+    /// downloading would otherwise silently forget what they armed. The rule lives
+    /// on the reason, where it can be checked without an unavailable engine to
+    /// simulate.
+    func testOnlyDefinitiveReasonsMayClearTheSetting() {
+        let mustNotDisarm: [SmartModeUnavailableReason] = [
+            .appleIntelligenceNotEnabled, .modelNotReady, .engineRefusing
+        ]
+        for reason in mustNotDisarm {
+            XCTAssertTrue(reason.isRecoverable, "\(reason.slug) must not clear the setting")
+        }
+        let mayDisarm: [SmartModeUnavailableReason] = [.deviceNotEligible, .osTooOld, .sdkMissing]
+        for reason in mayDisarm {
+            XCTAssertFalse(reason.isRecoverable, "\(reason.slug) should clear the setting")
+        }
     }
 
     func testResolveArmedModeIsANoOpWhenNothingIsArmed() {

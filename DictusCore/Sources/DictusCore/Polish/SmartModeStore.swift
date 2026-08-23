@@ -65,39 +65,49 @@ public enum SmartModeStore {
     /// not be able to change it mid-transcription and have the transformation
     /// disagree with what was transcribed).
     ///
-    /// ### Why it disarms rather than falling through
+    /// ### Why it falls back rather than failing closed
     ///
     /// A mode can only be armed on a device that could run it — that is the arming
     /// policy — but the device can lose Apple Intelligence afterwards, and then the
-    /// armed mode describes a transformation nothing can perform. Leaving it armed
-    /// would fail closed on every dictation from then on, so the user would get
-    /// *nothing* inserted, indefinitely, for a setting they made weeks ago. Clearing
-    /// it puts them back on the free polish and — once the fan and the mic pill
-    /// exist — changes what they see, which is the honest signal.
+    /// armed mode describes a transformation nothing can perform. Returning it
+    /// anyway would fail closed on every dictation from then on, and the user would
+    /// get *nothing* inserted, indefinitely, for a setting they made weeks ago. So
+    /// the dictation runs Normal and a line says why.
+    ///
+    /// ### And why it only sometimes disarms
+    ///
+    /// **Clearing the setting is reserved for conditions that can never lift on
+    /// their own** — ineligible hardware, an OS too old, a build without the SDK.
+    /// A model still downloading is recoverable, and a mode disarmed over it would
+    /// be a setting silently lost to a temporary state: the user would come back an
+    /// hour later to a keyboard that had quietly forgotten what they armed.
     ///
     /// Only the device half of availability is consulted. The #315 rate-limit latch
     /// belongs to whichever process is running generations and clears on its next
-    /// launch; disarming a sticky setting over a transient, per-process condition
-    /// read from the wrong process would be worse than the failure it avoids.
+    /// launch; reading a transient, per-process condition from the wrong process to
+    /// decide a sticky setting would be worse than the failure it avoids.
     public static func resolveArmedMode() -> SmartMode? {
         guard let identifier = armedIdentifier else { return nil }
         guard let mode = SmartModeCatalogue.mode(withIdentifier: identifier) else {
             // An identifier this build does not know: a downgrade, or a corrupted
-            // value. Clear it so the state on disk matches the Normal the user is
-            // actually getting.
+            // value. Definitively unusable, so clear it — the state on disk should
+            // match the Normal the user is actually getting.
             disarm()
-            PersistentLog.log(.smartModeDisarmed(mode: identifier, reason: "unknown-mode"))
+            PersistentLog.log(.smartModeSkipped(
+                mode: identifier, reason: "unknown-mode", disarmed: true
+            ))
             return nil
         }
-        guard SmartModeAvailability.deviceCanRunModes else {
-            let reason = SmartModeAvailability
-                .armability(engineState: PolishAvailability.state, engineIsRefusing: false)
-                .reason?.slug ?? "unavailable"
-            disarm()
-            PersistentLog.log(.smartModeDisarmed(mode: identifier, reason: reason))
-            return nil
-        }
-        return mode
+        let armability = SmartModeAvailability.armability(
+            engineState: PolishAvailability.state, engineIsRefusing: false
+        )
+        guard let reason = armability.reason else { return mode }
+        let disarms = !reason.isRecoverable
+        if disarms { disarm() }
+        PersistentLog.log(.smartModeSkipped(
+            mode: identifier, reason: reason.slug, disarmed: disarms
+        ))
+        return nil
     }
 
     // MARK: - The pinned list

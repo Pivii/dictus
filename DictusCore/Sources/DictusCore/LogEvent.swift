@@ -303,14 +303,19 @@ public enum LogEvent: Sendable {
     /// engine's own name for what it threw, or "-".
     case smartModeRefused(mode: String, outcome: String, reason: String)
 
-    /// Issue #79: an armed Smart Mode was cleared without the user asking.
+    /// Issue #79: a dictation that had a mode armed is running Normal instead.
     ///
-    /// Two causes, both meaning the armed mode describes a transformation this build
-    /// on this device cannot perform: the identifier belongs to no mode this build
-    /// ships, or Apple Foundation Models is no longer available. The dictation falls
-    /// back to Normal, which is the honest degradation — leaving it armed would fail
-    /// closed on every dictation from then on.
-    case smartModeDisarmed(mode: String, reason: String)
+    /// The armed mode describes a transformation this build on this device cannot
+    /// perform right now: the identifier belongs to no mode this build ships, or
+    /// Apple Foundation Models is unavailable. Falling back to Normal is the honest
+    /// degradation — failing closed here would leave the user with no text at all
+    /// for a setting they made weeks ago.
+    ///
+    /// `disarmed` says whether the setting itself was cleared. It is only cleared on
+    /// a condition that can never lift on its own (ineligible hardware, an OS too
+    /// old); a model still downloading is recoverable, and a mode disarmed over it
+    /// would be a setting silently lost to a temporary state.
+    case smartModeSkipped(mode: String, reason: String, disarmed: Bool)
 
     // MARK: - Computed Properties
 
@@ -373,7 +378,7 @@ public enum LogEvent: Sendable {
         // subsystem of its own (#315).
         case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
              .polishInsertionRefused, .polishCallSuperseded,
-             .smartModeRefused, .smartModeDisarmed:
+             .smartModeRefused, .smartModeSkipped:
             return .transcription
         }
     }
@@ -466,11 +471,11 @@ public enum LogEvent: Sendable {
             return .info
 
         // Warning: a Smart Mode that refused its own output cost the user a
-        // dictation they asked to be transformed, and one that was disarmed
-        // silently changed what the next dictation will do. Neither is an error --
-        // both are the design holding -- but both are the kind of thing a reader
-        // scanning a capture for "why did nothing happen" needs to see.
-        case .smartModeRefused, .smartModeDisarmed:
+        // dictation they asked to be transformed, and one that was skipped ran a
+        // dictation as Normal that the user had armed. Neither is an error -- both
+        // are the design holding -- but both are the kind of thing a reader scanning
+        // a capture for "why did nothing happen" needs to see.
+        case .smartModeRefused, .smartModeSkipped:
             return .warning
         }
     }
@@ -579,7 +584,7 @@ public enum LogEvent: Sendable {
         case .polishInsertionRefused: return "polishInsertionRefused"
         case .polishCallSuperseded: return "polishCallSuperseded"
         case .smartModeRefused: return "smartModeRefused"
-        case .smartModeDisarmed: return "smartModeDisarmed"
+        case .smartModeSkipped: return "smartModeSkipped"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -825,8 +830,8 @@ public enum LogEvent: Sendable {
             return "inflightMs=\(inflightMs)"
         case .smartModeRefused(let mode, let outcome, let reason):
             return "mode=\(mode) outcome=\(outcome) reason=\(reason)"
-        case .smartModeDisarmed(let mode, let reason):
-            return "mode=\(mode) reason=\(reason)"
+        case .smartModeSkipped(let mode, let reason, let disarmed):
+            return "mode=\(mode) reason=\(reason) disarmed=\(disarmed)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }
