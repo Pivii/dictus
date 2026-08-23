@@ -47,6 +47,52 @@ xcrun simctl bootstatus <udid>
 
 On an already-booted device it prints `Device already booted, nothing to do.`
 
+### The device type decides the identifier, and the Mac decides the RAM
+
+Two things a simulator reports about "the device" behave in opposite ways, and getting them the wrong way round has cost this project two issues.
+
+**The model identifier is yours to choose.** A device type and a runtime are different things: `iPhone 11` is a stock *device type* that pairs with whatever runtime is installed, so an A13 device exists here even though no iOS 13 runtime does.
+
+```bash
+xcrun simctl create "Dictus A13 iPhone 11" \
+  com.apple.CoreSimulator.SimDeviceType.iPhone-11 \
+  com.apple.CoreSimulator.SimRuntime.iOS-26-5
+```
+
+The device type has to exist, and this one does:
+
+```bash
+xcrun simctl list devicetypes | grep -i "iPhone-11"
+```
+
+```
+iPhone 11 Pro (com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro)
+iPhone 11 Pro Max (com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max)
+iPhone 11 (com.apple.CoreSimulator.SimDeviceType.iPhone-11)
+```
+
+Once created and booted, the device names itself:
+
+```bash
+xcrun simctl getenv <udid> SIMULATOR_MODEL_IDENTIFIER
+```
+
+```
+iPhone12,1
+```
+
+The runtime sets that variable itself, which is why **overriding it does not work**: `SIMCTL_CHILD_SIMULATOR_MODEL_IDENTIFIER=iPhone12,1` loses to the value the runtime writes. Issue #362 concluded from that loss that the device tier was unreachable. It was reachable, one command away, by creating the device instead of arguing with it. Delete it when you are done — see section 7.
+
+**The RAM is the Mac's and cannot be moved.** `DeviceCapabilities.readPhysicalMemoryGB()` reads `ProcessInfo.processInfo.physicalMemory`, which inside a simulator returns the host's memory. On this machine every simulator claims 24 GB, whatever it says it is:
+
+```
+[…] INFO [lifecycle] <APP> deviceCapabilitySnapshot model=iPhone12,1 ramGB=24 availableMB=0 thermal=nominal
+```
+
+That snapshot is a simulated iPhone 11 — 4 GB in the real world — reporting 24.
+
+**So split any device-tier question in two before you answer it.** Anything keyed on the identifier (`isA12OrA13iPhone`, the incompatibility branches, per-model gating) renders here and an agent can settle it. Anything keyed on memory — the `>= 6 GB` Turbo gate, the `insufficientMemory` reason — never fires, and no amount of driving the UI will make it. Section 8 has the rest of that list.
+
 ## 2. Build for that simulator
 
 A fresh worktree resolves its packages from zero, so all three steps are needed the first time:
@@ -394,6 +440,8 @@ defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 ```
 
 — but on Xcode 26.4.1 / iOS 26.5 it is not what stands between an agent and a software keyboard. Check section 5's attachment first.
+
+**A device tier keyed on memory is unreachable, however the device is labelled.** Section 1 has the measurement: `physicalMemory` returns the Mac's RAM, so the `>= 6 GB` Turbo gate and the `insufficientMemory` incompatibility reason never fire here. The identifier half of the same feature does render, on a device you create.
 
 **The keyboard renders and still does not give you the numbers.** Memory and timing are device figures. `memMB=50` was observed for the extension in this run; simulator memory is not device memory and no verdict belongs in that number. Dead zones, the declared height constraint and the keyboard-to-app handoff still need a physical iPhone.
 
