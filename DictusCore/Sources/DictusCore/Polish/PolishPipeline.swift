@@ -192,15 +192,46 @@ public enum PolishPipeline {
     /// French sent to an American client, or two minutes of rambling pasted where
     /// three bullets were expected. So the answer is `nil`, and the caller inserts
     /// nothing.
+    ///
+    /// ### With one exception, and only one: a context overflow on a mode that says
+    /// it may degrade
+    ///
+    /// `.exceededContextBudget` is decided *before* the engine is called, so no
+    /// transformation was attempted and the wrong-transformation risk the rule
+    /// guards against is absent by construction. Whether that licenses the floor is
+    /// the mode's own answer — see `SmartModeOverflowBehaviour`, which explains why
+    /// Notes says yes and Translate says no.
+    ///
+    /// **A caller cannot tell the two apart from this return value alone.** A
+    /// degraded output is a `String` exactly like a success, so `PolishService`
+    /// re-derives the distinction and packages it as `PolishOutcome.degraded`; the
+    /// user is told either way, because refusing in silence and degrading in silence
+    /// are the same failure.
     public static func resolvedOutput(_ result: Result,
                                       preprocessed: String,
                                       job: PolishJob) -> String? {
         if result.outcome == .success, let output = result.engineOutput {
             return output
         }
-        guard !job.task.isSmart else { return nil }
+        if let mode = job.task.smartMode, !degradesToFloor(mode, outcome: result.outcome) {
+            return nil
+        }
         guard let typography = job.typographyLanguage else { return preprocessed }
         return PolishPostpass.decodeFromEngine(preprocessed, language: typography)
+    }
+
+    /// Whether an armed mode accepts the deterministic floor for this outcome.
+    ///
+    /// The outcome test is as narrow as the argument that justifies it: only
+    /// `.exceededContextBudget` never reached the engine. `.engineFailed`,
+    /// `.rejectedGuardrail`, `.cancelled` and `.engineUnavailable` all stay
+    /// fail-closed for every mode, whatever it declares — the first three because a
+    /// transformation was attempted and may have half-happened, the last because it
+    /// describes a process that will not run the model again for its lifetime, which
+    /// is a different conversation to have with the user (#315).
+    public static func degradesToFloor(_ mode: SmartMode,
+                                       outcome: PolishMetrics.Outcome) -> Bool {
+        outcome == .exceededContextBudget && mode.overflowBehaviour == .insertRawText
     }
 
     /// Deterministic pre-pass for the auto path (#239 device-test fix).

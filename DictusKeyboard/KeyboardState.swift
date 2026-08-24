@@ -660,6 +660,13 @@ class KeyboardState: ObservableObject {
         // must not be skipped by an unrelated exit.
         refreshPolishAvailability()
 
+        // Same placement argument as the line above (#79): the armed mode is a sticky
+        // setting the app can change — block C's mode list unpins and repins — and it
+        // has nothing to do with whether this dictation was abandoned, so it must not
+        // be skipped by the reconcile guard's early return. The call also drops a fan
+        // a dictation has taken the area from; see `KeyboardSmartModeState.refresh`.
+        MainActor.assumeIsolated { KeyboardSmartModeState.shared.refresh(status: dictationStatus) }
+
         // Before adopting what the App Group says, check that somebody is still
         // writing it (#261). This is the read a rebuilt extension performs from its
         // own `init`, so an app terminated mid-dictation is caught here -- at the

@@ -267,23 +267,44 @@ public final class PolishService {
         var smartTask: PolishTask? { smartMode.map(PolishTask.smart) }
     }
 
-    /// A Smart Mode produced nothing insertable. Records the line and packages the
-    /// reason for whichever surface will say so (#79).
+    /// Turn what the pipeline resolved into what the caller inserts, naming a Smart
+    /// Mode's refusal when there was one (#79).
     ///
-    /// Both polish paths reach this by the same route — `resolvedOutput` answering
-    /// nil — so the log line and the failure value cannot drift apart.
-    private func smartModeFailed(_ mode: SmartMode,
-                                 bundle: PolishPipeline.Result) -> PolishOutcome {
+    /// Both polish paths end here, so the log line, the failure value and the
+    /// decision to insert cannot drift apart between them.
+    ///
+    /// Three ways out, and the third is the one that is easy to lose:
+    ///
+    /// - free polish, or a mode that succeeded → the text, no failure;
+    /// - a mode refused and nothing may be inserted → no text, a failure;
+    /// - a mode refused and it declared the untransformed floor better than nothing
+    ///   → **both**. `resolvedOutput` returns a `String` here that is indistinguishable
+    ///   from a success, so the distinction is re-derived from the same predicate
+    ///   that produced it rather than inferred from the string.
+    private func finalOutcome(returned: String?,
+                              bundle: PolishPipeline.Result,
+                              job: PolishJob,
+                              raw: String) -> PolishOutcome {
+        // `resolvedOutput` only withholds text for a Smart Mode, and only degrades
+        // for one, so anything else is a plain success or a free-polish floor.
+        guard let mode = job.task.smartMode, bundle.outcome != .success else {
+            return PolishOutcome(text: returned ?? raw)
+        }
         let reason = bundle.failureReason?.slug ?? "-"
+        let degraded = PolishPipeline.degradesToFloor(mode, outcome: bundle.outcome)
         PersistentLog.log(.smartModeRefused(
-            mode: mode.id, outcome: bundle.outcome.rawValue, reason: reason
+            mode: mode.id,
+            outcome: bundle.outcome.rawValue,
+            reason: degraded ? "\(reason)|degraded" : reason
         ))
-        return PolishOutcome(failure: SmartModeFailure(
+        let failure = SmartModeFailure(
             modeIdentifier: mode.id,
             modeDisplayName: mode.displayName,
             outcome: bundle.outcome.rawValue,
             reason: reason
-        ))
+        )
+        guard degraded, let returned else { return PolishOutcome(failure: failure) }
+        return PolishOutcome(degradedTo: returned, failure: failure)
     }
 
     // MARK: - Per-language path
@@ -463,14 +484,7 @@ public final class PolishService {
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
 
-        guard let returned else {
-            // `resolvedOutput` only answers nil for a Smart Mode, so the mode is
-            // present by construction; `.natural` would be a lie, so guard rather
-            // than default.
-            guard let smartMode = job.task.smartMode else { return PolishOutcome(text: raw) }
-            return smartModeFailed(smartMode, bundle: bundle)
-        }
-        return PolishOutcome(text: returned)
+        return finalOutcome(returned: returned, bundle: bundle, job: job, raw: raw)
     }
 
     // MARK: - Auto-detect path (#239)
@@ -586,11 +600,7 @@ public final class PolishService {
             failureReason: bundle.failureReason
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
-        guard let returned else {
-            guard let smartMode = job.task.smartMode else { return PolishOutcome(text: raw) }
-            return smartModeFailed(smartMode, bundle: bundle)
-        }
-        return PolishOutcome(text: returned)
+        return finalOutcome(returned: returned, bundle: bundle, job: job, raw: raw)
     }
 
     /// Metrics for one auto-path event. Defaults cover the skip exits (no

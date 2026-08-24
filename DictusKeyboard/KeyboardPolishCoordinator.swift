@@ -186,6 +186,31 @@ final class KeyboardPolishCoordinator {
             return
         }
         PendingDictationChannel.clear()
+
+        // The third insertion site, and the one that used to skip the rule the other
+        // two enforce (#391). A pending record carrying an armed mode is a dictation
+        // whose transformation never ran: typing its raw here would insert French
+        // under "→ EN", which is exactly what `PolishTask.isSmart` forbids — and this
+        // is the path nobody watches, because it has never fired in any device
+        // session. The other two sites are `run(_:)` above and `finish(text:insert:)`.
+        if let mode = pending.smartMode {
+            PersistentLog.log(.smartModeRefused(
+                mode: mode.id, outcome: "recovered", reason: "no-generation"
+            ))
+            PersistentLog.log(.polishHandoff(step: "recovered", outcome: "smart-refused", chars: pending.raw.count))
+            finish(text: nil, insert: false)
+            announce(
+                SmartModeFailure(
+                    modeIdentifier: mode.id,
+                    modeDisplayName: mode.displayName,
+                    outcome: "recovered",
+                    reason: "no-generation"
+                ),
+                degraded: false
+            )
+            return
+        }
+
         PersistentLog.log(.polishHandoff(step: "recovered", outcome: "raw", chars: pending.raw.count))
         finish(text: DictationTail.apply(pending.raw, policy: pending.policy), insert: true)
     }
@@ -249,16 +274,81 @@ final class KeyboardPolishCoordinator {
         // inserting it would be the worst outcome available: the user asked for
         // bullets, or for English, and would silently get neither.
         //
-        // What is deliberately NOT here is the message that says so. The toolbar's
-        // centre slot is where #79 puts it, and that slot is block B's work — until
-        // it lands, nothing can arm a mode, so this branch is unreachable in a
-        // shipped build rather than silently swallowing a dictation.
-        guard let polished = outcome.text else {
+        // The mode may also come back with the untransformed floor *and* a failure —
+        // a context overflow on a mode that declared the floor better than nothing,
+        // see `SmartModeOverflowBehaviour`. Then text is inserted and the message
+        // still fires: degrading in silence and refusing in silence are the same
+        // defect, which is why the message is keyed on the failure and not on
+        // whether anything was typed.
+        let failure = outcome.smartModeFailure
+        let degraded = outcome.isDegraded
+
+        if let polished = outcome.text {
+            finish(text: DictationTail.apply(polished, policy: pending.policy), insert: true)
+        } else {
             finish(text: nil, insert: false)
-            return
         }
 
-        finish(text: DictationTail.apply(polished, policy: pending.policy), insert: true)
+        // After `finish`, never before: a successful insertion clears the toolbar's
+        // message on its way to idle (`KeyboardState.insertDictation`), so a message
+        // raised first would be wiped by the very insertion it is explaining.
+        if let failure {
+            announce(failure, degraded: degraded)
+        }
+    }
+
+    /// Tell the user their armed mode did not run (#79).
+    ///
+    /// Three sentences, because three different things happened and only one of them
+    /// is "try again":
+    ///
+    /// - **Too long, text inserted** — the mode declared the floor acceptable. The
+    ///   text is in the field; what is missing is the transformation.
+    /// - **Too long, nothing inserted** — the mode could not degrade. This one has to
+    ///   carry the remedy, because it is the only case where the user has lost
+    ///   something and shortening the dictation genuinely fixes it.
+    /// - **Anything else** — engine throw, guardrail rejection, cancellation. The
+    ///   user can do nothing specific about any of them, so the copy does not pretend
+    ///   otherwise; it matches the in-app wording (`DictationHandoff`) word for word,
+    ///   so the same failure reads the same on both surfaces.
+    ///
+    /// The mode name is interpolated unlocalised on purpose: it is the catalogue's
+    /// own label — "Notes", "→ EN" — and naming it in one language everywhere is what
+    /// makes it recognisable as the thing the user armed.
+    ///
+    /// WHY the name is a colon-label rather than the sentence's subject: the
+    /// translation modes are called "→ EN", so "→ EN could not transform this text"
+    /// does not read. `DictationHandoff` flagged that as a known rough edge for this
+    /// block; the colon form is the fix, and the app's copy moved to it too so the
+    /// same failure reads identically on both surfaces. Renaming the modes was the
+    /// alternative and was rejected — `SmartModeCatalogue` picked a language-neutral
+    /// label on purpose, and the fan is where that label mostly lives.
+    private func announce(_ failure: SmartModeFailure, degraded: Bool) {
+        let name = failure.modeDisplayName
+        let overflowed = failure.outcome == PolishMetrics.Outcome.exceededContextBudget.rawValue
+        let message: String
+        switch (overflowed, degraded) {
+        case (true, true):
+            message = String(
+                localized: "\(name): too long, text inserted as dictated.",
+                comment: "Shown when a Smart Mode hit the context ceiling and the untransformed text was inserted instead. The placeholder is the mode's name."
+            )
+        case (true, false):
+            message = String(
+                localized: "\(name): too long. Try a shorter dictation.",
+                comment: "Shown when a Smart Mode hit the context ceiling and could not fall back, so nothing was inserted. The placeholder is the mode's name."
+            )
+        default:
+            message = String(
+                localized: "\(name): could not be applied. Try again.",
+                comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
+            )
+        }
+        KeyboardState.shared.presentStatusMessage(
+            message,
+            reason: "smartModeFailed-\(failure.outcome)",
+            timeoutReason: "smartModeFailed-timeout"
+        )
     }
 
     // MARK: - The backstop this move would otherwise have removed
