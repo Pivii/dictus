@@ -59,24 +59,8 @@ struct SmartModeFanView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // A surface of its own, because the fan is the only one in this keyboard
-        // without one (device feedback, 2026-08-24).
-        //
-        // The keyboard container is translucent, and the *keys* are what normally
-        // give the eye something opaque to lock onto. The fan replaces them with
-        // text on nothing, so the host app's own sentences read straight through the
-        // rows — visible in both device screenshots. Every other Dictus surface over
-        // a host carries a backing: the mic pill, the hamburger, the panel, the
-        // recording overlay.
-        //
-        // `dictusGlass` rather than an opacity or a fill because it **blurs**, which
-        // is what actually destroys sharp host text — dimming only makes it grey.
-        // It resolves to Liquid Glass on iOS 26 and `.regularMaterial` below, and
-        // adapts to the light and dark keyboard for free.
-        .dictusGlass(in: Rectangle())
-        // Below the backdrop, so neither the rows nor the glass can take a touch.
-        // See the type's doc comment: this is what keeps the drag on the mic's
-        // recogniser instead of letting the fan swallow it.
+        // See the type's doc comment. This is what keeps the drag on the mic's
+        // recogniser instead of letting a row swallow it.
         .allowsHitTesting(false)
     }
 
