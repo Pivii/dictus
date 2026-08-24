@@ -47,10 +47,14 @@ guard let command = args.first, ["show", "eval", "ab", "prompt"].contains(comman
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
-      show   <fixtures.json> [--runs N] [--instructions <prompt.txt>]
-      eval   <fixtures.json> [--instructions <prompt.txt>]
+      show   <fixtures.json> [--runs N] [--instructions <prompt.txt>] [--framing <framing.txt>]
+      eval   <fixtures.json> [--instructions <prompt.txt>] [--framing <framing.txt>]
       ab     <fixtures.json> --a <promptA.txt> --b <promptB.txt>
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>]
+
+    --framing (#79) overrides the USER turn, which is otherwise hardcoded as
+    "Polish this text…". `{{INPUT}}` marks where the text goes. Requires
+    --instructions.
 
     show/eval also accept (#268 spike, throwaway):
       --engine apple-fm | local   (default apple-fm)
@@ -72,6 +76,10 @@ let localBaseURL = optionValue("--base-url", in: args) ?? "http://127.0.0.1:1143
 // #268 D2, throwaway. `prompt` only.
 let promptFixtureID = optionValue("--id", in: args)
 let promptOutputDir = optionValue("--out", in: args)
+// #79. Overrides the USER turn the way `--instructions` overrides the system
+// prompt. See `FramedAppleFMPolishEngine` for why an Email prompt cannot be
+// measured underneath a user turn that says "Polish this text".
+let framingFile = optionValue("--framing", in: args)
 
 // MARK: - Load fixtures
 
@@ -120,8 +128,37 @@ print("error: FoundationModels not importable on this toolchain.")
 exit(1)
 #endif
 
+func loadFraming(_ path: String?) -> String? {
+    guard let path else { return nil }
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+        print("error: cannot read framing file \(path)")
+        exit(1)
+    }
+    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 @available(macOS 26.0, *)
 func makeEngine(_ override: (@Sendable (PolishTask, SupportedLanguage) -> String)?) -> any PolishEngineProtocol {
+    // #79. A user-turn override needs an engine whose user turn is not
+    // hardcoded, so it takes the resolved instructions eagerly rather than as
+    // a per-call closure. That is only well-defined when the caller also
+    // supplied the system prompt: refusing beats silently measuring the
+    // shipping prompt under an Email framing.
+    if let framing = loadFraming(framingFile) {
+        guard engineKind == "apple-fm" else {
+            print("error: --framing is only supported with --engine apple-fm")
+            exit(2)
+        }
+        guard let override else {
+            print("error: --framing requires --instructions (the framing overrides the "
+                  + "user turn; the system prompt must be stated too)")
+            exit(2)
+        }
+        return FramedAppleFMPolishEngine(
+            instructions: override(.natural, .french),
+            framing: framing
+        )
+    }
     // #268 spike, throwaway. `--instructions` has no meaning for the local engine:
     // it is there to A/B prompts on one model, and the spike A/Bs models on one
     // prompt. Refusing the combination beats silently ignoring the flag.

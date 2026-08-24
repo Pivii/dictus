@@ -1,0 +1,6 @@
+Rewrite this dictation as the body of an email. Output only the rewritten body, nothing else.
+
+Dictation:
+{{INPUT}}
+
+Email body:
