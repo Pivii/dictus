@@ -60,7 +60,11 @@ public enum SmartModeCatalogue {
             minimumLengthRatio: 0.1,
             maximumLengthRatio: 2.0,
             outputLanguage: .sameAsInput
-        )
+        ),
+        // The mode built for a long rambling dictation is the one that walks users
+        // into the context ceiling, so a refusal there costs the whole text. The
+        // floor is the same words in the same language, merely not restructured.
+        overflowBehaviour: .insertRawText
     )
 
     /// Translate → `target`.
@@ -88,7 +92,11 @@ public enum SmartModeCatalogue {
                 minimumLengthRatio: 0.4,
                 maximumLengthRatio: 3.0,
                 outputLanguage: .fixed(target)
-            )
+            ),
+            // Translation cannot degrade: the floor is the input language, which is
+            // the one thing this mode exists to change. Inserting it would be the
+            // failure #79 names as the worst available.
+            overflowBehaviour: .insertNothing
         )
     }
 
@@ -135,15 +143,31 @@ public enum SmartModeCatalogue {
 
     /// How many modes may be pinned to the keyboard's long-press fan.
     ///
-    /// **#79 is not self-consistent on this number and it is block B/C's to settle.**
-    /// Its acceptance criterion says "up to four modes are pinnable"; its geometry
-    /// paragraph measures the space below the toolbar at four *entries* — from the
-    /// real `KeyMetrics` values, 205 pt on a standard iPhone and 187 pt on an
-    /// iPhone SE, at roughly 46 pt a row — and says the fan holds "Normal plus the
-    /// modes the user pinned", which makes four entries three modes. The criterion
-    /// is the contract, so this follows it; whoever builds the fan owns the
-    /// discrepancy.
-    public static let maximumPinnedModes = 4
+    /// **Three, settled in block B on 2026-08-24.** #79 contradicted itself here —
+    /// its acceptance criterion said "up to four modes are pinnable", its geometry
+    /// paragraph measured four *entries* including Normal, which is three modes —
+    /// and block A followed the criterion pending a real fan on a real screen.
+    ///
+    /// The geometry paragraph won because it is a measurement and the criterion was
+    /// a guess. From the real `KeyMetrics` values, per fan row:
+    ///
+    /// | Entries | standard iPhone (205 pt) | iPhone SE (187 pt) |
+    /// |---|---|---|
+    /// | 4 (Normal + 3 modes) | 51.2 pt | 46.7 pt |
+    /// | 5 (Normal + 4 modes) | 41.0 pt | 37.4 pt |
+    ///
+    /// Five entries puts the SE row at 37.4 pt, under Apple's 44 pt minimum — and
+    /// this target is not a tap on a visible button but a blind release at the end
+    /// of a downward drag, under the thumb that is covering the row. Four clears
+    /// the minimum on the smallest supported screen.
+    ///
+    /// Normal has to be one of the four: releasing back on the mic aborts the
+    /// gesture, so it is not the way to clear a sticky mode. See
+    /// `SmartModeFanLayout`, which owns the arithmetic above.
+    ///
+    /// A device-dependent cap was considered and rejected: it would make one
+    /// setting in the app mean two different things on two phones.
+    public static let maximumPinnedModes = 3
 
     /// What a fresh install has pinned before the user has ever opened the mode list.
     ///

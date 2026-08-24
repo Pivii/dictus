@@ -32,6 +32,47 @@ public struct SmartModePrompt: Equatable, Sendable, Codable {
     }
 }
 
+/// What the user receives when a mode's transformation is refused **before the
+/// engine is ever called** — today only a context overflow (#270).
+///
+/// ### Why this is not simply the fail-closed rule
+///
+/// `PolishTask.isSmart` states the rule the rest of the pipeline follows: a Smart
+/// Mode must never silently insert untransformed text, so a refusal inserts nothing.
+/// That rule exists to stop a *wrong transformation* reaching the document.
+/// `.exceededContextBudget` is the one non-success where no transformation was
+/// attempted, so the risk it guards against is absent by construction — and the
+/// cost of applying it anyway is not symmetrical:
+///
+/// - **Notes** overflows at roughly 4,500-4,900 characters, and Notes is precisely
+///   the mode built for a long rambling dictation. Refusing costs the user the whole
+///   text; inserting the deterministic floor costs them the bullets. Same language,
+///   same content, just not restructured.
+/// - **Translate → X** cannot degrade at all. The floor *is* the wrong language, so
+///   inserting it is the exact scenario #79 names as the worst available: French
+///   sent to an American client, with a transient toolbar line as the only warning.
+///
+/// Both cases show a message; neither is silent. That is what made this block B's
+/// decision rather than something block A could have inherited (#79, 2026-08-24).
+///
+/// ### Why a field rather than a derivation
+///
+/// `PolishAcceptanceContract.outputLanguage` already discriminates the two cases
+/// today — `.fixed(_)` cannot degrade, `.sameAsInput` can — and deriving it would
+/// work for this catalogue. It is a field so that a custom mode (#269) has to answer
+/// the question rather than inherit an answer from a property chosen for an
+/// unrelated reason. A mode that condenses *and* translates would break the
+/// derivation silently; it cannot break an answer someone had to write down.
+public enum SmartModeOverflowBehaviour: String, Equatable, Sendable, Codable {
+
+    /// Insert the deterministic floor — the raw text with verbal punctuation
+    /// applied — and say the mode did not run.
+    case insertRawText
+
+    /// Insert nothing and say why. The floor would be wrong, not merely plainer.
+    case insertNothing
+}
+
 /// One Smart Mode.
 ///
 /// ### Data, not enum cases
@@ -85,18 +126,53 @@ public struct SmartMode: Equatable, Sendable, Codable, Identifiable {
     /// nothing reads it there.
     public var isPinned: Bool
 
+    /// What the user gets when this mode's transformation is refused before the
+    /// engine runs. See `SmartModeOverflowBehaviour` for why it is a field.
+    public let overflowBehaviour: SmartModeOverflowBehaviour
+
     public init(id: String,
                 displayName: String,
                 icon: String,
                 prompt: SmartModePrompt,
                 contract: PolishAcceptanceContract,
+                overflowBehaviour: SmartModeOverflowBehaviour,
                 isPinned: Bool = false) {
         self.id = id
         self.displayName = displayName
         self.icon = icon
         self.prompt = prompt
         self.contract = contract
+        self.overflowBehaviour = overflowBehaviour
         self.isPinned = isPinned
+    }
+
+    // MARK: - Decoding
+
+    /// Hand-written so `overflowBehaviour` can default rather than fail the whole
+    /// record.
+    ///
+    /// A `SmartMode` is written to the App Group inside the per-dictation snapshot,
+    /// and an app update can land between the write and the read — DictusApp
+    /// snapshots the mode, the user updates, the new keyboard extension decodes it.
+    /// A synthesised decoder would throw on the missing key, and
+    /// `KeyboardPolishCoordinator.storedSmartMode()` turns a throw into "no mode
+    /// armed", which for a translation means inserting the untranslated text. The
+    /// default is `.insertNothing` because that is the safe half of the choice: it
+    /// can cost a Notes dictation its text once, across one upgrade, where the other
+    /// default could send French to an American client.
+    ///
+    /// `encode(to:)` stays synthesised — it always writes every key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.displayName = try container.decode(String.self, forKey: .displayName)
+        self.icon = try container.decode(String.self, forKey: .icon)
+        self.prompt = try container.decode(SmartModePrompt.self, forKey: .prompt)
+        self.contract = try container.decode(PolishAcceptanceContract.self, forKey: .contract)
+        self.isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        self.overflowBehaviour = try container.decodeIfPresent(
+            SmartModeOverflowBehaviour.self, forKey: .overflowBehaviour
+        ) ?? .insertNothing
     }
 
     /// The same record with its pinned flag set. Used by the catalogue when it

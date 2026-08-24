@@ -21,11 +21,28 @@ import SwiftUI
 public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
+
+    /// The button's resting colour, and the colour of its idle glow.
+    ///
+    /// A parameter since #79: the keyboard's pill signals the armed Smart Mode by
+    /// turning `.dictusSmartMode` purple, which costs zero width in the most
+    /// contested 32 pt of the UI and stays visible while the user is typing.
+    ///
+    /// It only ever replaces the resting colour. Recording stays red and the two
+    /// post-recording stages stay in their washed accent, because those describe what
+    /// the phone is doing right now and outrank a setting — a red mic must mean
+    /// recording on every screen of this product.
+    public let tint: Color
+
     public let onTap: () -> Void
 
-    public init(status: DictationStatus, isPill: Bool = false, onTap: @escaping () -> Void) {
+    public init(status: DictationStatus,
+                isPill: Bool = false,
+                tint: Color = .dictusAccent,
+                onTap: @escaping () -> Void) {
         self.status = status
         self.isPill = isPill
+        self.tint = tint
         self.onTap = onTap
     }
 
@@ -123,7 +140,7 @@ public struct AnimatedMicButton: View {
                 .dictusGlass(in: isPill ? AnyShape(Capsule()) : AnyShape(Circle()))
                 .overlay(
                     mainShape()
-                        .stroke(Color.dictusAccent.opacity(glowOpacity), lineWidth: 2)
+                        .stroke(tint.opacity(glowOpacity), lineWidth: 2)
                         .frame(width: ringWidth, height: ringHeight)
                 )
 
@@ -186,7 +203,7 @@ public struct AnimatedMicButton: View {
         case .transcribing, .processing:
             return .dictusAccentHighlight.opacity(0.5)
         default:
-            return .dictusAccent
+            return tint
         }
     }
 
