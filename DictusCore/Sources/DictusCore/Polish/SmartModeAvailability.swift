@@ -82,8 +82,15 @@ public enum SmartModeUnavailableReason: Equatable, Sendable {
     /// rather than promise around.
     public var isRecoverable: Bool {
         switch self {
-        case .appleIntelligenceNotEnabled, .modelNotReady, .engineRefusing: return true
-        case .deviceNotEligible, .osTooOld, .sdkMissing, .other: return false
+        // `.other` carries every reason this build does not recognise, including
+        // `@unknown default` — a state Apple adds after we ship. Treating an
+        // unrecognised reason as definitive would let a future transient state (a
+        // model re-download, a new "busy") clear the user's armed mode for good on
+        // the first dictation, with nothing to restore it when the condition lifts.
+        // The unknown case is precisely the one where permanence cannot be known,
+        // so it is recoverable: log it, run Normal, keep the setting.
+        case .appleIntelligenceNotEnabled, .modelNotReady, .engineRefusing, .other: return true
+        case .deviceNotEligible, .osTooOld, .sdkMissing: return false
         }
     }
 }

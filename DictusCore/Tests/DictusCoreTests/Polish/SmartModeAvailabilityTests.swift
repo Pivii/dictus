@@ -59,7 +59,16 @@ final class SmartModeAvailabilityTests: XCTestCase {
         XCTAssertFalse(SmartModeUnavailableReason.deviceNotEligible.isRecoverable)
         XCTAssertFalse(SmartModeUnavailableReason.osTooOld.isRecoverable)
         XCTAssertFalse(SmartModeUnavailableReason.sdkMissing.isRecoverable)
-        XCTAssertFalse(SmartModeUnavailableReason.other("x").isRecoverable)
+    }
+
+    /// `.other` is where every reason this build does not recognise lands, including
+    /// `@unknown default` — a state Apple adds after we ship. It used to be
+    /// classified definitive, which meant `resolveArmedMode()` would disarm on it:
+    /// one transient future state and the user's setting is gone for good, with
+    /// nothing to restore it when the condition lifts. Found reviewing PR #389.
+    func testAnUnrecognisedReasonNeverClearsTheUsersArmedMode() {
+        XCTAssertTrue(SmartModeUnavailableReason.other("someFutureAppleState").isRecoverable)
+        XCTAssertTrue(SmartModeUnavailableReason.other("unknown").isRecoverable)
     }
 
     func testOtherCarriesApplesOwnWordingIntoTheSlug() {
