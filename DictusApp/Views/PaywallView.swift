@@ -215,14 +215,58 @@ struct PaywallView: View {
                     .font(.dictusCaption)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+
+                if !feature.isSupportedByThisDevice {
+                    unsupportedNotice
+                }
             }
 
             Spacer()
         }
         .padding(12)
         .dictusGlass()
+        // Dimmed, not hidden, and not disabled: the card is still a truthful part of
+        // what Pro contains, and the sentence under it is the point.
+        .opacity(feature.isSupportedByThisDevice ? 1 : 0.7)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(feature.displayName): \(feature.paywallDescription)")
+        .accessibilityLabel(accessibilityLabel(for: feature))
+    }
+
+    /// The line that makes a paywall honest on a device that cannot run the feature
+    /// (#79).
+    ///
+    /// **This is a review risk before it is a UX one.** Apple Foundation Models needs
+    /// an iPhone 15 Pro or later on iOS 26; Dictus supports iOS 17 up, so most of the
+    /// installed base is in this state permanently, and #268 closed the only
+    /// alternative backend `wontfix`. A reviewer on a device without Apple
+    /// Intelligence, facing a paywall that advertises a feature their hardware cannot
+    /// deliver, is a rejection for misleading metadata — and the App Review device on
+    /// #207 was an iPad Air.
+    ///
+    /// WHY the card is marked rather than removed, which #79 left open: a paywall
+    /// that silently contains different things on different phones is one nobody can
+    /// screenshot for review or reason about in a support thread, and a user who
+    /// upgrades their iPhone would never learn the feature had been there all along.
+    /// Marking says the same true thing to everyone. Pro still sells on History and
+    /// Vocabulary, which is exactly what #79 decided.
+    private var unsupportedNotice: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+
+            Text("Requires Apple Intelligence (iPhone 15 Pro or later, iOS 26)")
+                .font(.dictusCaption)
+                .lineLimit(2)
+        }
+        .foregroundColor(.secondary)
+        .padding(.top, 2)
+    }
+
+    private func accessibilityLabel(for feature: ProFeature) -> String {
+        guard let notice = feature.unsupportedNotice else {
+            return "\(feature.displayName): \(feature.paywallDescription)"
+        }
+        return "\(feature.displayName): \(feature.paywallDescription). \(notice)"
     }
 
     /// Icon color per feature (UI-SPEC: Smart Mode = purple, others = accent highlight).

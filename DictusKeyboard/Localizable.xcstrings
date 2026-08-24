@@ -259,6 +259,17 @@
         }
       }
     },
+    "Smart Modes are part of Dictus Pro." : {
+      "comment" : "Shown in the Smart Mode fan when the device can run Smart Modes but the user has no Pro subscription.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes font partie de Dictus Pro."
+          }
+        }
+      }
+    },
     "Smart Modes are unavailable right now." : {
       "comment" : "Shown in the Smart Mode fan for an unavailability reason this build does not recognise.",
       "localizations" : {

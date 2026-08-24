@@ -57,6 +57,46 @@ public enum ProFeature: String, CaseIterable {
         case .vocabulary: return SharedKeys.vocabularyEnabled
         }
     }
+
+    // MARK: - Device capability (#79)
+
+    /// Whether this feature needs Apple Foundation Models, and therefore an
+    /// iPhone 15 Pro or later on iOS 26.
+    ///
+    /// Dictus supports iOS 17 and up, so **most of the installed base cannot run
+    /// Smart Mode**, and #268 closed the only alternative backend `wontfix`. Refusing
+    /// to sell Pro on those devices would amputate the market to protect one feature;
+    /// selling it while advertising that feature is worse than that — it is a
+    /// misleading-metadata rejection waiting to happen, and the App Review device on
+    /// #207 was an iPad Air.
+    ///
+    /// So Pro is sold to everyone and the paywall tells the truth per device.
+    public var requiresAppleIntelligence: Bool {
+        switch self {
+        case .smartMode: return true
+        case .history, .vocabulary: return false
+        }
+    }
+
+    /// Whether this iPhone could deliver the feature if the user configured it for
+    /// it — hardware and OS only, not whether Apple Intelligence is switched on.
+    ///
+    /// The distinction matters on a paywall: an iPhone 15 Pro with Apple Intelligence
+    /// off is a device where Smart Mode works after one trip to Settings, and saying
+    /// "your iPhone does not support this" to that user would be false.
+    public var isSupportedByThisDevice: Bool {
+        guard requiresAppleIntelligence else { return true }
+        return SmartModeAvailability.deviceIsCapable
+    }
+
+    /// The line a card carries when the device cannot deliver the feature, or nil
+    /// when it can.
+    ///
+    /// English, like every other string on this type, and for the same stated reason:
+    /// DictusCore ships no string catalog. The paywall owns its translation.
+    public var unsupportedNotice: String? {
+        isSupportedByThisDevice ? nil : "Requires Apple Intelligence (iPhone 15 Pro or later, iOS 26)"
+    }
 }
 
 /// Centralized feature gating -- checks Pro status + per-feature toggle.

@@ -82,10 +82,18 @@ public enum SmartModeStore {
     /// be a setting silently lost to a temporary state: the user would come back an
     /// hour later to a keyboard that had quietly forgotten what they armed.
     ///
-    /// Only the device half of availability is consulted. The #315 rate-limit latch
-    /// belongs to whichever process is running generations and clears on its next
-    /// launch; reading a transient, per-process condition from the wrong process to
-    /// decide a sticky setting would be worse than the failure it avoids.
+    /// The device half of availability and the entitlement are consulted; the #315
+    /// rate-limit latch is not. That latch belongs to whichever process is running
+    /// generations and clears on its next launch, and reading a transient,
+    /// per-process condition from the wrong process to decide a sticky setting would
+    /// be worse than the failure it avoids.
+    ///
+    /// The entitlement belongs here for the opposite reason: it is not transient and
+    /// it is not per-process. A subscription that lapsed a month ago is still lapsed
+    /// in every process, and this is the one call every dictation makes — so it is
+    /// where a cancelled user stops getting the paid feature, rather than whenever
+    /// they next open the app (#392). It does not disarm, because `.notSubscribed`
+    /// is recoverable: resubscribe and the mode they chose is still there.
     public static func resolveArmedMode() -> SmartMode? {
         guard let identifier = armedIdentifier else { return nil }
         guard let mode = SmartModeCatalogue.mode(withIdentifier: identifier) else {
@@ -99,7 +107,14 @@ public enum SmartModeStore {
             return nil
         }
         let armability = SmartModeAvailability.armability(
-            engineState: PolishAvailability.state, engineIsRefusing: false
+            engineState: PolishAvailability.state,
+            engineIsRefusing: false,
+            // The enforcement point for a lapsed subscription (#392). Checked on
+            // every dictation, in the process that runs it, so a cancellation stops
+            // applying the mode without waiting for the user to open the app —
+            // otherwise a cancelled subscriber keeps the paid feature until
+            // something else happens to clear the value.
+            isEntitled: SmartModeAvailability.isEntitled
         )
         guard let reason = armability.reason else { return mode }
         let disarms = !reason.isRecoverable
