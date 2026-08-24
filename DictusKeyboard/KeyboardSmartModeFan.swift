@@ -344,6 +344,17 @@ final class KeyboardSmartModeState: ObservableObject {
                 localized: "Apple Intelligence is busy right now. Smart Modes will come back shortly.",
                 comment: "Shown in the Smart Mode fan while the process is rate-limited."
             )
+        case .notSubscribed:
+            // The one reason here with a remedy the user can act on today, and the
+            // only one that is not about the device. It gets a sentence rather than
+            // the control it deserves because the fan handles no touches at all —
+            // #392 settles that the non-subscriber's fan is a single Dictus Pro row
+            // committed by the same drag, and none of that is built. Until it is,
+            // this says the true thing rather than implying the phone is at fault.
+            return String(
+                localized: "Smart Modes are part of Dictus Pro.",
+                comment: "Shown in the Smart Mode fan when the device can run Smart Modes but the user has no Pro subscription."
+            )
         case .other:
             return String(
                 localized: "Smart Modes are unavailable right now.",
