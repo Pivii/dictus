@@ -1,6 +1,127 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Add %@ to the keyboard" : {
+      "comment" : "Accessibility label for the button that pins a Smart Mode to the keyboard fan.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter %@ au clavier"
+          }
+        }
+      }
+    },
+    "Hold the microphone on the keyboard to open these, then slide onto one. Up to %lld, plus Normal." : {
+      "comment" : "Footer of the pinned Smart Modes section, explaining the long-press gesture and the cap.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintiens le micro du clavier pour les ouvrir, puis glisse sur l’un d’eux. Jusqu’à %lld, plus Normal."
+          }
+        }
+      }
+    },
+    "In the keyboard fan" : {
+      "comment" : "Header of the section listing the Smart Modes pinned to the keyboard.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dans le clavier"
+          }
+        }
+      }
+    },
+    "Keyboard modes" : {
+      "comment" : "Settings row opening the list of Smart Modes pinned to the keyboard.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modes du clavier"
+          }
+        }
+      }
+    },
+    "No modes pinned. The keyboard will offer only Normal." : {
+      "comment" : "Shown when the user has unpinned every Smart Mode.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun mode épinglé. Le clavier n’offrira que Normal."
+          }
+        }
+      }
+    },
+    "Other modes" : {
+      "comment" : "Header of the section listing Smart Modes that are not pinned.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autres modes"
+          }
+        }
+      }
+    },
+    "Remove %@ from the keyboard" : {
+      "comment" : "Accessibility label for the button that unpins a Smart Mode from the keyboard fan.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer %@ du clavier"
+          }
+        }
+      }
+    },
+    "Remove one above to add another." : {
+      "comment" : "Footer shown when the pinned Smart Mode list is full.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retire-en un ci-dessus pour en ajouter un autre."
+          }
+        }
+      }
+    },
+    "Requires Apple Intelligence (iPhone 15 Pro or later, iOS 26)" : {
+      "comment" : "Paywall notice on a feature card the current device cannot run.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite Apple Intelligence (iPhone 15 Pro ou plus récent, iOS 26)"
+          }
+        }
+      }
+    },
+    "Smart Modes" : {
+      "comment" : "Title of the screen listing Smart Modes.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modes"
+          }
+        }
+      }
+    },
+    "Smart Modes need Apple Intelligence, which this iPhone does not support. Your choices are saved for a device that does." : {
+      "comment" : "Shown at the top of the Smart Mode list on hardware that cannot run Apple Foundation Models.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes exigent Apple Intelligence, que cet iPhone ne gère pas. Tes choix sont conservés pour un appareil compatible."
+          }
+        }
+      }
+    },
     "" : {
 
     },

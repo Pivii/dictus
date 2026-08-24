@@ -350,6 +350,27 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    // The fan's contents (#79). Subscribers only, and only when the
+                    // feature toggle above is on: a mode list under a switched-off
+                    // Smart Mode would arrange a fan the keyboard will not open.
+                    //
+                    // Deliberately NOT gated on device capability. The choice is
+                    // durable and the fan is the keyboard's, not this device's — a
+                    // user who arranges it here and changes phone next year should
+                    // find their arrangement waiting. `SmartModeListView` says so on
+                    // the screen instead of hiding the row.
+                    if proStatus.isProActive && FeatureGate.isAvailable(.smartMode) {
+                        NavigationLink {
+                            SmartModeListView()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "list.bullet.indent")
+                                    .foregroundColor(.dictusAccent)
+                                Text("Keyboard modes")
+                            }
+                        }
+                    }
                 }
             }
 
