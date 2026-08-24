@@ -8,13 +8,15 @@ final class ToolbarCentreSlotTests: XCTestCase {
     /// Everything competing at once. Each test below removes the winner and asserts
     /// the next one down, which is what actually tests an ordering — asserting each
     /// case in isolation would pass against any order at all.
-    private func resolve(errorMessage: String? = nil,
+    private func resolve(isChoosingMode: Bool = false,
+                         errorMessage: String? = nil,
                          offersDictationUndo: Bool = false,
                          hasSuggestions: Bool = false,
                          polishUnavailable: Bool = false,
                          armedModeName: String? = nil,
                          offersDiscoveryHint: Bool = false) -> ToolbarCentreSlot {
         ToolbarCentreSlot.resolve(
+            isChoosingMode: isChoosingMode,
             errorMessage: errorMessage,
             offersDictationUndo: offersDictationUndo,
             hasSuggestions: hasSuggestions,
@@ -25,6 +27,19 @@ final class ToolbarCentreSlotTests: XCTestCase {
     }
 
     // MARK: - The ladder, one rung at a time
+
+    /// The fan is open under the user's thumb, so the bar titles it — even over an
+    /// error, which by then describes a dictation that already ended.
+    func testChoosingAModeOutranksEverything() {
+        XCTAssertEqual(
+            resolve(
+                isChoosingMode: true, errorMessage: "boom", offersDictationUndo: true,
+                hasSuggestions: true, polishUnavailable: true,
+                armedModeName: "Notes", offersDiscoveryHint: true
+            ),
+            .choosingMode
+        )
+    }
 
     func testErrorOutranksEverything() {
         XCTAssertEqual(
@@ -91,6 +106,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertTrue(ToolbarCentreSlot.dictationUndo.evictsHamburger)
         XCTAssertTrue(ToolbarCentreSlot.suggestions.evictsHamburger)
 
+        XCTAssertFalse(ToolbarCentreSlot.choosingMode.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.polishUnavailable.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.armedMode("Notes").evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.discoveryHint.evictsHamburger)

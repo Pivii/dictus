@@ -64,6 +64,14 @@ final class KeyboardSmartModeState: ObservableObject {
     /// every layout pass.
     @Published private(set) var armedName: String?
 
+    /// SF Symbol of the armed Smart Mode, or nil for Normal.
+    ///
+    /// Denormalised beside `armedName` and for its reason. It is a second published
+    /// property rather than a struct because the two are read by different views —
+    /// the mic pill wants only the icon, the overlay wants both — and nothing here
+    /// ever needs them to change atomically: they are written in the same statement.
+    @Published private(set) var armedIcon: String?
+
     /// Whether the toolbar's centre slot still teaches the long-press gesture.
     ///
     /// Cached for a harder reason than `armedName`: `SmartModeDiscovery.offersHint`
@@ -117,7 +125,9 @@ final class KeyboardSmartModeState: ObservableObject {
     /// came down — a release then would arm a mode chosen before the dictation the
     /// user has since finished.
     func refresh(status: DictationStatus) {
-        armedName = SmartModeStore.armedMode?.displayName
+        let armed = SmartModeStore.armedMode
+        armedName = armed?.displayName
+        armedIcon = armed?.icon
         offersHint = SmartModeDiscovery.offersHint
         // Through `close()` rather than by clearing the value, so the backstop timer
         // goes with it. `presentAreaMode` refuses while a dictation owns the area,

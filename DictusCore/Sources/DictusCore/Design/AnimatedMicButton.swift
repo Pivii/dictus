@@ -22,27 +22,33 @@ public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
 
-    /// The button's resting colour, and the colour of its idle glow.
+    /// SF Symbol of the armed Smart Mode, drawn as a badge on the button's corner,
+    /// or nil when there is nothing armed.
     ///
-    /// A parameter since #79: the keyboard's pill signals the armed Smart Mode by
-    /// turning `.dictusSmartMode` purple, which costs zero width in the most
-    /// contested 32 pt of the UI and stays visible while the user is typing.
+    /// A parameter since #79, and a badge rather than a colour. The obvious signal
+    /// was to recolour the pill, and it was built twice and refused on sight both
+    /// times: the resting pill is *already* the accent blue, so any second colour on
+    /// it reads as a foreign element pasted onto the product rather than as a state
+    /// of it. The badge changes the button's silhouette instead, which is the axis
+    /// the design had left free — it costs zero width in the most contested 32 pt of
+    /// the UI, it survives every status the button can be in, and it names *which*
+    /// mode instead of merely saying that one exists.
     ///
-    /// It only ever replaces the resting colour. Recording stays red and the two
+    /// It never replaces anything the status owns. Recording stays red and the two
     /// post-recording stages stay in their washed accent, because those describe what
     /// the phone is doing right now and outrank a setting — a red mic must mean
     /// recording on every screen of this product.
-    public let tint: Color
+    public let badge: String?
 
     public let onTap: () -> Void
 
     public init(status: DictationStatus,
                 isPill: Bool = false,
-                tint: Color = .dictusAccent,
+                badge: String? = nil,
                 onTap: @escaping () -> Void) {
         self.status = status
         self.isPill = isPill
-        self.tint = tint
+        self.badge = badge
         self.onTap = onTap
     }
 
@@ -114,6 +120,9 @@ public struct AnimatedMicButton: View {
                     .font(.system(size: isPill ? 14 : 16, weight: .medium))
                     .foregroundColor(.white)
                     .scaleEffect(status == .recording ? pulseScale * 0.9 + 0.1 : 1.0)
+
+                // Armed Smart Mode, last so nothing draws over it
+                armedBadge
             }
         }
         .buttonStyle(GlassPressStyle(pressedScale: 0.88))
@@ -125,6 +134,40 @@ public struct AnimatedMicButton: View {
         .onAppear {
             startIdleAnimation()
         }
+    }
+
+    // MARK: - Armed Smart Mode Badge
+
+    /// The mode's glyph on a white disc, straddling the button's lower-right edge.
+    ///
+    /// White and not a tint of the button: the disc has to survive every fill the
+    /// status can put behind it — accent blue at rest, red while recording, a washed
+    /// highlight while transcribing — and white is the only value that reads on all
+    /// three without becoming a fourth colour in the product.
+    ///
+    /// It straddles the edge rather than sitting inside it so the silhouette itself
+    /// changes. That is the whole point of the badge: the signal has to survive being
+    /// seen out of the corner of the eye, at which distance a glyph *inside* a 56×36
+    /// pill is just texture.
+    @ViewBuilder
+    private var armedBadge: some View {
+        if let badge {
+            Image(systemName: badge)
+                .font(.system(size: badgeDiameter * 0.52, weight: .semibold))
+                .foregroundColor(.dictusAccent)
+                .frame(width: badgeDiameter, height: badgeDiameter)
+                .background(Circle().fill(.white))
+                .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
+                .offset(x: badgeOffset.width, y: badgeOffset.height)
+        }
+    }
+
+    private var badgeDiameter: CGFloat { isPill ? 18 : 24 }
+
+    /// Placed against the corner of the *button*, not of the ring: the ring is a glow
+    /// and has no edge the eye reads as the button's own.
+    private var badgeOffset: CGSize {
+        isPill ? CGSize(width: 24, height: 13) : CGSize(width: 25, height: 25)
     }
 
     // MARK: - Ring Effects
@@ -140,7 +183,7 @@ public struct AnimatedMicButton: View {
                 .dictusGlass(in: isPill ? AnyShape(Capsule()) : AnyShape(Circle()))
                 .overlay(
                     mainShape()
-                        .stroke(tint.opacity(glowOpacity), lineWidth: 2)
+                        .stroke(Color.dictusAccent.opacity(glowOpacity), lineWidth: 2)
                         .frame(width: ringWidth, height: ringHeight)
                 )
 
@@ -203,7 +246,7 @@ public struct AnimatedMicButton: View {
         case .transcribing, .processing:
             return .dictusAccentHighlight.opacity(0.5)
         default:
-            return tint
+            return .dictusAccent
         }
     }
 
@@ -288,7 +331,9 @@ public struct AnimatedMicButton: View {
 #Preview("Pill") {
     VStack(spacing: 40) {
         AnimatedMicButton(status: .idle, isPill: true) {}
-        AnimatedMicButton(status: .recording, isPill: true) {}
+        AnimatedMicButton(status: .idle, isPill: true, badge: "list.bullet") {}
+        AnimatedMicButton(status: .idle, isPill: true, badge: "globe") {}
+        AnimatedMicButton(status: .recording, isPill: true, badge: "globe") {}
         AnimatedMicButton(status: .transcribing, isPill: true) {}
     }
     .padding()

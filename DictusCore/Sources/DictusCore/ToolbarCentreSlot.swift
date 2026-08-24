@@ -16,6 +16,11 @@ import Foundation
 ///
 /// ### The order, and what each place is buying
 ///
+/// 0. **Choosing a mode** — the fan is open under the user's thumb *right now*. It
+///    outranks the error and the undo because both of those describe something that
+///    already finished, and the bar is the only place left to title a menu that has
+///    taken the keys: the fan itself cannot carry a header without pushing its rows
+///    down, and the row positions are the arithmetic the release depends on.
 /// 1. **Error** — the dictation failed. Nothing below it is worth saying, and undo
 ///    in particular is meaningless because nothing was inserted.
 /// 2. **Undo** (#266) — expires in seconds and on the first keystroke, and it is the
@@ -33,6 +38,9 @@ import Foundation
 /// 6. **Discovery hint** (#79) — costs nothing, because it only renders when there
 ///    is nothing else at all to show.
 public enum ToolbarCentreSlot: Equatable, Sendable {
+
+    /// The Smart Mode fan is open: the bar titles it.
+    case choosingMode
 
     /// A dictation or Smart Mode failure, in red.
     case error(String)
@@ -57,24 +65,27 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     case empty
 
     // swiftlint:disable function_parameter_count
-    // Six parameters because there are six competitors, and a table with six rows
-    // needs six inputs. Wrapping them in a struct would move the six names one line
-    // up and add a type whose only job is to be unpacked here; the alternative that
-    // would genuinely reduce the count — resolving some of them in here — is worse,
-    // because it would put UserDefaults and Apple Intelligence reads behind a pure
-    // function the tests drive by hand.
+    // Seven parameters because there are seven competitors, and a table with seven
+    // rows needs seven inputs. Wrapping them in a struct would move the seven names
+    // one line up and add a type whose only job is to be unpacked here; the
+    // alternative that would genuinely reduce the count — resolving some of them in
+    // here — is worse, because it would put UserDefaults and Apple Intelligence reads
+    // behind a pure function the tests drive by hand.
 
     /// What the slot resolves to.
     ///
+    /// - Parameter isChoosingMode: whether the long-press fan is on screen.
     /// - Parameter armedModeName: the armed mode's display name, or nil for Normal.
     /// - Parameter offersDiscoveryHint: whether the hint is still worth showing —
     ///   the caller owns that policy, see `SmartModeDiscovery`.
-    public static func resolve(errorMessage: String?,
+    public static func resolve(isChoosingMode: Bool,
+                               errorMessage: String?,
                                offersDictationUndo: Bool,
                                hasSuggestions: Bool,
                                polishUnavailable: Bool,
                                armedModeName: String?,
                                offersDiscoveryHint: Bool) -> ToolbarCentreSlot {
+        if isChoosingMode { return .choosingMode }
         if let errorMessage { return .error(errorMessage) }
         if offersDictationUndo { return .dictationUndo }
         if hasSuggestions { return .suggestions }
@@ -93,7 +104,7 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     public var evictsHamburger: Bool {
         switch self {
         case .error, .dictationUndo, .suggestions: return true
-        case .polishUnavailable, .armedMode, .discoveryHint, .empty: return false
+        case .choosingMode, .polishUnavailable, .armedMode, .discoveryHint, .empty: return false
         }
     }
 }

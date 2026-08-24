@@ -177,6 +177,7 @@ struct KeyboardRootView: View {
             isProActive: isProActive,
             onProTap: { leavePanel { state.openDictusApp(intent: "pro") } },
             armedSmartModeName: smartModes.armedName,
+            armedSmartModeIcon: smartModes.armedIcon,
             offersSmartModeHint: smartModes.offersHint,
             onSmartModeFanOpen: { smartModes.open() },
             onSmartModeFanDrag: { y in smartModes.track(y: y) },
@@ -259,7 +260,8 @@ struct KeyboardRootView: View {
                     waveformDriver: waveformDriver,
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() },
-                    armedSmartModeName: smartModes.armedName
+                    armedSmartModeName: smartModes.armedName,
+                    armedSmartModeIcon: smartModes.armedIcon
                 )
             } else {
                 // ONE toolbar, outside the switch, for every non-recording mode.

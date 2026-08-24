@@ -38,12 +38,16 @@ struct RecordingOverlay: View {
     /// Display name of the armed Smart Mode, or nil for Normal (#79).
     ///
     /// **This is the indicator that makes a sticky mode safe.** The mode survives
-    /// restarts and can have been armed a week ago; the mic pill's colour says
-    /// *something* is armed but not what, and by the time the overlay is up the mic
-    /// is gone. Naming it here means the user reads "Notes" while speaking, with the
-    /// cancel button one tap away — which is the difference between a setting they
-    /// forgot and a setting that cost them a dictation.
+    /// restarts and can have been armed a week ago; the mic pill's badge names it,
+    /// but by the time the overlay is up the mic is gone and the badge with it.
+    /// Naming it here means the user reads "Notes" while speaking, with the cancel
+    /// button one tap away — which is the difference between a setting they forgot
+    /// and a setting that cost them a dictation.
     var armedSmartModeName: String?
+
+    /// SF Symbol of the armed Smart Mode (#79). The same glyph the mic pill was
+    /// wearing a moment ago: this surface is the caption of that badge.
+    var armedSmartModeIcon: String?
 
     @State private var instanceID = String(UUID().uuidString.prefix(8))
 
@@ -212,17 +216,17 @@ struct RecordingOverlay: View {
     private var armedModeBadge: some View {
         if let armedSmartModeName {
             HStack(spacing: 5) {
-                Image(systemName: "sparkles")
+                Image(systemName: armedSmartModeIcon ?? "sparkles")
                     .font(.system(size: 12, weight: .semibold))
 
                 Text(armedSmartModeName)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundColor(.dictusSmartMode)
+            .foregroundColor(.dictusAccent)
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(Capsule().fill(Color.dictusSmartMode.opacity(0.14)))
+            .background(Capsule().fill(Color.dictusAccent.opacity(0.14)))
             .offset(y: 2)
         }
     }

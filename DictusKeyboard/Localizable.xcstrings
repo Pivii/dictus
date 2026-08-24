@@ -60,6 +60,17 @@
         }
       }
     },
+    "Choose a Smart Mode" : {
+      "comment" : "Toolbar title shown while the long-press Smart Mode fan is open.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisis un mode"
+          }
+        }
+      }
+    },
     "Close menu" : {
       "localizations" : {
         "fr" : {

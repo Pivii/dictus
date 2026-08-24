@@ -72,9 +72,14 @@ struct ToolbarView: View {
     /// Pro entry, panel presentation only. Non-subscribers only.
     var onProTap: (() -> Void)?
 
-    /// Display name of the armed Smart Mode, or nil for Normal (#79). Drives both
-    /// the centre slot's priority-4 occupant and the mic pill's colour.
+    /// Display name of the armed Smart Mode, or nil for Normal (#79). Drives the
+    /// centre slot's priority-4 occupant.
     var armedSmartModeName: String?
+
+    /// SF Symbol of the armed Smart Mode, or nil for Normal (#79). Drives the mic
+    /// pill's badge, and the glyph beside the name in the centre slot — the same
+    /// symbol in both places, which is what ties the two signals together.
+    var armedSmartModeIcon: String?
 
     /// Whether the "long-press for Smart Modes" hint is still worth showing. The
     /// policy is `SmartModeDiscovery`'s; this is only the answer.
@@ -190,6 +195,7 @@ struct ToolbarView: View {
     /// tested over there, because this target has no test bundle.
     private var centreSlot: ToolbarCentreSlot {
         ToolbarCentreSlot.resolve(
+            isChoosingMode: isSmartModeFanOpen,
             errorMessage: statusMessage,
             offersDictationUndo: showsDictationUndo,
             hasSuggestions: !suggestions.isEmpty,
@@ -202,6 +208,8 @@ struct ToolbarView: View {
     @ViewBuilder
     private var centreSlotContent: some View {
         switch centreSlot {
+        case .choosingMode:
+            fanTitle
         case .error(let message):
             errorMessage(message)
         case .dictationUndo:
@@ -260,7 +268,7 @@ struct ToolbarView: View {
         AnimatedMicButton(
             status: dictationStatus,
             isPill: true,
-            tint: armedSmartModeName == nil ? .dictusAccent : .dictusSmartMode,
+            badge: armedSmartModeIcon,
             onTap: {
                 guard !fanGestureDidOpen else {
                     fanGestureDidOpen = false
@@ -348,22 +356,52 @@ struct ToolbarView: View {
         DispatchQueue.main.async { fanGestureDidOpen = false }
     }
 
-    /// The armed mode's name, priority 4 (#79).
+    /// Titles the fan while it is open, priority 0 (#79).
     ///
-    /// Purple and quiet. It is a statement about a setting, not a message: the user
-    /// armed this deliberately, possibly last week, and the reason it is on screen at
-    /// all is that a sticky mode with no visible sign is how someone dictates a
-    /// translation they did not want.
-    private func armedModeLabel(_ name: String) -> some View {
+    /// The header the mock puts above the rows, moved into the bar. Drawn inside the
+    /// fan it would have to push the rows down, and the row positions are exactly
+    /// what `SmartModeFanLayout` maps the finger's y onto — a header there buys a
+    /// line of text and pays for it with the one piece of arithmetic in this block
+    /// that was settled on a device. The bar is empty at that moment anyway, and it
+    /// sits directly above the first row.
+    private var fanTitle: some View {
         HStack(spacing: 5) {
             Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+
+            Text(
+                "Choose a Smart Mode",
+                comment: "Toolbar title shown while the long-press Smart Mode fan is open."
+            )
+            .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+        }
+        .foregroundColor(.dictusAccent)
+        .padding(.leading, 6)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The armed mode's name, priority 4 (#79).
+    ///
+    /// Accent blue and quiet, wearing the mode's own glyph — the same glyph the mic
+    /// pill's badge is wearing 200 pt to the right, which is the entire reason the
+    /// badge is legible at all: this label is where the user learns what that mark on
+    /// the mic means.
+    ///
+    /// It is a statement about a setting, not a message: the user armed this
+    /// deliberately, possibly last week, and the reason it is on screen at all is that
+    /// a sticky mode with no visible sign is how someone dictates a translation they
+    /// did not want.
+    private func armedModeLabel(_ name: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: armedSmartModeIcon ?? "sparkles")
                 .font(.system(size: 11, weight: .semibold))
 
             Text(name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
         }
-        .foregroundColor(.dictusSmartMode)
+        .foregroundColor(.dictusAccent)
         .padding(.leading, 6)
         .frame(maxWidth: .infinity)
     }

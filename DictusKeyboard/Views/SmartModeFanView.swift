@@ -68,9 +68,22 @@ struct SmartModeFanView: View {
 
     /// One fan row: icon, name, and the highlight that says where the finger is.
     ///
-    /// WHY the highlight is a filled capsule and not a tint on the text: the thumb is
-    /// covering this row while choosing it. Only the edges are visible, so the signal
-    /// has to be at the edges.
+    /// ### Why every row has a surface, not only the highlighted one
+    ///
+    /// The keyboard container is translucent, and what normally gives the eye
+    /// something opaque to sit on is the *keys*. The fan replaces them, so before
+    /// this the rows were text floating on the host app's own text — legible enough
+    /// to read the wrong thing through, on the captures of 2026-08-24. One glass
+    /// panel behind the whole fan was tried and refused on sight: it came out lighter
+    /// than the keyboard with hard edges top and bottom, a square laid over the
+    /// product rather than part of it. A capsule per row is the fix that belongs
+    /// here, because it is the shape the keys already have — the fan reads as a
+    /// column of wide keys instead of as a sheet.
+    ///
+    /// ### Why the highlight is a filled capsule and not a tint on the text
+    ///
+    /// The thumb is covering this row while choosing it. Only the edges are visible,
+    /// so the signal has to be at the edges.
     ///
     /// A disabled row still draws its name and icon rather than being hidden. The
     /// user is entitled to see what the feature is before being told they cannot have
@@ -90,17 +103,26 @@ struct SmartModeFanView: View {
                 .font(.system(size: 17, weight: isHighlighted ? .semibold : .regular))
                 .lineLimit(1)
         }
-        .foregroundColor(foreground(entry, isHighlighted: isHighlighted, isEnabled: isEnabled))
+        .foregroundColor(isEnabled ? .dictusAccent : .secondary)
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity)
         .frame(height: rowHeight)
-        .background(
-            Capsule()
-                .fill(tint(entry).opacity(isHighlighted ? 0.22 : 0))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-        )
+        .background(rowSurface(isHighlighted: isHighlighted))
         .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    /// The capsule under a row: glass at rest, washed accent under the finger.
+    ///
+    /// The accent fill goes *over* the glass rather than replacing it, so the
+    /// highlighted row keeps the same opacity as its neighbours and only gains
+    /// colour. Swapping the material out instead made the chosen row look like a
+    /// hole in the column.
+    private func rowSurface(isHighlighted: Bool) -> some View {
+        Capsule()
+            .fill(Color.dictusAccent.opacity(isHighlighted ? 0.25 : 0))
+            .dictusGlass(in: Capsule())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
     }
 
     /// Normal is named here rather than on the entry: DictusCore ships no string
@@ -114,20 +136,4 @@ struct SmartModeFanView: View {
             )
     }
 
-    /// The row's colour is the colour the mic pill will take if this row is chosen —
-    /// accent for Normal, Smart Mode purple for a mode. The fan is where that
-    /// association is taught; the pill is where it is read afterwards.
-    private func tint(_ entry: SmartModeFanEntry) -> Color {
-        entry.smartMode == nil ? .dictusAccent : .dictusSmartMode
-    }
-
-    /// Highlighted rows take their own tint rather than a shared accent, so the
-    /// glyph, the label and the capsule all say the same thing about which of the two
-    /// states the release will produce.
-    private func foreground(_ entry: SmartModeFanEntry,
-                            isHighlighted: Bool,
-                            isEnabled: Bool) -> Color {
-        guard isEnabled else { return .secondary }
-        return isHighlighted ? tint(entry) : .primary
-    }
 }
