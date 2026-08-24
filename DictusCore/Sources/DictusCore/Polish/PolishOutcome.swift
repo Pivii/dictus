@@ -49,13 +49,24 @@ public struct SmartModeFailure: Equatable, Sendable {
 ///
 /// So a call can now come back with nothing, and the caller has to decide what to do
 /// about it rather than typing whatever string it was handed.
+///
+/// ### Three shapes, not two
+///
+/// A mode may also come back with *text and a failure at once*: the transformation
+/// did not happen, but this mode declared that the untransformed floor is better
+/// than nothing for this particular refusal — see `SmartModeOverflowBehaviour`. The
+/// user is told in both failing shapes. Refusing in silence and degrading in silence
+/// are the same defect, which is why `smartModeFailure` is what a surface keys on
+/// and `text` only decides whether anything is typed.
 public struct PolishOutcome: Equatable, Sendable {
 
     /// The text to insert, or nil when an armed Smart Mode failed and nothing may be
     /// inserted in its place.
     public let text: String?
 
-    /// Set with, and only with, a nil `text`.
+    /// Set whenever an armed Smart Mode did not produce its transformation —
+    /// including the degraded case, where `text` is the untransformed floor rather
+    /// than nil.
     public let smartModeFailure: SmartModeFailure?
 
     /// A successful call, or a free-polish call that fell back to its floor.
@@ -69,4 +80,15 @@ public struct PolishOutcome: Equatable, Sendable {
         self.text = nil
         self.smartModeFailure = failure
     }
+
+    /// A Smart Mode that did not run, on a mode that accepts the untransformed floor
+    /// for this refusal. `text` is that floor.
+    public init(degradedTo text: String, failure: SmartModeFailure) {
+        self.text = text
+        self.smartModeFailure = failure
+    }
+
+    /// Whether the text being inserted is the untransformed floor rather than the
+    /// mode's own output. What tells the two failure messages apart.
+    public var isDegraded: Bool { text != nil && smartModeFailure != nil }
 }

@@ -169,6 +169,13 @@ public enum SharedKeys {
     /// from `SmartModeCatalogue.defaultPinnedIdentifiers`; an empty array is a real
     /// choice and is honoured.
     public static let smartModePinned = "dictus.smartModePinned"
+    /// Bool: whether the user has ever completed the long-press fan gesture.
+    ///
+    /// The only thing it does is retire the discovery hint from the toolbar's centre
+    /// slot. Set once and never cleared — a user who has performed the gesture knows
+    /// it exists, and re-teaching them is what makes a hint into noise. See
+    /// `SmartModeDiscovery`.
+    public static let smartModeGestureUsed = "dictus.smartModeGestureUsed"
     /// Data: the JSON-encoded `SmartMode` armed for the transcription sitting in
     /// `lastTranscription`, or absent when the dictation runs Normal.
     ///

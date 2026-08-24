@@ -258,6 +258,61 @@ There is no dialog. The point-translation bridge is simply not connected. Measur
 | --- | --- |
 | `tap`, `touch`, `swipe`, `drag`, `describe-ui`, `slider` | `button`, `key`, `key-sequence`, `type`, `gesture`, `screenshot`, `record-video` |
 
+### `touch --up` does not end a SwiftUI gesture
+
+Measured 2026-08-24 while building the Smart Mode fan (#79). A batch of
+`touch --down` / `sleep` / `touch --up` at the same point delivers the press —
+a `LongPressGesture` fires — but the matching `DragGesture.onEnded` never
+does. The gesture stays open until something else ends it.
+
+So **a held press whose release matters cannot be tested with `touch` alone.**
+Use a `swipe` as the last step instead: it carries its own down-move-up and the
+release lands.
+
+```bash
+# The release never arrives:
+axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 2" --step "touch -x 357 -y 558 --up"
+
+# It does here — a two-point swipe is enough, the movement can be tiny:
+axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 1.2" \
+  --step "swipe --start-x 357 --start-y 558 --end-x 355 --end-y 550 --duration 0.5"
+```
+
+Do not read a product bug into the first form. It cost an hour here, and it is
+worth saying plainly: the code was correct and the harness was not — but the
+detour also found two real defects, so run the second form before concluding
+either way.
+
+### And when a gesture fails repeatedly, stop blaming the harness
+
+The same session then spent an hour on the opposite error. A drag that had armed
+a mode once stopped working, and every explanation tried was about `axe`:
+leftover touches, HID state, batch shape. The device was rebooted to clear it.
+None of it was true.
+
+The cause was in the code, and the simulator had been reporting it accurately all
+along: opening the fan changed which branch of a `switch` built the toolbar, so
+SwiftUI destroyed and rebuilt the view the gesture was attached to at the exact
+moment the gesture succeeded. Six consecutive runs opened the fan and highlighted
+no row.
+
+**The cheap diagnostic that settled it, and should have been step one:** screenshot
+*during* the drag rather than reading the log after it.
+
+```bash
+(axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 1.5" \
+  --step "swipe --start-x 357 --start-y 558 --end-x 200 --end-y 764 --duration 2.5" &)
+sleep 3.2
+xcrun simctl io <udid> screenshot /scratch/mid-drag.png
+```
+
+No highlight under the finger means no drag events are arriving, which is a
+different question from "the release did not commit" — and it takes one command
+instead of an hour.
+
 Read the screen before you tap it. `describe-ui` returns the full accessibility tree as JSON, with an `AXFrame` per element in **points** (402×874 on an iPhone 17, not the 1206×2622 pixels a screenshot has):
 
 ```bash

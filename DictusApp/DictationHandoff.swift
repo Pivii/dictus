@@ -56,6 +56,19 @@ extension DictationCoordinator {
         // a failure rather than as a quieter version of itself (#79). Inserting the
         // untransformed text would be the worst outcome available — the user asked
         // for bullets, or for English, and would get neither without being told.
+        // A mode can also come back with the untransformed floor *and* a failure — a
+        // context overflow on a mode that declared the floor better than nothing, see
+        // `SmartModeOverflowBehaviour`. The text below is then the raw rather than the
+        // transformation, and `outcome.isDegraded` is what says so.
+        //
+        // **This path does not tell the user yet, and the keyboard's does.** Not an
+        // oversight and not equivalent to inserting it silently: the refusal is logged
+        // by `PolishService.finalOutcome`, and the overwhelming majority of dictations
+        // go through the keyboard. What is missing is a *non-fatal* notice surface in
+        // the app — `handleError` is the only thing here that shows a sentence and it
+        // ends the dictation as a failure, which a dictation that produced text is
+        // not. Inventing one belongs with the block that owns this target's UI (#79
+        // block C), not with the keyboard block that created the state.
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
             let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
@@ -69,12 +82,13 @@ extension DictationCoordinator {
             //
             // The mode name interpolated in front stays unlocalised on purpose: it
             // is the catalogue's own label, so it reads as the thing the user armed.
-            // KNOWN ROUGH EDGE, for block B when this message first becomes
-            // reachable: translate modes are named "→ EN", so the sentence renders
-            // as "→ EN could not transform this text", which does not read. The fix
-            // belongs with the surface that shows it.
+            //
+            // The rough edge this comment used to flag for block B is fixed: the name
+            // is a colon-label, not the sentence's subject, because translate modes
+            // are called "→ EN" and "→ EN could not transform this text" does not
+            // read. The keyboard's `announce` uses the same shape, deliberately.
             handleError(String(
-                localized: "\(name) could not transform this text. Try again.",
+                localized: "\(name): could not be applied. Try again.",
                 comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
             ))
             return

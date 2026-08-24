@@ -159,4 +159,41 @@ final class SmartModeCatalogueTests: XCTestCase {
         XCTAssertNil(SmartModeCatalogue.mode(withIdentifier: "translate.klingon"))
         XCTAssertNil(SmartModeCatalogue.mode(withIdentifier: ""))
     }
+
+    // MARK: - The pill badge
+
+    /// A glyph names Notes. It cannot name a *target*, so every Translate row wears
+    /// its own language code — this is the assertion that fails the day someone gives
+    /// Translate a shared badge again and → EN and → ES become the same mark.
+    func testEveryTranslateModeCarriesItsOwnTargetCodeOnTheBadge() {
+        for language in SupportedLanguage.allCases {
+            let mode = SmartModeCatalogue.translate(to: language)
+            XCTAssertEqual(mode.badge, .text(language.shortCode), "wrong badge for \(language.rawValue)")
+            XCTAssertEqual(mode.icon, "globe", "the fan row still uses the glyph")
+        }
+
+        let badges = SupportedLanguage.allCases.map { SmartModeCatalogue.translate(to: $0).badge }
+        XCTAssertEqual(Set(badges.map(String.init(describing:))).count, badges.count)
+    }
+
+    func testNotesKeepsItsGlyphOnTheBadge() {
+        XCTAssertEqual(SmartModeCatalogue.notes.badge, .symbol("list.bullet"))
+    }
+
+    /// A mode written by an older build has no badge key. It must decode to the glyph
+    /// that build drew rather than throwing — `KeyboardPolishCoordinator` turns a
+    /// throw here into "no mode armed", which for a translation inserts the
+    /// untranslated text.
+    func testABadgelessRecordDecodesToItsIcon() throws {
+        let encoded = try JSONEncoder().encode(SmartModeCatalogue.notes)
+        var json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        json.removeValue(forKey: "badge")
+
+        let decoded = try JSONDecoder().decode(
+            SmartMode.self, from: JSONSerialization.data(withJSONObject: json)
+        )
+        XCTAssertEqual(decoded.badge, .symbol("list.bullet"))
+    }
 }
