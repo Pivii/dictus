@@ -26,8 +26,23 @@ public struct ModelInfo: Identifiable {
 
     public let identifier: String
     public let displayName: String
-    public let sizeLabel: String
+
+    /// Total bytes the downloader will pull for this model. See the measurement
+    /// note above `allIncludingDeprecated` for where these numbers come from.
     public let sizeBytes: Int64
+
+    /// The size shown on the model card and the onboarding download page.
+    ///
+    /// WHY computed rather than a second stored constant (issue #372):
+    /// the label and the byte count used to be two hand-written values that
+    /// nothing reconciled, so they could drift apart from each other as well as
+    /// from the repository. One number, one place to correct.
+    ///
+    /// WHY truncating division by 1 000 000: it is exactly what
+    /// `ModelManager.updateDownloadProgress` does for the `mbTotal` it logs and
+    /// for the MB counter under the progress bar, so the size promised on the
+    /// card and the total counted during the download print the same number.
+    public var sizeLabel: String { "~\(sizeBytes / 1_000_000) MB" }
 
     /// Speech-to-text engine this model uses (WhisperKit or Parakeet).
     public let engine: SpeechEngine
@@ -88,12 +103,30 @@ public struct ModelInfo: Identifiable {
 
     /// All known models including deprecated ones. Used for backward compatibility
     /// so already-downloaded Tiny/Base models still resolve and function.
+    ///
+    /// SIZES — measured 2026-08-23 against the repositories, issue #372.
+    ///
+    /// Every `sizeBytes` below is the exact sum of the files `ModelRepoDownloader`
+    /// selects for that model: the recursive contents of `<identifier>/` in
+    /// `argmaxinc/whisperkit-coreml` for WhisperKit, and the four required
+    /// `.mlmodelc` folders plus root-level `.json`/`.txt` in
+    /// `FluidInference/parakeet-tdt-0.6b-v3-coreml` for Parakeet. That is the
+    /// number the user's connection actually has to carry, and it is what the
+    /// progress bar counts down from.
+    ///
+    /// The previous values understated the download by up to 2.04x — Small
+    /// announced 250 MB and pulled 486 MB. They were the sizes of OpenAI's
+    /// PyTorch checkpoints (39/74/244/769 MB), not of the Core ML bundles Argmax
+    /// serves, so nothing about them was ever measured here.
+    ///
+    /// `ModelCatalogueSizeAuditTests` re-measures these on demand; a divergence
+    /// that appears in the field is logged by `ModelRepoDownloader` as
+    /// `modelDownloadSizeMismatch`.
     public static let allIncludingDeprecated: [ModelInfo] = [
         ModelInfo(
             identifier: "openai_whisper-tiny",
             displayName: "Tiny",
-            sizeLabel: "~40 MB",
-            sizeBytes: 40_000_000,
+            sizeBytes: 76_635_397,
             engine: .whisperKit,
             accuracyScore: 0.3,
             speedScore: 1.0,
@@ -103,8 +136,7 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "openai_whisper-base",
             displayName: "Base",
-            sizeLabel: "~75 MB",
-            sizeBytes: 75_000_000,
+            sizeBytes: 146_719_453,
             engine: .whisperKit,
             accuracyScore: 0.4,
             speedScore: 0.9,
@@ -118,8 +150,7 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "openai_whisper-small",
             displayName: "Small",
-            sizeLabel: "~250 MB",
-            sizeBytes: 250_000_000,
+            sizeBytes: 486_487_465,
             engine: .whisperKit,
             accuracyScore: 0.6,
             speedScore: 0.95,
@@ -129,8 +160,8 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "openai_whisper-small_216MB",
             displayName: "Small (Quantized)",
-            sizeLabel: "~216 MB",
-            sizeBytes: 216_000_000,
+            // 217 MB measured against a name that says 216 MB — the name holds.
+            sizeBytes: 217_350_763,
             engine: .whisperKit,
             accuracyScore: 0.55,
             speedScore: 0.95,
@@ -140,8 +171,7 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "openai_whisper-medium",
             displayName: "Medium",
-            sizeLabel: "~750 MB",
-            sizeBytes: 750_000_000,
+            sizeBytes: 1_529_654_233,
             engine: .whisperKit,
             accuracyScore: 0.8,
             speedScore: 0.55,
@@ -151,8 +181,8 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "parakeet-tdt-0.6b-v3",
             displayName: "Parakeet v3",
-            sizeLabel: "~800 MB",
-            sizeBytes: 800_000_000,
+            // The one entry that OVERSTATED: 800 MB announced, 483 MB served.
+            sizeBytes: 483_254_686,
             engine: .parakeet,
             accuracyScore: 0.85,
             speedScore: 0.85,
@@ -175,8 +205,13 @@ public struct ModelInfo: Identifiable {
         ModelInfo(
             identifier: "openai_whisper-large-v3_turbo_954MB",
             displayName: "Turbo",
-            sizeLabel: "~954 MB",
-            sizeBytes: 954_000_000,
+            // 1052 MB measured against a name that says 954 MB, and both are right:
+            // TextDecoder + AudioEncoder + their `.mil` files come to ~954 MB, which
+            // is the model. The folder also ships TextDecoderContextPrefill.mlmodelc
+            // (98 MB), which `directoryPatterns: ["<variant>/"]` pulls even though
+            // `requiredPaths` does not require it. The name describes the model; this
+            // constant describes the download.
+            sizeBytes: 1_052_848_880,
             engine: .whisperKit,
             accuracyScore: 0.9,
             speedScore: 0.2,
@@ -184,6 +219,29 @@ public struct ModelInfo: Identifiable {
             visibility: .available
         )
     ]
+
+    // MARK: - Announced size vs. served size (issue #372)
+
+    /// How far a declared size may sit from what the repository actually serves
+    /// before it counts as drift.
+    ///
+    /// Generous on purpose: a repository gaining a metadata file is not news, a
+    /// repack that doubles the payload is. Declared here rather than at either
+    /// call site so the download-time check and the audit test cannot disagree
+    /// about what "correct" means.
+    public static let sizeTolerance = 0.05
+
+    /// Whether the announced size has drifted from what the repository serves.
+    ///
+    /// The real total is only knowable after a network round trip the model card
+    /// does not make, so `sizeBytes` has to stay a hand-written constant and will
+    /// drift again the next time a repository is repacked. This predicate is how
+    /// that drift gets noticed: `ModelRepoDownloader` calls it the moment it has
+    /// both numbers, and `ModelCatalogueSizeAuditTests` calls it on demand.
+    public func sizeHasDrifted(fromMeasured measuredBytes: Int64) -> Bool {
+        guard sizeBytes > 0, measuredBytes > 0 else { return false }
+        return abs(Double(measuredBytes - sizeBytes)) / Double(sizeBytes) > Self.sizeTolerance
+    }
 
     /// Set of all supported model identifiers for quick lookup.
     /// Uses allIncludingDeprecated so downloaded Tiny/Base models still resolve.

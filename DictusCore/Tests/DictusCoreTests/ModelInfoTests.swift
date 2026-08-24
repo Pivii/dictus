@@ -99,10 +99,12 @@ final class ModelInfoTests: XCTestCase {
         // iPhone 12 / iPhone SE tier: 4 GB RAM — Turbo must not be runnable.
         // Issue #369: it stays LISTED, disabled with a reason, instead of vanishing.
         let iphone12 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
-        let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")
-        XCTAssertNotNil(turbo)
-        XCTAssertFalse(turbo!.isSupported(on: iphone12))
-        XCTAssertEqual(turbo!.incompatibilityReason(on: iphone12), .insufficientMemory(requiredGB: 6))
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
+            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+            return
+        }
+        XCTAssertFalse(turbo.isSupported(on: iphone12))
+        XCTAssertEqual(turbo.incompatibilityReason(on: iphone12), .insufficientMemory(requiredGB: 6))
         XCTAssertTrue(ModelInfo.available(on: iphone12).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
     }
 
@@ -110,14 +112,20 @@ final class ModelInfoTests: XCTestCase {
         // iPhone 14 Pro / iPhone 15 tier: 6 GB — passes the quantized Turbo gate.
         // Argmax lists iPhone14/15/16/17 families as supported for `_954MB`.
         let iphone15 = makeCapabilities(ramGB: 6, model: "iPhone15,4")
-        let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")!
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
+            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+            return
+        }
         XCTAssertTrue(turbo.isSupported(on: iphone15))
     }
 
     func testTurboAvailableOnEightGBDevices() {
         // iPhone 15 Pro Max / iPhone 16: 8 GB — well above the bar.
         let iphone15ProMax = makeCapabilities(ramGB: 8, model: "iPhone16,2")
-        let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")!
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
+            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+            return
+        }
         XCTAssertTrue(turbo.isSupported(on: iphone15ProMax))
         XCTAssertTrue(ModelInfo.available(on: iphone15ProMax).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
 
@@ -236,8 +244,14 @@ final class ModelInfoTests: XCTestCase {
     func testIncompatibilityReasonNamesTheRightConstraint() {
         let iphone11 = makeCapabilities(ramGB: 4, model: "iPhone12,1")
         let a14 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
-        let small = ModelInfo.forIdentifier("openai_whisper-small")!
-        let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB")!
+        guard let small = ModelInfo.forIdentifier("openai_whisper-small") else {
+            XCTFail("openai_whisper-small is missing from the catalogue")
+            return
+        }
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
+            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+            return
+        }
 
         // Old chip, not memory: an iPhone 11 has the RAM, it lacks the generation.
         XCTAssertEqual(small.incompatibilityReason(on: iphone11), .hardwareGeneration)
@@ -336,5 +350,43 @@ final class ModelInfoTests: XCTestCase {
             XCTAssertFalse(model.displayName.isEmpty, "\(model.identifier) has empty displayName")
             XCTAssertFalse(model.sizeLabel.isEmpty, "\(model.identifier) has empty sizeLabel")
         }
+    }
+
+    // MARK: - Announced size (issue #372)
+
+    /// The label and the byte count can no longer disagree, because there is only
+    /// one number. This pins the rendering so the card keeps printing the same MB
+    /// figure the download progress counts down from.
+    func testSizeLabelIsDerivedFromSizeBytes() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertEqual(model.sizeLabel, "~\(model.sizeBytes / 1_000_000) MB",
+                           "\(model.identifier) label and byte count disagree")
+        }
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-small")?.sizeLabel, "~486 MB")
+    }
+
+    /// A zero or negative size would render as "~0 MB" on the card and would make
+    /// the download-time reconciliation in `ModelRepoDownloader` skip the entry.
+    func testEveryCatalogueEntryDeclaresAPositiveSize() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertGreaterThan(model.sizeBytes, 0, "\(model.identifier) declares no size")
+        }
+    }
+
+    /// The predicate behind the `modelDownloadSizeMismatch` log line. The 250 MB case
+    /// is the bug this issue was filed for: that was the announced size while the
+    /// repository served 486 MB, and it has to read as drift.
+    func testSizeDriftIsJudgedAgainstTheAnnouncedSize() {
+        guard let small = ModelInfo.forIdentifier("openai_whisper-small") else {
+            XCTFail("openai_whisper-small is missing from the catalogue")
+            return
+        }
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: small.sizeBytes))
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 1.04)))
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 0.96)))
+        XCTAssertTrue(small.sizeHasDrifted(fromMeasured: Int64(Double(small.sizeBytes) * 1.10)))
+        XCTAssertTrue(small.sizeHasDrifted(fromMeasured: 250_000_000))
+        // A repository that reports no sizes is a missing measurement, not drift.
+        XCTAssertFalse(small.sizeHasDrifted(fromMeasured: 0))
     }
 }
