@@ -144,10 +144,16 @@ final class KeyboardSmartModeState: ObservableObject {
     /// appears and then arming a mode on release would change a setting the user
     /// never saw a menu for.
     ///
-    /// **Nothing is pinned.** A fan holding only Normal is a menu with one item and
-    /// no way to learn what the others are. The user is told where the list lives
-    /// instead. Only reachable by unpinning everything in the app — a fresh install
-    /// seeds two (`SmartModeCatalogue.defaultPinnedIdentifiers`).
+    /// **Nothing is pinned, and nothing is armed.** A fan holding only Normal is a
+    /// menu with one item, no way to learn what the others are, and nothing to
+    /// undo. The user is told where the list lives instead. Only reachable by
+    /// unpinning everything in the app — a fresh install seeds two
+    /// (`SmartModeCatalogue.defaultPinnedIdentifiers`).
+    ///
+    /// Both halves of that condition matter, and #402 is the bill for checking only
+    /// the first: with a mode armed, the Normal row is the one surface that clears
+    /// it, so the fan opens on it alone. `SmartModeFanLayout.entries` owns the rule
+    /// and states it at length; an empty result is the refusal.
     @discardableResult
     func open() -> Bool {
         let keyboard = KeyboardState.shared
@@ -155,8 +161,14 @@ final class KeyboardSmartModeState: ObservableObject {
             keyboard.logProbe("smartModeFanRefused", details: "reason=dictation-in-flight")
             return false
         }
-        let pinned = SmartModeCatalogue.pinnedModes
-        guard !pinned.isEmpty else {
+        // The store rather than the published `armedMode` beside it: that copy is a
+        // cache for view bodies and can be one `refreshFromDefaults` behind the app,
+        // and the app unpinning everything is exactly the moment it would be. One
+        // read per long-press is not the cost that cache exists to avoid.
+        let entries = SmartModeFanLayout.entries(
+            pinned: SmartModeCatalogue.pinnedModes, armed: SmartModeStore.armedMode
+        )
+        guard !entries.isEmpty else {
             keyboard.logProbe("smartModeFanRefused", details: "reason=nothing-pinned")
             keyboard.presentStatusMessage(
                 String(
@@ -174,7 +186,7 @@ final class KeyboardSmartModeState: ObservableObject {
         // thread inside a gesture.
         let armability = SmartModeAvailability.current
         fan = SmartModeFanState(
-            entries: SmartModeFanLayout.entries(pinned: pinned),
+            entries: entries,
             highlightedIndex: nil,
             unavailableReason: armability.reason.map(Self.localizedReason)
         )

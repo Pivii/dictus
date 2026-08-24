@@ -74,7 +74,8 @@ public enum SmartModeFanLayout {
     /// a target except Normal.
     public static let reasonHeight: CGFloat = 24
 
-    /// The rows, in order, for a pinned list.
+    /// The rows, in order, for a pinned list and the mode currently armed — or no
+    /// rows at all, which is this type's way of saying the fan should not open.
     ///
     /// Normal first because the fan deploys downward from the mic and the thumb
     /// travels away from the palm: the nearest row is the cheapest to reach, and
@@ -83,8 +84,32 @@ public enum SmartModeFanLayout {
     ///
     /// The pinned list is capped defensively as well as at the store, because this
     /// is the side that cannot draw more.
-    public static func entries(pinned: [SmartMode]) -> [SmartModeFanEntry] {
-        [.normal] + pinned.prefix(SmartModeCatalogue.maximumPinnedModes).map(SmartModeFanEntry.mode)
+    ///
+    /// ### Why the armed mode is an input to a list it never appears in
+    ///
+    /// It decides whether a Normal-only fan is worth opening, and #402 is what
+    /// happens when that question is answered somewhere else. With nothing pinned
+    /// and nothing armed, a one-row fan is a menu with one item, no way to learn
+    /// what the others are, and nothing to undo — the user is better served by
+    /// being told where the mode list lives. With nothing pinned but a mode
+    /// **armed**, that same one row is the only surface in the product that clears
+    /// it: releasing back on the mic aborts, so the mic is not the way out. A user
+    /// who unpins everything while "→ DE" is armed otherwise dictates German
+    /// forever, which is the bug as Pierre hit it on device.
+    ///
+    /// ### Why an empty array rather than a second return type
+    ///
+    /// A fan with no rows is not a state `SmartModeFanState` is allowed to hold —
+    /// its own doc comment says so — so "no rows" already means "do not open" for
+    /// everything downstream, and `rowHeight` and `entryIndex` already answer 0 and
+    /// nil for it. Wrapping that in an enum would name the same thing twice.
+    ///
+    /// `armed` is the resolved record, not the stored identifier: an identifier this
+    /// build cannot resolve reads as nil, and refusing on it is right — that user is
+    /// already getting Normal, so there is nothing to escape from.
+    public static func entries(pinned: [SmartMode], armed: SmartMode?) -> [SmartModeFanEntry] {
+        guard !pinned.isEmpty || armed != nil else { return [] }
+        return [.normal] + pinned.prefix(SmartModeCatalogue.maximumPinnedModes).map(SmartModeFanEntry.mode)
     }
 
     /// Height of one row, given the space below the toolbar.
