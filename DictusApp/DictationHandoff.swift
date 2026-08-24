@@ -59,7 +59,16 @@ extension DictationCoordinator {
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
             let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
-            handleError("\(name) n'a pas pu transformer ce texte. Réessayez.")
+            // Localised like every other user-facing failure in this file's
+            // neighbourhood (`DictationCoordinator.swift:491`, `:658`). The mode
+            // name interpolated in front stays unlocalised on purpose: it is the
+            // catalogue's own label — "Notes", "→ EN" — and naming it in one
+            // language everywhere is what makes it recognisable as the thing the
+            // user armed.
+            handleError(String(
+                localized: "\(name) could not transform this text. Try again.",
+                comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
+            ))
             return
         }
 
