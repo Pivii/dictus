@@ -117,46 +117,6 @@ struct KeyboardRootView: View {
         return mode
     }
 
-    /// The toolbar as it renders above a full-area presentation.
-    ///
-    /// The suggestion slots stay empty: the key grid is hidden in these modes, so
-    /// there is no word being typed to suggest for. Tapping the mic needs no
-    /// dismissal call — `.recording` supersedes whatever fills the area.
-    ///
-    /// `isPanelOpen` picks between the two presentations of the same 52 pt bar:
-    /// the dictation cockpit, and the panel header that replaces the mic with the
-    /// gear (#241).
-    private func fullAreaToolbar(isPanelOpen: Bool = false) -> some View {
-        ToolbarView(
-            hasFullAccess: state.controller?.hasFullAccess ?? false,
-            dictationStatus: state.dictationStatus,
-            onMicTap: { state.startRecording() },
-            statusMessage: state.statusMessage,
-            messageProbeRootViewID: instanceID,
-            messageProbeControllerID: controllerID,
-            showsPolishUnavailable: state.polishUnavailable,
-            suggestions: [],
-            suggestionMode: .idle,
-            onSuggestionTap: { _ in },
-            // Undo survives opening the emoji picker (#266): browsing emoji is not
-            // typing, and the insertion is still the tail of the field. The panel
-            // presentation ignores these — its bar has no centre slot.
-            showsDictationUndo: state.dictationUndoAvailable,
-            onDictationUndoTap: { state.performDictationUndo() },
-            isPanelOpen: isPanelOpen,
-            onPanelToggle: { togglePanel() },
-            onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
-            isProActive: isProActive,
-            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } },
-            armedSmartModeName: smartModes.armedName,
-            offersSmartModeHint: smartModes.offersHint,
-            onSmartModeFanOpen: { smartModes.open() },
-            onSmartModeFanDrag: { y in smartModes.track(y: y) },
-            onSmartModeFanRelease: { smartModes.commit() }
-        )
-        .frame(height: toolbarHeight)
-    }
-
     /// Close the panel, then run whatever takes the user out of the keyboard.
     ///
     /// WHY (#241 device feedback): the panel is a menu, not a place. Both entries
@@ -190,10 +150,106 @@ struct KeyboardRootView: View {
         state.togglePanelPresentation()
     }
 
+    /// The 52 pt bar, in whichever of its two presentations the mode calls for.
+    ///
+    /// The suggestion slots are only filled in `.keys`: every other presentation
+    /// hides the key grid, so there is no word being typed to suggest for.
+    private var toolbar: some View {
+        ToolbarView(
+            hasFullAccess: state.controller?.hasFullAccess ?? false,
+            dictationStatus: state.dictationStatus,
+            onMicTap: { state.startRecording() },
+            statusMessage: state.statusMessage,
+            messageProbeRootViewID: instanceID,
+            messageProbeControllerID: controllerID,
+            showsPolishUnavailable: state.polishUnavailable,
+            suggestions: presentedMode == .keys ? suggestionState.suggestions : [],
+            suggestionMode: presentedMode == .keys ? suggestionState.mode : .idle,
+            onSuggestionTap: { index in handleSuggestionTap(index: index) },
+            // Undo survives opening the emoji picker (#266): browsing emoji is not
+            // typing, and the insertion is still the tail of the field. The panel
+            // presentation ignores these — its bar has no centre slot.
+            showsDictationUndo: state.dictationUndoAvailable,
+            onDictationUndoTap: { state.performDictationUndo() },
+            isPanelOpen: presentedMode == .panel,
+            onPanelToggle: { togglePanel() },
+            onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
+            isProActive: isProActive,
+            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } },
+            armedSmartModeName: smartModes.armedName,
+            offersSmartModeHint: smartModes.offersHint,
+            onSmartModeFanOpen: { smartModes.open() },
+            onSmartModeFanDrag: { y in smartModes.track(y: y) },
+            onSmartModeFanRelease: { smartModes.commit() },
+            isSmartModeFanOpen: smartModes.fan != nil
+        )
+        .frame(height: toolbarHeight)
+    }
+
+    /// What fills the keyboard area under the bar. `.keys` puts nothing here — the
+    /// grid is UIKit, added directly by `KeyboardViewController`.
+    ///
+    /// Each `GeometryReader` now measures the area itself rather than the whole
+    /// hosting view, so the `- toolbarHeight` subtractions and their clamps are gone
+    /// with the reason they existed: a body evaluated before the hosting constraint
+    /// landed used to make that subtraction negative.
+    @ViewBuilder
+    private var areaBelowToolbar: some View {
+        switch presentedMode {
+        case .emoji:
+            // GeometryReader measures the actual space available to SwiftUI.
+            // WHY: In keyboard extensions, the hosting controller may not give the
+            // full screen width/height to SwiftUI due to safe area or system insets.
+            // Passing measured dimensions to EmojiPickerView guarantees it fits.
+            GeometryReader { geo in
+                EmojiPickerView(
+                    onEmojiInsert: { emoji in
+                        state.controller?.textDocumentProxy.insertText(emoji)
+                        HapticFeedback.keyTapped()
+                    },
+                    onDelete: {
+                        state.controller?.textDocumentProxy.deleteBackward()
+                        HapticFeedback.keyTapped()
+                    },
+                    onDismiss: { state.presentAreaMode(.keys) },
+                    availableWidth: geo.size.width,
+                    availableHeight: geo.size.height
+                )
+            }
+
+        case .panel:
+            // The hamburger panel (#241). Same layout contract #271 reserved: the bar
+            // on top, the panel filling the rest.
+            GeometryReader { geo in
+                KeyboardPanelView(
+                    availableHeight: geo.size.height,
+                    // Neither selection closes the panel (#272). A row carries two
+                    // independent choices now — language and layout — and closing on
+                    // the first one takes the second away. The ✕ in the bar is the
+                    // only way out.
+                    onLanguageChanged: { language in onLanguageChanged?(language) },
+                    onLayoutChanged: { layout, language in onLayoutChanged?(layout, language) }
+                )
+            }
+
+        case .smartModeFan:
+            if let fan = smartModes.fan {
+                // The height the *layout* used, not one SwiftUI has measured: the fan
+                // appears in the same turn the hosting constraint grows, and the two
+                // are not yet the same number. It is also the height the gesture's
+                // y-to-row mapping divides, and those two must agree or the row under
+                // the finger is not the row that highlights.
+                SmartModeFanView(state: fan, availableHeight: smartModes.areaHeight)
+            }
+
+        case .keys, .recording:
+            EmptyView()
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            switch presentedMode {
-            case .recording:
+            if presentedMode == .recording {
                 // Recording overlay fills the full area (toolbar + keyboard space).
                 // The UIKit keyboard is hidden by KeyboardViewController when recording.
                 RecordingOverlay(
@@ -205,112 +261,25 @@ struct KeyboardRootView: View {
                     onStop: { state.requestStop() },
                     armedSmartModeName: smartModes.armedName
                 )
-            case .emoji:
-                // GeometryReader measures the actual space available to SwiftUI.
-                // WHY: In keyboard extensions, the hosting controller may not give the
-                // full screen width/height to SwiftUI due to safe area or system insets.
-                // Passing measured dimensions to EmojiPickerView guarantees it fits.
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        // Toolbar stays visible during emoji browsing
-                        fullAreaToolbar()
-                        // Emoji picker uses exact measured dimensions
-                        EmojiPickerView(
-                            onEmojiInsert: { emoji in
-                                state.controller?.textDocumentProxy.insertText(emoji)
-                                HapticFeedback.keyTapped()
-                            },
-                            onDelete: {
-                                state.controller?.textDocumentProxy.deleteBackward()
-                                HapticFeedback.keyTapped()
-                            },
-                            onDismiss: { state.presentAreaMode(.keys) },
-                            availableWidth: geo.size.width,
-                            // Clamped: the body can be evaluated on a frame where
-                            // the hosting height constraint has not landed yet, so
-                            // `geo.size.height` is still the 52pt toolbar and the
-                            // subtraction goes negative. Handing a negative height
-                            // to the picker is the same family of bug as the blank
-                            // area this refactor already had to fix.
-                            availableHeight: max(0, geo.size.height - toolbarHeight)
-                        )
-                    }
-                }
-            case .panel:
-                // The hamburger panel (#241). Same layout contract #271 reserved:
-                // the bar on top, the panel filling the rest. The bar keeps its
-                // 52 pt and swaps its contents, so opening the panel moves no
-                // geometry the mode change had not already moved.
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        fullAreaToolbar(isPanelOpen: true)
-                        KeyboardPanelView(
-                            // Clamped for the same reason as the emoji picker: the
-                            // body can be evaluated on a frame where the hosting
-                            // height constraint has not landed yet, leaving
-                            // geo.size.height at the 52 pt bar.
-                            availableHeight: max(0, geo.size.height - toolbarHeight),
-                            // Neither selection closes the panel (#272). A row carries
-                            // two independent choices now — language and layout — and
-                            // closing on the first one takes the second away. The ✕ in
-                            // the bar is the only way out.
-                            onLanguageChanged: { language in
-                                onLanguageChanged?(language)
-                            },
-                            onLayoutChanged: { layout, language in
-                                onLayoutChanged?(layout, language)
-                            }
-                        )
-                    }
-                }
-            case .smartModeFan:
-                // Same layout contract as the emoji picker and the panel: the bar on
-                // top at its unchanged 52 pt, the fan filling the rest. The bar here
-                // is the live one — the finger is still on its mic, and the gesture
-                // that opened this is attached to it (#79).
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        fullAreaToolbar()
-
-                        if let fan = smartModes.fan {
-                            SmartModeFanView(
-                                state: fan,
-                                // Clamped for the reason the two branches below give:
-                                // the body can be evaluated on a frame where the
-                                // hosting height constraint has not landed yet, and
-                                // geo.size.height is still the bar.
-                                availableHeight: max(0, geo.size.height - toolbarHeight)
-                            )
-                        }
-                    }
-                }
-
-            case .keys:
-                // Toolbar only -- the keyboard grid is UIKit, managed by KeyboardViewController
-                ToolbarView(
-                    hasFullAccess: state.controller?.hasFullAccess ?? false,
-                    dictationStatus: state.dictationStatus,
-                    onMicTap: { state.startRecording() },
-                    statusMessage: state.statusMessage,
-                    messageProbeRootViewID: instanceID,
-                    messageProbeControllerID: controllerID,
-                    showsPolishUnavailable: state.polishUnavailable,
-                    suggestions: suggestionState.suggestions,
-                    suggestionMode: suggestionState.mode,
-                    onSuggestionTap: { index in
-                        handleSuggestionTap(index: index)
-                    },
-                    showsDictationUndo: state.dictationUndoAvailable,
-                    onDictationUndoTap: { state.performDictationUndo() },
-                    onPanelToggle: { togglePanel() },
-                    armedSmartModeName: smartModes.armedName,
-                    offersSmartModeHint: smartModes.offersHint,
-                    onSmartModeFanOpen: { smartModes.open() },
-                    onSmartModeFanDrag: { y in smartModes.track(y: y) },
-                    onSmartModeFanRelease: { smartModes.commit() }
-                )
-                // No KeyboardView here -- it's UIKit, added directly by KeyboardViewController
-                // No bottom spacer -- the UIKit keyboard handles its own height
+            } else {
+                // ONE toolbar, outside the switch, for every non-recording mode.
+                //
+                // WHY it was moved out (#79): SwiftUI identity is positional, so a
+                // toolbar built inside a `switch` is a *different* view in every
+                // branch — and opening the Smart Mode fan changes the branch. The
+                // long-press gesture attached to the mic was therefore destroyed and
+                // rebuilt at the exact moment it succeeded, so the drag that follows
+                // it was delivered to a recogniser that no longer existed. Measured
+                // on the simulator 2026-08-24: the fan opened every time and no row
+                // ever highlighted, in six consecutive runs.
+                //
+                // A gesture that spans a mode change needs a view that survives one.
+                // Nothing else about the layout changes: the bar is still 52 pt in
+                // every presentation, and the area below it is still measured by the
+                // same `GeometryReader`s — they now measure only the area, which is
+                // what they always wanted.
+                toolbar
+                areaBelowToolbar
             }
         }
         // The fan's drag is measured against the whole keyboard area, not against the

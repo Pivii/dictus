@@ -83,6 +83,21 @@ final class KeyboardSmartModeState: ObservableObject {
     /// the wrong row.
     var areaHeight: CGFloat = 0
 
+    /// Closes a fan whose gesture never ended.
+    ///
+    /// The fan hides the keys, so a fan that outlives its finger is a keyboard the
+    /// user cannot type on — the worst failure available to a menu. SwiftUI does not
+    /// call `onEnded` on a *cancelled* touch, only on a released one, and a keyboard
+    /// extension is somewhere touches get cancelled: the host app can present a
+    /// sheet, iOS can hand the keyboard to another controller mid-press.
+    ///
+    /// Eight seconds because a long-press-and-choose is over in about two, and
+    /// reading four rows does not take four times that. If it fires under a finger
+    /// that is still down, the release lands on a nil fan and does nothing — the
+    /// gesture is abandoned, not misread.
+    private var idleTimer: Timer?
+    private static let idleTimeout: TimeInterval = 8
+
     // MARK: - Refreshing
 
     /// Re-read the armed mode and the hint policy, and drop a fan a dictation has
@@ -104,7 +119,10 @@ final class KeyboardSmartModeState: ObservableObject {
     func refresh(status: DictationStatus) {
         armedName = SmartModeStore.armedMode?.displayName
         offersHint = SmartModeDiscovery.offersHint
-        if status.ownsKeyboardArea { fan = nil }
+        // Through `close()` rather than by clearing the value, so the backstop timer
+        // goes with it. `presentAreaMode` refuses while a dictation owns the area,
+        // which is the correct no-op here — the overlay already has the area.
+        if status.ownsKeyboardArea { close() }
     }
 
     // MARK: - Opening
@@ -156,6 +174,7 @@ final class KeyboardSmartModeState: ObservableObject {
             unavailableReason: armability.reason.map(Self.localizedReason)
         )
         keyboard.presentAreaMode(.smartModeFan)
+        armIdleTimer()
         HapticFeedback.keyTapped()
         keyboard.logProbe(
             "smartModeFanOpened",
@@ -189,9 +208,27 @@ final class KeyboardSmartModeState: ObservableObject {
     /// fires on entering *and* on leaving the rows, including into the abort.
     func highlight(_ index: Int?) {
         guard var current = fan, current.highlightedIndex != index else { return }
+        armIdleTimer()
         current.highlightedIndex = index
         fan = current
         HapticFeedback.keyTapped()
+    }
+
+    /// (Re)start the backstop. Every drag update pushes it out, so it only ever
+    /// fires on a gesture that has genuinely stopped reporting.
+    private func armIdleTimer() {
+        idleTimer?.invalidate()
+        idleTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.idleTimeout, repeats: false
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.fan != nil else { return }
+                    KeyboardState.shared.logProbe("smartModeFanTimedOut")
+                    self.close()
+                }
+            }
+        }
     }
 
     // MARK: - Releasing
@@ -252,6 +289,8 @@ final class KeyboardSmartModeState: ObservableObject {
     /// Put the keys back without arming anything. Also the path a cancelled gesture
     /// and a controller rebuilt mid-gesture both take.
     func close() {
+        idleTimer?.invalidate()
+        idleTimer = nil
         guard fan != nil else { return }
         fan = nil
         // `presentAreaMode` refuses while a dictation owns the area, which is exactly

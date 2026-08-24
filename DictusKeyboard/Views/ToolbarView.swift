@@ -92,6 +92,14 @@ struct ToolbarView: View {
     /// Release: arm what is highlighted and start recording, or abort.
     var onSmartModeFanRelease: (() -> Void)?
 
+    /// Whether the fan is on screen right now.
+    ///
+    /// Guards re-entry into `onSmartModeFanOpen`, and it is deliberately the *state*
+    /// rather than `fanGestureDidOpen`: the fan's idle backstop can close it while
+    /// the finger is still down, and a guard on the flag would leave the long press
+    /// inert from then on.
+    var isSmartModeFanOpen: Bool = false
+
     /// Coordinate space the fan gesture reports in. Declared here and named by
     /// `KeyboardRootView`, which owns the view it is attached to: the drag has to be
     /// measured against the whole keyboard area, not against the 52 pt bar the
@@ -267,9 +275,20 @@ struct ToolbarView: View {
     /// Long-press, then drag, then release — one continuous gesture, because that is
     /// what the user performs (#79, Typeless's gesture).
     ///
-    /// `minimumDistance: 0` on the drag so a release without movement still arrives
-    /// as a drag end: a user who long-presses and lets go without sliding must reach
-    /// the abort, not fall out of the sequence into nothing.
+    /// ### Why the drag is *sequenced* behind the long press and not simultaneous
+    ///
+    /// Both shapes were measured on the simulator on 2026-08-24, and the difference
+    /// is which one keeps tracking once the finger leaves the mic pill — which is
+    /// the whole gesture, since every row is below it. Sequenced does: the long
+    /// press has already won arbitration, so the drag inherits the touch and follows
+    /// it down the fan. A standalone `simultaneousGesture(DragGesture(…))` is
+    /// cancelled the moment the finger exits the `Button`'s bounds, and the release
+    /// never arrives — three consecutive runs opened the fan and armed nothing.
+    ///
+    /// `.first(true)` is the long press landing. Opening there rather than on the
+    /// first drag update is what makes the fan appear under a *stationary* thumb,
+    /// which is the affordance: nothing has moved yet, and the menu is already there
+    /// to move onto.
     private var fanGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(
@@ -279,11 +298,7 @@ struct ToolbarView: View {
             .onChanged { value in
                 switch value {
                 case .first(true):
-                    // The long press landed. Opening here rather than on the first
-                    // drag update is what makes the fan appear under a stationary
-                    // thumb, which is the affordance: nothing has moved yet, and the
-                    // menu is already there to move onto.
-                    guard !fanGestureDidOpen else { return }
+                    guard !isSmartModeFanOpen else { return }
                     fanGestureDidOpen = onSmartModeFanOpen?() ?? false
                 case .second(true, let drag):
                     guard fanGestureDidOpen, let drag else { return }
@@ -292,14 +307,35 @@ struct ToolbarView: View {
                     break
                 }
             }
-            .onEnded { _ in
-                guard fanGestureDidOpen else { return }
-                onSmartModeFanRelease?()
-                // Cleared a turn later, not here: the mic `Button`'s action may
-                // still be about to fire for this same release, and it is the flag
-                // that tells it to stand down.
-                DispatchQueue.main.async { fanGestureDidOpen = false }
-            }
+            .onEnded { _ in releaseFan() }
+    }
+
+    /// The release that a `SequenceGesture` does not deliver.
+    ///
+    /// A `SequenceGesture` only calls `onEnded` once its second gesture has been
+    /// *recognised*, and a `DragGesture` that never receives a movement update never
+    /// is. So a user who held the mic and let go without sliding — the natural way
+    /// to peek at the menu, and the exact shape of the documented abort — got no
+    /// release at all and the fan stayed over the keys. Measured 2026-08-24:
+    /// `smartModeFanOpened` with no `smartModeFanAborted` behind it.
+    ///
+    /// This covers exactly that case, and only that case: no movement means the
+    /// finger never left the pill, so the bounds limitation that rules this shape
+    /// out for tracking does not apply. When a real drag happens, whichever of the
+    /// two fires first closes the fan and the other finds nothing to do.
+    private var releaseSafetyNet: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onEnded { _ in releaseFan() }
+    }
+
+    /// End the gesture, once, whichever recogniser noticed.
+    private func releaseFan() {
+        guard fanGestureDidOpen else { return }
+        onSmartModeFanRelease?()
+        // Cleared a turn later, not here: the mic `Button`'s action may still be
+        // about to fire for this same release, and it is the flag that tells it to
+        // stand down.
+        DispatchQueue.main.async { fanGestureDidOpen = false }
     }
 
     /// The armed mode's name, priority 4 (#79).
