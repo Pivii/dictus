@@ -34,6 +34,10 @@ struct KeyboardRootView: View {
     let controllerID: String
     @ObservedObject private var state = KeyboardState.shared
     @ObservedObject private var waveformDriver = KeyboardWaveformDriver.shared
+    /// Everything Smart Mode: the armed mode's name, the discovery hint, and the
+    /// fan while the mic is held. A second observed object beside `KeyboardState`,
+    /// exactly as the waveform driver above is — see `KeyboardSmartModeState`.
+    @ObservedObject private var smartModes = KeyboardSmartModeState.shared
     @State private var instanceID = String(UUID().uuidString.prefix(8))
     /// Observable state for the suggestion bar, owned by KeyboardViewController.
     /// WHY @ObservedObject (not @StateObject): The controller creates and owns SuggestionState,
@@ -143,7 +147,12 @@ struct KeyboardRootView: View {
             onPanelToggle: { togglePanel() },
             onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
             isProActive: isProActive,
-            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } }
+            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } },
+            armedSmartModeName: smartModes.armedName,
+            offersSmartModeHint: smartModes.offersHint,
+            onSmartModeFanOpen: { smartModes.open() },
+            onSmartModeFanDrag: { y in smartModes.track(y: y) },
+            onSmartModeFanRelease: { smartModes.commit() }
         )
         .frame(height: toolbarHeight)
     }
@@ -193,7 +202,8 @@ struct KeyboardRootView: View {
                     elapsedSeconds: state.recordingElapsed,
                     waveformDriver: waveformDriver,
                     onCancel: { state.requestCancel() },
-                    onStop: { state.requestStop() }
+                    onStop: { state.requestStop() },
+                    armedSmartModeName: smartModes.armedName
                 )
             case .emoji:
                 // GeometryReader measures the actual space available to SwiftUI.
@@ -253,6 +263,28 @@ struct KeyboardRootView: View {
                         )
                     }
                 }
+            case .smartModeFan:
+                // Same layout contract as the emoji picker and the panel: the bar on
+                // top at its unchanged 52 pt, the fan filling the rest. The bar here
+                // is the live one — the finger is still on its mic, and the gesture
+                // that opened this is attached to it (#79).
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        fullAreaToolbar()
+
+                        if let fan = smartModes.fan {
+                            SmartModeFanView(
+                                state: fan,
+                                // Clamped for the reason the two branches below give:
+                                // the body can be evaluated on a frame where the
+                                // hosting height constraint has not landed yet, and
+                                // geo.size.height is still the bar.
+                                availableHeight: max(0, geo.size.height - toolbarHeight)
+                            )
+                        }
+                    }
+                }
+
             case .keys:
                 // Toolbar only -- the keyboard grid is UIKit, managed by KeyboardViewController
                 ToolbarView(
@@ -270,12 +302,22 @@ struct KeyboardRootView: View {
                     },
                     showsDictationUndo: state.dictationUndoAvailable,
                     onDictationUndoTap: { state.performDictationUndo() },
-                    onPanelToggle: { togglePanel() }
+                    onPanelToggle: { togglePanel() },
+                    armedSmartModeName: smartModes.armedName,
+                    offersSmartModeHint: smartModes.offersHint,
+                    onSmartModeFanOpen: { smartModes.open() },
+                    onSmartModeFanDrag: { y in smartModes.track(y: y) },
+                    onSmartModeFanRelease: { smartModes.commit() }
                 )
                 // No KeyboardView here -- it's UIKit, added directly by KeyboardViewController
                 // No bottom spacer -- the UIKit keyboard handles its own height
             }
         }
+        // The fan's drag is measured against the whole keyboard area, not against the
+        // 52 pt bar it starts in: the finger travels from the mic down over rows that
+        // are somebody else's view (#79). Named here because this is the view that
+        // spans both.
+        .coordinateSpace(name: ToolbarView.fanCoordinateSpace)
         // Issue #142: force the body to fill its hosting frame top-aligned.
         // Without this, when the hosting view expands from 52→276pt on mic
         // tap but SwiftUI hasn't yet re-rendered ToolbarView→RecordingOverlay

@@ -34,6 +34,17 @@ struct RecordingOverlay: View {
     @ObservedObject var waveformDriver: KeyboardWaveformDriver
     let onCancel: () -> Void
     let onStop: () -> Void
+
+    /// Display name of the armed Smart Mode, or nil for Normal (#79).
+    ///
+    /// **This is the indicator that makes a sticky mode safe.** The mode survives
+    /// restarts and can have been armed a week ago; the mic pill's colour says
+    /// *something* is armed but not what, and by the time the overlay is up the mic
+    /// is gone. Naming it here means the user reads "Notes" while speaking, with the
+    /// cancel button one tap away — which is the difference between a setting they
+    /// forgot and a setting that cost them a dictation.
+    var armedSmartModeName: String?
+
     @State private var instanceID = String(UUID().uuidString.prefix(8))
 
     /// Adaptive foreground color -- dark on light keyboard, light on dark keyboard.
@@ -57,8 +68,15 @@ struct RecordingOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar: varies by state but has consistent height
-            topBar
+            // Top bar: varies by state but has consistent height. The armed-mode
+            // badge is stacked over it rather than placed inside its branches
+            // because all three reserve the same 52 pt and the badge belongs in the
+            // centre of all three — including `.transcribing` / `.processing`, whose
+            // bar is deliberately empty and whose wait is the longest.
+            ZStack {
+                topBar
+                armedModeBadge
+            }
 
             // Waveform area fills remaining space between topBar and footer.
             // WHY no GeometryReader: On the first frame, the hosting view may still be
@@ -177,6 +195,35 @@ struct RecordingOverlay: View {
             .padding(.trailing, 17)
             .padding(.top, 10)
             .padding(.bottom, 6)
+        }
+    }
+
+    /// The armed mode's name, centred between the top bar's two pills (#79).
+    ///
+    /// WHY the 2 pt offset: the bar's padding is asymmetric — 10 pt above, 6 pt
+    /// below, which is what makes it interchangeable with `ToolbarView` (see
+    /// `topBar`). So the pills' own centre sits 2 pt below the region's, and a badge
+    /// centred on the region would read as sitting slightly high next to them.
+    ///
+    /// Renders nothing at all for Normal. An "off" state announced on every dictation
+    /// is noise, and the absence is already unambiguous — the mic that opened this
+    /// was blue.
+    @ViewBuilder
+    private var armedModeBadge: some View {
+        if let armedSmartModeName {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Text(armedSmartModeName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundColor(.dictusSmartMode)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Capsule().fill(Color.dictusSmartMode.opacity(0.14)))
+            .offset(y: 2)
         }
     }
 

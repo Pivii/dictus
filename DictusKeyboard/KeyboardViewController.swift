@@ -460,6 +460,16 @@ class KeyboardViewController: UIInputViewController {
         // returning to a keyboard should mean. The emoji picker deliberately keeps
         // the old restore behaviour: browsing emoji is a task worth resuming,
         // choosing a language is not.
+        // The Smart Mode fan does not survive either, and for a stronger reason than
+        // the panel's (#79): it is the visible half of a gesture, and the finger that
+        // opened it is long gone by the time a fresh controller mounts. Restoring it
+        // would present a menu that can only be dismissed by a release nobody is
+        // going to perform. `closeSmartModeFan` rather than `presentAreaMode` so the
+        // highlighted row goes with the presentation.
+        if KeyboardState.shared.areaMode == .smartModeFan {
+            KeyboardSmartModeState.shared.close()
+        }
+
         if KeyboardState.shared.areaMode == .panel {
             KeyboardState.shared.presentAreaMode(.keys)
         }
@@ -1080,6 +1090,28 @@ class KeyboardViewController: UIInputViewController {
                 instanceID: controllerID,
                 action: "hostingSet_panelOpen",
                 details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
+        case .smartModeFan:
+            // Same geometry again, and deliberately so: the fan is the emoji picker's
+            // contract with different contents. What is new is that this branch runs
+            // *during a live gesture* — the finger is already down on the mic when the
+            // long-press fires — so the hosting height grows under a touch that is
+            // still being tracked. Nothing here is new machinery: the constant moves
+            // in the same synchronous turn it always has, and `heightConstraint` is
+            // untouched (#166).
+            giellaKeyboard?.isHidden = true
+            let fanHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fanHeight
+            setHostingExpanded(true)
+            // The height the fan's rows actually divide, published to the gesture in
+            // the same turn as the constraint that creates it. See the property.
+            KeyboardSmartModeState.shared.areaHeight = max(0, fanHeight - toolbarHeight)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_smartModeFanOpen",
+                details: "old=\(oldHosting) new=\(fanHeight) status=\(status) mode=\(mode.rawValue)"
             ))
 
         case .recording:

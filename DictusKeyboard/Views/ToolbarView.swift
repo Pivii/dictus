@@ -72,6 +72,44 @@ struct ToolbarView: View {
     /// Pro entry, panel presentation only. Non-subscribers only.
     var onProTap: (() -> Void)?
 
+    /// Display name of the armed Smart Mode, or nil for Normal (#79). Drives both
+    /// the centre slot's priority-4 occupant and the mic pill's colour.
+    var armedSmartModeName: String?
+
+    /// Whether the "long-press for Smart Modes" hint is still worth showing. The
+    /// policy is `SmartModeDiscovery`'s; this is only the answer.
+    var offersSmartModeHint: Bool = false
+
+    /// Opens the long-press fan. Returns whether it opened — a refusal (a dictation
+    /// in flight, nothing pinned) leaves the gesture inert rather than arming on a
+    /// menu the user never saw.
+    var onSmartModeFanOpen: (() -> Bool)?
+
+    /// Reports the finger's position while the fan is open, in points below the
+    /// toolbar. Negative means back up on the mic.
+    var onSmartModeFanDrag: ((CGFloat) -> Void)?
+
+    /// Release: arm what is highlighted and start recording, or abort.
+    var onSmartModeFanRelease: (() -> Void)?
+
+    /// Coordinate space the fan gesture reports in. Declared here and named by
+    /// `KeyboardRootView`, which owns the view it is attached to: the drag has to be
+    /// measured against the whole keyboard area, not against the 52 pt bar the
+    /// gesture starts in.
+    static let fanCoordinateSpace = "dictusKeyboardArea"
+
+    /// Set the moment the long-press succeeds, cleared as soon as anything has had a
+    /// chance to consume it.
+    ///
+    /// WHY it exists: the fan gesture is attached with `simultaneousGesture`, so the
+    /// underlying mic `Button` is still live and fires its action on a release inside
+    /// its bounds — which is exactly the abort. Without this, pulling back to the mic
+    /// to cancel would start the plain recording the user just cancelled.
+    ///
+    /// It is set ~0.35 s before any release, so it is always true by the time the
+    /// button action could run, whichever order SwiftUI delivers the two in.
+    @State private var fanGestureDidOpen = false
+
     var body: some View {
         // WHY ZStack: ensures the banner text is centered horizontally across the
         // full toolbar width, independent of the mic pill position on the right.
@@ -92,8 +130,15 @@ struct ToolbarView: View {
         // WHY 52pt: The AnimatedMicButton pill (36pt tall) has ring/glow effects
         // extending to 46pt. With 4pt top padding, 52pt total provides enough
         // breathing room above and below the pill without clipping.
-        .frame(height: 52)
+        .frame(height: Self.toolbarHeight)
     }
+
+    /// The bar's height, in both presentations. Named rather than inlined because the
+    /// fan gesture subtracts it to turn a root-space drag into a fan-space one, and a
+    /// second literal 52 would be a silent one-notch offset on every row boundary.
+    /// `KeyboardRootView` and `KeyboardViewController` hold their own copies for
+    /// their own layout; this one belongs to the bar itself.
+    static let toolbarHeight: CGFloat = 52
 
     // MARK: - Presentations
 
@@ -122,52 +167,177 @@ struct ToolbarView: View {
     /// mid-word, and that is the cheapest of the three prices.
     private var dictationBar: some View {
         HStack {
-            if let message = statusMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-                    // Instrumentation only (#261). "The message was assigned" and
-                    // "a live view put it on screen" are different facts, and only
-                    // the first was observable — iOS keeps several controllers
-                    // alive, so a message can be set and rendered into a tree the
-                    // user is not looking at. This is the second fact, reported
-                    // from the one place that can actually attest to it.
-                    .onAppear {
-                        KeyboardState.shared.noteStatusMessageDisplayed(
-                            rootView: messageProbeRootViewID,
-                            controller: messageProbeControllerID
-                        )
-                    }
-                    .onDisappear {
-                        KeyboardState.shared.noteStatusMessageHidden(
-                            rootView: messageProbeRootViewID,
-                            controller: messageProbeControllerID
-                        )
-                    }
-            } else if showsDictationUndo {
-                dictationUndoButton
-
-                Spacer()
-            } else if suggestions.isEmpty {
+            if !centreSlot.evictsHamburger {
                 hamburgerButton
-
-                if showsPolishUnavailable {
-                    polishUnavailableNotice
-                } else {
-                    Spacer()
-                }
-            } else {
-                SuggestionBarView(
-                    suggestions: suggestions,
-                    mode: suggestionMode,
-                    onTap: { index in onSuggestionTap?(index) }
-                )
             }
 
-            AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
+            centreSlotContent
+
+            micPill
         }
+    }
+
+    /// The one occupant of the centre slot, resolved by the priority table in
+    /// DictusCore (#79). The view renders whatever it is handed; the ordering is
+    /// tested over there, because this target has no test bundle.
+    private var centreSlot: ToolbarCentreSlot {
+        ToolbarCentreSlot.resolve(
+            errorMessage: statusMessage,
+            offersDictationUndo: showsDictationUndo,
+            hasSuggestions: !suggestions.isEmpty,
+            polishUnavailable: showsPolishUnavailable,
+            armedModeName: armedSmartModeName,
+            offersDiscoveryHint: offersSmartModeHint
+        )
+    }
+
+    @ViewBuilder
+    private var centreSlotContent: some View {
+        switch centreSlot {
+        case .error(let message):
+            errorMessage(message)
+        case .dictationUndo:
+            dictationUndoButton
+            Spacer()
+        case .suggestions:
+            SuggestionBarView(
+                suggestions: suggestions,
+                mode: suggestionMode,
+                onTap: { index in onSuggestionTap?(index) }
+            )
+        case .polishUnavailable:
+            polishUnavailableNotice
+        case .armedMode(let name):
+            armedModeLabel(name)
+        case .discoveryHint:
+            discoveryHint
+        case .empty:
+            Spacer()
+        }
+    }
+
+    private func errorMessage(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundColor(.red)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            // Instrumentation only (#261). "The message was assigned" and
+            // "a live view put it on screen" are different facts, and only
+            // the first was observable — iOS keeps several controllers
+            // alive, so a message can be set and rendered into a tree the
+            // user is not looking at. This is the second fact, reported
+            // from the one place that can actually attest to it.
+            .onAppear {
+                KeyboardState.shared.noteStatusMessageDisplayed(
+                    rootView: messageProbeRootViewID,
+                    controller: messageProbeControllerID
+                )
+            }
+            .onDisappear {
+                KeyboardState.shared.noteStatusMessageHidden(
+                    rootView: messageProbeRootViewID,
+                    controller: messageProbeControllerID
+                )
+            }
+    }
+
+    /// The mic, carrying the fan gesture.
+    ///
+    /// `simultaneousGesture` rather than `highPriorityGesture`: the plain tap is
+    /// still the overwhelmingly common way to dictate, and it must not pay a
+    /// long-press delay. See `fanGestureDidOpen` for how the two are kept from
+    /// firing on the same release.
+    private var micPill: some View {
+        AnimatedMicButton(
+            status: dictationStatus,
+            isPill: true,
+            tint: armedSmartModeName == nil ? .dictusAccent : .dictusSmartMode,
+            onTap: {
+                guard !fanGestureDidOpen else {
+                    fanGestureDidOpen = false
+                    return
+                }
+                onMicTap()
+            }
+        )
+        .simultaneousGesture(fanGesture)
+    }
+
+    /// Long-press, then drag, then release — one continuous gesture, because that is
+    /// what the user performs (#79, Typeless's gesture).
+    ///
+    /// `minimumDistance: 0` on the drag so a release without movement still arrives
+    /// as a drag end: a user who long-presses and lets go without sliding must reach
+    /// the abort, not fall out of the sequence into nothing.
+    private var fanGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(
+                minimumDistance: 0,
+                coordinateSpace: .named(Self.fanCoordinateSpace)
+            ))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    // The long press landed. Opening here rather than on the first
+                    // drag update is what makes the fan appear under a stationary
+                    // thumb, which is the affordance: nothing has moved yet, and the
+                    // menu is already there to move onto.
+                    guard !fanGestureDidOpen else { return }
+                    fanGestureDidOpen = onSmartModeFanOpen?() ?? false
+                case .second(true, let drag):
+                    guard fanGestureDidOpen, let drag else { return }
+                    onSmartModeFanDrag?(drag.location.y - Self.toolbarHeight)
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in
+                guard fanGestureDidOpen else { return }
+                onSmartModeFanRelease?()
+                // Cleared a turn later, not here: the mic `Button`'s action may
+                // still be about to fire for this same release, and it is the flag
+                // that tells it to stand down.
+                DispatchQueue.main.async { fanGestureDidOpen = false }
+            }
+    }
+
+    /// The armed mode's name, priority 4 (#79).
+    ///
+    /// Purple and quiet. It is a statement about a setting, not a message: the user
+    /// armed this deliberately, possibly last week, and the reason it is on screen at
+    /// all is that a sticky mode with no visible sign is how someone dictates a
+    /// translation they did not want.
+    private func armedModeLabel(_ name: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+
+            Text(name)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundColor(.dictusSmartMode)
+        .padding(.leading, 6)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Priority 5, the discovery affordance (#79).
+    ///
+    /// Secondary and small, in the register of the #315 notice rather than of an
+    /// error: nothing is wrong, there is simply something here the user has not
+    /// found. `SmartModeDiscovery` retires it once the gesture has been performed.
+    private var discoveryHint: some View {
+        Text(
+            "Hold the mic for Smart Modes",
+            comment: "Toolbar hint teaching the long-press gesture that opens the Smart Mode fan."
+        )
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .padding(.leading, 6)
+        .frame(maxWidth: .infinity)
     }
 
     /// The panel header: close left, gear anchored right, Pro entry inserted to
