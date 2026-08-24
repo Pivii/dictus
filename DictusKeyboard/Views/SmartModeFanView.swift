@@ -78,16 +78,17 @@ struct SmartModeFanView: View {
     /// (#79), one surface earlier.
     private func row(_ entry: SmartModeFanEntry, isHighlighted: Bool) -> some View {
         let isEnabled = entry.smartMode == nil || !showsReason
+        // Icon and label centred as one group, not the label centred inside a
+        // leading-aligned row (device feedback, 2026-08-24): the highlight capsule
+        // spans the full width, and a label pinned to its left edge reads as text
+        // that happens to sit on a pill rather than as the pill's own label.
         return HStack(spacing: 10) {
             Image(systemName: entry.icon)
                 .font(.system(size: 17, weight: .medium))
-                .frame(width: 24)
 
             Text(name(entry))
                 .font(.system(size: 17, weight: isHighlighted ? .semibold : .regular))
                 .lineLimit(1)
-
-            Spacer()
         }
         .foregroundColor(foreground(entry, isHighlighted: isHighlighted, isEnabled: isEnabled))
         .padding(.horizontal, 20)

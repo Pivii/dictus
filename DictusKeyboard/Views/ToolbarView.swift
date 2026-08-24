@@ -296,16 +296,26 @@ struct ToolbarView: View {
                 coordinateSpace: .named(Self.fanCoordinateSpace)
             ))
             .onChanged { value in
-                switch value {
-                case .first(true):
-                    guard !isSmartModeFanOpen else { return }
+                // `.second` and NOT `.first(true)`, which is the whole of this
+                // gesture's timing (device, 2026-08-24).
+                //
+                // A `LongPressGesture`'s value means "a press is in progress", not
+                // "the press has lasted long enough". `onChanged` therefore delivers
+                // `.first(true)` the instant the finger lands, and opening there
+                // meant the fan had no delay at all: **21 mic taps out of 21 in one
+                // session opened the fan**, and a plain tap could no longer start a
+                // dictation. The 0.35 s was written down and never applied.
+                //
+                // A `SequenceGesture` moves to `.second` only once its first gesture
+                // has *succeeded*, so this is the long press completing. The drag
+                // value is nil until the finger actually moves, which is what keeps
+                // the fan appearing under a stationary thumb.
+                guard case .second(true, let drag) = value else { return }
+                if !isSmartModeFanOpen {
                     fanGestureDidOpen = onSmartModeFanOpen?() ?? false
-                case .second(true, let drag):
-                    guard fanGestureDidOpen, let drag else { return }
-                    onSmartModeFanDrag?(drag.location.y - Self.toolbarHeight)
-                default:
-                    break
                 }
+                guard fanGestureDidOpen, let drag else { return }
+                onSmartModeFanDrag?(drag.location.y - Self.toolbarHeight)
             }
             .onEnded { _ in releaseFan() }
     }
