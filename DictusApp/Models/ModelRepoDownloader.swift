@@ -165,6 +165,7 @@ final class ModelRepoDownloader {
         // sizes (verified: Encoder weight.bin = 445187200), so byte weighting is
         // accurate. Unknown sizes (-1) count as 0, same as FluidAudio.
         let totalBytes: Int64 = files.reduce(0) { $0 + Int64(max(0, $1.size)) }
+        Self.logSizeMismatchIfAny(modelName: modelName, measuredBytes: totalBytes)
         let reporter = ProgressReporter(
             totalBytes: totalBytes,
             totalFiles: files.count,
@@ -219,6 +220,30 @@ final class ModelRepoDownloader {
                 throw DownloadError.missingRequiredFile(requiredPath)
             }
         }
+    }
+
+    // MARK: - Catalogue size reconciliation (issue #372)
+
+    /// Compares the size `ModelInfo` promised on the model card against the total
+    /// the repository just told us, and logs the pair when they disagree.
+    ///
+    /// WHY here: this is the only moment in the app where both numbers exist. The
+    /// card cannot compute the real total (it would need this network round trip),
+    /// so the announced size has to stay a hand-written constant — and it will
+    /// drift again the next time a repository is repacked. One line at download
+    /// time turns that drift from silent into something a log reader catches for
+    /// free. `ModelInfo.sizeHasDrifted(fromMeasured:)` owns the threshold.
+    ///
+    /// Nothing downstream reads this: it is diagnostics only, the download proceeds
+    /// on the measured total exactly as before.
+    private static func logSizeMismatchIfAny(modelName: String, measuredBytes: Int64) {
+        guard let model = ModelInfo.forIdentifier(modelName),
+              model.sizeHasDrifted(fromMeasured: measuredBytes) else { return }
+        PersistentLog.log(.modelDownloadSizeMismatch(
+            name: modelName,
+            catalogMB: Int(model.sizeBytes / 1_000_000),
+            actualMB: Int(measuredBytes / 1_000_000)
+        ))
     }
 
     // MARK: - File listing (HuggingFace tree API)

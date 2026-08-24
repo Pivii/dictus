@@ -98,6 +98,10 @@ public enum LogEvent: Sendable {
     case modelLoadStateChanged(from: String, to: String, reason: String)
     case modelDownloadProgress(name: String, percent: Int, mbDownloaded: Int, mbTotal: Int)
     case modelDownloadStalled(name: String, path: String, timeoutSeconds: Int, attempt: Int)
+    /// The catalogue promised one size and the repository serves another (issue #372).
+    /// Emitted once per download, only past the tolerance, so its presence in a log
+    /// is itself the signal that a hardcoded size has drifted.
+    case modelDownloadSizeMismatch(name: String, catalogMB: Int, actualMB: Int)
 
     // MARK: Keyboard
     case keyboardDidAppear
@@ -337,7 +341,7 @@ public enum LogEvent: Sendable {
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelDeleteFailed, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged,
-             .modelDownloadProgress, .modelDownloadStalled:
+             .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .overlayShown, .overlayHidden, .rapidTapRejected,
@@ -405,7 +409,8 @@ public enum LogEvent: Sendable {
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
-             .modelDownloadStalled, .audioHapticsAllowanceFailed:
+             .modelDownloadStalled, .audioHapticsAllowanceFailed,
+             .modelDownloadSizeMismatch:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -578,6 +583,7 @@ public enum LogEvent: Sendable {
         case .modelLoadStateChanged: return "modelLoadStateChanged"
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
+        case .modelDownloadSizeMismatch: return "modelDownloadSizeMismatch"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
         case .polishHandoff: return "polishHandoff"
@@ -671,6 +677,8 @@ public enum LogEvent: Sendable {
             return "name=\(name) percent=\(percent) downloaded=\(mbDownloaded)MB total=\(mbTotal)MB"
         case .modelDownloadStalled(let name, let path, let timeoutSeconds, let attempt):
             return "name=\(name) path=\(path) timeout=\(timeoutSeconds)s attempt=\(attempt)"
+        case .modelDownloadSizeMismatch(let name, let catalogMB, let actualMB):
+            return "name=\(name) catalog=\(catalogMB)MB actual=\(actualMB)MB"
 
         // Keyboard (no content parameters -- privacy)
         case .keyboardDidAppear, .keyboardDidDisappear,
