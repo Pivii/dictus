@@ -118,6 +118,10 @@ struct ToolbarView: View {
     /// button action could run, whichever order SwiftUI delivers the two in.
     @State private var fanGestureDidOpen = false
 
+    /// Drives the discovery hint's float: 0 at rest, 3 at the far end of the breath.
+    /// One value for the offset and the opacity, so the two cannot drift apart.
+    @State private var hintDrift: CGFloat = 0
+
     var body: some View {
         // WHY ZStack: ensures the banner text is centered horizontally across the
         // full toolbar width, independent of the mic pill position on the right.
@@ -406,17 +410,57 @@ struct ToolbarView: View {
     /// Secondary and small, in the register of the #315 notice rather than of an
     /// error: nothing is wrong, there is simply something here the user has not
     /// found. `SmartModeDiscovery` retires it once the gesture has been performed.
+    ///
+    /// ### Why it moves, when nothing else in this bar does
+    ///
+    /// Every other occupant of the centre slot is a *statement* — an error, a name, a
+    /// notice — and a statement that drifts is a distraction. This one is an
+    /// invitation, and it is competing for attention with the text the user came here
+    /// to write. Static grey caption text in a keyboard toolbar is the most ignorable
+    /// object in iOS; it is read once, on the first keyboard the user ever opens, and
+    /// after that it is furniture. The drift is what buys the second look.
+    ///
+    /// The motion is deliberately the mic's own: 2 s, `easeInOut`, `autoreverses`,
+    /// the same curve as `AnimatedMicButton`'s idle glow. Two things breathing
+    /// together at the same rate read as one thing pointing at the other; two things
+    /// breathing at different rates read as a bug.
+    ///
+    /// The arrow drifts a little further than the text. That difference is the whole
+    /// effect — the group is not sliding, it is *reaching* — and it is why this is
+    /// two amplitudes on one animation rather than one `offset` on the `HStack`.
+    ///
+    /// It repeats forever in a keyboard extension, which is the cost. It is the cost
+    /// the idle mic glow already pays in the same view, and this one stops existing
+    /// the moment the user performs the gesture once.
     private var discoveryHint: some View {
-        Text(
-            "Hold the mic for Smart Modes",
-            comment: "Toolbar hint teaching the long-press gesture that opens the Smart Mode fan."
-        )
+        HStack(spacing: 6) {
+            Text(
+                "Hold the mic for Smart Modes",
+                comment: "Toolbar hint teaching the long-press gesture that opens the Smart Mode fan."
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+
+            // Toward the mic, which is the point of the sentence and sits to the
+            // right of it in both presentations of this bar.
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10, weight: .semibold))
+                .offset(x: hintDrift * 2.2)
+        }
         .font(.caption2)
         .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
+        .opacity(0.62 + hintDrift * 0.13)
+        .offset(x: hintDrift)
         .padding(.leading, 6)
         .frame(maxWidth: .infinity)
+        .onAppear {
+            // Assigned inside the animation and never reset: the hint has no other
+            // states, so there is nothing here to cancel and stack the way
+            // `AnimatedMicButton` has to.
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                hintDrift = 3
+            }
+        }
     }
 
     /// The panel header: close left, gear anchored right, Pro entry inserted to
