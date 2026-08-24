@@ -81,6 +81,9 @@ public enum SmartModeCatalogue {
             // render from the identifier if it wants one.
             displayName: "\u{2192} \(target.shortCode)",
             icon: "globe",
+            // The pill badge says "EN", not a globe: a globe cannot tell → EN from
+            // → ES, and pinning both is the whole point of pinning three modes.
+            badge: .text(target.shortCode),
             prompt: SmartModePrompt(
                 instructions: SmartModeTranslatePrompt.instructions(
                     target: target, glossary: PolishGlossary.promptBlock

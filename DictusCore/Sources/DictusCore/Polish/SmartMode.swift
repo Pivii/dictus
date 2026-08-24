@@ -32,6 +32,30 @@ public struct SmartModePrompt: Equatable, Sendable, Codable {
     }
 }
 
+/// What a mode puts on the mic pill's corner badge when it is armed (#79).
+///
+/// ### Why this is not just `icon`
+///
+/// The badge is an 18 pt disc and the only thing on screen while the user types, so
+/// it has to answer "which mode" on its own — the fan and the centre label are both
+/// gone by then. A symbol answers that for Notes. It does not for Translate: the
+/// glyph is a globe, and **a globe is the same globe whatever the target language**.
+/// The moment a user pins → EN and → ES, which is the point of pinning three modes,
+/// two identical badges mean two different transformations. The target's code does
+/// not have that problem and is two characters wide.
+///
+/// It stays separate from `displayName` because the name is sized for a fan row —
+/// "→ EN" with its arrow — and the arrow is noise inside a disc that is already
+/// attached to the button it modifies.
+public enum SmartModeBadge: Equatable, Sendable, Codable {
+
+    /// An SF Symbol, for modes a glyph can name.
+    case symbol(String)
+
+    /// One or two characters, for modes that a glyph cannot tell apart.
+    case text(String)
+}
+
 /// What the user receives when a mode's transformation is refused **before the
 /// engine is ever called** — today only a context overflow (#270).
 ///
@@ -106,8 +130,14 @@ public struct SmartMode: Equatable, Sendable, Codable, Identifiable {
     /// Name shown in the fan, in the recording overlay, and in the app's mode list.
     public let displayName: String
 
-    /// SF Symbol name.
+    /// SF Symbol name. Used wherever the mode appears next to its own name — the fan
+    /// row, the centre label, the recording overlay, the app's mode list.
     public let icon: String
+
+    /// What the armed mic pill's corner badge shows. Defaults to `icon`, because for
+    /// every mode a glyph can name, that is the right answer and the one that keeps
+    /// the two surfaces saying the same thing.
+    public let badge: SmartModeBadge
 
     /// What the engine is told to do.
     public let prompt: SmartModePrompt
@@ -133,6 +163,7 @@ public struct SmartMode: Equatable, Sendable, Codable, Identifiable {
     public init(id: String,
                 displayName: String,
                 icon: String,
+                badge: SmartModeBadge? = nil,
                 prompt: SmartModePrompt,
                 contract: PolishAcceptanceContract,
                 overflowBehaviour: SmartModeOverflowBehaviour,
@@ -140,6 +171,7 @@ public struct SmartMode: Equatable, Sendable, Codable, Identifiable {
         self.id = id
         self.displayName = displayName
         self.icon = icon
+        self.badge = badge ?? .symbol(icon)
         self.prompt = prompt
         self.contract = contract
         self.overflowBehaviour = overflowBehaviour
@@ -167,6 +199,12 @@ public struct SmartMode: Equatable, Sendable, Codable, Identifiable {
         self.id = try container.decode(String.self, forKey: .id)
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.icon = try container.decode(String.self, forKey: .icon)
+        // Same upgrade-across-a-dictation argument as `overflowBehaviour` below, with
+        // a cheaper default: a record written by the previous build has no badge, and
+        // `icon` is what that build drew. The worst case is a globe on the pill for
+        // one snapshot, not a lost transformation.
+        self.badge = try container.decodeIfPresent(SmartModeBadge.self, forKey: .badge)
+            ?? .symbol(self.icon)
         self.prompt = try container.decode(SmartModePrompt.self, forKey: .prompt)
         self.contract = try container.decode(PolishAcceptanceContract.self, forKey: .contract)
         self.isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false

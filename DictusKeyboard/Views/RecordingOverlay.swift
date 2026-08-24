@@ -37,17 +37,15 @@ struct RecordingOverlay: View {
 
     /// Display name of the armed Smart Mode, or nil for Normal (#79).
     ///
+    /// The armed Smart Mode, or nil for Normal (#79).
+    ///
     /// **This is the indicator that makes a sticky mode safe.** The mode survives
     /// restarts and can have been armed a week ago; the mic pill's badge names it,
     /// but by the time the overlay is up the mic is gone and the badge with it.
     /// Naming it here means the user reads "Notes" while speaking, with the cancel
     /// button one tap away — which is the difference between a setting they forgot
     /// and a setting that cost them a dictation.
-    var armedSmartModeName: String?
-
-    /// SF Symbol of the armed Smart Mode (#79). The same glyph the mic pill was
-    /// wearing a moment ago: this surface is the caption of that badge.
-    var armedSmartModeIcon: String?
+    var armedSmartMode: SmartMode?
 
     @State private var instanceID = String(UUID().uuidString.prefix(8))
 
@@ -214,12 +212,12 @@ struct RecordingOverlay: View {
     /// was blue.
     @ViewBuilder
     private var armedModeBadge: some View {
-        if let armedSmartModeName {
+        if let armedSmartMode {
             HStack(spacing: 5) {
-                Image(systemName: armedSmartModeIcon ?? "sparkles")
+                Image(systemName: armedSmartMode.icon)
                     .font(.system(size: 12, weight: .semibold))
 
-                Text(armedSmartModeName)
+                Text(armedSmartMode.displayName)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
             }

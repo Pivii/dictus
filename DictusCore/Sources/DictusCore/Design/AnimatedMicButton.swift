@@ -22,8 +22,9 @@ public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
 
-    /// SF Symbol of the armed Smart Mode, drawn as a badge on the button's corner,
-    /// or nil when there is nothing armed.
+    /// The armed Smart Mode's mark, drawn on the button's corner, or nil when there
+    /// is nothing armed. A glyph for Notes, the target's code for Translate — see
+    /// `SmartModeBadge` for why the two are not the same thing.
     ///
     /// A parameter since #79, and a badge rather than a colour. The obvious signal
     /// was to recolour the pill, and it was built twice and refused on sight both
@@ -38,13 +39,13 @@ public struct AnimatedMicButton: View {
     /// post-recording stages stay in their washed accent, because those describe what
     /// the phone is doing right now and outrank a setting — a red mic must mean
     /// recording on every screen of this product.
-    public let badge: String?
+    public let badge: SmartModeBadge?
 
     public let onTap: () -> Void
 
     public init(status: DictationStatus,
                 isPill: Bool = false,
-                badge: String? = nil,
+                badge: SmartModeBadge? = nil,
                 onTap: @escaping () -> Void) {
         self.status = status
         self.isPill = isPill
@@ -152,13 +153,31 @@ public struct AnimatedMicButton: View {
     @ViewBuilder
     private var armedBadge: some View {
         if let badge {
-            Image(systemName: badge)
-                .font(.system(size: badgeDiameter * 0.52, weight: .semibold))
+            badgeContent(badge)
                 .foregroundColor(.dictusAccent)
                 .frame(width: badgeDiameter, height: badgeDiameter)
                 .background(Circle().fill(.white))
                 .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
                 .offset(x: badgeOffset.width, y: badgeOffset.height)
+        }
+    }
+
+    /// Text rides smaller than a glyph, and rounded.
+    ///
+    /// A two-letter code set at the symbol's size overflows the disc — SF Symbols are
+    /// drawn to fit their point size, two characters are not. Rounded because the disc
+    /// is one, and `.monospaced`-style digits are not wanted: these are letters.
+    @ViewBuilder
+    private func badgeContent(_ badge: SmartModeBadge) -> some View {
+        switch badge {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: badgeDiameter * 0.52, weight: .semibold))
+        case .text(let value):
+            Text(value)
+                .font(.system(size: badgeDiameter * 0.44, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
@@ -331,9 +350,9 @@ public struct AnimatedMicButton: View {
 #Preview("Pill") {
     VStack(spacing: 40) {
         AnimatedMicButton(status: .idle, isPill: true) {}
-        AnimatedMicButton(status: .idle, isPill: true, badge: "list.bullet") {}
-        AnimatedMicButton(status: .idle, isPill: true, badge: "globe") {}
-        AnimatedMicButton(status: .recording, isPill: true, badge: "globe") {}
+        AnimatedMicButton(status: .idle, isPill: true, badge: .symbol("list.bullet")) {}
+        AnimatedMicButton(status: .idle, isPill: true, badge: .text("EN")) {}
+        AnimatedMicButton(status: .recording, isPill: true, badge: .text("ES")) {}
         AnimatedMicButton(status: .transcribing, isPill: true) {}
     }
     .padding()

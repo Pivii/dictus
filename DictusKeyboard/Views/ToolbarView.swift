@@ -72,14 +72,9 @@ struct ToolbarView: View {
     /// Pro entry, panel presentation only. Non-subscribers only.
     var onProTap: (() -> Void)?
 
-    /// Display name of the armed Smart Mode, or nil for Normal (#79). Drives the
-    /// centre slot's priority-4 occupant.
-    var armedSmartModeName: String?
-
-    /// SF Symbol of the armed Smart Mode, or nil for Normal (#79). Drives the mic
-    /// pill's badge, and the glyph beside the name in the centre slot — the same
-    /// symbol in both places, which is what ties the two signals together.
-    var armedSmartModeIcon: String?
+    /// The armed Smart Mode, or nil for Normal (#79). Drives the centre slot's
+    /// priority-4 occupant and the mic pill's corner badge.
+    var armedSmartMode: SmartMode?
 
     /// Whether the "long-press for Smart Modes" hint is still worth showing. The
     /// policy is `SmartModeDiscovery`'s; this is only the answer.
@@ -200,7 +195,7 @@ struct ToolbarView: View {
             offersDictationUndo: showsDictationUndo,
             hasSuggestions: !suggestions.isEmpty,
             polishUnavailable: showsPolishUnavailable,
-            armedModeName: armedSmartModeName,
+            armedModeName: armedSmartMode?.displayName,
             offersDiscoveryHint: offersSmartModeHint
         )
     }
@@ -268,7 +263,7 @@ struct ToolbarView: View {
         AnimatedMicButton(
             status: dictationStatus,
             isPill: true,
-            badge: armedSmartModeIcon,
+            badge: armedSmartMode?.badge,
             onTap: {
                 guard !fanGestureDidOpen else {
                     fanGestureDidOpen = false
@@ -383,10 +378,10 @@ struct ToolbarView: View {
 
     /// The armed mode's name, priority 4 (#79).
     ///
-    /// Accent blue and quiet, wearing the mode's own glyph — the same glyph the mic
-    /// pill's badge is wearing 200 pt to the right, which is the entire reason the
-    /// badge is legible at all: this label is where the user learns what that mark on
-    /// the mic means.
+    /// Accent blue and quiet, wearing the mode's own glyph beside its name. This is
+    /// where the badge on the mic is *taught*: the two sit 200 pt apart on the same
+    /// bar, so reading "→ EN" here is what makes the EN on the pill mean something
+    /// later, when the label has given way to the suggestions.
     ///
     /// It is a statement about a setting, not a message: the user armed this
     /// deliberately, possibly last week, and the reason it is on screen at all is that
@@ -394,7 +389,7 @@ struct ToolbarView: View {
     /// did not want.
     private func armedModeLabel(_ name: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: armedSmartModeIcon ?? "sparkles")
+            Image(systemName: armedSmartMode?.icon ?? "sparkles")
                 .font(.system(size: 11, weight: .semibold))
 
             Text(name)
