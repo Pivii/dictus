@@ -4,55 +4,66 @@ import Foundation
 import FoundationModels
 
 /// The round-1 polish engine. Wraps Apple's on-device Foundation Model with a
-/// per `(mode, language)` `LanguageModelSession` cache so the system prompt is
+/// per `(task, language)` `LanguageModelSession` cache so the system prompt is
 /// baked at session creation, not retransmitted with every call.
 ///
 /// Availability is gated by `PolishAvailability.isAppleFMAvailable` upstream —
-/// `PolishCoordinator` instantiates this engine only when Apple Intelligence is
-/// usable. The cache has a small bound (9): 4 languages × 2 per-language modes
-/// + 1 language-agnostic Auto session (#239).
+/// `PolishService` instantiates this engine only when Apple Intelligence is
+/// usable. The cache bound is derived rather than written down: 4 languages ×
+/// 2 per-language polish modes + 1 language-agnostic Auto session (#239) + one
+/// language-agnostic session per Smart Mode (#79).
 @available(iOS 26.0, macOS 26.0, *)
 public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Sendable {
 
     public let identifier = "apple-fm"
-    private let cache = SessionCache(capacity: 9)
+    private let cache = SessionCache(capacity: sessionCacheCapacity)
+
+    /// One session per prompt this build can send.
+    ///
+    /// Sized rather than guessed because an under-sized cache is invisible: it
+    /// evicts a warmed session and the next dictation silently pays for a cold one.
+    static let sessionCacheCapacity =
+        SupportedLanguage.allCases.count * 2 + 1 + SmartModeCatalogue.builtIns.count
 
     /// Optional instructions override. `nil` in the app (uses the shipping
     /// prompts via `Self.instructions`); the eval harness injects a candidate
     /// prompt here to A/B against the baseline without recompiling — the session
     /// wrapper and stateless lifecycle stay identical, only the system prompt
     /// changes.
-    private let instructionsOverride: (@Sendable (PolishMode, SupportedLanguage) -> String)?
+    private let instructionsOverride: (@Sendable (PolishTask, SupportedLanguage) -> String)?
 
     public init() {
         self.instructionsOverride = nil
     }
 
-    public init(instructionsOverride: @escaping @Sendable (PolishMode, SupportedLanguage) -> String) {
+    public init(instructionsOverride: @escaping @Sendable (PolishTask, SupportedLanguage) -> String) {
         self.instructionsOverride = instructionsOverride
     }
 
-    private func resolvedInstructions(mode: PolishMode, language: SupportedLanguage) -> String {
-        instructionsOverride?(mode, language) ?? Self.instructions(for: mode, language: language)
+    private func resolvedInstructions(task: PolishTask, language: SupportedLanguage) -> String {
+        instructionsOverride?(task, language) ?? Self.instructions(for: task, language: language)
     }
 
-    /// Normalize the session-cache language for a mode. `.auto` has a single
-    /// language-agnostic prompt, so its session key must not vary with the
-    /// caller-supplied placeholder language — otherwise a `prewarm(mode: .auto)`
-    /// and the subsequent `polish(mode: .auto)` could miss each other and the
-    /// warm session would be wasted. `.english` is an arbitrary canonical
-    /// filler; `instructions(for:language:)` ignores it in `.auto` mode.
-    private static func sessionLanguage(for mode: PolishMode,
+    /// Normalize the session-cache language for a task. A task whose prompt is
+    /// written once for every input language — `.auto` (#239) and every Smart Mode
+    /// (#79) — must not vary its session key with the caller-supplied placeholder
+    /// language, otherwise a `prewarm` and the `polish` that follows it could miss
+    /// each other and the warm session would be wasted. `.english` is an arbitrary
+    /// canonical filler; `instructions(for:language:)` ignores it for those tasks.
+    ///
+    /// A translation mode names its target inside its own instructions, so its
+    /// sessions stay separate through the identifier rather than through this.
+    private static func sessionLanguage(for task: PolishTask,
                                         requested: SupportedLanguage) -> SupportedLanguage {
-        mode == .auto ? .english : requested
+        task.hasLanguageAgnosticPrompt ? .english : requested
     }
 
     public func polish(raw: String,
                        targetLanguage: SupportedLanguage,
-                       mode: PolishMode) async throws -> String {
+                       task: PolishTask) async throws -> String {
         let key = SessionKey(
-            mode: mode,
-            language: Self.sessionLanguage(for: mode, requested: targetLanguage)
+            task: task.identifier,
+            language: Self.sessionLanguage(for: task, requested: targetLanguage)
         )
         // A session lives exactly one polish call. `prewarm()` (fired at
         // recording start) leaves a fresh, warmed session in the cache; we use
@@ -67,21 +78,18 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         // stateless transform, so we keep at most `instructions + 1 input`.
         let session = await cache.session(
             for: key,
-            instructions: resolvedInstructions(mode: mode, language: targetLanguage)
+            instructions: resolvedInstructions(task: task, language: targetLanguage)
         )
         // Wrap the input with explicit Input/Output framing. Without this Apple
         // FM treats the raw as a conversational turn and emits chat-reply
         // acknowledgements ("I'll polish it for you") instead of the polished
-        // text. The trailing "Polished output:" marker biases the model toward
-        // continuing the transform rather than starting a chat reply.
-        let prompt = """
-        Polish this text. Output only the polished version, nothing else.
-
-        Input:
-        \(raw)
-
-        Polished output:
-        """
+        // text. The trailing marker biases the model toward continuing the
+        // transform rather than starting a chat reply.
+        //
+        // Both halves come off the task since #79. They used to be hardcoded to the
+        // polish wording, and asking the model to produce notes under an instruction
+        // that says "polish" is self-defeating.
+        let prompt = task.userTurn(raw: raw)
         // The drop names the session it is dropping (#315). `respond()` suspends
         // for four to five seconds, and the captures on that issue show two
         // dictations chaining inside a single second — so the next recording's
@@ -104,21 +112,21 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         }
     }
 
-    /// Create a FRESH session for `(mode, targetLanguage)` and prewarm it.
-    /// Called from `PolishCoordinator.prewarm()` at app launch and at the start
-    /// of every recording (#141). The coordinator passes `.natural` for the
-    /// per-language path and `.auto` in Auto-detect mode (#239) so the warmed
-    /// instructions match the ones `polish()` will use. Dropping any existing
-    /// session first guarantees we warm a virgin session (instructions only,
-    /// zero accumulated transcript) — the prerequisite for the stateless
-    /// invariant in `polish()`.
-    public func prewarm(mode: PolishMode, targetLanguage: SupportedLanguage) async {
-        let language = Self.sessionLanguage(for: mode, requested: targetLanguage)
-        let key = SessionKey(mode: mode, language: language)
+    /// Create a FRESH session for `(task, targetLanguage)` and prewarm it.
+    /// Called from `PolishService.prewarm()` at app launch and at the start
+    /// of every recording (#141). The service passes `.natural` for the
+    /// per-language path, `.auto` in Auto-detect mode (#239), and the armed Smart
+    /// Mode when there is one (#79) so the warmed instructions match the ones
+    /// `polish()` will use. Dropping any existing session first guarantees we warm a
+    /// virgin session (instructions only, zero accumulated transcript) — the
+    /// prerequisite for the stateless invariant in `polish()`.
+    public func prewarm(task: PolishTask, targetLanguage: SupportedLanguage) async {
+        let language = Self.sessionLanguage(for: task, requested: targetLanguage)
+        let key = SessionKey(task: task.identifier, language: language)
         await cache.drop(key)
         let session = await cache.session(
             for: key,
-            instructions: resolvedInstructions(mode: mode, language: language)
+            instructions: resolvedInstructions(task: task, language: language)
         )
         session.prewarm()
     }
@@ -131,7 +139,7 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     public static let contextBudget = PolishContextBudget.appleFoundationModels
 
     /// Price the call before making it: the RESOLVED instructions for
-    /// `(mode, targetLanguage)` — which is what the session was or will be
+    /// `(task, targetLanguage)` — which is what the session was or will be
     /// created with, including any harness override — plus the input, plus a
     /// reserve for the generated output. Instruction length varies by a factor
     /// of two across the prompt set, and the measurement showed instructions
@@ -141,9 +149,9 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     /// `resolvedInstructions`, so what is priced is exactly what is sent.
     public func contextFit(input: String,
                            targetLanguage: SupportedLanguage,
-                           mode: PolishMode) -> PolishContextFit {
+                           task: PolishTask) -> PolishContextFit {
         Self.contextBudget.fit(
-            instructions: resolvedInstructions(mode: mode, language: targetLanguage),
+            instructions: resolvedInstructions(task: task, language: targetLanguage),
             input: input
         )
     }
@@ -186,7 +194,7 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
 
     // MARK: - Instruction routing
 
-    /// Returns the system prompt for `(mode, language)`. All four supported
+    /// Returns the system prompt for `(task, language)`. All four supported
     /// languages have a dedicated prompt in BOTH Natural and Repair modes
     /// (FR + EN tested against real dictation; ES + DE authored on-paper,
     /// pending native-speaker validation per ADR 0003). The English fallback
@@ -195,10 +203,19 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     /// `docs/agents/language-onboarding.md` §"Polish prompt".
     /// `.auto` mode (#239) ignores `language` entirely: one language-agnostic
     /// prompt covers every auto-detected input language.
-    public static func instructions(for mode: PolishMode,
+    ///
+    /// A Smart Mode (#79) carries its own instructions on its record, so this
+    /// dispatch does not grow a case per mode — adding Email is a catalogue row and
+    /// a prompt file, and nothing here moves.
+    public static func instructions(for task: PolishTask,
                                     language: SupportedLanguage) -> String {
         let glossary = PolishGlossary.promptBlock
-        switch (mode, language) {
+        if let smartMode = task.smartMode {
+            return smartMode.prompt.instructions
+        }
+        // Exhaustive over `PolishMode` below, so the `?? .natural` is unreachable:
+        // `smartMode` and `polishMode` are the two halves of the same enum.
+        switch (task.polishMode ?? .natural, language) {
         case (.auto, _):
             return PolishAutoPrompt.instructions(glossary: glossary)
         case (.natural, .french):
@@ -225,11 +242,13 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
 
 @available(iOS 26.0, macOS 26.0, *)
 private struct SessionKey: Hashable, Sendable {
-    let mode: PolishMode
+    /// `PolishTask.identifier` — "natural", "auto", "smart.notes", … A string since
+    /// #79, because a Smart Mode is a record and has no enum case to key on.
+    let task: String
     let language: SupportedLanguage
 }
 
-/// Per-`(mode, language)` `LanguageModelSession` cache with naive LRU eviction.
+/// Per-`(task, language)` `LanguageModelSession` cache with naive LRU eviction.
 /// Sessions hold compiled instruction state — keeping them around avoids the
 /// per-call cost of rebuilding the system prompt.
 @available(iOS 26.0, macOS 26.0, *)

@@ -40,6 +40,21 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// process whose toolbar can change the language.
     public let policy: TranscriptionLanguagePolicy
 
+    /// The Smart Mode armed when this dictation started, or nil for Normal (#79).
+    ///
+    /// Travels for the same reason `policy` does, and the reason is sharper here.
+    /// The mode is armed by long-pressing the mic on the keyboard, so the process
+    /// that would re-read it is the process whose UI changes it — and a mode changed
+    /// between "stop speaking" and "the generation runs" would transform a dictation
+    /// the user started under a different instruction. The whole record travels
+    /// rather than its identifier so a custom mode (#269) needs no lookup table on
+    /// the far side.
+    ///
+    /// Optional, and decoded as absent on records written before it existed: a
+    /// keyboard that upgrades mid-dictation finds a record with no mode and runs the
+    /// free polish, which is what that dictation was started under anyway.
+    public let smartMode: SmartMode?
+
     /// How long the user spoke. Feeds the polish duration gate (#141), which is
     /// otherwise unanswerable in the extension: it never saw the audio.
     public let recordingDuration: TimeInterval
@@ -101,11 +116,13 @@ public struct PendingDictation: Codable, Equatable, Sendable {
 
     public init(raw: String,
                 policy: TranscriptionLanguagePolicy,
+                smartMode: SmartMode? = nil,
                 recordingDuration: TimeInterval,
                 documentIdentifier: String?,
                 claimedAt: TimeInterval = Date().timeIntervalSince1970) {
         self.raw = raw
         self.policy = policy
+        self.smartMode = smartMode
         self.recordingDuration = recordingDuration
         self.documentIdentifier = documentIdentifier
         self.claimedAt = claimedAt

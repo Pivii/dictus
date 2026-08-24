@@ -91,7 +91,7 @@ do {
     exit(1)
 }
 
-func loadInstructions(_ path: String?) -> (@Sendable (PolishMode, SupportedLanguage) -> String)? {
+func loadInstructions(_ path: String?) -> (@Sendable (PolishTask, SupportedLanguage) -> String)? {
     guard let path else { return nil }
     guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
         print("error: cannot read instructions file \(path)")
@@ -138,7 +138,7 @@ func loadFraming(_ path: String?) -> String? {
 }
 
 @available(macOS 26.0, *)
-func makeEngine(_ override: (@Sendable (PolishMode, SupportedLanguage) -> String)?) -> any PolishEngineProtocol {
+func makeEngine(_ override: (@Sendable (PolishTask, SupportedLanguage) -> String)?) -> any PolishEngineProtocol {
     // #79. A user-turn override needs an engine whose user turn is not
     // hardcoded, so it takes the resolved instructions eagerly rather than as
     // a per-call closure. That is only well-defined when the caller also
@@ -189,7 +189,7 @@ struct RunOutcome {
     let engineMs: Int
     /// Raw NLLanguage code of the input ("fr", "it", "zh-Hans", …).
     let detected: String?
-    let mode: PolishMode?
+    let task: PolishTask?
     /// Set when the engine threw (#315) — the same slug the app exports, so a
     /// failure seen here reads against the field data without a translation.
     let failureReason: PolishFailureReason?
@@ -199,14 +199,14 @@ struct RunOutcome {
          outcome: PolishMetrics.Outcome,
          engineMs: Int,
          detected: String?,
-         mode: PolishMode?,
+         task: PolishTask?,
          failureReason: PolishFailureReason? = nil) {
         self.final = final
         self.engineOutput = engineOutput
         self.outcome = outcome
         self.engineMs = engineMs
         self.detected = detected
-        self.mode = mode
+        self.task = task
         self.failureReason = failureReason
     }
 }
@@ -221,12 +221,15 @@ func runOnce(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcom
     // floor (decoded pre-pass), never the literal raw. (#185)
     guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
         let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
-        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
+        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, task: nil)
     }
     let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
-    let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: target, mode: mode)
-    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: target, mode: mode)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected.rawValue, mode: mode, failureReason: r.failureReason)
+    let job = PolishJob(task: .polish(mode), promptLanguage: target, languageAgnosticPath: false)
+    let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, job: job)
+    // `resolvedOutput` only answers nil for a Smart Mode, and the harness runs
+    // polish fixtures, so the coalesce is unreachable rather than a fallback.
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job) ?? preprocessed
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detected.rawValue, task: job.task, failureReason: r.failureReason)
 }
 
 /// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
@@ -238,12 +241,13 @@ func runOnce(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcom
 @available(macOS 26.0, *)
 func runOnceAuto(_ fx: Fixture, engine: any PolishEngineProtocol) async -> RunOutcome {
     guard let detectedCode = PolishPipeline.detectLanguageCode(in: fx.raw) else {
-        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, mode: nil)
+        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, task: nil)
     }
     let preprocessed = PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode)
-    let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, target: .english, mode: .auto)
-    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, target: .english, mode: .auto)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, mode: .auto, failureReason: r.failureReason)
+    let job = PolishJob(task: .auto, promptLanguage: .english, languageAgnosticPath: true)
+    let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, job: job)
+    let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job) ?? preprocessed
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, task: job.task, failureReason: r.failureReason)
 }
 
 @available(macOS 26.0, *)
@@ -258,7 +262,7 @@ func runHarness() async {
                 let o = await runOnce(fx, engine: engine)
                 let tag = runs > 1 ? " #\(run)" : ""
                 let why = o.failureReason.map { ", reason=\($0.slug)" } ?? ""
-                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected ?? "-")→\(o.mode?.rawValue ?? "-")\(why)"
+                let route = "\(o.outcome.rawValue), \(o.engineMs)ms, detected=\(o.detected ?? "-")→\(o.task?.identifier ?? "-")\(why)"
                 print("  polished\(tag): \(o.final)")
                 print("            (\(route))")
                 // When the guardrail rejects, `final` is the raw fallback — surface
@@ -328,10 +332,11 @@ func runHarness() async {
                 exit(1)
             }
             let mode = PolishPipeline.mode(sttEngine: fx.speechEngine, detected: detected, target: target)
-            let system = AppleFoundationModelsPolishEngine.instructions(for: mode, language: target)
-            let user = LocalHTTPPolishEngine.userTurn(raw: preprocessed)
+            let task = PolishTask.polish(mode)
+            let system = AppleFoundationModelsPolishEngine.instructions(for: task, language: target)
+            let user = task.userTurn(raw: preprocessed)
             print("━━ [\(fx.id)] lang=\(fx.lang) stt=\(fx.sttEngine ?? "PK") "
-                  + "detected=\(detected.rawValue) mode=\(mode.rawValue) "
+                  + "detected=\(detected.rawValue) mode=\(task.identifier) "
                   + "systemChars=\(system.count) userChars=\(user.count)")
             if let dir = promptOutputDir {
                 let base = URL(fileURLWithPath: dir).appendingPathComponent(fx.id)

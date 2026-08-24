@@ -50,13 +50,19 @@ public final class PolishCoordinator {
     }
 
     /// Polish raw STT output for an in-app dictation. See `PolishService.polish`.
+    ///
+    /// `smartMode` is the mode armed when this dictation started (#79). A dictation
+    /// started inside the app honours it exactly as a keyboard one does: the mode is
+    /// a parameter of the dictation, not of the process that runs it.
     public func polish(raw: String,
                        languagePolicy: TranscriptionLanguagePolicy,
+                       smartMode: SmartMode?,
                        recordingDuration: TimeInterval,
-                       onEngineWillRun: (() -> Void)? = nil) async -> String {
+                       onEngineWillRun: (() -> Void)? = nil) async -> PolishOutcome {
         await service.polish(
             raw: raw,
             languagePolicy: languagePolicy,
+            smartMode: smartMode,
             recordingDuration: recordingDuration,
             onEngineWillRun: onEngineWillRun
         )

@@ -63,7 +63,7 @@ struct FramedAppleFMPolishEngine: PolishEngineProtocol {
 
     func polish(raw: String,
                 targetLanguage: SupportedLanguage,
-                mode: PolishMode) async throws -> String {
+                task: PolishTask) async throws -> String {
         // One session per call, dropped on return — the same stateless
         // invariant the shipping engine maintains through its cache, reached
         // here by not having a cache at all. The harness makes one call at a
@@ -83,7 +83,7 @@ struct FramedAppleFMPolishEngine: PolishEngineProtocol {
     /// bare input. A framing template is prompt too.
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
-                    mode: PolishMode) -> PolishContextFit {
+                    task: PolishTask) -> PolishContextFit {
         AppleFoundationModelsPolishEngine.contextBudget.fit(
             instructions: instructions,
             input: userTurn(raw: input)

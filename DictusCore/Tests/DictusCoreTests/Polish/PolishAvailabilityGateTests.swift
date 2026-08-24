@@ -123,8 +123,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: "une dictée parfaitement ordinaire qu'il faudrait polir",
             engine: MustNotRunEngine(),
-            target: .french,
-            mode: .natural,
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false),
             gate: blockedGate(for: MustNotRunEngine().identifier)
         )
         XCTAssertEqual(result.outcome, .engineUnavailable)
@@ -141,8 +140,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: "une dictée parfaitement ordinaire qu'il faudrait polir",
             engine: MustNotRunEngine(),
-            target: .french,
-            mode: .natural,
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false),
             gate: blockedGate(for: MustNotRunEngine().identifier)
         )
         XCTAssertNil(result.failureReason)
@@ -158,7 +156,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
 
         let openStart = Date()
         let served = await PolishPipeline.transform(
-            preprocessed: input, engine: engine, target: .french, mode: .natural
+            preprocessed: input, engine: engine, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         let openMs = Date().timeIntervalSince(openStart) * 1000
         XCTAssertEqual(served.outcome, .success)
@@ -166,7 +164,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
 
         let blockedStart = Date()
         let skipped = await PolishPipeline.transform(
-            preprocessed: input, engine: engine, target: .french, mode: .natural,
+            preprocessed: input, engine: engine, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false),
             gate: blockedGate(for: engine.identifier)
         )
         let blockedMs = Date().timeIntervalSince(blockedStart) * 1000
@@ -185,12 +183,11 @@ final class PolishAvailabilityGateTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: preprocessed,
             engine: MustNotRunEngine(),
-            target: .french,
-            mode: .natural,
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false),
             gate: blockedGate(for: MustNotRunEngine().identifier)
         )
         let out = PolishPipeline.resolvedOutput(
-            result, preprocessed: preprocessed, target: .french, mode: .natural
+            result, preprocessed: preprocessed, job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
         )
         XCTAssertEqual(out, "Ok, petit test\u{00A0}?")
     }
@@ -202,13 +199,12 @@ final class PolishAvailabilityGateTests: XCTestCase {
         let result = await PolishPipeline.transform(
             preprocessed: preprocessed,
             engine: MustNotRunEngine(),
-            target: .french,
-            mode: .auto,
+            job: PolishJob(task: .auto, promptLanguage: .french, languageAgnosticPath: true),
             gate: blockedGate(for: MustNotRunEngine().identifier)
         )
         XCTAssertEqual(result.outcome, .engineUnavailable)
         let out = PolishPipeline.resolvedOutput(
-            result, preprocessed: preprocessed, target: .french, mode: .auto
+            result, preprocessed: preprocessed, job: PolishJob(task: .auto, promptLanguage: .french, languageAgnosticPath: true)
         )
         XCTAssertEqual(out, preprocessed)
     }
@@ -218,7 +214,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
     func testTheDefaultGateLeavesTheTransformUntouched() async {
         let input = "this is a perfectly normal english sentence about testing things"
         let result = await PolishPipeline.transform(
-            preprocessed: input, engine: PassthroughPolishEngine(), target: .english, mode: .natural
+            preprocessed: input, engine: PassthroughPolishEngine(), job: PolishJob(task: .natural, promptLanguage: .english, languageAgnosticPath: false)
         )
         XCTAssertEqual(result.outcome, .success)
         XCTAssertEqual(result.engineOutput, input)
@@ -234,7 +230,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
 
     func testOutcomeSurvivesTheMetricJSONRoundTrip() throws {
         let metric = PolishMetrics(
-            engine: "apple-fm", mode: .natural, targetLanguage: .french,
+            engine: "apple-fm", mode: "natural", targetLanguage: .french,
             detectedLanguage: "fr", rawCharCount: 61, polishedCharCount: 61,
             latencyMs: 1, outcome: .engineUnavailable,
             timings: PolishTimings(preprocessMs: 1, engineMs: 0, postprocessMs: 0)
@@ -294,7 +290,7 @@ final class PolishAvailabilityGateTests: XCTestCase {
 private struct MustNotRunEngine: PolishEngineProtocol {
     let identifier = "must-not-run"
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         XCTFail("the engine must not be called while polish is unavailable")
         return raw
     }
@@ -305,7 +301,7 @@ private struct MustNotRunEngine: PolishEngineProtocol {
 private struct SlowEngine: PolishEngineProtocol {
     let identifier = "slow-engine"
 
-    func polish(raw: String, targetLanguage: SupportedLanguage, mode: PolishMode) async throws -> String {
+    func polish(raw: String, targetLanguage: SupportedLanguage, task: PolishTask) async throws -> String {
         try await Task.sleep(nanoseconds: 300_000_000)
         return raw
     }

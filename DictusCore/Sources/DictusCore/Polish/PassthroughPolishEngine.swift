@@ -16,7 +16,7 @@ public final class PassthroughPolishEngine: PolishEngineProtocol {
 
     public func polish(raw: String,
                        targetLanguage: SupportedLanguage,
-                       mode: PolishMode) async throws -> String {
+                       task: PolishTask) async throws -> String {
         try await Task.sleep(nanoseconds: 100_000_000)
         try Task.checkCancellation()
         return raw

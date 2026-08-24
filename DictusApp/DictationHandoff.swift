@@ -24,6 +24,7 @@ extension DictationCoordinator {
     /// did before #361, and show the result in the app.
     func finishInApp(rawText: String,
                      languagePolicy: TranscriptionLanguagePolicy,
+                     smartMode: SmartMode?,
                      audioDuration: TimeInterval,
                      session: Int) async {
         // Polish layer (#141) — passes raw through when toggle off, when language
@@ -34,9 +35,10 @@ extension DictationCoordinator {
         // about a millisecond, and announcing a stage for them would flash a
         // label and a new animation for a single frame. `onEngineWillRun`
         // fires only once an engine worth waiting for is about to run.
-        let text = await PolishCoordinator.shared.polish(
+        let outcome = await PolishCoordinator.shared.polish(
             raw: rawText,
             languagePolicy: languagePolicy,
+            smartMode: smartMode,
             recordingDuration: audioDuration,
             // Gated like every other write this task makes: the callback
             // fires from inside `polish`, which a cancel does not interrupt,
@@ -49,6 +51,34 @@ extension DictationCoordinator {
                 LiveActivityManager.shared.transitionToProcessing()
             }
         )
+
+        // An armed Smart Mode that produced nothing insertable ends the dictation as
+        // a failure rather than as a quieter version of itself (#79). Inserting the
+        // untransformed text would be the worst outcome available — the user asked
+        // for bullets, or for English, and would get neither without being told.
+        guard let text = outcome.text else {
+            guard mayReport(session, "smart mode failure") else { return }
+            let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
+            // Localised, which is NOT what the neighbours do: of the twelve other
+            // `handleError` call sites, one localises, two forward
+            // `error.localizedDescription`, two pass a variable, and the rest are
+            // hardcoded literals — two of them French, which is the bug this
+            // avoids. The convention here is worth breaking rather than following:
+            // this is new copy, on a paid feature, and it is the sentence a user
+            // gets instead of their text.
+            //
+            // The mode name interpolated in front stays unlocalised on purpose: it
+            // is the catalogue's own label, so it reads as the thing the user armed.
+            // KNOWN ROUGH EDGE, for block B when this message first becomes
+            // reachable: translate modes are named "→ EN", so the sentence renders
+            // as "→ EN could not transform this text", which does not read. The fix
+            // belongs with the surface that shows it.
+            handleError(String(
+                localized: "\(name) could not transform this text. Try again.",
+                comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
+            ))
+            return
+        }
 
         let finalText = DictationTail.apply(text, policy: languagePolicy)
 
@@ -72,6 +102,11 @@ extension DictationCoordinator {
         // lying here if no keyboard ever claimed it.
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
+        // Same reasoning one key up: cleared rather than merely not written, because
+        // a previous hand-off's mode could still be lying here if no keyboard ever
+        // claimed it — and a keyboard that typed this app-origin text under it would
+        // transform a dictation that has already been transformed (#79).
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
         defaults.synchronize()
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
@@ -98,6 +133,7 @@ extension DictationCoordinator {
     /// saw the audio, and the polish duration gate is decided on it.
     func handOffToKeyboard(rawText: String,
                            languagePolicy: TranscriptionLanguagePolicy,
+                           smartMode: SmartMode?,
                            audioDuration: TimeInterval,
                            session: Int) {
         // The last transcription the user sees in the app, until the keyboard reports
@@ -119,6 +155,22 @@ extension DictationCoordinator {
             PersistentLog.log(.dictationFailed(error: "language policy did not encode for hand-off"))
         }
         defaults.set(audioDuration, forKey: SharedKeys.lastTranscriptionDuration)
+        // The armed Smart Mode travels beside the policy, or the key is cleared so
+        // the keyboard reads Normal (#79). Written from the same snapshot the
+        // transcription used, never re-read on the far side — the keyboard toolbar
+        // is where the mode is armed, so re-reading it there is the mid-dictation
+        // change #226's snapshot exists to prevent, in its sharpest form.
+        if let smartMode, let modeData = try? JSONEncoder().encode(smartMode) {
+            defaults.set(modeData, forKey: SharedKeys.lastTranscriptionSmartMode)
+        } else {
+            // Either no mode was armed, or — unreachable — the record did not
+            // encode. Both degrade to Normal, which is the free polish: the honest
+            // fallback, and the one the keyboard already knows how to run.
+            defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
+            if smartMode != nil {
+                PersistentLog.log(.dictationFailed(error: "smart mode did not encode for hand-off"))
+            }
+        }
         let token = UUID().uuidString
         polishHandoffToken = token
         defaults.set(token, forKey: SharedKeys.handoffToken)

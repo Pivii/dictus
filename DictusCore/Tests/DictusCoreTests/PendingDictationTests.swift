@@ -146,4 +146,48 @@ final class PendingDictationTests: XCTestCase {
         let decoded = try JSONDecoder().decode(PendingDictation.self, from: data)
         XCTAssertNil(decoded.documentIdentifier)
     }
+
+    // MARK: - The armed Smart Mode crosses with it (#79)
+
+    /// The whole record travels, not its identifier: the keyboard applies the mode
+    /// the dictation was started under, with no lookup and no re-read.
+    func testTheArmedModeSurvivesTheCrossingWithItsPromptAndItsContract() throws {
+        let armed = SmartModeCatalogue.translate(to: .english)
+        let record = PendingDictation(
+            raw: "salut ça va",
+            policy: policy,
+            smartMode: armed,
+            recordingDuration: 4.2,
+            documentIdentifier: fieldA
+        )
+        let data = try JSONEncoder().encode(record)
+        let decoded = try JSONDecoder().decode(PendingDictation.self, from: data)
+        XCTAssertEqual(decoded.smartMode?.id, "translate.en")
+        XCTAssertEqual(decoded.smartMode?.contract.outputLanguage, .fixed(.english))
+        XCTAssertEqual(decoded.smartMode?.prompt, armed.prompt)
+    }
+
+    func testNormalIsTheAbsenceOfAMode() throws {
+        let data = try JSONEncoder().encode(pending(documentIdentifier: fieldA))
+        let decoded = try JSONDecoder().decode(PendingDictation.self, from: data)
+        XCTAssertNil(decoded.smartMode)
+    }
+
+    /// A record written by a build that predates the field decodes with no mode, so
+    /// a keyboard that upgrades mid-dictation runs the free polish — which is what
+    /// that dictation was started under anyway.
+    func testARecordWrittenBeforeTheFieldExistedStillDecodes() throws {
+        let encodedPolicy = try JSONEncoder().encode(policy)
+        let legacy: [String: Any] = [
+            "raw": "bonjour tout le monde",
+            "policy": try JSONSerialization.jsonObject(with: encodedPolicy),
+            "recordingDuration": 4.2,
+            "documentIdentifier": fieldA,
+            "claimedAt": 1_000
+        ]
+        let data = try JSONSerialization.data(withJSONObject: legacy)
+        let decoded = try JSONDecoder().decode(PendingDictation.self, from: data)
+        XCTAssertNil(decoded.smartMode)
+        XCTAssertEqual(decoded.raw, "bonjour tout le monde")
+    }
 }

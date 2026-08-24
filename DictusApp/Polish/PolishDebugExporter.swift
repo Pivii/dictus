@@ -170,7 +170,7 @@ enum PolishDebugExporter {
                 timestamp: formatter.string(from: entry.timestamp),
                 writer: entry.writer,
                 engine: entry.metrics.engine,
-                mode: entry.metrics.mode?.rawValue,
+                mode: entry.metrics.mode,
                 targetLanguage: entry.metrics.targetLanguage?.rawValue,
                 detectedLanguage: entry.metrics.detectedLanguage,
                 transcriptionMode: entry.metrics.languageResolution?.transcriptionMode,

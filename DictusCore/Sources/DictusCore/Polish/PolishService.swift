@@ -3,16 +3,20 @@ import Foundation
 import NaturalLanguage
 
 /// Orchestrates the polish layer:
-/// 1. Honour the global toggle (`SharedKeys.polishEnabled`).
+/// 1. Honour the global toggle (`SharedKeys.polishEnabled`) — unless a Smart Mode
+///    is armed, which is a narrower and later instruction (#79, `PolishGatePolicy`).
 /// 2. Branch on the resolved prompt selection (#239): per-language path for
 ///    follow/explicit modes, language-agnostic auto path for Auto-detect.
 /// 3. Detect the language of the raw STT output via `NLLanguageRecognizer`;
 ///    skip on gibberish (top hypothesis below `confidenceThreshold`).
-/// 4. Choose mode: `.natural` for Whisper or `.natural`/`.repair` for Parakeet
-///    depending on detected-vs-target match; `.auto` in Auto-detect mode.
-/// 5. Run the engine with cancellation support, apply the guardrail, emit metrics.
+/// 4. Choose the task: the armed Smart Mode when there is one, otherwise
+///    `.natural` for Whisper or `.natural`/`.repair` for Parakeet depending on
+///    detected-vs-target match, and `.auto` in Auto-detect mode.
+/// 5. Run the engine with cancellation support, apply the task's acceptance
+///    contract, emit metrics.
 ///
-/// See ADR 0003 for the contract the prompts are written against.
+/// See ADR 0003 for the contract the polish prompts are written against, and
+/// `PolishAcceptanceContract` for why a Smart Mode carries its own.
 ///
 /// ### One service per process (#361)
 ///
@@ -100,17 +104,31 @@ public final class PolishService {
         supersedeInflight()
     }
 
-    /// Warm up the Apple FM engine (if present) for the user's current target
-    /// language. Apple recommends calling `prewarm()` ≥1s before `respond()`, and
+    /// Warm up the Apple FM engine (if present) for what the next dictation will
+    /// actually run. Apple recommends calling `prewarm()` ≥1s before `respond()`, and
     /// the recording duration is exactly that window. Each call recreates a fresh
     /// session, so the engine's stateless invariant holds (see
     /// `AppleFoundationModelsPolishEngine`).
     ///
-    /// No-op when the toggle is off (don't pay to load the model into memory if
-    /// no polish will run) or when the engine has nothing to warm.
+    /// **It warms the armed Smart Mode's session when one is armed** (#79). Warming
+    /// the polish session instead would mean every Smart Mode dictation pays for a
+    /// cold one, which is worth seconds of perceived latency — and a Smart Mode is
+    /// the case where the user is least willing to wait, because they asked for
+    /// something rather than for tidying.
+    ///
+    /// No-op when the engine has nothing to warm, or when the toggle is off and no
+    /// mode is armed: don't pay to load the model into memory if nothing will run.
     public func prewarm() {
-        guard defaults.bool(forKey: SharedKeys.polishEnabled) else { return }
         guard let engineToWarm = appleFMEngine else { return }
+        // Read, never resolve: `resolveArmedMode()` can clear the user's setting, and
+        // a warm-up is not a dictation. Warming the session of a mode that turns out
+        // to be unrunnable costs nothing — the engine only exists where the SDK does,
+        // and the dictation resolves the mode again from scratch.
+        let task = SmartModeStore.armedMode.map(PolishTask.smart)
+        guard PolishGatePolicy.runsDespiteToggle(
+            task: task ?? .natural,
+            polishEnabled: defaults.bool(forKey: SharedKeys.polishEnabled)
+        ) else { return }
         // Resolve the prompt selection through the language policy
         // (#226/#239/#332): explicit mode targets the language the user chose,
         // not the keyboard one; Auto mode warms the language-agnostic auto
@@ -125,9 +143,9 @@ public final class PolishService {
         Task {
             switch selection {
             case .language(let target):
-                await engineToWarm.prewarm(mode: .natural, targetLanguage: target)
+                await engineToWarm.prewarm(task: task ?? .natural, targetLanguage: target)
             case .autoDetected:
-                await engineToWarm.prewarm(mode: .auto, targetLanguage: .english)
+                await engineToWarm.prewarm(task: task ?? .auto, targetLanguage: .english)
             }
         }
     }
@@ -153,12 +171,25 @@ public final class PolishService {
     /// gibberish gate, a passthrough backend -- has been cleared by the time it
     /// fires, so the state marks a wait that is really happening rather than one
     /// that might.
+    ///
+    /// `smartMode` is the armed Smart Mode captured in the same per-dictation
+    /// snapshot (#79), or nil for Normal — the free polish, which is the default.
+    /// It is passed in rather than read here for exactly the reason `languagePolicy`
+    /// is: the mode is armed from the keyboard toolbar, so re-reading it after the
+    /// transcription would let a mid-dictation change reach a dictation that started
+    /// under a different one. A mode replaces the polish prompt for that dictation;
+    /// it does not stack on top of it.
     public func polish(raw: String,
                        languagePolicy: TranscriptionLanguagePolicy,
+                       smartMode: SmartMode? = nil,
                        recordingDuration: TimeInterval,
-                       onEngineWillRun: (() -> Void)? = nil) async -> String {
-        guard defaults.bool(forKey: SharedKeys.polishEnabled) else {
-            return raw
+                       onEngineWillRun: (() -> Void)? = nil) async -> PolishOutcome {
+        let task = smartMode.map(PolishTask.smart)
+        guard PolishGatePolicy.runsDespiteToggle(
+            task: task ?? .natural,
+            polishEnabled: defaults.bool(forKey: SharedKeys.polishEnabled)
+        ) else {
+            return PolishOutcome(text: raw)
         }
 
         // `methodStart` anchors the full wall-clock the user actually waits
@@ -183,6 +214,7 @@ public final class PolishService {
         let request = Request(
             raw: raw,
             languagePolicy: languagePolicy,
+            smartMode: smartMode,
             recordingDuration: recordingDuration,
             methodStart: methodStart,
             detectedCode: detectedCode,
@@ -217,6 +249,8 @@ public final class PolishService {
     private struct Request {
         let raw: String
         let languagePolicy: TranscriptionLanguagePolicy
+        /// The armed Smart Mode for this dictation, from the snapshot (#79).
+        let smartMode: SmartMode?
         let recordingDuration: TimeInterval
         /// Anchors the wall-clock the user waits for. Captured before
         /// detection so its cost lands in `preprocessMs` like everything else.
@@ -227,6 +261,29 @@ public final class PolishService {
         /// The same detection narrowed to the four languages the per-language
         /// prompts exist for, or `nil` — gibberish, or outside that set.
         let detected: SupportedLanguage?
+
+        /// The armed Smart Mode as a task, when there is one. Nil means the free
+        /// polish, and each path resolves its own prompt variant.
+        var smartTask: PolishTask? { smartMode.map(PolishTask.smart) }
+    }
+
+    /// A Smart Mode produced nothing insertable. Records the line and packages the
+    /// reason for whichever surface will say so (#79).
+    ///
+    /// Both polish paths reach this by the same route — `resolvedOutput` answering
+    /// nil — so the log line and the failure value cannot drift apart.
+    private func smartModeFailed(_ mode: SmartMode,
+                                 bundle: PolishPipeline.Result) -> PolishOutcome {
+        let reason = bundle.failureReason?.slug ?? "-"
+        PersistentLog.log(.smartModeRefused(
+            mode: mode.id, outcome: bundle.outcome.rawValue, reason: reason
+        ))
+        return PolishOutcome(failure: SmartModeFailure(
+            modeIdentifier: mode.id,
+            modeDisplayName: mode.displayName,
+            outcome: bundle.outcome.rawValue,
+            reason: reason
+        ))
     }
 
     // MARK: - Per-language path
@@ -242,7 +299,7 @@ public final class PolishService {
     /// exactly what selects `PolishMode.repair` below.
     private func polishTargeted(_ request: Request,
                                 target: SupportedLanguage,
-                                onEngineWillRun: (() -> Void)?) async -> String {
+                                onEngineWillRun: (() -> Void)?) async -> PolishOutcome {
         let raw = request.raw
         let languagePolicy = request.languagePolicy
         let methodStart = request.methodStart
@@ -253,7 +310,8 @@ public final class PolishService {
         // Pre-pass: deterministic regex substitution of verbal punctuation
         // commands. Round 3 testing showed Apple FM cannot be coaxed into
         // doing this reliably in French — handling it in code bypasses the
-        // model entirely for this concern.
+        // model entirely for this concern. It stays keyed on the SPOKEN language
+        // whatever the mode does to the output (#79): the user still says "virgule".
         let preprocessed = VerbalPunctuationPrepass.apply(raw, language: target)
 
         // Duration gate (#141): on a flash dictation (< engineMinDuration) the
@@ -262,7 +320,13 @@ public final class PolishService {
         // punctuation above + NBSP below, both ~0ms) so typography stays
         // consistent with longer clips. No language detection / guardrail here
         // since the engine never runs.
-        if request.recordingDuration < Self.engineMinDuration {
+        //
+        // Disabled when a Smart Mode is armed (#79). Sensible for polish, a silent
+        // failure for a mode: arm "→ EN", say a short sentence in 1.8 s, and the
+        // keyboard would insert French.
+        if PolishGatePolicy.skipsForDuration(
+            request.recordingDuration, task: request.smartTask ?? .natural
+        ) {
             let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let postStart = Date()
             // No engine ran → no newline markers to decode; this only applies
@@ -288,13 +352,22 @@ public final class PolishService {
                 languageResolution: resolution
             )
             await emit(m, raw: raw, polished: finalShort)
-            return finalShort
+            return PolishOutcome(text: finalShort)
         }
 
         // Skip on gibberish — preserves trust per ADR 0002 §"skip-on-gibberish rule".
         // Also covers a confident detection outside the four supported
-        // languages, which this path has no prompt for.
-        guard let detected = request.detected else {
+        // languages, which this path has no prompt for. Disabled when a mode is
+        // armed: short sentences to translate land here routinely, and a Smart
+        // Mode's prompt does not depend on detection having succeeded (#79).
+        //
+        // `detected` is still needed below to pick the free-polish prompt variant,
+        // so a mode that got past the gate on an undetected input falls back to the
+        // target — which its own prompt ignores anyway.
+        let gibberishSkips = PolishGatePolicy.skipsForGibberish(
+            hasDetectedLanguage: request.detected != nil, task: request.smartTask ?? .natural
+        )
+        if gibberishSkips {
             // Return the deterministic floor, NOT the literal raw: the verbal-
             // punctuation pre-pass already ran (~0ms) and the user expects their
             // spoken "virgule"/"point" turned into marks even when the LLM is
@@ -324,53 +397,58 @@ public final class PolishService {
                 languageResolution: resolution
             )
             await emit(m, raw: raw, polished: nil)
-            return fallback
+            return PolishOutcome(text: fallback)
         }
 
-        let mode = PolishPipeline.mode(sttEngine: sttEngine, detected: detected, target: target)
+        let job = PolishJob(
+            task: request.smartTask ?? .polish(PolishPipeline.mode(
+                sttEngine: sttEngine, detected: request.detected ?? target, target: target
+            )),
+            promptLanguage: target,
+            languageAgnosticPath: false
+        )
 
         // Resolve the engine for this call — see `activeEngine` doc-comment.
         let currentEngine = activeEngine
 
         supersedeInflight()
         announceEngineStage(currentEngine, to: onEngineWillRun)
-        // Everything above (pre-pass + detection + mode) is the preprocess cost;
+        // Everything above (pre-pass + detection + task) is the preprocess cost;
         // the engine-facing transform (encode → engine → decode → guardrail) is
         // delegated to `PolishPipeline` so the eval harness runs identical code.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
 
-        let task = Task {
+        let inflightTask = Task {
             // Read inside the task, not snapshotted above (#315): a polish call
             // that overlaps this one can flip the gate between the two, and a
             // snapshot taken at creation time would send one more request to an
             // engine already known to be refusing.
             await PolishPipeline.transform(
-                preprocessed: preprocessed, engine: currentEngine, target: target,
-                mode: mode, gate: self.availabilityGate
+                preprocessed: preprocessed, engine: currentEngine,
+                job: job, gate: self.availabilityGate
             )
         }
-        trackInflight(task)
+        trackInflight(inflightTask)
 
-        let bundle = await task.value
-        clearInflight(task)
+        let bundle = await inflightTask.value
+        clearInflight(inflightTask)
         recordAvailability(bundle, engine: currentEngine)
         // True total, methodStart → here. Any gap vs (pre+engine+post) is
         // Swift Task scheduling / actor-hop overhead — itself worth seeing.
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
-        // On any non-success (engine failed, guardrail rejected, cancelled) fall
-        // back to the deterministic floor, never the literal raw — see
-        // `PolishPipeline.resolvedOutput`. (#185)
-        let returned = PolishPipeline.resolvedOutput(
-            bundle, preprocessed: preprocessed, target: target, mode: mode
-        )
+        // On any non-success (engine failed, guardrail rejected, cancelled) the free
+        // polish falls back to the deterministic floor, never the literal raw (#185),
+        // and a Smart Mode falls back to nothing at all (#79) — see
+        // `PolishPipeline.resolvedOutput`.
+        let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, job: job)
 
         let m = PolishMetrics(
             engine: currentEngine.identifier,
-            mode: mode,
+            mode: job.task.identifier,
             targetLanguage: target,
-            detectedLanguage: detected.rawValue,
+            detectedLanguage: request.detectedCode,
             rawCharCount: raw.count,
-            polishedCharCount: returned.count,
+            polishedCharCount: returned?.count ?? 0,
             latencyMs: totalMs,
             outcome: bundle.outcome,
             sttEngine: sttEngine.rawValue,
@@ -385,7 +463,14 @@ public final class PolishService {
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
 
-        return returned
+        guard let returned else {
+            // `resolvedOutput` only answers nil for a Smart Mode, so the mode is
+            // present by construction; `.natural` would be a lie, so guard rather
+            // than default.
+            guard let smartMode = job.task.smartMode else { return PolishOutcome(text: raw) }
+            return smartModeFailed(smartMode, bundle: bundle)
+        }
+        return PolishOutcome(text: returned)
     }
 
     // MARK: - Auto-detect path (#239)
@@ -411,7 +496,7 @@ public final class PolishService {
     /// how device tests validate output language == input language. Engine
     /// runs are identified by `mode == .auto` in the debug export.
     private func polishAutoDetected(_ request: Request,
-                                    onEngineWillRun: (() -> Void)?) async -> String {
+                                    onEngineWillRun: (() -> Void)?) async -> PolishOutcome {
         let raw = request.raw
         let languagePolicy = request.languagePolicy
         let methodStart = request.methodStart
@@ -428,7 +513,11 @@ public final class PolishService {
 
         // Duration gate (#141): on a flash dictation the user wants instant
         // text, so the LLM is skipped — but the deterministic floor is kept.
-        if request.recordingDuration < Self.engineMinDuration {
+        // Disabled when a Smart Mode is armed, for the reason spelled out on the
+        // per-language path (#79).
+        if PolishGatePolicy.skipsForDuration(
+            request.recordingDuration, task: request.smartTask ?? .auto
+        ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
                 outcome: .skippedShort, raw: raw, finalCount: preprocessed.count,
@@ -437,14 +526,17 @@ public final class PolishService {
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
             await emit(m, raw: raw, polished: nil)
-            return preprocessed
+            return PolishOutcome(text: preprocessed)
         }
 
         // Gibberish gate — same skip-on-gibberish rule as the per-language
         // path (ADR 0002), but on the raw NLLanguage code: auto mode must
         // accept the whole long tail (zh, it, pt, …), not just the four
         // supported languages. No detection → no pre-pass ran → raw is intact.
-        guard let detectedCode = request.detectedCode else {
+        // Also disabled when a Smart Mode is armed (#79).
+        if PolishGatePolicy.skipsForGibberish(
+            hasDetectedLanguage: request.detectedCode != nil, task: request.smartTask ?? .auto
+        ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
                 outcome: .skipped, raw: raw, finalCount: raw.count,
@@ -453,35 +545,39 @@ public final class PolishService {
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
             await emit(m, raw: raw, polished: nil)
-            return raw
+            return PolishOutcome(text: raw)
         }
 
+        let job = PolishJob(
+            task: request.smartTask ?? .auto,
+            promptLanguage: contextLanguage,
+            languageAgnosticPath: true
+        )
         let currentEngine = activeEngine
         supersedeInflight()
         announceEngineStage(currentEngine, to: onEngineWillRun)
         // Pre-engine work in auto mode: detection + detected-language pre-pass.
         let preprocessMs = Int(Date().timeIntervalSince(methodStart) * 1000)
-        let task = Task {
+        let inflightTask = Task {
             // Read inside the task rather than snapshotted — same reason as the
             // per-language path above (#315).
             await PolishPipeline.transform(
-                preprocessed: preprocessed, engine: currentEngine, target: contextLanguage,
-                mode: .auto, gate: self.availabilityGate
+                preprocessed: preprocessed, engine: currentEngine,
+                job: job, gate: self.availabilityGate
             )
         }
-        trackInflight(task)
+        trackInflight(inflightTask)
 
-        let bundle = await task.value
-        clearInflight(task)
+        let bundle = await inflightTask.value
+        clearInflight(inflightTask)
         recordAvailability(bundle, engine: currentEngine)
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
-        let returned = PolishPipeline.resolvedOutput(
-            bundle, preprocessed: preprocessed, target: contextLanguage, mode: .auto
-        )
+        let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, job: job)
         let m = autoEventMetrics(
-            outcome: bundle.outcome, raw: raw, finalCount: returned.count,
+            outcome: bundle.outcome, raw: raw, finalCount: returned?.count ?? 0,
             languagePolicy: languagePolicy, engineID: currentEngine.identifier,
-            mode: .auto, detectedLanguage: detectedCode, latencyMs: totalMs,
+            mode: job.task.identifier, detectedLanguage: request.detectedCode,
+            latencyMs: totalMs,
             timings: PolishTimings(
                 preprocessMs: preprocessMs,
                 engineMs: bundle.engineMs,
@@ -490,7 +586,11 @@ public final class PolishService {
             failureReason: bundle.failureReason
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
-        return returned
+        guard let returned else {
+            guard let smartMode = job.task.smartMode else { return PolishOutcome(text: raw) }
+            return smartModeFailed(smartMode, bundle: bundle)
+        }
+        return PolishOutcome(text: returned)
     }
 
     /// Metrics for one auto-path event. Defaults cover the skip exits (no
@@ -509,7 +609,7 @@ public final class PolishService {
                                   finalCount: Int,
                                   languagePolicy: TranscriptionLanguagePolicy,
                                   engineID: String,
-                                  mode: PolishMode? = nil,
+                                  mode: String? = nil,
                                   detectedLanguage: String? = nil,
                                   latencyMs: Int = 0,
                                   timings: PolishTimings =
@@ -625,15 +725,11 @@ public final class PolishService {
             PersistentLog.log(.polishEngineFailed(
                 reason: m.failureReason?.slug ?? "unclassified",
                 engine: m.engine,
-                mode: m.mode?.rawValue ?? "-",
+                mode: m.mode ?? "-",
                 engineMs: m.timings?.engineMs ?? 0
             ))
         }
         await sink.record(PolishDebugEntry(raw: raw, polished: polished, metrics: m))
     }
 
-    /// Recording duration (seconds) below which the LLM polish is skipped (#141).
-    /// On flash dictations the user wants instant text and the model rarely adds
-    /// value for ~3-6s of latency. Deterministic passes still run. Tunable.
-    private static let engineMinDuration: TimeInterval = 2.0
 }

@@ -23,7 +23,7 @@ final class PolishEventStoreTests: XCTestCase {
             raw: raw,
             polished: nil,
             metrics: PolishMetrics(
-                engine: "apple-fm", mode: .natural, targetLanguage: .french,
+                engine: "apple-fm", mode: "natural", targetLanguage: .french,
                 detectedLanguage: "fr", rawCharCount: raw.count, polishedCharCount: raw.count,
                 latencyMs: 1, outcome: .success
             ),

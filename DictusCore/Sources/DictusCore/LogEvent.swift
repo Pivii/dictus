@@ -293,6 +293,34 @@ public enum LogEvent: Sendable {
     /// reader needs to see both numbers to tell that from a stall.
     case polishCallSuperseded(inflightMs: Int)
 
+    /// Issue #79: a Smart Mode's output was refused, so nothing was inserted.
+    ///
+    /// **Fail closed is the point of the line.** For the free polish, falling back to
+    /// the deterministic floor is invisible and harmless; for a mode it would mean
+    /// French sent to an American client, or two minutes of rambling pasted where
+    /// three bullets were expected. So a refused mode inserts nothing — and an
+    /// insertion that does not happen is an absence, which is only readable against
+    /// the reason it did not.
+    ///
+    /// `outcome` is the `PolishMetrics.Outcome` that refused it (the contract
+    /// rejected the output, the engine threw, the input did not fit); `reason` is the
+    /// engine's own name for what it threw, or "-".
+    case smartModeRefused(mode: String, outcome: String, reason: String)
+
+    /// Issue #79: a dictation that had a mode armed is running Normal instead.
+    ///
+    /// The armed mode describes a transformation this build on this device cannot
+    /// perform right now: the identifier belongs to no mode this build ships, or
+    /// Apple Foundation Models is unavailable. Falling back to Normal is the honest
+    /// degradation — failing closed here would leave the user with no text at all
+    /// for a setting they made weeks ago.
+    ///
+    /// `disarmed` says whether the setting itself was cleared. It is only cleared on
+    /// a condition that can never lift on its own (ineligible hardware, an OS too
+    /// old); a model still downloading is recoverable, and a mode disarmed over it
+    /// would be a setting silently lost to a temporary state.
+    case smartModeSkipped(mode: String, reason: String, disarmed: Bool)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -353,7 +381,8 @@ public enum LogEvent: Sendable {
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
         case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
-             .polishInsertionRefused, .polishCallSuperseded:
+             .polishInsertionRefused, .polishCallSuperseded,
+             .smartModeRefused, .smartModeSkipped:
             return .transcription
         }
     }
@@ -445,6 +474,14 @@ public enum LogEvent: Sendable {
         // A superseded call is likewise the documented behaviour of decision 15.
         case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded:
             return .info
+
+        // Warning: a Smart Mode that refused its own output cost the user a
+        // dictation they asked to be transformed, and one that was skipped ran a
+        // dictation as Normal that the user had armed. Neither is an error -- both
+        // are the design holding -- but both are the kind of thing a reader scanning
+        // a capture for "why did nothing happen" needs to see.
+        case .smartModeRefused, .smartModeSkipped:
+            return .warning
         }
     }
 
@@ -552,6 +589,8 @@ public enum LogEvent: Sendable {
         case .polishHandoff: return "polishHandoff"
         case .polishInsertionRefused: return "polishInsertionRefused"
         case .polishCallSuperseded: return "polishCallSuperseded"
+        case .smartModeRefused: return "smartModeRefused"
+        case .smartModeSkipped: return "smartModeSkipped"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -797,6 +836,10 @@ public enum LogEvent: Sendable {
             return "reason=\(reason) ageMs=\(ageMs)"
         case .polishCallSuperseded(let inflightMs):
             return "inflightMs=\(inflightMs)"
+        case .smartModeRefused(let mode, let outcome, let reason):
+            return "mode=\(mode) outcome=\(outcome) reason=\(reason)"
+        case .smartModeSkipped(let mode, let reason, let disarmed):
+            return "mode=\(mode) reason=\(reason) disarmed=\(disarmed)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }

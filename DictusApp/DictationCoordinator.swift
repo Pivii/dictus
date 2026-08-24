@@ -735,6 +735,18 @@ class DictationCoordinator: ObservableObject {
                 // resolves to the historical follow behavior.
                 let languagePolicy = TranscriptionLanguagePolicy.snapshot()
 
+                // The armed Smart Mode is part of the same per-dictation snapshot
+                // (#79), taken here for the reason #226 introduced the language one:
+                // the user must not be able to change the mode mid-transcription and
+                // have the transformation disagree with what was transcribed. It is
+                // sharper for the mode than for the language, because the mode is
+                // armed from the keyboard — the process that would otherwise re-read
+                // it is the process whose UI changes it.
+                //
+                // `resolveArmedMode` is also where a mode this device can no longer
+                // run gets cleared; see `SmartModeStore`.
+                let smartMode = SmartModeStore.resolveArmedMode()
+
                 let rawText = try await transcriptionService.transcribe(
                     audioSamples: samples,
                     languagePolicy: languagePolicy
@@ -754,6 +766,7 @@ class DictationCoordinator: ObservableObject {
                     await finishInApp(
                         rawText: rawText,
                         languagePolicy: languagePolicy,
+                        smartMode: smartMode,
                         audioDuration: audioDuration,
                         session: session
                     )
@@ -768,6 +781,7 @@ class DictationCoordinator: ObservableObject {
                     handOffToKeyboard(
                         rawText: rawText,
                         languagePolicy: languagePolicy,
+                        smartMode: smartMode,
                         audioDuration: audioDuration,
                         session: session
                     )
@@ -1230,7 +1244,11 @@ class DictationCoordinator: ObservableObject {
     /// and the app's own failure screen read (#320). Neither consumes it: it stays put
     /// until the next dictation starts, so a user who reads it on one surface and then
     /// opens the other is told the same thing twice rather than something else.
-    private func handleError(_ message: String) {
+    ///
+    /// Not `private` only because `DictationHandoff.swift` needs it: an in-app
+    /// dictation whose armed Smart Mode produced nothing insertable has failed, and
+    /// this is the one funnel that tells the user so (#79).
+    func handleError(_ message: String) {
         DictationErrorChannel.record(message)
         defaults.set(false, forKey: SharedKeys.coldStartActive)
         defaults.removeObject(forKey: SharedKeys.sourceAppScheme)
