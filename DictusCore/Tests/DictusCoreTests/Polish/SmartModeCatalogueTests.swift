@@ -84,6 +84,53 @@ final class SmartModeCatalogueTests: XCTestCase {
         XCTAssertTrue(instructions.contains("NEVER translate"))
     }
 
+    /// The one rule Translate exists to hold, checked where a model actually reads
+    /// it: in the worked examples, not in the prose.
+    ///
+    /// The example block used to be constant while the target varied, so the
+    /// "→ English" instructions demonstrated an English input producing a French
+    /// output — the rule being broken, in context, inside the prompt meant to
+    /// enforce it. Found reviewing PR #389.
+    func testTranslateExamplesOnlyEverOutputTheTargetLanguage() {
+        // The counter-example's RIGHT output, one per language. Literals rather
+        // than a call into the prompt's own helpers: a test that asks the code
+        // under test what it should say cannot catch the code saying it in the
+        // wrong language.
+        let rightOutputs: [SupportedLanguage: String] = [
+            .french: "Je peux pas venir ce soir, désolé.",
+            .english: "I can't come tonight, sorry.",
+            .spanish: "No puedo ir esta noche, lo siento.",
+            .german: "Ich kann heute Abend nicht kommen, sorry."
+        ]
+
+        for target in SupportedLanguage.allCases {
+            let instructions = SmartModeCatalogue.translate(to: target).prompt.instructions
+
+            guard let expected = rightOutputs[target] else {
+                XCTFail("No expected RIGHT output recorded for \(target)")
+                continue
+            }
+            XCTAssertTrue(
+                instructions.contains(expected),
+                "The \(target) prompt does not show its own language in the RIGHT example"
+            )
+
+            for (language, output) in rightOutputs where language != target {
+                XCTAssertFalse(
+                    instructions.contains(output),
+                    "The \(target) prompt demonstrates a \(language) output"
+                )
+            }
+
+            // And the inputs are never already in the target: an example whose
+            // input needs no translation demonstrates rule 8, not translation.
+            XCTAssertFalse(
+                instructions.contains("INPUT: \(expected)"),
+                "The \(target) prompt uses a \(target) input, which needs no translating"
+            )
+        }
+    }
+
     // MARK: - The record travels
 
     func testRecordSurvivesAJSONRoundTrip() throws {

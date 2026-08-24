@@ -87,25 +87,153 @@ enum SmartModeTranslatePrompt {
         Domain vocabulary — preserve canonical spelling, do not translate these terms:
         \(glossary)
 
-        Examples — the input language varies; the output is always \(name):
+        \(examples(target: target))
+        """
+    }
 
-        INPUT: salut est ce que t'es dispo demain vers dix heures pour qu'on cale le truc
-        OUTPUT (into English): Hey, are you free tomorrow around 10 to sort this out?
+    // MARK: - Examples
 
-        INPUT: hey I'm running late I'll be there in fifteen minutes
-        OUTPUT (into French): Salut, je suis en retard, j'arrive dans quinze minutes.
+    /// The example block, built for the target.
+    ///
+    /// WHY parameterised rather than constant (found reviewing PR #389): the block
+    /// used to be fixed text while `name` varied, so the "→ English" instructions
+    /// carried `OUTPUT (into French): …` — an in-context demonstration of the model
+    /// doing the one thing this mode forbids. A model weighs a worked example far
+    /// more heavily than a rule stated in prose, so a contradicting example is worse
+    /// than no example.
+    ///
+    /// The invariant this restores: **every OUTPUT is in the target, and every INPUT
+    /// is in some other language**, so the block can only ever show the rule being
+    /// obeyed. `inputLanguages(avoiding:)` is what keeps the second half true — an
+    /// example whose input is already in the target would demonstrate rule 8
+    /// (leave it alone) rather than translation.
+    private static func examples(target: SupportedLanguage) -> String {
+        let sources = inputLanguages(avoiding: target)
+        let first = sources[0]
+        let second = sources[1]
+        return """
+        Examples — the input language varies; the output is always \(englishName(of: target)):
+
+        INPUT: \(casualInput(first))
+        OUTPUT: \(casualOutput(target))
+
+        INPUT: \(lateInput(second))
+        OUTPUT: \(lateOutput(target))
 
         Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position:
 
-        INPUT: on se voit demain<<NL>>bonne soirée
-        OUTPUT (into English): See you tomorrow<<NL>>Have a good evening
+        INPUT: \(lineBreakInput(first))
+        OUTPUT: \(lineBreakOutput(target))
 
         COUNTER-EXAMPLES — the WRONG outputs below add content the speaker never dictated, or shift the register. Never produce them.
 
-        INPUT: je peux pas venir ce soir désolé
-        WRONG (invented a greeting and a sign-off): Hi, I'm sorry but I won't be able to make it tonight. Best regards.
-        WRONG (register shifted up): I regret to inform you that I am unable to attend this evening.
-        RIGHT: I can't come tonight, sorry.
+        INPUT: \(declineInput(second))
+        WRONG (invented a greeting and a sign-off): \(declineWrongPolite(target))
+        WRONG (register shifted up): \(declineWrongFormal(target))
+        RIGHT: \(declineRight(target))
         """
+    }
+
+    /// Languages an example may be written in, for a given target: every supported
+    /// language except the target itself, in a fixed order so the prompt text is
+    /// stable across builds. Two are always available, since there are four.
+    private static func inputLanguages(avoiding target: SupportedLanguage) -> [SupportedLanguage] {
+        [.french, .english, .spanish, .german].filter { $0 != target }
+    }
+
+    // Four short messages, each written in all four languages. Spoken-style,
+    // unpunctuated inputs; punctuated, register-preserving outputs — the shape the
+    // rules above describe. Kept as switches rather than a dictionary literal so a
+    // new `SupportedLanguage` case fails the build here instead of silently
+    // dropping an example.
+
+    private static func casualInput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "salut est ce que t'es dispo demain vers dix heures pour qu'on cale le truc"
+        case .english: return "hey are you free tomorrow around ten so we can sort this out"
+        case .spanish: return "oye estás libre mañana sobre las diez para que lo cuadremos"
+        case .german: return "hey hast du morgen gegen zehn zeit damit wir das klären"
+        }
+    }
+
+    private static func casualOutput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "Salut, tu es dispo demain vers 10 h qu'on cale ça ?"
+        case .english: return "Hey, are you free tomorrow around 10 to sort this out?"
+        case .spanish: return "Oye, ¿estás libre mañana sobre las 10 para cuadrarlo?"
+        case .german: return "Hey, hast du morgen gegen 10 Uhr Zeit, damit wir das klären?"
+        }
+    }
+
+    private static func lateInput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "je suis en retard j'arrive dans quinze minutes"
+        case .english: return "hey I'm running late I'll be there in fifteen minutes"
+        case .spanish: return "oye voy con retraso llego en quince minutos"
+        case .german: return "hey ich verspäte mich ich bin in fünfzehn minuten da"
+        }
+    }
+
+    private static func lateOutput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "Salut, je suis en retard, j'arrive dans quinze minutes."
+        case .english: return "Hey, I'm running late, I'll be there in fifteen minutes."
+        case .spanish: return "Oye, voy con retraso, llego en quince minutos."
+        case .german: return "Hey, ich verspäte mich, ich bin in fünfzehn Minuten da."
+        }
+    }
+
+    private static func lineBreakInput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "on se voit demain<<NL>>bonne soirée"
+        case .english: return "see you tomorrow<<NL>>have a good evening"
+        case .spanish: return "nos vemos mañana<<NL>>buenas noches"
+        case .german: return "bis morgen<<NL>>schönen abend noch"
+        }
+    }
+
+    private static func lineBreakOutput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "On se voit demain<<NL>>Bonne soirée"
+        case .english: return "See you tomorrow<<NL>>Have a good evening"
+        case .spanish: return "Nos vemos mañana<<NL>>Buenas noches"
+        case .german: return "Bis morgen<<NL>>Schönen Abend noch"
+        }
+    }
+
+    private static func declineInput(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "je peux pas venir ce soir désolé"
+        case .english: return "I can't come tonight sorry"
+        case .spanish: return "no puedo ir esta noche lo siento"
+        case .german: return "ich kann heute abend nicht kommen sorry"
+        }
+    }
+
+    private static func declineRight(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "Je peux pas venir ce soir, désolé."
+        case .english: return "I can't come tonight, sorry."
+        case .spanish: return "No puedo ir esta noche, lo siento."
+        case .german: return "Ich kann heute Abend nicht kommen, sorry."
+        }
+    }
+
+    private static func declineWrongPolite(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "Bonjour, je suis désolé mais je ne pourrai pas venir ce soir. Cordialement."
+        case .english: return "Hi, I'm sorry but I won't be able to make it tonight. Best regards."
+        case .spanish: return "Hola, siento no poder ir esta noche. Un saludo."
+        case .german: return "Hallo, es tut mir leid, aber ich kann heute Abend nicht kommen. Viele Grüße."
+        }
+    }
+
+    private static func declineWrongFormal(_ language: SupportedLanguage) -> String {
+        switch language {
+        case .french: return "Je suis au regret de vous informer que je ne pourrai être présent ce soir."
+        case .english: return "I regret to inform you that I am unable to attend this evening."
+        case .spanish: return "Lamento informarle de que no podré asistir esta noche."
+        case .german: return "Ich bedauere, Ihnen mitteilen zu müssen, dass ich heute Abend nicht teilnehmen kann."
+        }
     }
 }
