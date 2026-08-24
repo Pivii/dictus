@@ -59,12 +59,20 @@ extension DictationCoordinator {
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
             let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
-            // Localised like every other user-facing failure in this file's
-            // neighbourhood (`DictationCoordinator.swift:491`, `:658`). The mode
-            // name interpolated in front stays unlocalised on purpose: it is the
-            // catalogue's own label — "Notes", "→ EN" — and naming it in one
-            // language everywhere is what makes it recognisable as the thing the
-            // user armed.
+            // Localised, which is NOT what the neighbours do: of the twelve other
+            // `handleError` call sites, one localises, two forward
+            // `error.localizedDescription`, two pass a variable, and the rest are
+            // hardcoded literals — two of them French, which is the bug this
+            // avoids. The convention here is worth breaking rather than following:
+            // this is new copy, on a paid feature, and it is the sentence a user
+            // gets instead of their text.
+            //
+            // The mode name interpolated in front stays unlocalised on purpose: it
+            // is the catalogue's own label, so it reads as the thing the user armed.
+            // KNOWN ROUGH EDGE, for block B when this message first becomes
+            // reachable: translate modes are named "→ EN", so the sentence renders
+            // as "→ EN could not transform this text", which does not read. The fix
+            // belongs with the surface that shows it.
             handleError(String(
                 localized: "\(name) could not transform this text. Try again.",
                 comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
