@@ -260,7 +260,7 @@ struct ToolbarView: View {
         AnimatedMicButton(
             status: dictationStatus,
             isPill: true,
-            tint: armedSmartModeName == nil ? .dictusAccent : .dictusSmartMode,
+            ringTint: armedSmartModeName == nil ? .dictusAccent : .dictusSmartMode,
             onTap: {
                 guard !fanGestureDidOpen else {
                     fanGestureDidOpen = false

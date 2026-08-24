@@ -22,29 +22,55 @@ public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
 
-    /// The button's resting colour, and the colour of its idle glow.
+    /// The colour of the button's **ring**, when the status has not claimed it.
     ///
     /// A parameter since #79: the keyboard's pill signals the armed Smart Mode by
     /// turning `.dictusSmartMode` purple, which costs zero width in the most
     /// contested 32 pt of the UI and stays visible while the user is typing.
     ///
-    /// It only ever replaces the resting colour. Recording stays red and the two
-    /// post-recording stages stay in their washed accent, because those describe what
-    /// the phone is doing right now and outrank a setting — a red mic must mean
-    /// recording on every screen of this product.
-    public let tint: Color
+    /// ### Why the ring and not the fill
+    ///
+    /// It was the fill, and that is what a device session found wrong (2026-08-24).
+    /// The armed pill was 2,016 pt² of full-saturation purple, permanently, because
+    /// the mode is sticky — while every other purple in the feature is already quiet:
+    /// a 0.22 capsule behind a fan row, a 0.14 capsule behind the overlay badge, 13 pt
+    /// of label text. One surface out of four was shouting, and it read as foreign in
+    /// an app whose identity is grey, blue and white.
+    ///
+    /// A 3 pt stroke around the 66 × 46 ring is roughly 300 pt² — the same token and
+    /// the same meaning at about a seventh of the ink. It also puts the signal on the
+    /// **edge**, which is where `SmartModeFanView` already argues the signal has to
+    /// be: the thumb that armed the mode is sitting on the pill.
+    ///
+    /// Removing purple altogether was considered and rejected. `#8B5CF6` measures
+    /// 4.23:1 against white — better than `#3D7EFF`'s 3.73:1 — so it is not a
+    /// contrast problem, and the brand kit names this colour "Smart mode". The dose
+    /// was the problem.
+    ///
+    /// The status always outranks it: recording keeps its red ring, because a red mic
+    /// must mean recording on every screen of this product.
+    public let ringTint: Color
 
     public let onTap: () -> Void
 
     public init(status: DictationStatus,
                 isPill: Bool = false,
-                tint: Color = .dictusAccent,
+                ringTint: Color = .dictusAccent,
                 onTap: @escaping () -> Void) {
         self.status = status
         self.isPill = isPill
-        self.tint = tint
+        self.ringTint = ringTint
         self.onTap = onTap
     }
+
+    /// Whether the ring is carrying a signal of its own rather than the default glow.
+    ///
+    /// Drives the two things that separate an armed ring from an idle one: it is
+    /// opaque and a notch thicker, and it does **not** breathe. The pulse says "tap
+    /// me", which is about the button; armed is a statement about a setting, and
+    /// settings do not breathe. That second channel is what keeps the two states
+    /// distinguishable without relying on colour alone.
+    private var ringCarriesSignal: Bool { ringTint != .dictusAccent }
 
     // MARK: - Animation State
 
@@ -133,14 +159,24 @@ public struct AnimatedMicButton: View {
     private var ringEffect: some View {
         switch status {
         case .idle, .ready, .failed:
-            // Glass ring with soft glow pulsing 0.3-0.6 opacity over 2s
+            // Glass ring with soft glow pulsing 0.3-0.6 opacity over 2s — unless the
+            // ring is carrying a signal, in which case it is opaque, 3 pt and still.
+            //
+            // Opaque is not a taste call: at the 0.3 end of the breath, `#8B5CF6`
+            // composited over a light keyboard measures 1.35:1, which is invisible.
+            // At full opacity it is 2.83:1 against that backdrop and 4.23:1 against
+            // white. A breathing purple ring would have been a signal that vanishes
+            // for half of every two seconds.
             mainShape()
                 .fill(Color.clear)
                 .frame(width: ringWidth, height: ringHeight)
                 .dictusGlass(in: isPill ? AnyShape(Capsule()) : AnyShape(Circle()))
                 .overlay(
                     mainShape()
-                        .stroke(tint.opacity(glowOpacity), lineWidth: 2)
+                        .stroke(
+                            ringTint.opacity(ringCarriesSignal ? 1 : glowOpacity),
+                            lineWidth: ringCarriesSignal ? 3 : 2
+                        )
                         .frame(width: ringWidth, height: ringHeight)
                 )
 
@@ -158,14 +194,19 @@ public struct AnimatedMicButton: View {
                 .scaleEffect(pulseScale)
 
         case .transcribing, .processing, .requested:
-            // Static glass ring during transcription and the LLM stage
+            // Static glass ring during transcription and the LLM stage. The armed
+            // mode stays named here too: this is the longest wait in the product,
+            // and it is when the user most wants to be sure of what they armed.
             mainShape()
                 .fill(Color.clear)
                 .frame(width: ringWidth, height: ringHeight)
                 .dictusGlass(in: isPill ? AnyShape(Capsule()) : AnyShape(Circle()))
                 .overlay(
                     mainShape()
-                        .stroke(Color.dictusAccent.opacity(0.4), lineWidth: 2)
+                        .stroke(
+                            ringTint.opacity(ringCarriesSignal ? 0.8 : 0.4),
+                            lineWidth: 2
+                        )
                         .frame(width: ringWidth, height: ringHeight)
                 )
         }
@@ -203,7 +244,13 @@ public struct AnimatedMicButton: View {
         case .transcribing, .processing:
             return .dictusAccentHighlight.opacity(0.5)
         default:
-            return tint
+            // Always the accent. The armed Smart Mode used to replace this and no
+            // longer does — see `ringTint`. Blue at rest is the reference point the
+            // rest of the toolbar's deliberately-50% icons are calibrated against
+            // (`DictusColors.dictusPillIconSecondary`), and Dictus already renders a
+            // faded mic to mean "you cannot dictate": desaturating the resting state
+            // would put the default one step from the disabled one.
+            return .dictusAccent
         }
     }
 
