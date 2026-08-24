@@ -103,7 +103,7 @@ struct SmartModeFanView: View {
                 .font(.system(size: 17, weight: isHighlighted ? .semibold : .regular))
                 .lineLimit(1)
         }
-        .foregroundColor(isEnabled ? .dictusAccent : .secondary)
+        .foregroundColor(foreground(isHighlighted: isHighlighted, isEnabled: isEnabled))
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity)
         .frame(height: rowHeight)
@@ -123,6 +123,27 @@ struct SmartModeFanView: View {
             .dictusGlass(in: Capsule())
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
+    }
+
+    /// The colour of a row's glyph and label.
+    ///
+    /// ### Why only the highlighted row is blue
+    ///
+    /// Between #79's visual pass and #399 every enabled row was accent blue. The
+    /// commit that did it was getting the Smart Mode purple out of the keyboard,
+    /// which was right; it took `.primary` with it, which was not. Three blue rows
+    /// on three pale capsules read as three chosen things, and the highlight was
+    /// left saying "this one" against two neighbours wearing its own colour.
+    ///
+    /// ### Why the resting rows are `.primary` rather than a near-black literal
+    ///
+    /// The fan stands in for the keys, so its resting rows should read as key
+    /// glyphs — and those invert: the vendored theme paints them black on a light
+    /// keyboard and white on a dark one. `.primary` is that pair, already resolved
+    /// by the environment; a literal would be right in one appearance only.
+    private func foreground(isHighlighted: Bool, isEnabled: Bool) -> Color {
+        guard isEnabled else { return .secondary }
+        return isHighlighted ? .dictusAccent : .primary
     }
 
     /// Normal is named here rather than on the entry: DictusCore ships no string
