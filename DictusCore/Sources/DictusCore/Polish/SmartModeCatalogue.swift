@@ -115,9 +115,22 @@ public enum SmartModeCatalogue {
         all.first { $0.id == identifier }
     }
 
-    /// The modes the user pinned, in catalogue order, capped at `maximumPinnedModes`.
+    /// The modes the user pinned, **in the order they pinned them**, capped at
+    /// `maximumPinnedModes`.
+    ///
+    /// WHY this maps the stored list rather than filtering the catalogue (found
+    /// reviewing PR #389): `SmartModeStore.setPinned` states that the order is the
+    /// user's and is preserved, and `pinnedIdentifiers` honours it — but filtering
+    /// `all` returns catalogue order, so the two disagreed. Pinning
+    /// `["translate.de", "notes"]` produced `[notes, translate.de]` here. Block B
+    /// builds the long-press fan from this property, so the divergence would have
+    /// shipped as a fan that ignores the order the user arranged.
+    ///
+    /// `compactMap` drops an identifier that belongs to no mode this build ships,
+    /// for the same reason `mode(withIdentifier:)` returns nil: a downgrade or a
+    /// corrupted value should cost that one entry, not the whole fan.
     public static var pinnedModes: [SmartMode] {
-        Array(all.filter(\.isPinned).prefix(maximumPinnedModes))
+        Array(SmartModeStore.pinnedIdentifiers.compactMap(mode(withIdentifier:)).prefix(maximumPinnedModes))
     }
 
     /// How many modes may be pinned to the keyboard's long-press fan.

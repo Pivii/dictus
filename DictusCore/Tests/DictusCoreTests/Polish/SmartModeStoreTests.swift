@@ -107,6 +107,23 @@ final class SmartModeStoreTests: XCTestCase {
         XCTAssertEqual(SmartModeStore.pinnedIdentifiers, ["translate.de", "notes"])
     }
 
+    /// The order has to survive the trip through the catalogue, not just the store.
+    /// It did not: `pinnedModes` filtered the catalogue, so it answered in catalogue
+    /// order and the assertion above passed anyway. Block B draws the fan from
+    /// `pinnedModes`, so that divergence was a fan ignoring the user's arrangement.
+    func testPinnedOrderSurvivesResolutionThroughTheCatalogue() {
+        SmartModeStore.setPinned(["translate.de", "notes"])
+        XCTAssertEqual(SmartModeCatalogue.pinnedModes.map(\.id), ["translate.de", "notes"])
+
+        SmartModeStore.setPinned(["notes", "translate.de"])
+        XCTAssertEqual(SmartModeCatalogue.pinnedModes.map(\.id), ["notes", "translate.de"])
+    }
+
+    func testAPinnedIdentifierThisBuildDoesNotShipCostsOnlyItsOwnEntry() {
+        SmartModeStore.setPinned(["translate.klingon", "notes"])
+        XCTAssertEqual(SmartModeCatalogue.pinnedModes.map(\.id), ["notes"])
+    }
+
     func testPinnedIsCappedAtWhatTheFanCanDraw() {
         let everything = SmartModeCatalogue.builtIns.map(\.id)
         XCTAssertGreaterThan(everything.count, SmartModeCatalogue.maximumPinnedModes)
