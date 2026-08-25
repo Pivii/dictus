@@ -182,3 +182,15 @@ keyRepeatStopped ticks=49  reason=touch            <- after
 The select-all rows are the ones that matter: the selection is anchored at offset 0,
 so the before-context is empty throughout, and the guard let the deletion through
 anyway. That is `selectedText` doing the job the context alone could not.
+
+### #390 still holds
+
+Held backspace, host app terminated mid-hold, from `raw/dictus-keyrepeat-events.txt`:
+
+```
+keyRepeatStarted
+keyRepeatStopped ticks=22 reason=windowDetached
+```
+
+The repeat died with the view rather than outliving it. None of #390's teardown paths
+were touched; the `unavailable` outcome preserves its behaviour exactly.

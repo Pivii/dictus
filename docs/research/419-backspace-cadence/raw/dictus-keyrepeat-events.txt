@@ -8,3 +8,5 @@
 403:[2026-08-25T14:57:15Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=1 reason=documentEmpty
 458:[2026-08-25T14:58:03Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
 459:[2026-08-25T14:58:03Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=1 reason=documentEmpty
+487:[2026-08-25T14:59:33Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+488:[2026-08-25T14:59:35Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=22 reason=windowDetached
