@@ -395,10 +395,33 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(turbo.displayName, "Turbo")
         XCTAssertEqual(turbo.engine, .whisperKit)
         XCTAssertEqual(turbo.visibility, .available)
-        // Carried over unchanged — see the catalogue comment. `speedScore` in
-        // particular is inherited, not measured, pending an on-device RTF reading.
+        // `accuracyScore` is hand-assigned, like every entry's. `speedScore` is not:
+        // it comes from a device reading of 8.78x realtime (see the catalogue comment).
         XCTAssertEqual(turbo.accuracyScore, 0.9)
-        XCTAssertEqual(turbo.speedScore, 0.2)
+        XCTAssertEqual(turbo.speedScore, 0.75)
+    }
+
+    /// The card has to rank Turbo above Medium on speed, because the device says it is.
+    ///
+    /// Written as an ordering rather than as three constants: the numbers will move
+    /// again when the catalogue gets the WER recalibration it is still owed, and this
+    /// test should survive that and keep defending the thing #408 measured. #171
+    /// predicted the opposite ordering from architecture alone — the encoder is the
+    /// bulk of this variant, so it "should" have stayed slower than Medium — and the
+    /// measurement falsified it. That is the regression worth pinning.
+    func testTurboOutranksMediumOnSpeedAsMeasured() {
+        guard let turbo = ModelInfo.forIdentifier(turbo632),
+              let medium = ModelInfo.forIdentifier("openai_whisper-medium"),
+              let small = ModelInfo.forIdentifier("openai_whisper-small"),
+              let old = ModelInfo.forIdentifier(turbo954) else {
+            XCTFail("the catalogue must resolve all four")
+            return
+        }
+        // Measured RTF on an iPhone 15 Pro Max: Small 17.3x, turbo632 8.78x,
+        // Medium 4.16x, turbo954 2.70x. The scores must carry that same order.
+        XCTAssertGreaterThan(small.speedScore, turbo.speedScore)
+        XCTAssertGreaterThan(turbo.speedScore, medium.speedScore)
+        XCTAssertGreaterThan(medium.speedScore, old.speedScore)
     }
 
     /// The swap must be a strict size reduction on the model the user downloads —

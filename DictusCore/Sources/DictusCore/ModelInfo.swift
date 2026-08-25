@@ -229,22 +229,26 @@ public struct ModelInfo: Identifiable {
             // `allIncludingDeprecated`, which reproduces `1_052_848_880` exactly.
             sizeBytes: 645_668_913,
             engine: .whisperKit,
-            // Both scores are CARRIED OVER from `_954MB`, deliberately (issue #408):
+            // `speedScore` MEASURED on device 2026-08-25, iPhone 15 Pro Max, iOS 26.6,
+            // build `0d88286@HEAD`: 47.33 s of French dictation transcribed in 5 393 ms,
+            // so **8.78x realtime**. That falsifies #171's hypothesis 1, which predicted
+            // this variant would stay slower than Medium because turbo distils only the
+            // decoder. It is the opposite: 8.78x against Medium's measured 4.16x and
+            // `_954MB`'s 2.70x, on the same device and the same kind of input.
             //
-            //  - `accuracyScore` is hand-assigned across the whole catalogue, and
-            //    #171 shows the ranking is inverted (measured order: Parakeet ~
-            //    turbo632 > Medium > turbo954). Recalibrating needs a real WER corpus
-            //    and its own issue; moving one entry alone would only relocate the
-            //    inconsistency.
-            //  - `speedScore` 0.2 is INHERITED, not measured. #171 measured 2.70x RTF
-            //    for `_954MB` on an iPhone 15 Pro Max; this variant has no on-device
-            //    RTF reading yet. #171's hypothesis 1 predicts it stays slower than
-            //    Medium — turbo distils only the decoder, and the served tree agrees
-            //    the encoder is the bulk here (429 MB of 632 MB) — but a prediction
-            //    is not a measurement. Correct this once #171 has the number.
+            // The scale's other measured anchors, all iPhone 15 Pro Max: Small 17.3x at
+            // 0.95, Medium 4.16x at 0.55. 8.78x sits between them, hence 0.75 — one
+            // notch under Parakeet, clearly above Medium, which is what the numbers say
+            // and what the card has to convey.
+            //
+            // `accuracyScore` 0.9 is unchanged and still HAND-ASSIGNED, like every other
+            // entry's. The #171 corpus run puts this variant at or above Parakeet (0.85)
+            // and above Medium (0.8), so 0.9 is consistent with what was measured — but
+            // consistent is not derived. A real WER recalibration of the whole catalogue
+            // is still owed and still needs its own issue.
             accuracyScore: 0.9,
-            speedScore: 0.2,
-            description: "Most accurate but slowest",
+            speedScore: 0.75,
+            description: "Most accurate, and fast",
             visibility: .available
         ),
         // Superseded by the entry above (issue #408). Kept resolvable, and only
