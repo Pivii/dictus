@@ -679,6 +679,10 @@ class KeyboardViewController: UIInputViewController {
         // (#260): a detached controller must not adopt an ownerless dictation.
         isAttached = false
 
+        // A finger held on backspace when iOS takes the keyboard away never produces a
+        // touchesEnded, and the repeat timer was cleared by nothing else (#390).
+        giellaKeyboard?.cancelKeyRepeat(reason: "viewDidDisappear")
+
         // Restore system gesture recognizer delay (be a good citizen)
         restoreWindowGestureDelay()
 
@@ -852,6 +856,7 @@ class KeyboardViewController: UIInputViewController {
         hostingController?.removeFromParent()
         hostingController = nil
 
+        giellaKeyboard?.cancelKeyRepeat(reason: "controllerDeinit")
         giellaKeyboard?.removeFromSuperview()
         giellaKeyboard = nil
 
@@ -1275,7 +1280,10 @@ class KeyboardViewController: UIInputViewController {
             details: "status=\(KeyboardState.shared.dictationStatus.rawValue) oldHosting=\(hostingHeightConstraint?.constant ?? -1) oldHeight=\(heightConstraint?.constant ?? -1) inputBounds=\(Int(kbInputView.bounds.width))x\(Int(kbInputView.bounds.height))"
         ))
 
-        // Remove old keyboard
+        // Remove old keyboard. Stop its auto-repeat first: this controller and its
+        // bridge outlive the rebuild, so an outgoing view still holding a repeat would
+        // keep deleting into the live document from outside the hierarchy (#390).
+        giellaKeyboard?.cancelKeyRepeat(reason: "reloadLayout")
         giellaKeyboard?.removeFromSuperview()
 
         // Create new keyboard with updated definition
