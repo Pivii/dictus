@@ -1,0 +1,203 @@
+1487119591.4	launch
+1487119736.1	seeded	len=254	text="alpha bravo charlie. delta  echo foxtrot-golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve ZZZZZZZZZZZZZZZZZZZZZZZZZ"
+1487119953.6	firstResponder	field=text	value=true
+1487124213.5	shouldChange	loc=253	len=1	repl=""
+1487124219.8	deleteBackward.in	len=254
+1487124222.0	didChange	len=253	tail="lve ZZZZZZZZZZZZZZZZZZZZZZZZ"
+1487124222.3	deleteBackward.out	len=253	deleted=1
+1487124718.8	shouldChange	loc=252	len=1	repl=""
+1487124720.5	deleteBackward.in	len=253
+1487124723.8	didChange	len=252	tail="elve ZZZZZZZZZZZZZZZZZZZZZZZ"
+1487124724.4	deleteBackward.out	len=252	deleted=1
+1487124816.1	shouldChange	loc=251	len=1	repl=""
+1487124818.8	deleteBackward.in	len=252
+1487124822.4	didChange	len=251	tail="welve ZZZZZZZZZZZZZZZZZZZZZZ"
+1487124827.0	deleteBackward.out	len=251	deleted=1
+1487124916.1	shouldChange	loc=250	len=1	repl=""
+1487124918.1	deleteBackward.in	len=251
+1487124921.4	didChange	len=250	tail="twelve ZZZZZZZZZZZZZZZZZZZZZ"
+1487124924.1	deleteBackward.out	len=250	deleted=1
+1487125016.5	shouldChange	loc=249	len=1	repl=""
+1487125018.3	deleteBackward.in	len=250
+1487125021.5	didChange	len=249	tail=" twelve ZZZZZZZZZZZZZZZZZZZZ"
+1487125023.8	deleteBackward.out	len=249	deleted=1
+1487125115.9	shouldChange	loc=248	len=1	repl=""
+1487125117.1	deleteBackward.in	len=249
+1487125119.9	didChange	len=248	tail="n twelve ZZZZZZZZZZZZZZZZZZZ"
+1487125121.2	deleteBackward.out	len=248	deleted=1
+1487125216.0	shouldChange	loc=247	len=1	repl=""
+1487125217.9	deleteBackward.in	len=248
+1487125221.3	didChange	len=247	tail="en twelve ZZZZZZZZZZZZZZZZZZ"
+1487125224.4	deleteBackward.out	len=247	deleted=1
+1487125316.1	shouldChange	loc=246	len=1	repl=""
+1487125317.9	deleteBackward.in	len=247
+1487125321.5	didChange	len=246	tail="ven twelve ZZZZZZZZZZZZZZZZZ"
+1487125322.8	deleteBackward.out	len=246	deleted=1
+1487125415.8	shouldChange	loc=245	len=1	repl=""
+1487125418.0	deleteBackward.in	len=246
+1487125422.1	didChange	len=245	tail="even twelve ZZZZZZZZZZZZZZZZ"
+1487125423.2	deleteBackward.out	len=245	deleted=1
+1487125516.2	shouldChange	loc=244	len=1	repl=""
+1487125518.4	deleteBackward.in	len=245
+1487125521.6	didChange	len=244	tail="leven twelve ZZZZZZZZZZZZZZZ"
+1487125523.6	deleteBackward.out	len=244	deleted=1
+1487125616.0	shouldChange	loc=243	len=1	repl=""
+1487125617.9	deleteBackward.in	len=244
+1487125621.2	didChange	len=243	tail="eleven twelve ZZZZZZZZZZZZZZ"
+1487125622.2	deleteBackward.out	len=243	deleted=1
+1487125716.0	shouldChange	loc=242	len=1	repl=""
+1487125717.6	deleteBackward.in	len=243
+1487125720.8	didChange	len=242	tail=" eleven twelve ZZZZZZZZZZZZZ"
+1487125722.2	deleteBackward.out	len=242	deleted=1
+1487125816.2	shouldChange	loc=241	len=1	repl=""
+1487125818.1	deleteBackward.in	len=242
+1487125821.6	didChange	len=241	tail="n eleven twelve ZZZZZZZZZZZZ"
+1487125823.1	deleteBackward.out	len=241	deleted=1
+1487125915.6	shouldChange	loc=240	len=1	repl=""
+1487125917.1	deleteBackward.in	len=241
+1487125919.9	didChange	len=240	tail="en eleven twelve ZZZZZZZZZZZ"
+1487125920.9	deleteBackward.out	len=240	deleted=1
+1487126016.2	shouldChange	loc=239	len=1	repl=""
+1487126018.4	deleteBackward.in	len=240
+1487126021.4	didChange	len=239	tail="ten eleven twelve ZZZZZZZZZZ"
+1487126022.2	deleteBackward.out	len=239	deleted=1
+1487126115.4	shouldChange	loc=238	len=1	repl=""
+1487126116.5	deleteBackward.in	len=239
+1487126119.1	didChange	len=238	tail=" ten eleven twelve ZZZZZZZZZ"
+1487126120.2	deleteBackward.out	len=238	deleted=1
+1487126216.0	shouldChange	loc=237	len=1	repl=""
+1487126217.7	deleteBackward.in	len=238
+1487126220.9	didChange	len=237	tail="e ten eleven twelve ZZZZZZZZ"
+1487126224.6	deleteBackward.out	len=237	deleted=1
+1487126315.7	shouldChange	loc=236	len=1	repl=""
+1487126317.2	deleteBackward.in	len=237
+1487126319.5	didChange	len=236	tail="ne ten eleven twelve ZZZZZZZ"
+1487126320.5	deleteBackward.out	len=236	deleted=1
+1487126416.3	shouldChange	loc=235	len=1	repl=""
+1487126418.3	deleteBackward.in	len=236
+1487126421.2	didChange	len=235	tail="ine ten eleven twelve ZZZZZZ"
+1487126422.3	deleteBackward.out	len=235	deleted=1
+1487126516.3	shouldChange	loc=234	len=1	repl=""
+1487126518.5	deleteBackward.in	len=235
+1487126522.2	didChange	len=234	tail="nine ten eleven twelve ZZZZZ"
+1487126523.7	deleteBackward.out	len=234	deleted=1
+1487126615.7	shouldChange	loc=233	len=1	repl=""
+1487126617.6	deleteBackward.in	len=234
+1487126620.1	didChange	len=233	tail=" nine ten eleven twelve ZZZZ"
+1487126621.1	deleteBackward.out	len=233	deleted=1
+1487126716.4	shouldChange	loc=229	len=4	repl=""
+1487126721.0	deleteBackward.in	len=230
+1487126723.1	didChange	len=229	tail="ight nine ten eleven twelve "
+1487126723.9	deleteBackward.out	len=229	deleted=1
+1487127067.1	shouldChange	loc=222	len=7	repl=""
+1487127073.6	deleteBackward.in	len=223
+1487127075.4	didChange	len=222	tail="seven eight nine ten eleven "
+1487127075.9	deleteBackward.out	len=222	deleted=1
+1487127422.8	shouldChange	loc=215	len=7	repl=""
+1487127427.2	deleteBackward.in	len=216
+1487127428.6	didChange	len=215	tail="ve six seven eight nine ten "
+1487127428.9	deleteBackward.out	len=215	deleted=1
+1487127772.4	shouldChange	loc=211	len=4	repl=""
+1487127777.1	deleteBackward.in	len=212
+1487127778.3	didChange	len=211	tail="r five six seven eight nine "
+1487127778.6	deleteBackward.out	len=211	deleted=1
+1487128122.1	shouldChange	loc=206	len=5	repl=""
+1487128126.7	deleteBackward.in	len=207
+1487128127.9	didChange	len=206	tail="e four five six seven eight "
+1487128128.4	deleteBackward.out	len=206	deleted=1
+1487128471.8	shouldChange	loc=200	len=6	repl=""
+1487128476.7	deleteBackward.in	len=201
+1487128478.0	didChange	len=200	tail="o three four five six seven "
+1487128478.3	deleteBackward.out	len=200	deleted=1
+1487128823.0	shouldChange	loc=194	len=6	repl=""
+1487128827.3	deleteBackward.in	len=195
+1487128829.0	didChange	len=194	tail="one two three four five six "
+1487128829.5	deleteBackward.out	len=194	deleted=1
+1487129171.8	shouldChange	loc=190	len=4	repl=""
+1487129175.0	deleteBackward.in	len=191
+1487129176.5	didChange	len=190	tail="ulu one two three four five "
+1487129176.9	deleteBackward.out	len=190	deleted=1
+1487129521.9	shouldChange	loc=185	len=5	repl=""
+1487129526.4	deleteBackward.in	len=186
+1487129527.6	didChange	len=185	tail="kee zulu one two three four "
+1487129528.0	deleteBackward.out	len=185	deleted=1
+1487129872.8	shouldChange	loc=180	len=5	repl=""
+1487129877.0	deleteBackward.in	len=181
+1487129878.3	didChange	len=180	tail="y yankee zulu one two three "
+1487129878.6	deleteBackward.out	len=180	deleted=1
+1487130222.1	shouldChange	loc=174	len=6	repl=""
+1487130226.5	deleteBackward.in	len=175
+1487130228.2	didChange	len=174	tail="ey xray yankee zulu one two "
+1487130228.6	deleteBackward.out	len=174	deleted=1
+1487130566.9	shouldChange	loc=170	len=4	repl=""
+1487130568.5	deleteBackward.in	len=171
+1487130569.6	didChange	len=170	tail="hiskey xray yankee zulu one "
+1487130570.0	deleteBackward.out	len=170	deleted=1
+1487130923.3	shouldChange	loc=166	len=4	repl=""
+1487130927.1	deleteBackward.in	len=167
+1487130928.2	didChange	len=166	tail="or whiskey xray yankee zulu "
+1487130928.6	deleteBackward.out	len=166	deleted=1
+1487131268.7	shouldChange	loc=161	len=5	repl=""
+1487131270.1	deleteBackward.in	len=162
+1487131270.9	didChange	len=161	tail=" victor whiskey xray yankee "
+1487131271.1	deleteBackward.out	len=161	deleted=1
+1487131616.9	shouldChange	loc=154	len=7	repl=""
+1487131619.1	deleteBackward.in	len=155
+1487131619.9	didChange	len=154	tail="uniform victor whiskey xray "
+1487131620.2	deleteBackward.out	len=154	deleted=1
+1487131972.1	shouldChange	loc=149	len=5	repl=""
+1487131976.4	deleteBackward.in	len=150
+1487131978.4	didChange	len=149	tail="ango uniform victor whiskey "
+1487131978.9	deleteBackward.out	len=149	deleted=1
+1487132322.1	shouldChange	loc=141	len=8	repl=""
+1487132327.7	deleteBackward.in	len=142
+1487132329.1	didChange	len=141	tail="sierra tango uniform victor "
+1487132329.4	deleteBackward.out	len=141	deleted=1
+1487132667.4	shouldChange	loc=134	len=7	repl=""
+1487132674.4	deleteBackward.in	len=135
+1487132676.0	didChange	len=134	tail=" romeo sierra tango uniform "
+1487132676.4	deleteBackward.out	len=134	deleted=1
+1487133021.8	shouldChange	loc=126	len=8	repl=""
+1487133027.5	deleteBackward.in	len=127
+1487133029.0	didChange	len=126	tail="a quebec romeo sierra tango "
+1487133032.6	deleteBackward.out	len=126	deleted=1
+1487133371.5	shouldChange	loc=120	len=6	repl=""
+1487133375.8	deleteBackward.in	len=121
+1487133377.3	didChange	len=120	tail="ar papa quebec romeo sierra "
+1487133377.7	deleteBackward.out	len=120	deleted=1
+1487133717.1	shouldChange	loc=113	len=7	repl=""
+1487133720.2	deleteBackward.in	len=114
+1487133721.5	didChange	len=113	tail="ber oscar papa quebec romeo "
+1487133721.8	deleteBackward.out	len=113	deleted=1
+1487134073.0	shouldChange	loc=107	len=6	repl=""
+1487134077.4	deleteBackward.in	len=108
+1487134078.8	didChange	len=107	tail=" november oscar papa quebec "
+1487134079.1	deleteBackward.out	len=107	deleted=1
+1487134416.8	shouldChange	loc=100	len=7	repl=""
+1487134420.1	deleteBackward.in	len=101
+1487134421.6	didChange	len=100	tail="ma mike november oscar papa "
+1487134422.1	deleteBackward.out	len=100	deleted=1
+1487134772.2	shouldChange	loc=95	len=5	repl=""
+1487134781.9	deleteBackward.in	len=96
+1487134785.0	didChange	len=95	tail="lo lima mike november oscar "
+1487134785.4	deleteBackward.out	len=95	deleted=1
+1487135122.5	shouldChange	loc=89	len=6	repl=""
+1487135132.4	deleteBackward.in	len=90
+1487135134.9	didChange	len=89	tail="iet kilo lima mike november "
+1487135135.2	deleteBackward.out	len=89	deleted=1
+1487135467.6	shouldChange	loc=80	len=9	repl=""
+1487135484.6	deleteBackward.in	len=81
+1487135486.5	didChange	len=80	tail="india juliet kilo lima mike "
+1487135486.8	deleteBackward.out	len=80	deleted=1
+1487135821.7	shouldChange	loc=75	len=5	repl=""
+1487135830.9	deleteBackward.in	len=76
+1487135833.7	didChange	len=75	tail="otel india juliet kilo lima "
+1487135834.0	deleteBackward.out	len=75	deleted=1
+1487136167.4	shouldChange	loc=70	len=5	repl=""
+1487136179.2	deleteBackward.in	len=71
+1487136181.2	didChange	len=70	tail="olf hotel india juliet kilo "
+1487136181.5	deleteBackward.out	len=70	deleted=1
+1487136516.6	shouldChange	loc=65	len=5	repl=""
+1487136521.7	deleteBackward.in	len=66
+1487136523.5	didChange	len=65	tail="rot-golf hotel india juliet "
+1487136523.7	deleteBackward.out	len=65	deleted=1

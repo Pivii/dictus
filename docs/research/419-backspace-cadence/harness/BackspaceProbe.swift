@@ -156,6 +156,13 @@ final class ProbeViewController: UIViewController, UITextViewDelegate {
             ProbeLog.log("firstResponder\tfield=secure\tvalue=\(secureField.isFirstResponder)")
         } else {
             textView.becomeFirstResponder()
+            // `-selectAll 1` builds the exact state that reverted the previous attempt
+            // at this guard: a selection anchored at offset 0, which leaves the host
+            // reporting an empty before-context while a real deletion is pending (#419).
+            if UserDefaults.standard.bool(forKey: "selectAll") {
+                textView.selectedRange = NSRange(location: 0, length: seed.count)
+                ProbeLog.log("selectedAll\trange=0..<\(seed.count)")
+            }
             ProbeLog.log("firstResponder\tfield=text\tvalue=\(textView.isFirstResponder)")
         }
     }

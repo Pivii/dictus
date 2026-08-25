@@ -144,3 +144,41 @@ Two numbers say the whole issue:
 - The Dictus keyboard's keys are **not in the accessibility tree** -- only the system
   globe and dictation buttons are. Its delete key has to be tapped by coordinate, read
   off a screenshot.
+
+## Dictus after the fix, same harness, same hold
+
+Verified on the same simulator, same seed text, same 12 s hold at the same
+coordinate. `raw/dictus-after-12s.log`:
+
+```
+       0 ms   1 character      <- touch-down
+     505 ms   1 character      <- repeat begins        (Apple: 500)
+       ...    20 character deletions, every ~100 ms    (Apple: 20, 100 ms)
+   2 402 ms   1 character
+   2 503 ms   4 characters     <- word mode            (Apple: 2 517 ms)
+   2 854 ms   7 characters     <- and every ~350 ms    (Apple: ~350 ms)
+       ...    343.8-356.4 ms across 28 intervals
+  12 303 ms   5 characters     <- still 65 characters left when the finger lifts
+```
+
+The same 12 s hold that used to leave the field empty after 5.2 s and then tick
+73 more times now leaves 65 of the 254 characters standing. Our keyboard's own log
+counts it in one line each way (`raw/dictus-keyrepeat-events.txt`):
+
+```
+keyRepeatStopped ticks=122 reason=touch            <- before
+keyRepeatStopped ticks=49  reason=touch            <- after
+```
+
+### The empty field, and the case that reverted the last attempt
+
+| Case | Before | After | Apple |
+| --- | --- | --- | --- |
+| Field empties mid-hold (`dictus-after-empties-midhold.log`) | 73 further ticks over 7.4 s | stops on the tick that finds it empty, `ticks=23 reason=documentEmpty`, nothing for the remaining 9 s | stops |
+| Hold on an already empty field (`dictus-after-empty-from-start.log`) | ticked for the whole hold | one delete on touch-down, then nothing for 8 s, `ticks=1 reason=documentEmpty` | one delete on touch-down, then nothing for 6 s |
+| **Select all, then tap backspace** (`dictus-after-selectall-tap.log`) | deletes | **deletes** -- one edit, `loc=0 len=19`, the whole selection | n/a |
+| **Select all, then hold backspace** (`dictus-after-selectall-hold.log`) | deletes | **deletes** the selection on touch-down, then the now-empty field stops the repeat | n/a |
+
+The select-all rows are the ones that matter: the selection is anchored at offset 0,
+so the before-context is empty throughout, and the guard let the deletion through
+anyway. That is `selectedText` doing the job the context alone could not.

@@ -1,0 +1,10 @@
+106:[2026-08-25T14:48:09Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+107:[2026-08-25T14:48:21Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=122 reason=touch
+344:[2026-08-25T14:55:50Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+345:[2026-08-25T14:56:02Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=49 reason=touch
+373:[2026-08-25T14:56:43Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+374:[2026-08-25T14:56:46Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=23 reason=documentEmpty
+402:[2026-08-25T14:57:15Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+403:[2026-08-25T14:57:15Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=1 reason=documentEmpty
+458:[2026-08-25T14:58:03Z] DEBUG   [keyboard] <KBD> keyRepeatStarted
+459:[2026-08-25T14:58:03Z] DEBUG   [keyboard] <KBD> keyRepeatStopped ticks=1 reason=documentEmpty
