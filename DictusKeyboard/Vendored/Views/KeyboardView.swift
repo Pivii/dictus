@@ -39,8 +39,16 @@ final internal class GiellaKeyboardView: UIView,
     LongPressOverlayDelegate,
     LongPressCursorMovementDelegate
 {
+    // The three cadences below are Apple's own, measured rather than guessed --
+    // Apple documents none of this. See docs/research/419-backspace-cadence/ for the
+    // timeline and the raw samples (#419).
     private static let pauseBeforeRepeatTimeInterval: TimeInterval = 0.5
     private static let keyRepeatTimeInterval: TimeInterval = 0.1
+    /// Word mode is slower than character mode, not faster: Apple's word deletions
+    /// arrive as spaced waves 345.7-358.6 ms apart (mean 350.0 over 20 intervals),
+    /// where ours used to arrive at the character cadence -- ten words a second, with
+    /// no gap between them, which is how a held backspace ate whole paragraphs (#419).
+    private static let wordModeRepeatTimeInterval: TimeInterval = 0.35
     private var theme: Theme
 
     private let definition: KeyboardDefinition
@@ -533,8 +541,14 @@ final internal class GiellaKeyboardView: UIView,
     /// Used to switch from character-level to word-level deletion after threshold.
     private var deleteRepeatCount: Int = 0
 
-    /// After this many character deletions, switch to word-level deletion.
-    private static let wordModeThreshold = 10
+    /// After this many character repeats, switch to word-level deletion.
+    ///
+    /// Apple switches on the 21st repeat tick, so 20 here (#419). At the 0.1 s
+    /// character cadence that puts the switch 2.5 s after touch-down instead of the
+    /// 1.5 s it used to take -- the "arrives too early" half of the complaint. The
+    /// measurement cannot say whether Apple counts ticks or elapsed time, because its
+    /// character cadence is fixed: 20 ticks and 2.0 s are the same moment.
+    private static let wordModeThreshold = 20
 
     struct ActiveKey: Hashable {
         static func == (lhs: GiellaKeyboardView.ActiveKey, rhs: GiellaKeyboardView.ActiveKey) -> Bool {
@@ -925,10 +939,15 @@ final internal class GiellaKeyboardView: UIView,
             keyRepeatTimer?.invalidate()
             keyRepeatTimer = makeKeyRepeatTimer(timeInterval: GiellaKeyboardView.keyRepeatTimeInterval)
         }
-        // Stage 2 -> Stage 3: After word mode threshold, speed up to 0.05s for faster word deletion
+        // Stage 2 -> Stage 3: word mode has just started, so slow down to its cadence.
+        // This branch used to rebuild the timer at the interval it already had, making
+        // it a no-op that left word deletion running at ten a second (#419). Apple's
+        // first word deletion also lands on the normal character tick and only the
+        // ones after it are spaced, which is why the change happens here, after the
+        // tick, rather than on the threshold itself.
         else if deleteRepeatCount == Self.wordModeThreshold + 1 && timer.timeInterval == GiellaKeyboardView.keyRepeatTimeInterval {
             keyRepeatTimer?.invalidate()
-            keyRepeatTimer = makeKeyRepeatTimer(timeInterval: 0.1)
+            keyRepeatTimer = makeKeyRepeatTimer(timeInterval: GiellaKeyboardView.wordModeRepeatTimeInterval)
         }
     }
 
