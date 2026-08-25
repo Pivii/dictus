@@ -41,7 +41,10 @@ protocol SpeechModelProtocol {
 /// and try again.") straight into the keyboard's error banner. These cases carry
 /// localised, user-actionable text instead, while `diagnosticDescription` keeps the
 /// English technical detail for `PersistentLog`.
-enum SpeechModelError: LocalizedError {
+///
+/// This shape is now named and shared: `DiagnosableError`, in
+/// `DictationFailureMessage.swift`, is #313's generalisation of this type.
+enum SpeechModelError: DiagnosableError {
     /// The selected variant is absent from the local model repository, or its
     /// folder holds no compiled Core ML bundle.
     case modelNotInstalled(identifier: String)

@@ -20,25 +20,52 @@ extension Notification.Name {
 }
 
 /// Errors that can occur during audio engine operations.
-enum AudioEngineError: Error, LocalizedError {
+enum AudioEngineError: Error, DiagnosableError {
     case permissionDenied
     case permissionUndetermined
     case phoneCallActive
     case audioHardwareUnavailable
+
+    /// `installTap` or `engine.start` raised an Objective-C exception. The payload is the
+    /// exception's own text and is diagnostic only — it is an AVFoundation sentence that
+    /// names formats and sample rates.
     case installTapFailed(String)
 
+    /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
+    /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
         switch self {
-        case .permissionDenied:
-            return "Microphone permission denied"
-        case .permissionUndetermined:
-            return "Microphone permission not yet requested"
+        case .permissionDenied, .permissionUndetermined:
+            return DictationFailureMessage.microphonePermissionDenied
         case .phoneCallActive:
-            return "Micro indisponible pendant un appel"
+            return String(localized: "The microphone is busy on a call. Try again once the call ends.",
+                          comment: "Shown when a dictation cannot start because a phone call holds the microphone (issue #313).")
         case .audioHardwareUnavailable:
-            return "Micro indisponible, réessayez dans un instant"
+            return String(localized: "The microphone is not available right now. Try again in a moment.",
+                          comment: "Shown when the audio hardware reports no usable input format (issue #313).")
+        case .installTapFailed:
+            // WHY the same sentence #311 wrote for a stranded cold start: from the user's
+            // side this is the same event, a dictation that did not start, and the same
+            // action fixes it. It deliberately names no cause — the message it replaces
+            // said the microphone was unavailable, and the tester in #417 correctly
+            // answered that nothing else was holding their microphone.
+            return String(localized: "Dictation could not start. Tap the microphone again.")
+        }
+    }
+
+    /// English technical detail for the log. Never shown to the user.
+    var diagnosticDescription: String {
+        switch self {
+        case .permissionDenied:
+            return "microphone permission denied"
+        case .permissionUndetermined:
+            return "microphone permission not yet requested"
+        case .phoneCallActive:
+            return "input node reports zero channels — a call holds the microphone"
+        case .audioHardwareUnavailable:
+            return "input node reports an unusable format after the retry"
         case .installTapFailed(let reason):
-            return "Micro indisponible (\(reason))"
+            return "installTap/engine.start raised: \(reason)"
         }
     }
 }
@@ -675,7 +702,7 @@ class UnifiedAudioEngine: ObservableObject {
             try startEngine(context: "forceRestart")
             PersistentLog.log(.engineWarmUpSuccess(context: "forceRestart"))
         } catch {
-            PersistentLog.log(.engineWarmUpFailed(context: "forceRestart", error: error.localizedDescription))
+            PersistentLog.log(.engineWarmUpFailed(context: "forceRestart", error: DictationFailureMessage.diagnostic(for: error)))
         }
     }
 

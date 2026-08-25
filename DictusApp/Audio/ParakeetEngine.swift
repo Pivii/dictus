@@ -137,10 +137,21 @@ class ParakeetEngine: SpeechModelProtocol {
 }
 
 /// Errors specific to ParakeetEngine.
-enum ParakeetEngineError: Error, LocalizedError {
+enum ParakeetEngineError: Error, DiagnosableError {
     case unavailable
 
+    /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
+    /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return String(localized: "This model needs a newer version of iOS. Open Dictus and choose another model.",
+                          comment: "Shown when the selected model requires an iOS version this device does not run (issue #313).")
+        }
+    }
+
+    /// English technical detail for the log. Never shown to the user.
+    var diagnosticDescription: String {
         switch self {
         case .unavailable:
             return "Parakeet engine is not available on this iOS version"

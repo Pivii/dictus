@@ -243,7 +243,7 @@ class DictationCoordinator: ObservableObject {
                 PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
                 self.setModelLoadState(.ready, reason: "init-preload-success")
             } catch {
-                PersistentLog.log(.engineWarmUpFailed(context: "init-preload", error: error.localizedDescription))
+                PersistentLog.log(.engineWarmUpFailed(context: "init-preload", error: DictationFailureMessage.diagnostic(for: error)))
                 self.setModelLoadState(.idle, reason: "init-preload-failed")
             }
         }
@@ -367,7 +367,7 @@ class DictationCoordinator: ObservableObject {
                     PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
                     self.setModelLoadState(.ready, reason: "didBecomeActive-success")
                 } catch {
-                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: error.localizedDescription))
+                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: DictationFailureMessage.diagnostic(for: error)))
                     self.setModelLoadState(.idle, reason: "didBecomeActive-failed")
                 }
             }
