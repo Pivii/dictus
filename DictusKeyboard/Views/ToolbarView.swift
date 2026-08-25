@@ -231,10 +231,16 @@ struct ToolbarView: View {
         }
     }
 
+    /// WHY not red (#313, decided 2026-08-25): red is the recording overlay's colour in
+    /// this keyboard, and a message in that same red one second after the overlay in that
+    /// red disappears reads as an alarm. Half of what lands here is not an alarm at all —
+    /// "No words detected" is the user having stopped the mic a beat early — and the other
+    /// half is not helped by shouting. Grey, the treatment the bar already gives
+    /// `polishUnavailableNotice`, says the same thing without claiming the app is broken.
     private func errorMessage(_ message: String) -> some View {
         Text(message)
             .font(.caption)
-            .foregroundColor(.red)
+            .foregroundStyle(.secondary)
             .lineLimit(1)
             .frame(maxWidth: .infinity)
             // Instrumentation only (#261). "The message was assigned" and
@@ -563,11 +569,13 @@ struct ToolbarView: View {
 
     /// Polish is not running, and will not run again until DictusApp restarts (#315).
     ///
-    /// WHY secondary and not the red of `statusMessage`: nothing failed for the
-    /// user. The dictation still arrives, as the deterministic floor it already
-    /// takes when a guardrail rejects the model's output — what is missing is the
-    /// polish on top. Red is this bar's colour for a dictation that did not
-    /// happen, and reusing it here would say something untrue.
+    /// WHY secondary: nothing failed for the user. The dictation still arrives, as
+    /// the deterministic floor it already takes when a guardrail rejects the model's
+    /// output — what is missing is the polish on top.
+    ///
+    /// This used to be the exception, the one message in the bar that was not red.
+    /// Since #313 it is the rule: no message in this keyboard is red, and the
+    /// argument written here is the one that generalised.
     ///
     /// The copy names the state and stops. No cause, no remedy, no "try again
     /// later": Apple's background rate limit is only refunded by a fresh app
