@@ -72,13 +72,16 @@ extension DictationCoordinator {
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
             let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
-            // Localised, which is NOT what the neighbours do: of the twelve other
-            // `handleError` call sites, one localises, two forward
-            // `error.localizedDescription`, two pass a variable, and the rest are
-            // hardcoded literals — two of them French, which is the bug this
-            // avoids. The convention here is worth breaking rather than following:
-            // this is new copy, on a paid feature, and it is the sentence a user
-            // gets instead of their text.
+            // Localised, which was NOT what the neighbours did when this was written:
+            // of the twelve other `handleError` call sites, one localised, two
+            // forwarded `error.localizedDescription`, and the rest were hardcoded
+            // literals, two of them French. #313 turned that round — every call site
+            // now resolves through the catalog and none forwards raw error text — so
+            // this is the convention rather than the exception to it.
+            //
+            // It stays a fault and not a notice: a Smart Mode that produced nothing is
+            // the app failing to do what the user armed, not a dictation with no words
+            // in it.
             //
             // The mode name interpolated in front stays unlocalised on purpose: it
             // is the catalogue's own label, so it reads as the thing the user armed.
