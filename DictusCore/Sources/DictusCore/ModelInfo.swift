@@ -231,10 +231,17 @@ public struct ModelInfo: Identifiable {
             engine: .whisperKit,
             // `speedScore` MEASURED on device 2026-08-25, iPhone 15 Pro Max, iOS 26.6,
             // build `0d88286@HEAD`: 47.33 s of French dictation transcribed in 5 393 ms,
-            // so **8.78x realtime**. That falsifies #171's hypothesis 1, which predicted
-            // this variant would stay slower than Medium because turbo distils only the
-            // decoder. It is the opposite: 8.78x against Medium's measured 4.16x and
-            // `_954MB`'s 2.70x, on the same device and the same kind of input.
+            // so **8.78x realtime**, and 8.8x to 12.5x across the shorter clips in the
+            // same session. That falsifies #171's hypothesis 1, which predicted this
+            // variant would stay slower than Medium because turbo distils only the
+            // decoder.
+            //
+            // Medium's comparison points, both on this device and both slower: 4.16x
+            // measured warm in #171 (2026-05-09, a different build), and 6.10x measured
+            // cold in the same session as the reading above. Turbo beats it either way,
+            // by somewhere between 1.4x and 2.1x — the spread is what happens when the
+            // two numbers come from different sessions and different warm states, and
+            // it is stated here rather than collapsed into the flattering end of it.
             //
             // The scale's other measured anchors, all iPhone 15 Pro Max: Small 17.3x at
             // 0.95, Medium 4.16x at 0.55. 8.78x sits between them, hence 0.75 — one
