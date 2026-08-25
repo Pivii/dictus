@@ -16,8 +16,12 @@ final class ModelLanguageSupportTests: XCTestCase {
         "openai_whisper-small_216MB"
     ]
 
+    /// Both quantized Turbo variants belong here. `_954MB` is deprecated since #408
+    /// but still installed on devices, so it must keep the claims it shipped with
+    /// rather than falling through to the small-class default.
     private let highAccuracyWhisperIDs = [
         "openai_whisper-medium",
+        "openai_whisper-large-v3-v20240930_turbo_632MB",
         "openai_whisper-large-v3_turbo_954MB"
     ]
 
@@ -70,6 +74,32 @@ final class ModelLanguageSupportTests: XCTestCase {
             let zh = model.languageSupport.highlights.first { $0.code == "zh" }
             XCTAssertEqual(zh?.note, .goodOnThisModel,
                            "\(id) must carry the good-Chinese note")
+        }
+    }
+
+    // MARK: - Issue #408: the Turbo swap must not change tier
+
+    /// The acceptance criterion the swap could silently fail: `languageSupport`
+    /// switches on the identifier, and an unclassified Whisper entry falls through to
+    /// the small-class default. A new Turbo landing in that branch would tell its
+    /// users their model is imprecise on Chinese and to upgrade — away from the
+    /// highest-accuracy variant the app ships.
+    func testBothTurboVariantsResolveToHighAccuracyNotTheSmallClassDefault() {
+        for id in ["openai_whisper-large-v3-v20240930_turbo_632MB",
+                   "openai_whisper-large-v3_turbo_954MB"] {
+            guard let model = ModelInfo.forIdentifier(id) else {
+                XCTFail("\(id) missing from catalog")
+                continue
+            }
+            let zh = model.languageSupport.highlights.first { $0.code == "zh" }
+            XCTAssertEqual(zh?.note, .goodOnThisModel, "\(id) fell through to the small class")
+            guard let medium = ModelInfo.forIdentifier("openai_whisper-medium") else {
+                XCTFail("medium missing from catalog")
+                return
+            }
+            XCTAssertEqual(model.languageSupport.highlights.map(\.code),
+                           medium.languageSupport.highlights.map(\.code),
+                           "\(id) does not share Medium's high-accuracy highlights")
         }
     }
 

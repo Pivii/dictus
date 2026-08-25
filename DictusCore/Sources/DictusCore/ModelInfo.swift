@@ -189,22 +189,79 @@ public struct ModelInfo: Identifiable {
             description: "Fast and accurate (NVIDIA)",
             visibility: .available
         ),
-        // Phase 37 (issue #104): Whisper Turbo re-introduced using Argmax's
-        // iPhone-supported quantized variant `openai_whisper-large-v3_turbo_954MB`.
+        // Phase 37 (issue #104): Whisper Turbo re-introduced using an Argmax
+        // iPhone-supported QUANTIZED variant.
         //
         // The previous non-quantized `openai_whisper-large-v3_turbo` identifier was
         // the root cause of the historical failures (2026-03 removals + 2026-04-22
         // retest on iPhone 15 Pro Max): that build is M-series-only and triggers
         // `ANE model load has failed ... Must re-compile the E5 bundle` on iPhone
         // ANE regardless of chip generation, because the non-quantized TextDecoder
-        // exceeds the mobile ANE's memory budget.
+        // exceeds the mobile ANE's memory budget. That remains true of the identifier
+        // it names; both quantized variants below are unaffected by it.
+        //
+        // Issue #408 changed WHICH quantized variant "Turbo" means. On the French
+        // dictation corpus measured 2026-08-25 for #171
+        // (https://github.com/getdictus/dictus-ios/issues/171#issuecomment-5409496092)
+        // `_954MB` won no clip of five and hallucinated on three, and translated a
+        // French sentence carrying English loanwords into English instead of
+        // transcribing it. `_v20240930_turbo_632MB` won or tied on four of five,
+        // hallucinated on one, and is 39% smaller. Both ship the same four
+        // `.mlmodelc` artefacts and carry the same Argmax device gate, so
+        // `directoryPatterns`, `requiredPaths` and the RAM rule all stay as they were.
         //
         // Source of truth: https://huggingface.co/argmaxinc/whisperkit-coreml/blob/main/config.json
-        // iPhone 14/15/16/17 families (identifiers iPhone15,iPhone16,iPhone17,iPhone18)
-        // list this `_954MB` variant as supported.
+        // The A15 family (iPhone14) and the A16/A17 Pro/A18/A19 family (iPhone15,
+        // iPhone16, iPhone17, iPhone18, iPad15,7-8, iPad16,1-2) list BOTH quantized
+        // turbo variants as supported. Neither is listed for A12/A13 or A14.
+        ModelInfo(
+            identifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
+            displayName: "Turbo",
+            // 645 MB measured against a name that says 632 MB — the same gap the
+            // `_954MB` entry below carries, for the same reason. AudioEncoder
+            // (429 MB) + TextDecoder (203 MB) come to the 632 MB in the name, which
+            // is the model; `directoryPatterns: ["<variant>/"]` then pulls the whole
+            // folder, including the 12 MB TextDecoderContextPrefill.mlmodelc that
+            // `requiredPaths` does not require. The name describes the model; this
+            // constant describes the download.
+            //
+            // Re-derived 2026-08-25 by the method described above
+            // `allIncludingDeprecated`, which reproduces `1_052_848_880` exactly.
+            sizeBytes: 645_668_913,
+            engine: .whisperKit,
+            // Both scores are CARRIED OVER from `_954MB`, deliberately (issue #408):
+            //
+            //  - `accuracyScore` is hand-assigned across the whole catalogue, and
+            //    #171 shows the ranking is inverted (measured order: Parakeet ~
+            //    turbo632 > Medium > turbo954). Recalibrating needs a real WER corpus
+            //    and its own issue; moving one entry alone would only relocate the
+            //    inconsistency.
+            //  - `speedScore` 0.2 is INHERITED, not measured. #171 measured 2.70x RTF
+            //    for `_954MB` on an iPhone 15 Pro Max; this variant has no on-device
+            //    RTF reading yet. #171's hypothesis 1 predicts it stays slower than
+            //    Medium — turbo distils only the decoder, and the served tree agrees
+            //    the encoder is the bulk here (429 MB of 632 MB) — but a prediction
+            //    is not a measurement. Correct this once #171 has the number.
+            accuracyScore: 0.9,
+            speedScore: 0.2,
+            description: "Most accurate but slowest",
+            visibility: .available
+        ),
+        // Superseded by the entry above (issue #408). Kept resolvable, and only
+        // resolvable: a user who already pulled 1.05 GB of Turbo on an earlier build
+        // keeps dictating with it, keeps seeing it in the Settings "Downloaded"
+        // section, and can delete it from there — while `available(on:)` stops
+        // offering it, so nobody downloads it again. Same soft-deprecation contract
+        // as Tiny/Base, and the reason there is no launch-time `activeModel` rewrite:
+        // that would have cost an existing Turbo user either a 645 MB download they
+        // did not ask for or a silent move off the model they picked.
+        //
+        // WHY the display name gains a qualifier: a user who holds both variants
+        // would otherwise read two rows both called "Turbo" in that section, with
+        // nothing but the size to separate them. Follows "Small (Quantized)".
         ModelInfo(
             identifier: "openai_whisper-large-v3_turbo_954MB",
-            displayName: "Turbo",
+            displayName: "Turbo (Legacy)",
             // 1052 MB measured against a name that says 954 MB, and both are right:
             // TextDecoder + AudioEncoder + their `.mil` files come to ~954 MB, which
             // is the model. The folder also ships TextDecoderContextPrefill.mlmodelc
@@ -216,7 +273,7 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.9,
             speedScore: 0.2,
             description: "Most accurate but slowest",
-            visibility: .available
+            visibility: .deprecated
         )
     ]
 
@@ -301,10 +358,11 @@ public struct ModelInfo: Identifiable {
 
     /// Whether this model is safe to expose on a device with the given capabilities.
     ///
-    /// For the quantized Whisper Turbo (`_954MB`): requires ≥ 6 GB RAM. This matches
-    /// Argmax's published compatibility matrix: all iPhone 14/15/16/17 families
-    /// (iPhone15,X through iPhone18,X in Apple identifier nomenclature) list this
-    /// variant as supported, and those devices ship with 6 GB+ RAM.
+    /// For the quantized Whisper Turbo variants (`_v20240930_turbo_632MB` and the
+    /// deprecated `_954MB`): requires ≥ 6 GB RAM. This matches Argmax's published
+    /// compatibility matrix: the iPhone 14/15/16/17 families (iPhone14,X through
+    /// iPhone18,X in Apple identifier nomenclature) list both variants as supported,
+    /// and those devices ship with 6 GB+ RAM.
     /// For every other model: returns true — existing catalog entries have already
     /// been validated on the minimum supported device class.
     ///
@@ -357,7 +415,11 @@ public struct ModelInfo: Identifiable {
             return Self.a12a13SupportedIdentifiers.contains(identifier) ? nil : .hardwareGeneration
         }
         switch identifier {
-        case "openai_whisper-large-v3_turbo_954MB":
+        // Both quantized Turbo variants (issue #408): Argmax lists them for exactly
+        // the same device families, so they share one rule. The deprecated `_954MB`
+        // is matched here too — it is still installed on devices, so the Settings
+        // "Downloaded" row it renders must be able to say why it is disabled.
+        case "openai_whisper-large-v3-v20240930_turbo_632MB", "openai_whisper-large-v3_turbo_954MB":
             return capabilities.physicalMemoryGB >= 6 ? nil : .insufficientMemory(requiredGB: 6)
         default:
             return nil
