@@ -698,7 +698,10 @@ class DictationCoordinator: ObservableObject {
 
                 guard !samples.isEmpty else {
                     guard mayReport(session, "empty recording") else { return }
-                    handleError("No audio recorded")
+                    PersistentLog.log(.dictationFailed(error: "no samples collected"))
+                    // A notice, not a fault (#313): nothing was captured, and the user
+                    // reads the same sentence here as for every other way that happens.
+                    handleError(DictationFailureMessage.noWordsDetected)
                     return
                 }
 
@@ -707,7 +710,10 @@ class DictationCoordinator: ObservableObject {
                 guard audioDuration >= minimumRecordingDuration else {
                     PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
                     guard mayReport(session, "short recording") else { return }
-                    handleError("Recording too short")
+                    // The maintainer hit this regularly and read it as an app bug every
+                    // time (#313). It is not one: the mic was stopped a beat early. Same
+                    // event as an empty recording, same sentence.
+                    handleError(DictationFailureMessage.noWordsDetected)
                     return
                 }
 

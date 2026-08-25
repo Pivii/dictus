@@ -203,7 +203,9 @@ class WhisperKitEngine: SpeechModelProtocol {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmed.isEmpty else {
-            throw TranscriptionError.transcriptionFailed("Empty transcription result")
+            // Nothing wrong happened: the model ran on a normal-length clip and heard
+            // no words. A notice, not a fault (#313).
+            throw TranscriptionError.noSpeechDetected(context: "empty WhisperKit transcription result")
         }
 
         return trimmed

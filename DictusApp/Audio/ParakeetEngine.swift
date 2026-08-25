@@ -100,6 +100,10 @@ class ParakeetEngine: SpeechModelProtocol {
         }
     }
 
+    /// Shortest clip FluidAudio accepts: one second at the 16 kHz the pipeline
+    /// already resamples to. Its own error message states the requirement.
+    private static let minimumSampleCount = 16_000
+
     /// Transcribe audio samples using Parakeet v3.
     ///
     /// - Parameters:
@@ -119,12 +123,26 @@ class ParakeetEngine: SpeechModelProtocol {
             throw TranscriptionError.emptyAudio
         }
 
+        // Parakeet's own one-second floor, declared here rather than discovered there.
+        //
+        // WHY (#313, field report 2026-08-08): below this, FluidAudio throws, and its
+        // sentence — "Parakeet: Invalid audio data provided. Must be at least 1 second of
+        // 16kHz audio." — reached the keyboard toolbar verbatim, naming an internal
+        // component and a sample rate to someone who had simply stopped the mic a beat
+        // early. It is reachable on any ordinary tap because the coordinator's floor is
+        // 0.5 s and this one is 1.0 s, so recordings in between pass ours and fail this.
+        // Refusing it ourselves is what lets the user read a notice instead.
+        guard audioSamples.count >= Self.minimumSampleCount else {
+            throw TranscriptionError.noSpeechDetected(
+                context: "\(audioSamples.count) samples, below Parakeet's \(Self.minimumSampleCount) floor")
+        }
+
         do {
             let result = try await asrManager.transcribe(audioSamples)
             let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !text.isEmpty else {
-                throw TranscriptionError.transcriptionFailed("Empty Parakeet transcription result")
+                throw TranscriptionError.noSpeechDetected(context: "empty Parakeet transcription result")
             }
 
             return text

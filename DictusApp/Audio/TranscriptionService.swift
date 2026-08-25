@@ -178,7 +178,10 @@ class TranscriptionService {
                 logPerformance(modelName: modelName, audioSamples: audioSamples, transcriptionDurationMs: durationMs)
                 return result
             } catch {
-                PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
+                // The diagnostic, not `localizedDescription`: since #313 the latter is the
+                // sentence written for the user, and a log line that carried it would say
+                // nothing about what actually failed.
+                PersistentLog.log(.transcriptionFailed(error: DictationFailureMessage.diagnostic(for: error)))
                 throw error
             }
         }
@@ -239,8 +242,7 @@ class TranscriptionService {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !trimmed.isEmpty else {
-                PersistentLog.log(.transcriptionFailed(error: "Empty transcription result"))
-                throw TranscriptionError.transcriptionFailed("Empty transcription result")
+                throw TranscriptionError.noSpeechDetected(context: "empty WhisperKit transcription result (legacy path)")
             }
 
             let durationMs = Int(Date().timeIntervalSince(transcriptionStart) * 1000)
@@ -249,7 +251,7 @@ class TranscriptionService {
             logPerformance(modelName: modelName, audioSamples: audioSamples, transcriptionDurationMs: durationMs)
             return trimmed
         } catch let error as TranscriptionError {
-            PersistentLog.log(.transcriptionFailed(error: error.localizedDescription ?? "unknown"))
+            PersistentLog.log(.transcriptionFailed(error: error.diagnosticDescription))
             throw error
         } catch {
             PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
