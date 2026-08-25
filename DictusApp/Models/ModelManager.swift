@@ -212,9 +212,11 @@ class ModelManager: ObservableObject {
 
         // Tracks which phase a failure (if any) belongs to. Download-phase failures
         // keep files on disk (every file is complete thanks to atomic per-file
-        // moves) so a retry resumes where it left off; prewarm-phase failures still
-        // clean up, because ANE compilation failures (E5 bundle errors) can leave
+        // moves) so a retry resumes where it left off; a prewarm failure keeps them
+        // too when it is the deadline guard firing (issue #405) and only cleans up
+        // otherwise, because ANE compilation failures (E5 bundle errors) can leave
         // behind unusable cached files that prevent retry from working.
+        // `ModelCleanupPolicy` owns the rule; this flag is one of its two inputs.
         var downloadPhaseCompleted = false
 
         do {
@@ -328,18 +330,27 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            if downloadPhaseCompleted {
-                // Prewarm failure: clean up. ANE compilation failures (E5 bundle
-                // errors) leave behind unusable cached files that prevent
-                // re-download from working correctly.
+            // Three failure kinds, one of which deletes anything — see
+            // ModelCleanupPolicy for the rule and its reasons:
+            //   • download failure → keep (issue #210, same policy as the Parakeet
+            //     path): every file on disk is complete, a retry resumes;
+            //   • prewarm timeout → keep (issue #405): the payload is intact and only
+            //     the Core ML compile ran out of clock, so a retry must resume at the
+            //     compile step instead of repaying a 1 GB download;
+            //   • any other prewarm failure → clean up: an E5 bundle error (issue
+            //     #104) leaves a corrupt Core ML cache that fails identically forever.
+            // Since issue #235, tapping the card's "Retry" affordance retries in
+            // place; the full reset stays in the overflow menu's "Delete partial
+            // download" entry (cleanupFailedModel). When nothing is deleted here the
+            // debug log shows .modelPrewarmTimeout with no .modelCleanupPerformed
+            // line after it — that pair is what says the bytes were kept.
+            let isPrewarmTimeout = (error as? ModelManagerError)?.isPrewarmTimeout ?? false
+            if ModelCleanupPolicy.shouldCleanUpFiles(
+                downloadPhaseCompleted: downloadPhaseCompleted,
+                isPrewarmTimeout: isPrewarmTimeout
+            ) {
                 cleanupModelFiles(identifier)
             }
-            // Download failure: deliberately NO cleanup (issue #210, same policy as
-            // the Parakeet path) — the downloader moves each file into place
-            // atomically, so anything on disk is a complete file and a retry skips
-            // it and resumes where it left off. Since issue #235, tapping the card's
-            // "Retry" affordance retries in place; the full reset lives in the
-            // overflow menu's "Delete partial download" entry (cleanupFailedModel).
 
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
@@ -630,6 +641,14 @@ enum ModelManagerError: Error, LocalizedError {
         case .prewarmTimeout(let seconds):
             return "Model optimization did not complete within \(seconds)s"
         }
+    }
+
+    /// Whether this is the prewarm deadline guard firing rather than a real
+    /// failure of the model files (issue #405). The one prewarm failure whose
+    /// downloaded payload is still worth keeping — see `ModelCleanupPolicy`.
+    var isPrewarmTimeout: Bool {
+        if case .prewarmTimeout = self { return true }
+        return false
     }
 }
 
