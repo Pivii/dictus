@@ -6,14 +6,28 @@ import UIKit
 import AudioToolbox
 import DictusCore
 
+/// What one tick of the backspace auto-repeat achieved, which is what decides whether
+/// the tick gives feedback and whether the repeat carries on.
+enum KeyRepeatOutcome {
+    /// A deletion was issued into a live document.
+    case deleted
+    /// The document is provably empty and nothing is selected, so the hold has nothing
+    /// left to do. Apple's keyboard stops repeating here rather than ticking on in
+    /// silence, measured in docs/research/419-backspace-cadence/ (#419).
+    case nothingToDelete
+    /// There is no document to delete into -- the controller went away mid-hold. Stay
+    /// silent; the teardown paths that own this case are what stop the timer (#390).
+    case unavailable
+}
+
 protocol GiellaKeyboardViewDelegate: AnyObject {
     func didSwipeKey(_ key: KeyDefinition)
     func didTriggerKey(_ key: KeyDefinition)
     func didTriggerDoubleTap(forKey key: KeyDefinition)
     func didTriggerHoldKey(_ key: KeyDefinition)
-    /// Perform `key`'s auto-repeat action and report whether a deletion was actually
-    /// issued. The repeat tick fires its haptic and its click on that answer (#390).
-    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> Bool
+    /// Perform `key`'s auto-repeat action and report what it achieved. The repeat tick
+    /// fires its haptic and its click on that answer (#390), and stops on it (#419).
+    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> KeyRepeatOutcome
     func didMoveCursor(_ movement: Int)
 }
 
@@ -914,18 +928,32 @@ final internal class GiellaKeyboardView: UIView,
 
         // Word-level deletion after threshold, character-level before it.
         let wordMode = deleteRepeatCount > Self.wordModeThreshold
-        let deleted = delegate?.didTriggerRepeat(activeKey.key, wordMode: wordMode) ?? false
+        let outcome = delegate?.didTriggerRepeat(activeKey.key, wordMode: wordMode) ?? .unavailable
 
-        // The feedback follows the deletion, not the tick (#390). Both used to fire
-        // unconditionally, which is what produced "haptics in a chain while nothing is
-        // deleted": with no delegate left there is nothing to delete into and the repeat
-        // has to be silent. Still exactly one haptic and one click per deletion, as #286
-        // left it -- each repeat tick used to click from inside the bridge's delete
-        // handlers, and emitting it here is what keeps that count right now they are
-        // silent.
-        if deleted {
+        switch outcome {
+        case .deleted:
+            // The feedback follows the deletion, not the tick (#390). Both used to fire
+            // unconditionally, which is what produced "haptics in a chain while nothing
+            // is deleted". Still exactly one haptic and one click per deletion, as #286
+            // left it -- each repeat tick used to click from inside the bridge's delete
+            // handlers, and emitting it here is what keeps that count right now they are
+            // silent.
             HapticFeedback.keyTapped()
             playSound(for: activeKey.key)
+
+        case .nothingToDelete:
+            // A hold that has eaten the whole field used to keep ticking for as long as
+            // the finger stayed down -- measured at 73 further ticks over 7.4 s, each
+            // one a haptic and a click for a deletion that deleted nothing (#419).
+            // Apple stops instead, so this stops. The finger is still down, so
+            // `activeKey` stays as it is and the touch that ends the hold clears it.
+            stopKeyRepeat(reason: "documentEmpty")
+            return
+
+        case .unavailable:
+            // No document to delete into. Silent, and left running: the teardown paths
+            // added in #390 are what stop this one, and they carry their own log reason.
+            break
         }
 
         increaseKeyRepeatRateIfNeeded()
