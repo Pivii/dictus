@@ -196,6 +196,32 @@ final class DictusKeyboardBridge: NSObject,
         }
     }
 
+    /// Perform `key`'s auto-repeat action and report whether a deletion was actually
+    /// issued.
+    ///
+    /// WHY the keyboard view asks rather than just calling and assuming (#390): the
+    /// repeat tick used to fire its haptic and its click unconditionally, so a repeat
+    /// that had outlived its controller kept tapping the user's wrist while every
+    /// deletion went nowhere. `controller` is weak and dies with the keyboard, which
+    /// makes "is there still a document to delete into" a question this class can
+    /// answer and the view cannot.
+    ///
+    /// WHY the answer is proxy availability and not "did the document change": a host
+    /// may withhold `documentContextBeforeInput` -- a secure field reports none -- while
+    /// still accepting the deletion, so gating the feedback on the context would silence
+    /// a backspace that works, and #286 must not regress. A deletion issued into a live
+    /// proxy is a deletion issued.
+    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> Bool {
+        guard controller?.textDocumentProxy != nil else { return false }
+
+        if wordMode {
+            didTriggerHoldKey(key)
+        } else {
+            didTriggerKey(key)
+        }
+        return true
+    }
+
     func didMoveCursor(_ movement: Int) {
         // Moving the caret is what the undo check tests for, so drop the offer
         // here rather than wait for the host to report the selection change (#266).
