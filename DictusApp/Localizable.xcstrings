@@ -460,6 +460,16 @@
         }
       }
     },
+    "Choose another model" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir un autre modèle"
+          }
+        }
+      }
+    },
     "Clear" : {
       "localizations" : {
         "fr" : {
@@ -2447,6 +2457,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cela peut améliorer la qualité du texte, mais peut ajouter un peu de temps de traitement."
+          }
+        }
+      }
+    },
+    "This is taking longer than usual. The preparation continues on its own. You can keep waiting, or choose a lighter model." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La préparation est plus longue que d’habitude. Elle continue de son côté. Vous pouvez attendre, ou choisir un modèle plus léger."
           }
         }
       }

@@ -33,8 +33,19 @@ struct ModelLoadingOverlay: View {
     /// The user-facing flow that caused preparation to be shown.
     let context: ModelPreparationContext
 
+    /// Extra work the presenter wants done when the user takes the escape hatch —
+    /// in practice, navigation. Dismissal and abandoning the load are handled here
+    /// and do not need to be repeated by the caller. `nil` means "nothing to do
+    /// beyond dismissing"; it does NOT disable the escape, `context.allowsEscape`
+    /// decides that (issue #428).
+    let onEscape: (() -> Void)?
+
     @State private var showCompletion = false
     @State private var activeContext: ModelPreparationContext
+
+    /// Flips true once the screen has been up for
+    /// `ModelPreparationEscape.revealDelaySeconds` without finishing (issue #428).
+    @State private var showEscape = false
 
     /// Tracks whether we have ever observed an active prep phase (downloading,
     /// compiling, or loading). Without this, the overlay would auto-dismiss
@@ -54,13 +65,15 @@ struct ModelLoadingOverlay: View {
         modelManager: ModelManager,
         modelIdentifier: String,
         context: ModelPreparationContext = .modelSelection,
-        isPresented: Binding<Bool>
+        isPresented: Binding<Bool>,
+        onEscape: (() -> Void)? = nil
     ) {
         self.modelManager = modelManager
         self.modelIdentifier = modelIdentifier
         self.context = context
         self._isPresented = isPresented
         self._activeContext = State(initialValue: context)
+        self.onEscape = onEscape
     }
 
     var body: some View {
@@ -105,11 +118,36 @@ struct ModelLoadingOverlay: View {
 
                 Spacer()
 
-                stayOnPageNotice
-                    .padding(.bottom, 40)
+                VStack(spacing: 20) {
+                    stayOnPageNotice
+
+                    if showEscape && !showCompletion {
+                        escapeOffer
+                            .transition(.opacity)
+                    }
+                }
+                .padding(.bottom, 40)
             }
         }
         .interactiveDismissDisabled(true)
+        // Reveal the escape late, not at once. The screen exists to stop the user
+        // tapping the mic mid-load (issue #144) and that reason holds for every
+        // healthy load; a button at second zero would break what the screen is for.
+        // `.task` is cancelled when the screen goes away, so a load that finishes
+        // normally never gets here.
+        // Keyed on the context because the keyboard can change it mid-wait
+        // (`dictusKeyboardPreparationRequested`), and a context that was not allowed an
+        // escape when the screen opened must get one from the moment it is.
+        .task(id: activeContext) {
+            guard activeContext.allowsEscape else { return }
+            try? await Task.sleep(
+                nanoseconds: UInt64(ModelPreparationEscape.revealDelaySeconds) * 1_000_000_000
+            )
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showEscape = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { _ in
             checkForCompletion()
         }
@@ -219,6 +257,40 @@ struct ModelLoadingOverlay: View {
         }
     }
 
+    /// The way out, offered once the wait stops looking routine (issue #428).
+    ///
+    /// Deliberately worded as an offer. The first compile of a variant on a device runs
+    /// into the minutes (see `ModelPreparationEscape.revealDelaySeconds`), so this
+    /// appears during perfectly healthy first-time preparations, and the copy has to
+    /// leave the user free to simply keep waiting. It also has to be honest that leaving
+    /// does not stop the work: the compile cannot be interrupted, it carries on whatever
+    /// the user chooses here.
+    private var escapeOffer: some View {
+        VStack(spacing: 10) {
+            Text("This is taking longer than usual. The preparation continues on its own. You can keep waiting, or choose a lighter model.")
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Button {
+                escape()
+            } label: {
+                Text("Choose another model")
+                    .font(.dictusCaption.weight(.semibold))
+                    .foregroundStyle(Color.dictusAccent)
+                    // A caption-sized label draws a hit target ~14pt tall (measured on
+                    // the simulator's accessibility tree). Padded to Apple's 44pt
+                    // minimum, because this is the one control on a screen the user is
+                    // already stuck on and it must not need aiming at.
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private var explanationText: LocalizedStringKey {
         switch activeContext {
         case .onboarding:
@@ -317,6 +389,17 @@ struct ModelLoadingOverlay: View {
         case .ready:
             return []
         }
+    }
+
+    /// Leave the preparation screen without waiting for the load to resolve.
+    ///
+    /// Order matters: abandon first, dismiss second. Abandoning flips the shared load
+    /// state to idle, so by the time the presenter's auto-presentation logic re-runs
+    /// there is no live preparation left for it to re-cover the screen with.
+    private func escape() {
+        modelManager.abandonPreparation()
+        isPresented = false
+        onEscape?()
     }
 
     private func checkForCompletion() {

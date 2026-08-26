@@ -602,4 +602,34 @@ final class ModelInfoTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Escape hatch window (issue #428)
+
+    /// The relationship that makes the escape hatch an offer rather than a formality:
+    /// the user must always be given the choice before a deadline makes it for them.
+    ///
+    /// Written as a comparison, not as `45 < 120`: both numbers are expected to move
+    /// once more compiles are measured on real devices. What must not move is the order.
+    func testTheEscapeIsOfferedBeforeAnyDeadlineCanFire() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertLessThan(
+                ModelPreparationEscape.revealDelaySeconds,
+                model.prewarmTimeoutSeconds,
+                "\(model.identifier) would time out before the user is offered a way off the screen"
+            )
+        }
+    }
+
+    /// And the other end of that window: the escape must not appear during a routine
+    /// wait. The slowest preparation measured outside a variant's first compile is
+    /// Medium at 32s on an iPhone 15 Pro Max (2026-08-26); a load that finds a warm
+    /// Core ML cache is seconds (3636ms measured on the same device).
+    ///
+    /// A first compile is NOT a routine wait and is deliberately not bounded here — it
+    /// runs into the minutes, and the escape appearing during one is the intended
+    /// behaviour, not a violation of this test.
+    func testTheEscapeIsNotOfferedDuringARoutineWait() {
+        let measuredMediumCompileSeconds = 32
+        XCTAssertGreaterThan(ModelPreparationEscape.revealDelaySeconds, measuredMediumCompileSeconds)
+    }
 }

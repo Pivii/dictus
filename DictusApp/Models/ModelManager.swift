@@ -69,6 +69,19 @@ class ModelManager: ObservableObject {
     /// so SwiftUI can drive the loading overlay reactively.
     @Published var modelLoadState: ModelLoadState = .idle
 
+    /// Set when the user dismisses the preparation screen by hand (issue #428).
+    ///
+    /// WHY it has to exist: the escape lands the user on the Models tab, and
+    /// `ModelManagerView` auto-presents the very same screen from live state the
+    /// moment that tab appears. Without a memory of the user's decision, escaping
+    /// would re-cover the screen on the next frame and the way out would be no way
+    /// out at all.
+    ///
+    /// Cleared the moment the user asks for model work again (`downloadModel`,
+    /// `selectModel`), because from then on the screen is answering a fresh request
+    /// rather than replaying the one they walked away from.
+    @Published var preparationDismissedByUser = false
+
     // MARK: - Private
 
     private let defaults = AppGroup.defaults
@@ -176,6 +189,8 @@ class ModelManager: ObservableObject {
     /// restoration, app lifecycle handling). For v1, foreground download with visible
     /// progress is simpler and sufficient. Users will have the app open during download.
     func downloadModel(_ identifier: String) async throws {
+        // A fresh request: the preparation screen is welcome again (issue #428).
+        preparationDismissedByUser = false
         // Check if this is a Parakeet model and route accordingly
         let modelInfo = ModelInfo.forIdentifier(identifier)
         if modelInfo?.engine == .parakeet {
@@ -525,11 +540,27 @@ class ModelManager: ObservableObject {
     /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
+        // A fresh request: the preparation screen is welcome again (issue #428).
+        preparationDismissedByUser = false
         activeModel = identifier
         persistState()
         PersistentLog.log(.modelSelected(name: identifier))
         // Trigger an eager load so the model is in RAM before the next mic tap.
         DictationCoordinator.shared.preloadActiveModel()
+    }
+
+    /// The user took the escape offered on the preparation screen (issue #428).
+    ///
+    /// Two things have to happen together, which is why they live behind one call:
+    /// the coordinator has to stop waiting for the load (and let the next one start),
+    /// and this manager has to remember the decision so the views that auto-present
+    /// the screen do not immediately undo it.
+    ///
+    /// What does NOT happen is the compile stopping. It cannot be stopped; see
+    /// `DictationCoordinator.abandonInFlightModelLoad`.
+    func abandonPreparation() {
+        preparationDismissedByUser = true
+        DictationCoordinator.shared.abandonInFlightModelLoad(reason: "user-left-preparation-screen")
     }
 
     /// Deletes a model from disk and updates state.

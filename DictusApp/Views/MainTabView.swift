@@ -73,7 +73,20 @@ struct MainTabView: View {
                     isPresented: Binding(
                         get: { self.preparingModelID != nil },
                         set: { if !$0 { self.preparingModelID = nil } }
-                    )
+                    ),
+                    onEscape: {
+                        // Land somewhere the user can act. This branch replaces the
+                        // whole TabView, so dismissing it drops them on whichever tab
+                        // was selected — Home, which cannot change the model. The
+                        // Models tab is the one screen that answers the question the
+                        // escape was taken to ask (issue #428).
+                        self.selectedTab = 1
+                        // And forget the launch intent, or the screen comes straight
+                        // back: `init` re-reads `ColdStartLaunch.intent` every time
+                        // SwiftUI rebuilds this view, and a `.prepare` left in place
+                        // would re-seed `preparingModelID` on a later identity change.
+                        ColdStartLaunch.clear()
+                    }
                 )
             } else if isColdStartMode {
                 // Full-screen branded overlay with animated swipe gesture and bilingual text.

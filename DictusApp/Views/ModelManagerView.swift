@@ -103,6 +103,10 @@ struct ModelManagerView: View {
     /// First model identifier currently in a user-facing prep phase.
     /// Priority: active load > prewarming > downloading.
     private var liveActivePrepModel: String? {
+        // The user already walked away from this screen once (issue #428). Landing on
+        // this tab is where the escape sends them, so re-presenting it here would undo
+        // the escape on the very next frame.
+        if modelManager.preparationDismissedByUser { return nil }
         if modelManager.modelLoadState == .loading,
            let active = modelManager.activeModel {
             return active

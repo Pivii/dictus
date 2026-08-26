@@ -146,6 +146,19 @@ class DictationCoordinator: ObservableObject {
     /// a concurrency lock — the first caller creates it, subsequent callers await it.
     private var initTask: Task<Void, Error>?
 
+    /// Generation counter for model loads (issue #428).
+    ///
+    /// Bumped whenever an in-flight load stops being the one the app is waiting for:
+    /// its deadline expired, or the user took the escape off the preparation screen.
+    /// The load itself keeps running — a Core ML compile checks no cancellation flag
+    /// and offers no suspension point, so nothing here can stop it — but a load whose
+    /// epoch has moved on must publish nothing. Without that rule, an abandoned Turbo
+    /// compile finishing ten minutes later would swap `whisperKit` out from under a
+    /// user who has since chosen Medium, and dictate with a model they did not pick.
+    /// Not `private` only because `DictationCoordinator+ModelLoad.swift` arbitrates the
+    /// launch race through it and Swift scopes `private` to the file. One owner.
+    var modelLoadEpoch = 0
+
     /// Re-entry flag for stopDictation. Prevents the 3+ concurrent transcribe()
     /// calls observed in #144 when a user taps stop multiple times during a model
     /// swap (turbo load). Set synchronously on entry, cleared in the Task's defer.
@@ -159,6 +172,31 @@ class DictationCoordinator: ObservableObject {
     /// Combine subscriptions forwarding UnifiedAudioEngine's published values to coordinator.
     private var energyCancellable: AnyCancellable?
     private var secondsCancellable: AnyCancellable?
+
+    /// Release the engine-init dedupe lock, but only if it still points at `task`.
+    ///
+    /// WHY the identity check: an abandoned load eventually completes and runs its own
+    /// cleanup. A bare `initTask = nil` there would clear whatever task a *newer* load
+    /// had since installed, and the caller after that would see no lock, start a second
+    /// WhisperKit init, and put two Core ML compiles on the Neural Engine at once —
+    /// the "E5 bundle" failure the prewarm serialisation in `ModelManager` exists to
+    /// avoid.
+    private func clearInitTask(ifStillCurrent task: Task<Void, Error>) {
+        if initTask == task { initTask = nil }
+    }
+
+    /// Drop the engine-init dedupe lock unconditionally, so the next `ensureEngineReady`
+    /// starts a load instead of awaiting one that has been given up on (issue #428).
+    /// The abandoned task keeps running; `clearInitTask(ifStillCurrent:)` is what stops
+    /// its eventual cleanup from clearing whatever replaced it.
+    ///
+    /// Internal because the orchestration that calls it lives in
+    /// `DictationCoordinator+ModelLoad.swift`: this file is at the length budget issue
+    /// #146 calibrated against it, and one named seam is a cheaper thing to expose than
+    /// the private state behind it.
+    func releaseEngineInitLock() {
+        initTask = nil
+    }
 
     private init() {
         // Forward UnifiedAudioEngine's energy levels and seconds to coordinator.
@@ -1388,6 +1426,10 @@ private extension DictationCoordinator {
             details: "folder=\(modelFolder.lastPathComponent) download=false tokenizerCache=\(WhisperModelRepository.cachedTokenizerRepositoryNames().joined(separator: "|"))"
         ))
 
+        // Captured before the task starts, checked after the compile returns: a load
+        // the app has since abandoned must not publish an engine (issue #428).
+        let epoch = modelLoadEpoch
+
         let task = Task<Void, Error> {
             if #available(iOS 14.0, *) {
                 DictusLogger.app.info("Initializing WhisperKit with model: \(modelName, privacy: .public)")
@@ -1405,6 +1447,11 @@ private extension DictationCoordinator {
             )
 
             let kit = try await WhisperKit(config)
+
+            guard self.shouldPublishLoad(
+                epoch: epoch, component: "WhisperKitLoad", modelName: modelName
+            ) else { return }
+
             self.whisperKit = kit
             self.currentModelName = modelName
 
@@ -1423,9 +1470,9 @@ private extension DictationCoordinator {
 
         do {
             try await task.value
-            initTask = nil
+            clearInitTask(ifStillCurrent: task)
         } catch {
-            initTask = nil
+            clearInitTask(ifStillCurrent: task)
             // Wrap anything WhisperKit or Core ML raises (issue #249). Their messages
             // are English and developer-facing; `handleError` writes whatever reaches
             // it straight into the keyboard's error banner. The raw text stays in the
@@ -1488,6 +1535,9 @@ private extension DictationCoordinator {
                 details: "folder=\(cacheDirectory.lastPathComponent) download=false"
             ))
 
+            // Same abandonment rule as the WhisperKit path (issue #428).
+            let epoch = modelLoadEpoch
+
             let task = Task<Void, Error> {
                 if #available(iOS 14.0, *) {
                     DictusLogger.app.info("Initializing ParakeetEngine for model: \(modelName, privacy: .public)")
@@ -1495,6 +1545,10 @@ private extension DictationCoordinator {
 
                 let parakeetEngine = ParakeetEngine()
                 try await parakeetEngine.prepare(modelIdentifier: modelName)
+
+                guard self.shouldPublishLoad(
+                    epoch: epoch, component: "ParakeetLoad", modelName: modelName
+                ) else { return }
 
                 self.whisperKit = nil
                 self.currentModelName = modelName
@@ -1509,9 +1563,9 @@ private extension DictationCoordinator {
 
             do {
                 try await task.value
-                initTask = nil
+                clearInitTask(ifStillCurrent: task)
             } catch {
-                initTask = nil
+                clearInitTask(ifStillCurrent: task)
                 // Wrap anything FluidAudio or Core ML raises (issue #249) — those
                 // messages are English and developer-facing, and `handleError` writes
                 // whatever reaches it into the keyboard's error banner.

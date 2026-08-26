@@ -25,6 +25,7 @@
 		AA000264 /* ColdStartLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100264 /* ColdStartLaunch.swift */; };
 		AA000311 /* ColdStartResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100311 /* ColdStartResolution.swift */; };
 		AA000361 /* DictationHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100361 /* DictationHandoff.swift */; };
+		AA000428 /* DictationCoordinator+ModelLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100428 /* DictationCoordinator+ModelLoad.swift */; };
 		AA000006 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000A /* DictationView.swift */; };
 		AA000007 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000B /* KeyboardState.swift */; };
 		AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F6 /* KeyboardLifecycleProbe.swift */; };
@@ -195,6 +196,7 @@
 		AA100264 /* ColdStartLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartLaunch.swift; sourceTree = "<group>"; };
 		AA100311 /* ColdStartResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColdStartResolution.swift; sourceTree = "<group>"; };
 		AA100361 /* DictationHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHandoff.swift; sourceTree = "<group>"; };
+		AA100428 /* DictationCoordinator+ModelLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DictationCoordinator+ModelLoad.swift"; sourceTree = "<group>"; };
 		AA10000A /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		AA10000B /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
 		AA1000F6 /* KeyboardLifecycleProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLifecycleProbe.swift; sourceTree = "<group>"; };
@@ -383,6 +385,7 @@
 				AA100264 /* ColdStartLaunch.swift */,
 				AA100311 /* ColdStartResolution.swift */,
 				AA100361 /* DictationHandoff.swift */,
+				AA100428 /* DictationCoordinator+ModelLoad.swift */,
 				AA10000A /* DictationView.swift */,
 				AA1000F5 /* LiveActivityManager.swift */,
 				SS400001 /* Subscription */,
@@ -968,6 +971,7 @@
 				AA000264 /* ColdStartLaunch.swift in Sources */,
 				AA000311 /* ColdStartResolution.swift in Sources */,
 				AA000361 /* DictationHandoff.swift in Sources */,
+				AA000428 /* DictationCoordinator+ModelLoad.swift in Sources */,
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
 				AA00P201 /* PolishAvailability.swift in Sources */,
