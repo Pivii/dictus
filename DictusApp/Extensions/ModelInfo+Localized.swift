@@ -18,6 +18,12 @@ extension ModelInfo {
             return String(localized: "Best accuracy")
         case "parakeet-tdt-0.6b-v3":
             return String(localized: "Fast and accurate (NVIDIA)")
+        case "openai_whisper-large-v3-v20240930_turbo_632MB":
+            return String(localized: "Most accurate, and fast")
+        // The deprecated `_954MB` (issue #408) keeps its own case, and its own words:
+        // it really was the slowest, at a measured 2.70x realtime (#171). It is still
+        // installed on devices, and the default branch would hand its card the
+        // unlocalized English `description`.
         case "openai_whisper-large-v3_turbo_954MB":
             return String(localized: "Most accurate but slowest")
         default:

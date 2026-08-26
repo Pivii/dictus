@@ -43,6 +43,44 @@ swift run polish-harness ab fixtures/seed.json --a /tmp/baseline.txt --b /tmp/ca
 swift run polish-harness prompt Sources/polish-harness/fixtures/seed.json --id 3-long
 ```
 
+## Smart Modes (#79, #393)
+
+`--mode <identifier>` arms a Smart Mode instead of the free polish. What runs is
+the mode's system prompt, **its own user-turn framing**, and — the part that
+cannot be inherited — **its own acceptance contract**: the free-polish bands
+reject Notes for condensing and Translate for changing language, which is the
+whole reason a mode carries a contract of its own. Identifiers are catalogue
+identifiers (`notes`, `translate.en`, …); an unknown one lists what the build
+ships.
+
+```sh
+# Run a mode over a fixture set, five samples per fixture. Ends with an outcome
+# tally — the drift RATE, which a device session cannot produce.
+swift run polish-harness show Sources/polish-harness/fixtures/notes-fr.json --mode notes --runs 5
+
+# The comparison #79 requires: the mode against free polish, both on their
+# shipping prompts. The sides differ by TASK, so neither --a nor --b is needed.
+swift run polish-harness ab Sources/polish-harness/fixtures/notes-fr.json --mode-b notes
+
+# A prompt candidate against the shipping one, on the same mode.
+swift run polish-harness ab fixtures/notes-fr.json --mode notes --b /tmp/notes-v2.txt
+
+# The exact bytes a mode sends. Runs no model, so it needs no Apple Intelligence.
+swift run polish-harness prompt fixtures/notes-fr.json --mode notes --id N1-field-commits
+```
+
+Two gates behave differently under a mode, and the harness mirrors the app
+(`PolishGatePolicy`): the gibberish gate does not skip, so an input in a
+language outside the four reaches the engine, and a non-success inserts
+**nothing** rather than the untransformed floor. A refusal prints as
+`<refused — a Smart Mode inserts nothing>`, with the engine's actual output on
+the `engineOut` line beneath it.
+
+Mode fixtures: `fixtures/notes-fr.json` and `fixtures/translate-en.json`. They
+are written to put pressure on their mode — a field dictation that failed on
+device, rambles with no structure, input already partly in the target language,
+and input in a language outside the four.
+
 ## Fixtures
 
 A JSON array of cases (`fixtures/seed.json` seeds the 5 Wispr-Flow comparison

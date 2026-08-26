@@ -1,0 +1,40 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.09s)
+
+━━ [N1-field-commits] lang=fr
+  raw: Okay, donc j'aimerais que tu notes ça s'il te plaît. au lieu de 4 on a fait 5 commith alors qu'on devait en faire 6 ensuite on a acheté des yaourts alors qu'on aurait pu acheter des de la fraise donc voilà ça fait vraiment on va dire 3 gros changements
+  A [polish] (2417ms): D'accord, donc je voudrais que tu notes ça s'il te plaît. Au lieu de 4, on a fait 5 commits, alors qu'on devait en faire 6. Ensuite, on a acheté des yaourts, alors qu'on aurait pu acheter des fraises. Donc voilà, ça fait vraiment trois gros changements.
+  B [smart.notes] (1484ms): <refused — a Smart Mode inserts nothing>
+
+━━ [N2-reunion-vrac] lang=fr
+  raw: bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine
+  A [polish] (3615ms): Bon alors, euh je récapitule ce qu'il faut que je fasse avant la réunion. Donc déjà, faut que je récupère les chiffres de janvier auprès de Marion. Elle m'a dit qu'elle les aurait mardi, enfin, non, mercredi, euh, du coup, faudra que je fasse le tableau comparatif avec ceux de l'année dernière, et puis aussi, tu vois, il faut absolument que j'appelle le prestataire parce que leur devis, il est encore passé de 12 000 à 15 000 euros, et ça personne l'a validé, et enfin, bon, voilà, il faudrait aussi que je pense à réserver la salle du deuxième étage, parce que l'autre, elle est prise toute la semaine.
+  B [smart.notes] (2113ms): - Récupérer les chiffres de janvier auprès de Marion, mardi ou mercredi
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire, devis passé de 12000 à 15000 euros, non validé
+- Réserver la salle du deuxième étage, l'autre est prise toute la semaine
+
+━━ [N3-projet-fleuve] lang=fr
+  raw: alors euh je fais le point général parce que là ça part un peu dans tous les sens donc côté design c'est bon les maquettes ont été validées vendredi par contre le dev a pris deux semaines de retard à cause de l'API du prestataire qui renvoie n'importe quoi sur les dates et euh du coup on est en train de voir si on décale la livraison au 15 mars au lieu du premier ensuite sur le budget on est à peu près dans les clous il reste 8000 euros mais euh faut compter les licences qui tombent en février et ça c'est 3000 de plus donc en vrai on est juste et puis dernière chose Thomas part en congé trois semaines à partir du 20 donc si on veut qu'il finisse la partie paiement faut que ce soit bouclé avant sinon ça repousse encore et là franchement je sais pas comment on tient la date
+  A [polish] (4211ms): Alors, je fais le point général parce que là ça part un peu dans tous les sens. Donc côté design, les maquettes ont été validées vendredi, mais le dev a pris deux semaines de retard à cause de l'API du prestataire qui renvoie n'importe quoi sur les dates. Donc, on est en train de voir si on décale la livraison au 15 mars au lieu du premier. Ensuite, sur le budget, on est à peu près dans les clous. Il reste environ 8 000 euros, mais faut compter les licences qui tombent en février et ça, c'est 3 000 de plus, donc en vrai, on est juste. Et dernière chose, Thomas part en congé trois semaines à partir du 20, donc si on veut qu'il termine la partie paiement, faut que ce soit bouclé avant sinon ça repousse encore. Franchement, je sais pas comment on tient la date.
+  B [smart.notes] (2503ms): <refused — a Smart Mode inserts nothing>
+
+━━ [N4-une-idee] lang=fr
+  raw: faut que je rappelle le comptable avant vendredi pour la TVA du trimestre
+  A [polish] (1461ms): Je rappelle le comptable avant vendredi pour la TVA du trimestre.
+  B [smart.notes] (1128ms): - Rappeler le comptable avant vendredi pour la TVA du trimestre
+
+━━ [N5-en-ramble] lang=en
+  raw: okay so quick brain dump before I forget the deploy is blocked because the certificate expired on the staging box and uh Sam said he'd rotate it tomorrow morning but we also need to bump the node version because the build image is on eighteen and the new package needs twenty and honestly I think we should just do both in the same window otherwise we're doing two freezes for nothing
+  A [polish] (2248ms): Okay, so a quick brain dump before I forget. The deploy is blocked because the certificate expired on the staging box. Sam said he'd rotate it tomorrow morning, but we also need to bump the node version because the build image is on 18 and the new package needs 20. Honestly, I think we should just do both in the same window, otherwise we're doing two freezes for nothing.
+  B [smart.notes] (1853ms): - Deploy blocked: certificate expired on staging box
+- Sam will rotate certificate tomorrow morning
+- Node version needs to be bumped from 18 to 20
+- Should do both updates in the same window to avoid freezes
+
+━━ [N6-ponctuation-dictee] lang=fr
+  raw: note pour moi virgule il faut relancer l'agence virgule ils n'ont pas répondu depuis dix jours à la ligne et prévoir un plan B au cas où ça se confirme
+  A [polish] (1773ms): Note pour moi, il faut relancer l'agence. Ils n'ont pas répondu depuis dix jours et prévoir un plan B au cas où ça se confirme.
+  B [smart.notes] (1140ms): - Relancer l'agence
+- Prévoir un plan B

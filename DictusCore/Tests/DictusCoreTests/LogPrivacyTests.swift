@@ -29,6 +29,8 @@ final class LogPrivacyTests: XCTestCase {
             .keyboardDidDisappear,
             .keyboardMicTapped,
             .keyboardTextInserted,
+            .keyRepeatStarted,
+            .keyRepeatStopped(ticks: 12, reason: "touch"),
             .appLaunched(version: "1.2"),
             .appDidBecomeActive,
             .appWillResignActive,

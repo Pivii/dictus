@@ -109,6 +109,20 @@ public enum LogEvent: Sendable {
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
 
+    // MARK: Key auto-repeat (#390)
+    // Neither case carries a key or a character. Only backspace auto-repeats, so
+    // naming the key would add nothing and would open the door `keyboardTextInserted`
+    // keeps shut.
+    /// The held-key auto-repeat engaged: the press outlasted the 0.5 s pause and the
+    /// first repeated deletion just fired. A plain tap schedules the same timer and
+    /// logs nothing, which is what keeps a 1 MB log readable while someone types.
+    case keyRepeatStarted
+    /// The auto-repeat ended. `ticks` is how many times it fired, `reason` names what
+    /// stopped it -- a finger lifting, the keyboard going off screen, the view being
+    /// torn down. A `keyRepeatStarted` with no matching stop is a repeat that outlived
+    /// its keyboard, which is the whole of #390 and was previously invisible.
+    case keyRepeatStopped(ticks: Int, reason: String)
+
     // MARK: Keyboard status message (#261)
     /// The toolbar message was assigned. `reason` names what asked for it.
     case dictationMessageSet(reason: String, owner: String, visible: Bool)
@@ -344,6 +358,7 @@ public enum LogEvent: Sendable {
              .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
+             .keyRepeatStarted, .keyRepeatStopped,
              .overlayShown, .overlayHidden, .rapidTapRejected,
              .dictationMessageSet, .dictationMessageDisplayed, .dictationMessageCleared,
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
@@ -446,6 +461,7 @@ public enum LogEvent: Sendable {
              .onboardingKeyboardRetry,
              .audioEngineStopped,
              .keyboardDidDisappear, .keyboardTextInserted,
+             .keyRepeatStarted, .keyRepeatStopped,
              .appDidBecomeActive, .appWillResignActive, .appDidEnterBackground,
              .rapidTapRejected,
              .engineWarmUpAttempt, .engineWarmUpSuccess,
@@ -526,6 +542,8 @@ public enum LogEvent: Sendable {
         case .dictationMessageDisplayed: return "dictationMessageDisplayed"
         case .dictationMessageCleared: return "dictationMessageCleared"
         case .keyboardTextInserted: return "keyboardTextInserted"
+        case .keyRepeatStarted: return "keyRepeatStarted"
+        case .keyRepeatStopped: return "keyRepeatStopped"
         case .engineWarmUpAttempt: return "engineWarmUpAttempt"
         case .engineWarmUpSuccess: return "engineWarmUpSuccess"
         case .engineWarmUpFailed: return "engineWarmUpFailed"
@@ -684,6 +702,10 @@ public enum LogEvent: Sendable {
         case .keyboardDidAppear, .keyboardDidDisappear,
              .keyboardMicTapped, .keyboardTextInserted:
             return ""
+        case .keyRepeatStarted:
+            return ""
+        case .keyRepeatStopped(let ticks, let reason):
+            return "ticks=\(ticks) reason=\(reason)"
 
         // Engine Diagnostics
         case .engineWarmUpAttempt(let context):

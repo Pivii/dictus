@@ -11,6 +11,9 @@ protocol GiellaKeyboardViewDelegate: AnyObject {
     func didTriggerKey(_ key: KeyDefinition)
     func didTriggerDoubleTap(forKey key: KeyDefinition)
     func didTriggerHoldKey(_ key: KeyDefinition)
+    /// Perform `key`'s auto-repeat action and report whether a deletion was actually
+    /// issued. The repeat tick fires its haptic and its click on that answer (#390).
+    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> Bool
     func didMoveCursor(_ movement: Int)
 }
 
@@ -560,9 +563,7 @@ final internal class GiellaKeyboardView: UIView,
                 dismissOverlayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false, block: { [weak self] _ in
                     self?.removeOverlay(forKey: activeKey.key)
                 })
-                keyRepeatTimer?.invalidate()
-                keyRepeatTimer = nil
-                deleteRepeatCount = 0
+                stopKeyRepeat(reason: "touch")
             }
 
             if let key = newValue, key.key.type.supportsRepeatTrigger, keyRepeatTimer == nil {
@@ -581,13 +582,65 @@ final internal class GiellaKeyboardView: UIView,
         }
     }
 
+    /// Schedule the auto-repeat tick.
+    ///
+    /// WHY the block form rather than `target:selector:` (#390): a scheduled `Timer` is
+    /// retained by its run loop AND retains its target, so the selector form kept this
+    /// whole view alive after the controller had dropped it. A hold interrupted by a
+    /// layout rebuild or by the keyboard being dismissed left a detached view ticking
+    /// haptics forever. The sibling `dismissOverlayTimer` above already takes
+    /// `[weak self]`; this now matches it.
     private func makeKeyRepeatTimer(timeInterval: TimeInterval) -> Timer {
-        return Timer.scheduledTimer(
-            timeInterval: timeInterval,
-            target: self,
-            selector: #selector(GiellaKeyboardView.keyRepeatTimerDidTrigger),
-            userInfo: nil,
-            repeats: true)
+        return Timer.scheduledTimer(withTimeInterval: timeInterval, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                // Nothing left to stop this from the inside. The tick count went with
+                // the view, so the line reports it as unknown rather than as zero.
+                timer.invalidate()
+                PersistentLog.log(.keyRepeatStopped(ticks: -1, reason: "viewDeallocated"))
+                return
+            }
+            self.keyRepeatTimerDidTrigger()
+        }
+    }
+
+    /// Invalidate the auto-repeat timer and close its log entry.
+    ///
+    /// Logs only a repeat that had actually engaged: every backspace *tap* schedules the
+    /// same timer for its 0.5 s pause, and a line per keystroke would bury the signal in
+    /// a 1 MB log whose reader is an agent (#255).
+    private func stopKeyRepeat(reason: String) {
+        keyRepeatTimer?.invalidate()
+        keyRepeatTimer = nil
+        if deleteRepeatCount > 0 {
+            PersistentLog.log(.keyRepeatStopped(ticks: deleteRepeatCount, reason: reason))
+        }
+        deleteRepeatCount = 0
+    }
+
+    /// Stop any auto-repeat in flight, from outside the touch sequence.
+    ///
+    /// WHY this exists (#390): `activeKey` is cleared by `touchesEnded` and
+    /// `touchesCancelled` and by nothing else, so a view torn down mid-hold kept a
+    /// populated `activeKey` and a live timer. The controller calls this when it goes
+    /// off screen and before it drops this view, and `willMove(toWindow:)` below calls
+    /// it for every other path that detaches us.
+    func cancelKeyRepeat(reason: String) {
+        stopKeyRepeat(reason: reason)
+        // Clearing the active key is what `touchesCancelled` does, and it is what stops
+        // the tick's own `activeKey != nil` guard from letting a stale hold resume if
+        // anything reschedules. `stopKeyRepeat` already ran, so the `willSet` below
+        // finds no timer and logs nothing a second time.
+        activeKey = nil
+    }
+
+    /// Leaving the window is the one teardown signal this view gets on every path that
+    /// drops it: a layout rebuild, the controller deallocating, the keyboard being
+    /// dismissed mid-hold. None of them delivers a touch event (#390).
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil {
+            cancelKeyRepeat(reason: "windowDetached")
+        }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with _: UIEvent?) {
@@ -836,27 +889,32 @@ final internal class GiellaKeyboardView: UIView,
         }
     }
 
-    @objc func keyRepeatTimerDidTrigger() {
-        if let activeKey = activeKey, activeKey.key.type.supportsRepeatTrigger {
-            deleteRepeatCount += 1
+    func keyRepeatTimerDidTrigger() {
+        guard let activeKey = activeKey, activeKey.key.type.supportsRepeatTrigger else { return }
 
-            if deleteRepeatCount > Self.wordModeThreshold {
-                // Word-level deletion after threshold
-                delegate?.didTriggerHoldKey(activeKey.key)
-            } else {
-                // Character-level deletion
-                delegate?.didTriggerKey(activeKey.key)
-            }
-
-            // Haptic feedback on each deletion
-            HapticFeedback.keyTapped()
-            // ...and its click. Each repeat tick used to click from inside the bridge's
-            // delete handlers; emitting it here keeps a held backspace at exactly one
-            // click per deletion now that those handlers are silent (#286).
-            playSound(for: activeKey.key)
-
-            increaseKeyRepeatRateIfNeeded()
+        deleteRepeatCount += 1
+        if deleteRepeatCount == 1 {
+            // The hold outlasted the 0.5 s pause, so this is where the repeat begins.
+            PersistentLog.log(.keyRepeatStarted)
         }
+
+        // Word-level deletion after threshold, character-level before it.
+        let wordMode = deleteRepeatCount > Self.wordModeThreshold
+        let deleted = delegate?.didTriggerRepeat(activeKey.key, wordMode: wordMode) ?? false
+
+        // The feedback follows the deletion, not the tick (#390). Both used to fire
+        // unconditionally, which is what produced "haptics in a chain while nothing is
+        // deleted": with no delegate left there is nothing to delete into and the repeat
+        // has to be silent. Still exactly one haptic and one click per deletion, as #286
+        // left it -- each repeat tick used to click from inside the bridge's delete
+        // handlers, and emitting it here is what keeps that count right now they are
+        // silent.
+        if deleted {
+            HapticFeedback.keyTapped()
+            playSound(for: activeKey.key)
+        }
+
+        increaseKeyRepeatRateIfNeeded()
     }
 
     private func increaseKeyRepeatRateIfNeeded() {

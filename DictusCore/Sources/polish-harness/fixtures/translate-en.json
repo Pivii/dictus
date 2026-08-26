@@ -1,0 +1,75 @@
+[
+  {
+    "id": "T1-fr-casual",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BASELINE. Ordinary French dictation, familiar register, tutoiement. The register rule is what separates a translation from a rewrite: 'je peux pas' must not come back as 'I regret to inform you'. The output-language check is the mode's own contract's job, not an expectation here.",
+    "raw": "salut Sophie alors pour le rendez-vous de jeudi je peux pas avant quinze heures j'ai un truc qui traîne le matin par contre après je suis libre toute l'après-midi dis moi si ça te va",
+    "expect": [
+      { "contains": "Sophie" },
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "regexAbsent": "(?i)(best regards|kind regards|sincerely|yours truly|cordialement)" }
+    ]
+  },
+  {
+    "id": "T2-fr-deja-partiellement-en",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "ALREADY PARTLY IN THE TARGET. French sentence carrying English technical vocabulary the speaker uses as-is ('le call', 'la deadline', 'un rollback'). Rule 8 says leave what is already English alone and translate the rest. Two ways to fail: translate the English chunks into something else, or take the English chunks as licence to return the whole thing untranslated.",
+    "raw": "bon alors pendant le call de ce matin le client a demandé si on pouvait avancer la deadline d'une semaine et euh moi j'ai dit que c'était jouable seulement si on fait un rollback sur la partie search parce que sinon on tient pas",
+    "expect": [
+      { "contains": "deadline" },
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" }
+    ]
+  },
+  {
+    "id": "T3-it-clavier-fr",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "OUTSIDE THE FOUR, on the per-language path — the device-realistic shape of it: French keyboard, and the user speaks Italian. Detection answers 'it', which the per-language path has no prompt for, so the free polish SKIPS this input entirely (gibberish gate) and returns the deterministic floor. An armed mode must not skip: that is `PolishGatePolicy.skipsForGibberish` refusing to skip for a mode, and it is the only reason this fixture can reach the engine.",
+    "raw": "allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "dentist" }
+    ]
+  },
+  {
+    "id": "T4-it-auto",
+    "lang": "it",
+    "sttEngine": "PK",
+    "_note": "OUTSIDE THE FOUR, on the auto path. Same Italian input as T3, routed the way the app routes a language with no dedicated prompt when transcription is set to Auto-detect. Both routes are in the set because a mode has to survive both, and they differ in what the pre-pass and the typography post-pass do around it.",
+    "raw": "allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "dentist" }
+    ]
+  },
+  {
+    "id": "T5-saut-de-ligne",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "The hard line break the speaker dictated, as it reaches polish from a device export: a real newline, which `encodeForEngine` turns into the <<NL>> marker. Rule 7 says keep it character-for-character at the same position. A leaked literal marker is the visible failure; a lost line break is the silent one, which is why the newline itself is asserted.",
+    "raw": "on se voit demain matin devant l'entrée\nprends les badges au passage",
+    "expect": [
+      { "contains": "\n" },
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" }
+    ]
+  },
+  {
+    "id": "T6-deja-en",
+    "lang": "en",
+    "sttEngine": "PK",
+    "_note": "ALREADY FULLY IN THE TARGET. Rule 8's limit case: the prompt says return it polished but not otherwise changed. DECLARED BEFORE THE RUN — this fixture is expected NOT to look visibly different from free polish, and is excluded from the visible-difference denominator rather than allowed to drag it down. PR #388's own stated regret was making that bar a hard gate while naming a fixture designed to fail it.",
+    "raw": "hey so I just got off the phone with the supplier and they can ship on the twelfth but only if we confirm the quantity before friday otherwise it slips to the next batch",
+    "expect": [
+      { "contains": "friday" },
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" }
+    ]
+  }
+]

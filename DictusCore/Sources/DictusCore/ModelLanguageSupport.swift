@@ -228,7 +228,13 @@ extension ModelInfo {
     /// the seven catalog entries.
     public var languageSupport: ModelLanguageSupport {
         switch identifier {
-        case "openai_whisper-medium", "openai_whisper-large-v3_turbo_954MB":
+        // The deprecated `_954MB` (issue #408) stays classified here alongside the
+        // variant that replaced it: it is still installed on devices, and letting it
+        // fall through to the small-class default would silently downgrade the
+        // language claims shown to a user whose model has not changed.
+        case "openai_whisper-medium",
+             "openai_whisper-large-v3-v20240930_turbo_632MB",
+             "openai_whisper-large-v3_turbo_954MB":
             return .whisperHighAccuracy
         case "parakeet-tdt-0.6b-v3":
             return .parakeetV3
