@@ -60,6 +60,39 @@ struct DictusApp: App {
     @AppStorage(SharedKeys.hasCompletedOnboarding, store: UserDefaults(suiteName: AppGroup.identifier))
     private var hasCompletedOnboarding = false
 
+    /// A process that has just started has no model load in flight. Anything else on
+    /// disk is a lie left by the previous process, and this is the only moment it can
+    /// be told apart from a real one.
+    ///
+    /// WHY this exists (#428): `modelLoadState` is App Group state with a single writer
+    /// and no reset. A preload that never returns -- killed by a force quit, by
+    /// suspension, or simply hung, which is what the maintainer's device log shows at
+    /// 2026-08-26T09:56:19Z -- leaves `loading` on disk forever. The keyboard reads that
+    /// value, defers every mic tap into a `intent=prepare` launch, and `MainTabView`
+    /// answers that intent with a full-screen preparation view that has no button, no
+    /// gesture and no timeout. The app becomes unusable and reinstalling does not help,
+    /// because the App Group container survives an install.
+    ///
+    /// The reset alone does not make a hung preload return; it makes the app survive one.
+    ///
+    /// It is logged deliberately. `setModelLoadState` dedupes on the raw value, so a
+    /// relaunch into an already-`loading` state writes nothing at all -- six launches in
+    /// that same device log produced not one model-state line between them. Whoever
+    /// reads the log next needs to see that this fired, and for which model.
+    private static func clearStaleModelLoadState() {
+        let defaults = AppGroup.defaults
+        guard defaults.string(forKey: SharedKeys.modelLoadState) == ModelLoadState.loading.rawValue else {
+            return
+        }
+        defaults.set(ModelLoadState.idle.rawValue, forKey: SharedKeys.modelLoadState)
+        let model = defaults.string(forKey: SharedKeys.activeModel) ?? "unknown"
+        PersistentLog.log(.modelLoadStateChanged(
+            from: ModelLoadState.loading.rawValue,
+            to: ModelLoadState.idle.rawValue,
+            reason: "stale-at-launch model=\(model)"
+        ))
+    }
+
     init() {
         PersistentLog.source = "APP"
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -76,6 +109,8 @@ struct DictusApp: App {
         // for a key that no longer exists in code, and this is the only process that
         // owns hygiene over shared state.
         SharedKeys.clearRetiredKeys()
+
+        Self.clearStaleModelLoadState()
 
         let result = AppGroupDiagnostic.run()
         DictusLogger.app.info(
