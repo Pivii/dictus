@@ -25,7 +25,8 @@ final class DictationErrorCopyTests: XCTestCase {
         "DictusApp/Audio/UnifiedAudioEngine.swift",
         "DictusApp/Audio/TranscriptionService.swift",
         "DictusApp/Audio/ParakeetEngine.swift",
-        "DictusApp/Audio/SpeechModelProtocol.swift"
+        "DictusApp/Audio/SpeechModelProtocol.swift",
+        "DictusApp/DictationHandoff.swift"
     ]
 
     private static let catalogPath = "DictusApp/Localizable.xcstrings"
@@ -83,14 +84,52 @@ final class DictationErrorCopyTests: XCTestCase {
     /// caught to the user. `DictationFailureMessage.userFacing(for:)` is the only way an
     /// error may become a message, because it is the only thing that knows to substitute a
     /// written sentence for a CoreAudio number or a FluidAudio string.
+    ///
+    /// Read over the whole call and not one line of it: SwiftLint's line-length rule
+    /// actively pushes a long `handleError(...)` onto a second line — this file's own
+    /// sources do it — so a single-line check would wave through exactly the wrapped
+    /// call it exists to catch (#313 review).
     func testNoCallSiteForwardsAThrownErrorToTheUser() throws {
         for path in Self.messageSources {
             let source = try source(at: path)
-            for (offset, line) in source.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
-            where line.contains("handleError(") && line.contains("localizedDescription") {
-                XCTFail("\(path):\(offset + 1) hands raw error text to the user: \(line.trimmingCharacters(in: .whitespaces))")
+            for call in handleErrorCalls(in: source) where call.argument.contains("localizedDescription") {
+                XCTFail("\(path):\(call.line) hands raw error text to the user: \(call.argument)")
             }
         }
+    }
+
+    /// Every `handleError(...)` in a source, paired with its full argument text — the
+    /// call's parentheses balanced, so a call broken across any number of lines reads as
+    /// one string.
+    private func handleErrorCalls(in source: String) -> [(line: Int, argument: String)] {
+        var calls: [(line: Int, argument: String)] = []
+        var searchStart = source.startIndex
+
+        while let open = source.range(of: "handleError(", range: searchStart..<source.endIndex) {
+            var depth = 1
+            var index = open.upperBound
+            var inString = false
+
+            while index < source.endIndex, depth > 0 {
+                let character = source[index]
+                if character == "\"" { inString.toggle() }
+                if !inString {
+                    if character == "(" { depth += 1 }
+                    if character == ")" { depth -= 1 }
+                }
+                index = source.index(after: index)
+            }
+
+            let argument = source[open.upperBound..<index]
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .joined(separator: " ")
+            let line = source[source.startIndex..<open.lowerBound].filter { $0 == "\n" }.count + 1
+            calls.append((line: line, argument: argument))
+            searchStart = index
+        }
+
+        return calls
     }
 
     /// `errorDescription` is what a user reads, so a case that returns a bare literal has

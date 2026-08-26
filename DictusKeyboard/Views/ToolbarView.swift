@@ -241,7 +241,16 @@ struct ToolbarView: View {
         Text(message)
             .font(.caption)
             .foregroundStyle(.secondary)
-            .lineLimit(1)
+            // WHY two lines (#313): the sentences this slot now shows are written
+            // instructions, not codes, and the longest French one runs 96 characters
+            // against roughly 50 that fit on one `.caption` line here -- one line
+            // truncates "Activez-le dans les Reglages de l'iPhone" away and leaves the
+            // user with only the half that states the problem. The bar's 52pt frame is
+            // fixed above, so two 15pt lines cost no height: this cannot move the
+            // keyboard's declared height (#166).
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             // Instrumentation only (#261). "The message was assigned" and
             // "a live view put it on screen" are different facts, and only

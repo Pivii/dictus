@@ -23,7 +23,12 @@ extension Notification.Name {
 enum AudioEngineError: Error, DiagnosableError {
     case permissionDenied
     case permissionUndetermined
-    case phoneCallActive
+
+    /// A call holds the microphone. The payload names which of the two signals said so —
+    /// the two sites disagree about the channel count, and a diagnostic that asserts the
+    /// wrong one is worse than one that asserts nothing (#313 review).
+    case phoneCallActive(evidence: String)
+
     case audioHardwareUnavailable
 
     /// `installTap` or `engine.start` raised an Objective-C exception. The payload is the
@@ -60,8 +65,8 @@ enum AudioEngineError: Error, DiagnosableError {
             return "microphone permission denied"
         case .permissionUndetermined:
             return "microphone permission not yet requested"
-        case .phoneCallActive:
-            return "input node reports zero channels — a call holds the microphone"
+        case .phoneCallActive(let evidence):
+            return "a call holds the microphone — \(evidence)"
         case .audioHardwareUnavailable:
             return "input node reports an unusable format after the retry"
         case .installTapFailed(let reason):
@@ -851,7 +856,7 @@ class UnifiedAudioEngine: ObservableObject {
 
         // Guard: zero-channel format means hardware is unavailable (phone call active)
         guard hwFormat.channelCount > 0 else {
-            throw AudioEngineError.phoneCallActive
+            throw AudioEngineError.phoneCallActive(evidence: "input node reports zero channels")
         }
 
         // B.2 — One-shot retry when hardware reports a valid channel count but
@@ -880,7 +885,7 @@ class UnifiedAudioEngine: ObservableObject {
             $0.portType.rawValue.lowercased().contains("telephony")
         }
         if hasTelephony {
-            throw AudioEngineError.phoneCallActive
+            throw AudioEngineError.phoneCallActive(evidence: "a telephony input route is active")
         }
 
         // Create converter from hardware format to 16kHz mono

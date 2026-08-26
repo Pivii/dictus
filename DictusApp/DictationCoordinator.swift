@@ -699,8 +699,11 @@ class DictationCoordinator: ObservableObject {
                 let samples = audioEngine.collectSamples()
 
                 guard !samples.isEmpty else {
-                    guard mayReport(session, "empty recording") else { return }
+                    // Logged before the session gate, like `recordingTooShort` below:
+                    // a run abandoned between stop and this check still failed, and a
+                    // failure with no line in the log cannot be diagnosed afterwards.
                     PersistentLog.log(.dictationFailed(error: "no samples collected"))
+                    guard mayReport(session, "empty recording") else { return }
                     // A notice, not a fault (#313): nothing was captured, and the user
                     // reads the same sentence here as for every other way that happens.
                     handleError(DictationFailureMessage.noWordsDetected)
@@ -1310,7 +1313,7 @@ class DictationCoordinator: ObservableObject {
             } catch {
                 PersistentLog.log(.engineWarmUpFailed(
                     context: "selectModel-proactive",
-                    error: error.localizedDescription
+                    error: DictationFailureMessage.diagnostic(for: error)
                 ))
                 self.setModelLoadState(.idle, reason: "selectModel-proactive-failed")
             }
