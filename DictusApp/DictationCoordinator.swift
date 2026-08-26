@@ -1402,7 +1402,7 @@ private extension DictationCoordinator {
             do {
                 try await existingTask.value
             } catch {
-                throw SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+                throw Self.loadFailure(for: modelName, from: error)
             }
             return
         }
@@ -1452,7 +1452,14 @@ private extension DictationCoordinator {
 
             guard self.shouldPublishLoad(
                 epoch: epoch, component: "WhisperKitLoad", modelName: modelName
-            ) else { return }
+            ) else {
+                // Throw, never return. This task is the shared init lock, and every
+                // caller parked on `try await existingTask.value` reads a plain return
+                // as a loaded engine. A cold-start dictation is one of those callers:
+                // it would write `.ready` with `whisperKit == nil` behind it and then
+                // call `transcribe` on nothing (issue #428 review, finding 1).
+                throw SpeechModelError.loadAbandoned(identifier: modelName)
+            }
 
             self.whisperKit = kit
             self.currentModelName = modelName
@@ -1479,7 +1486,7 @@ private extension DictationCoordinator {
             // are English and developer-facing; `handleError` writes whatever reaches
             // it straight into the keyboard's error banner. The raw text stays in the
             // log, the user gets a localised one.
-            let wrapped = SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+            let wrapped = Self.loadFailure(for: modelName, from: error)
             PersistentLog.log(.diagnosticProbe(
                 component: "WhisperKitLoad",
                 instanceID: modelName,
@@ -1511,7 +1518,7 @@ private extension DictationCoordinator {
                 do {
                     try await existingTask.value
                 } catch {
-                    throw SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+                    throw Self.loadFailure(for: modelName, from: error)
                 }
                 return
             }
@@ -1550,7 +1557,12 @@ private extension DictationCoordinator {
 
                 guard self.shouldPublishLoad(
                     epoch: epoch, component: "ParakeetLoad", modelName: modelName
-                ) else { return }
+                ) else {
+                    // Throws for the same reason as the WhisperKit path above: this is
+                    // the shared lock, and a silent success would hand every awaiting
+                    // caller an engine that was discarded.
+                    throw SpeechModelError.loadAbandoned(identifier: modelName)
+                }
 
                 self.whisperKit = nil
                 self.currentModelName = modelName
@@ -1571,7 +1583,7 @@ private extension DictationCoordinator {
                 // Wrap anything FluidAudio or Core ML raises (issue #249) — those
                 // messages are English and developer-facing, and `handleError` writes
                 // whatever reaches it into the keyboard's error banner.
-                let wrapped = SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+                let wrapped = Self.loadFailure(for: modelName, from: error)
                 PersistentLog.log(.diagnosticProbe(
                     component: "ParakeetLoad",
                     instanceID: modelName,

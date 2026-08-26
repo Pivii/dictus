@@ -124,6 +124,21 @@ extension DictationCoordinator {
         ))
     }
 
+    /// Wrap a raw engine error for the caller, without flattening an abandonment.
+    ///
+    /// Everything WhisperKit, FluidAudio and Core ML raise is English and
+    /// developer-facing, and `handleError` writes whatever reaches it straight into the
+    /// keyboard's banner, so it is localised on the way out (issue #249). An
+    /// abandonment is already ours, already localised, and says something different and
+    /// more actionable than "the model could not be loaded": nothing is broken, the app
+    /// simply stopped waiting, and tapping again works (issue #428).
+    static func loadFailure(for modelName: String, from error: Error) -> SpeechModelError {
+        if let speechError = error as? SpeechModelError, speechError.isLoadAbandoned {
+            return speechError
+        }
+        return SpeechModelError.engineLoadFailed(identifier: modelName, underlying: error)
+    }
+
     /// Whether a load that has just produced an engine is still the one the app wants.
     ///
     /// A Core ML compile cannot be stopped, so a load may finish minutes after the user

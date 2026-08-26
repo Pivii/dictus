@@ -2406,6 +2406,16 @@
         }
       }
     },
+    "The model preparation was interrupted. Tap the microphone again to retry." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La préparation du modèle a été interrompue. Appuyez à nouveau sur le micro pour réessayer."
+          }
+        }
+      }
+    },
     "The model server is busy. Please try again in a few minutes." : {
       "comment" : "Model download error when HuggingFace rate-limits (HTTP 429/503, issue #207).",
       "localizations" : {
