@@ -65,6 +65,52 @@ struct DictusApp: App {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         PersistentLog.log(.appLaunched(version: version))
 
+        // A process that has just started cannot have a model load in flight (#428).
+        //
+        // `modelLoadState` lives in the App Group and nothing ever cleared it, so a
+        // compile interrupted by a force-quit or a jetsam left "loading" behind for
+        // good. The keyboard reads that value and answers a mic tap by opening Dictus
+        // with `intent=prepare`, which makes `MainTabView` replace the tab bar with the
+        // preparation screen — no Settings, no model list, no way to pick something
+        // else. One dead compile locked the app out of itself on every later launch.
+        //
+        // WHY here, above everything: this must run before any reader. The one thing
+        // that touches shared state earlier is `DictationCoordinator.shared`, built as
+        // this struct's stored-property default before this body runs — and it neither
+        // reads nor writes this key synchronously. Its own preload writes "loading"
+        // from a `Task` on the main actor, which cannot start until this initializer
+        // returns, and that write is the honest one: that load really is in flight.
+        if ModelLoadState.clearStaleLoadingState(in: AppGroup.defaults) {
+            // Two lines on purpose, and neither is redundant.
+            //
+            // The transition line keeps the `modelLoadStateChanged` grep complete: a
+            // reader following the state across a session must not find a gap where a
+            // correction happened. The probe carries the model identifier, which the
+            // transition event has no field for and which is the first thing anyone
+            // debugging this will want.
+            //
+            // WHY it matters that this logs at all: a stuck load is otherwise INVISIBLE
+            // across relaunches. `setModelLoadState` returns without logging when the
+            // persisted value already matches what it is being asked to write, so a
+            // process that starts on a stale "loading" and writes "loading" again says
+            // nothing. Measured on the maintainer's device: six consecutive launches
+            // with an `appLaunched` line and not one `modelLoadStateChanged` after it.
+            // From this build on, the correction is on the record, and the `.loading`
+            // that follows it is a real transition that logs like any other.
+            let stuckModel = AppGroup.defaults.string(forKey: SharedKeys.activeModel) ?? "unknown"
+            PersistentLog.log(.modelLoadStateChanged(
+                from: ModelLoadState.loading.rawValue,
+                to: ModelLoadState.idle.rawValue,
+                reason: "stale-loading-cleared-at-launch"
+            ))
+            PersistentLog.log(.diagnosticProbe(
+                component: "ModelPreload",
+                instanceID: stuckModel,
+                action: "staleLoadingCleared",
+                details: "from=loading to=idle trigger=appLaunch"
+            ))
+        }
+
         // Clean up any Live Activities left over from a previous app session.
         // WHY in init: If the app crashed or was force-quit, the Dynamic Island
         // keeps showing stale data for up to 8 hours. Cleaning up here ensures
