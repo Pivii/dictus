@@ -87,8 +87,11 @@ final class ModelRepoDownloader {
         ///
         /// Required paths = the three CoreML bundles every variant ships plus
         /// `config.json` (verified against the repo tree for Small, Small Quantized,
-        /// Medium, and Turbo `_954MB` — Turbo's extra `TextDecoderContextPrefill.mlmodelc`
-        /// is downloaded too but not universally required).
+        /// Medium, and both quantized Turbo variants — Turbo's extra
+        /// `TextDecoderContextPrefill.mlmodelc` is downloaded too but not universally
+        /// required. Re-verified against the repo tree for
+        /// `openai_whisper-large-v3-v20240930_turbo_632MB` when issue #408 swapped it
+        /// in: same four `.mlmodelc` folders, same two root `.json` files.
         static func whisperKit(variant: String) -> Configuration {
             Configuration(
                 repoPath: "argmaxinc/whisperkit-coreml",
