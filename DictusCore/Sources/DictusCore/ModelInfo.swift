@@ -59,6 +59,67 @@ public struct ModelInfo: Identifiable {
     /// Whether this model is shown in the download catalog or only kept for backward compat.
     public let visibility: CatalogVisibility
 
+    /// How long the Core ML prewarm is allowed to run for this model before the
+    /// deadline guard gives up (issue #406).
+    ///
+    /// WHY the budget belongs to the model and not to the app:
+    /// the guard serves two opposite jobs at once. On a compile that will never
+    /// finish — Whisper Small on an unsupported A13, issue #362 — it is the only
+    /// thing standing between the user and an endless spinner, so it wants to be
+    /// short. On Turbo it has to let a legitimately long compile run to the end, so
+    /// it wants to be long. One number cannot be both, and raising the global one to
+    /// suit Turbo would make every #362-class device wait twice as long to be told
+    /// what it could have been told in two minutes.
+    ///
+    /// Only the WhisperKit download path consumes this today
+    /// (`ModelManager.downloadWhisperKitModel`). The Parakeet path compiles through
+    /// FluidAudio and has never carried a deadline guard of any kind, so the value on
+    /// `parakeet-tdt-0.6b-v3` is declarative until one exists.
+    public let prewarmTimeoutSeconds: Int
+
+    /// The budget a model gets when its entry does not ask for another one.
+    ///
+    /// 120s was the Phase 37 global (issue #104), calibrated against the ~17s a
+    /// Parakeet Encoder compile took on an iPhone 15 Pro Max. It stays the default:
+    /// issue #406 established that it is wrong for Turbo, not that it is wrong
+    /// everywhere, and no other variant has been reported timing out.
+    ///
+    /// Declared here rather than at the call site so the catalogue's default and
+    /// `ModelManager`'s fallback for an unknown identifier cannot drift apart.
+    public static let defaultPrewarmTimeoutSeconds = 120
+
+    /// WHY an initializer written by hand:
+    /// `prewarmTimeoutSeconds` needs a default, so that giving models their own
+    /// budget did not mean writing `120` onto seven entries with nothing to say
+    /// about it. A `let` carrying an inline initial value is excluded from the
+    /// implicit memberwise initializer entirely, so a default is only reachable
+    /// through an explicit initializer — or by making the property a `var`, which
+    /// would leave the catalogue with one mutable stored field among eight.
+    ///
+    /// Deliberately internal rather than public: nothing outside DictusCore builds a
+    /// `ModelInfo`, and the implicit initializer this replaces was internal too.
+    init(
+        identifier: String,
+        displayName: String,
+        sizeBytes: Int64,
+        engine: SpeechEngine,
+        accuracyScore: Double,
+        speedScore: Double,
+        description: String,
+        visibility: CatalogVisibility,
+        prewarmTimeoutSeconds: Int = ModelInfo.defaultPrewarmTimeoutSeconds
+    ) {
+        self.identifier = identifier
+        self.displayName = displayName
+        self.sizeBytes = sizeBytes
+        self.engine = engine
+        self.accuracyScore = accuracyScore
+        self.speedScore = speedScore
+        self.description = description
+        self.visibility = visibility
+        self.prewarmTimeoutSeconds = prewarmTimeoutSeconds
+    }
+
     // MARK: - Deprecated label properties (backward compat)
 
     /// Use accuracyScore instead. Kept temporarily for existing UI references.
@@ -256,7 +317,29 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.9,
             speedScore: 0.75,
             description: "Most accurate, and fast",
-            visibility: .available
+            visibility: .available,
+            // 300s, and it is a GUESS rather than a measurement (issue #406).
+            //
+            // Nobody has ever watched a Turbo compile finish on an iPhone. The flat
+            // 120s guard cut every attempt short, on both variants, so the real
+            // duration is unknown for both. The only figure that exists at all is the
+            // "~2 min on a 15 Pro Max" quoted in `ModelLoadingOverlay.swift`, and that
+            // prose describes the `_954MB` variant this entry replaced. 300 is 2.5x
+            // it: room for a slow-but-real compile under thermal throttling or disk
+            // pressure. It does NOT bound a hang — see #427 and the note at the call
+            // site: this budget reports, it does not interrupt.
+            //
+            // The maintainer's iPhone 15 Pro Max hit the 120s guard on THIS variant on
+            // 2026-08-25, which is what shows issue #408's 39% size cut does not on
+            // its own bring the compile inside the old budget.
+            //
+            // This number is meant to be replaced by a measurement, and produces one
+            // for free: the first compile that completes under it logs
+            // `modelCompilationCompleted durationMs`, the first real reading of a Turbo
+            // compile anyone will have. Do not then shrink 300 to hug that reading —
+            // it will be one device, in one thermal state, with one amount of free
+            // disk. The TestFlight reporter had 5.3 GB free of 254 GB.
+            prewarmTimeoutSeconds: 300
         ),
         // Superseded by the entry above (issue #408). Kept resolvable, and only
         // resolvable: a user who already pulled 1.05 GB of Turbo on an earlier build
@@ -284,7 +367,16 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.9,
             speedScore: 0.2,
             description: "Most accurate but slowest",
-            visibility: .deprecated
+            visibility: .deprecated,
+            // The same 300s as the entry that supersedes it, for a stronger reason:
+            // `_954MB` is the variant the 2026-08-25 TestFlight report actually timed
+            // out on at 120s. Declaring 120 here would leave the catalogue asserting a
+            // budget the field has already disproved for this exact model.
+            //
+            // Unreachable in practice: `available(on:)` no longer offers this variant,
+            // so no download — and therefore no prewarm — can start for it. Kept
+            // correct rather than kept convenient.
+            prewarmTimeoutSeconds: 300
         )
     ]
 

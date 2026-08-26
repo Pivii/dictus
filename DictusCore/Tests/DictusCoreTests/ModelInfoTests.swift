@@ -518,4 +518,88 @@ final class ModelInfoTests: XCTestCase {
         // A repository that reports no sizes is a missing measurement, not drift.
         XCTAssertFalse(small.sizeHasDrifted(fromMeasured: 0))
     }
+
+    // MARK: - Per-model prewarm budget (issue #406)
+
+    /// The acceptance criterion, stated as the comparison that motivated the issue.
+    ///
+    /// The only documented Turbo compile duration anyone has is the "~2 min on a
+    /// 15 Pro Max" in `ModelLoadingOverlay.swift` — 120s, which is exactly where the
+    /// old global guard sat. A budget equal to the compile it is supposed to survive
+    /// is not a guard, it is a coin flip, and the field flipped it twice on
+    /// 2026-08-25. Turbo's budget must clear that figure with room to spare.
+    ///
+    /// Deliberately written as `> documented`, not `== 300`: the number is expected
+    /// to move once a real compile duration exists (see the catalogue comment). What
+    /// must not move is the relationship.
+    func testTurboBudgetExceedsItsDocumentedCompileDuration() {
+        let documentedCompileSeconds = 120
+        guard let turbo = ModelInfo.forIdentifier(turbo632) else {
+            XCTFail("\(turbo632) is missing from the catalogue")
+            return
+        }
+        XCTAssertGreaterThan(turbo.prewarmTimeoutSeconds, documentedCompileSeconds)
+        XCTAssertEqual(turbo.prewarmTimeoutSeconds, 300)
+        // The superseded variant is the one that actually timed out at 120s in the
+        // TestFlight report, so it must not be left asserting 120 either.
+        XCTAssertEqual(ModelInfo.forIdentifier(turbo954)?.prewarmTimeoutSeconds, 300)
+    }
+
+    /// The default exists so that giving Turbo a budget did not silently re-time
+    /// every other model. Everything that is not Turbo stays on the Phase 37 value.
+    func testEveryNonTurboModelKeepsTheDefaultBudget() {
+        XCTAssertEqual(ModelInfo.defaultPrewarmTimeoutSeconds, 120)
+        let turboIdentifiers: Set<String> = [turbo632, turbo954]
+        for model in ModelInfo.allIncludingDeprecated where !turboIdentifiers.contains(model.identifier) {
+            XCTAssertEqual(
+                model.prewarmTimeoutSeconds,
+                ModelInfo.defaultPrewarmTimeoutSeconds,
+                "\(model.identifier) should inherit the default budget, not declare its own"
+            )
+        }
+    }
+
+    /// Issue #362 is the reason the global value was not simply doubled: on an
+    /// unsupported A13, Whisper Small never finishes compiling and this guard is the
+    /// only thing that ends the spinner. Widening Turbo must not widen that wait.
+    func testWhisperSmallKeepsTheShortBudgetThatEndsTheA13Spinner() {
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-small")?.prewarmTimeoutSeconds, 120)
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-base")?.prewarmTimeoutSeconds, 120)
+    }
+
+    /// Why a five-minute budget is safe to declare at all: no #362-class device can
+    /// ever be handed it. Both Turbo variants are gated out on A12/A13 by the Argmax
+    /// support matrix and on sub-6 GB devices by RAM, so a prewarm carrying 300s can
+    /// only start on hardware where a long compile is the expected outcome.
+    func testTheWiderBudgetIsUnreachableFromTheDevicesThatNeedTheShortOne() {
+        let constrained = [
+            makeCapabilities(ramGB: 4, model: "iPhone12,1"),   // iPhone 11, A13 — issue #362
+            makeCapabilities(ramGB: 4, model: "iPhone11,2"),   // iPhone XS, A12
+            makeCapabilities(ramGB: 4, model: "iPhone13,2")    // iPhone 12, A14, supported but 4 GB
+        ]
+        for capabilities in constrained {
+            for identifier in [turbo632, turbo954] {
+                guard let turbo = ModelInfo.forIdentifier(identifier) else {
+                    XCTFail("\(identifier) is missing from the catalogue")
+                    return
+                }
+                XCTAssertFalse(
+                    turbo.isSupported(on: capabilities),
+                    "\(identifier) must stay gated on \(capabilities.deviceModelIdentifier)"
+                )
+            }
+        }
+    }
+
+    /// Every budget has to be a usable deadline. A zero or negative value would make
+    /// `withPrewarmTimeout` fire before the compile starts.
+    func testEveryCatalogueEntryDeclaresAUsableBudget() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertGreaterThan(
+                model.prewarmTimeoutSeconds,
+                0,
+                "\(model.identifier) declares a non-positive prewarm budget"
+            )
+        }
+    }
 }

@@ -284,10 +284,43 @@ class ModelManager: ObservableObject {
             // Phase 37: guard the CoreML prewarm against indefinite hangs.
             // On iPhone ANE, some WhisperKit model variants fail to compile and the
             // async init never returns (E5 bundle load failure — issue #104,
-            // 2026-04-22 iPhone 15 Pro Max). 120s is well above the observed normal
-            // worst case (~17s for Parakeet Encoder on this device) so we don't
-            // false-positive on legitimately long prewarms.
-            let prewarmTimeoutSeconds = 120
+            // 2026-04-22 iPhone 15 Pro Max).
+            //
+            // WHY the number comes from the catalogue (issue #406):
+            // it used to be a flat 120 written here, justified by the ~17s a Parakeet
+            // Encoder compile took on a 15 Pro Max. That was a reading from a different
+            // engine, it was never revisited, and it ended up sitting almost exactly on
+            // Turbo's own compile time — so a TestFlight tester lost a completed Turbo
+            // download to it on 2026-08-25, and the maintainer reproduced it the same
+            // day on the smaller variant from issue #408. Raising the global instead
+            // would have punished the opposite case: Whisper Small on an unsupported
+            // A13 (issue #362) takes far longer than it has any business taking.
+            // `ModelInfo.prewarmTimeoutSeconds` lets the two models disagree.
+            //
+            // WHAT THIS GUARD DOES NOT DO (issue #427): it does not interrupt the
+            // compile. `withPrewarmTimeout` races a sleep against `WhisperKit(config)`
+            // in a task group, and a task group cannot return until every child has
+            // finished — `cancelAll()` is a request, and a Core ML compile neither
+            // checks cancellation nor offers a suspension point where it could. So the
+            // error is thrown on time and surfaces only once the compile has finished
+            // anyway. Measured 2026-08-26: a 5s budget reported failure after 212s, on
+            // a compile that had by then completed and warmed the cache.
+            //
+            // So do not read this budget as protection against a hang. It bounds
+            // nothing; it reports, afterwards, that the work took longer than a number.
+            // #362 in particular is NOT protected by it, whatever an earlier version of
+            // this comment claimed.
+            //
+            // Whatever this resolves to is the number that reaches the user: it is
+            // carried by the thrown `.prewarmTimeout(seconds:)` into both the
+            // `.modelPrewarmTimeout` log line and the error text on the model card, so
+            // the debug log always states the budget that was actually applied.
+            //
+            // The fallback covers an identifier the catalogue does not know, which this
+            // path should never see — `downloadModel` had to resolve the model to route
+            // it here by engine in the first place.
+            let prewarmTimeoutSeconds = ModelInfo.forIdentifier(identifier)?.prewarmTimeoutSeconds
+                ?? ModelInfo.defaultPrewarmTimeoutSeconds
             do {
                 _ = try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
                     try await WhisperKit(config)
