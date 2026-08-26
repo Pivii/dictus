@@ -185,15 +185,24 @@ class DictationCoordinator: ObservableObject {
         if initTask == task { initTask = nil }
     }
 
+    /// The work the launch deadline is measured against: compile if needed, load into
+    /// RAM, warm the audio path. Returns the model that ended up loaded, for the log.
+    ///
+    /// WHY it exists as a seam rather than being inlined where it is used: the deadline
+    /// that races it lives in `DictationCoordinator+ModelLoad.swift`, because this file
+    /// is at the length budget issue #146 calibrated against it. One named entry point
+    /// is a cheaper thing to expose than the four private members it touches.
+    func loadActiveModelIntoMemory() async throws -> String {
+        try await ensureEngineReady()
+        PersistentLog.log(.engineWarmUpAttempt(context: "init-preload"))
+        try audioEngine.warmUp()
+        return currentModelName ?? "unknown"
+    }
+
     /// Drop the engine-init dedupe lock unconditionally, so the next `ensureEngineReady`
     /// starts a load instead of awaiting one that has been given up on (issue #428).
     /// The abandoned task keeps running; `clearInitTask(ifStillCurrent:)` is what stops
     /// its eventual cleanup from clearing whatever replaced it.
-    ///
-    /// Internal because the orchestration that calls it lives in
-    /// `DictationCoordinator+ModelLoad.swift`: this file is at the length budget issue
-    /// #146 calibrated against it, and one named seam is a cheaper thing to expose than
-    /// the private state behind it.
     func releaseEngineInitLock() {
         initTask = nil
     }
@@ -272,18 +281,7 @@ class DictationCoordinator: ObservableObject {
                 self.setModelLoadState(.idle, reason: "init-preload-no-model")
                 return
             }
-
-            self.setModelLoadState(.loading, reason: "init-preload")
-            do {
-                try await ensureEngineReady()
-                PersistentLog.log(.engineWarmUpAttempt(context: "init-preload"))
-                try audioEngine.warmUp()
-                PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
-                self.setModelLoadState(.ready, reason: "init-preload-success")
-            } catch {
-                PersistentLog.log(.engineWarmUpFailed(context: "init-preload", error: error.localizedDescription))
-                self.setModelLoadState(.idle, reason: "init-preload-failed")
-            }
+            await self.runLaunchPreload()
         }
 
         // Stop audio engine when user taps Power button in Dynamic Island.
@@ -1329,6 +1327,10 @@ class DictationCoordinator: ObservableObject {
     /// into a cancellation storm without this proactive path).
     ///
     /// Safe to call repeatedly: the underlying `initTask` lock dedupes concurrent loads.
+    ///
+    /// Deliberately still without the deadline `runLaunchPreload` carries (issue #428
+    /// scoped the deadline to launch): a load started from this path always has the
+    /// preparation screen in front of it, and that screen now offers its own escape.
     func preloadActiveModel() {
         Task {
             self.setModelLoadState(.loading, reason: "selectModel-proactive")

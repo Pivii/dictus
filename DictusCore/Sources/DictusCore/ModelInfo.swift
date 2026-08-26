@@ -71,10 +71,17 @@ public struct ModelInfo: Identifiable {
     /// suit Turbo would make every #362-class device wait twice as long to be told
     /// what it could have been told in two minutes.
     ///
-    /// Only the WhisperKit download path consumes this today
-    /// (`ModelManager.downloadWhisperKitModel`). The Parakeet path compiles through
-    /// FluidAudio and has never carried a deadline guard of any kind, so the value on
-    /// `parakeet-tdt-0.6b-v3` is declarative until one exists.
+    /// Two paths consume this. The WhisperKit download path
+    /// (`ModelManager.downloadWhisperKitModel`) races it against the first compile,
+    /// and issue #427 established that this use bounds nothing: a task group cannot
+    /// return while a child runs, so it reports lateness after the fact. The launch
+    /// preload (`DictationCoordinator.runLaunchPreload`, issue #428) reads the same
+    /// number through `preloadDeadlineSeconds(for:)` and does honour it, because it
+    /// arbitrates between two independent tasks instead of awaiting a group.
+    ///
+    /// The Parakeet path compiles through FluidAudio and has never carried a deadline
+    /// guard of its own, so the value on `parakeet-tdt-0.6b-v3` is reachable only
+    /// through the launch preload.
     public let prewarmTimeoutSeconds: Int
 
     /// The budget a model gets when its entry does not ask for another one.
@@ -87,6 +94,33 @@ public struct ModelInfo: Identifiable {
     /// Declared here rather than at the call site so the catalogue's default and
     /// `ModelManager`'s fallback for an unknown identifier cannot drift apart.
     public static let defaultPrewarmTimeoutSeconds = 120
+
+    /// How long the app's launch preload waits for `identifier` before it gives the UI
+    /// back to the user (issue #428).
+    ///
+    /// WHY this reuses `prewarmTimeoutSeconds` rather than introducing a second number:
+    /// both budgets bound the same physical work on the same device — the Core ML
+    /// compile plus the RAM load of one model — and the catalogue already carries the
+    /// per-model disagreement that matters (Turbo 300s, everything else 120s, issue
+    /// #406). A second constant would be a second thing to keep true, and the first
+    /// time the two drifted the launch path would be the one holding the wrong number.
+    ///
+    /// What the budget has to survive is a variant's FIRST compile on a device, which
+    /// builds the Core ML bundle cache and runs into the minutes: an iPhone 15 Pro Max
+    /// log shows a Turbo compile still running 212s in, and the same device measured
+    /// 236s on 2026-08-25. Every load after that finds the cache and takes seconds
+    /// (3636ms measured). A budget sized against the warm figure would fire on every
+    /// first install; these are sized against the cold one.
+    ///
+    /// Neither figure is a ceiling for a colder or busier device, which is why the
+    /// deadline frees the UI rather than failing the model — see the call site.
+    ///
+    /// An identifier the catalogue does not know falls back to the default rather than
+    /// waiting forever; that is the same fallback `ModelManager` uses for the download
+    /// path, for the same reason.
+    public static func preloadDeadlineSeconds(for identifier: String) -> Int {
+        forIdentifier(identifier)?.prewarmTimeoutSeconds ?? defaultPrewarmTimeoutSeconds
+    }
 
     /// WHY an initializer written by hand:
     /// `prewarmTimeoutSeconds` needs a default, so that giving models their own
