@@ -1,0 +1,35 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.13s)
+
+━━ [T1-fr-casual] lang=fr
+  raw: salut Sophie alors pour le rendez-vous de jeudi je peux pas avant quinze heures j'ai un truc qui traîne le matin par contre après je suis libre toute l'après-midi dis moi si ça te va
+  A [polish] (2164ms): Salut Sophie, alors pour le rendez-vous de jeudi, je peux pas avant quinze heures. J'ai un truc qui traîne le matin, mais après, je suis libre toute l'après-midi. Dis-moi si ça te va.
+  B [smart.translate.en] (1812ms): Hi Sophie, so for Thursday's appointment, I can't make it before 3 PM because I have something that's dragging me down in the morning, but after that, I'm free all afternoon. Let me know if that works for you.
+
+━━ [T2-fr-deja-partiellement-en] lang=fr
+  raw: bon alors pendant le call de ce matin le client a demandé si on pouvait avancer la deadline d'une semaine et euh moi j'ai dit que c'était jouable seulement si on fait un rollback sur la partie search parce que sinon on tient pas
+  A [polish] (2171ms): Bon alors, pendant le call de ce matin, le client a demandé si on pouvait avancer la date limite d'une semaine, et moi, j'ai dit que c'était jouable seulement si on faisait un rollback sur la partie search, parce que sinon, on tient pas.
+  B [smart.translate.en] (1687ms): Well, during this morning's call, the client asked if we could extend the deadline by a week. And I said that it was possible only if we did a rollback on the search part, because otherwise we wouldn't be able to.
+
+━━ [T3-it-clavier-fr] lang=fr
+  raw: allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre
+  A [polish] (0ms): allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre
+  B [smart.translate.en] (1687ms): Okay, I wanted to tell you that tomorrow I can't come to the office because I have something with the dentist at 11, but in the afternoon, if you want, we can meet at 3.
+
+━━ [T4-it-auto] lang=it
+  raw: allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre
+  A [polish] (1762ms): Allora, senti, volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici. Nel pomeriggio, però, ci sono, se vuoi, ci sentiamo verso le tre.
+  B [smart.translate.en] (1782ms): Okay, I wanted to tell you that I can't come to the office tomorrow because I have an appointment with the dentist at 11, but in the afternoon, if you want, we can meet around 3.
+
+━━ [T5-saut-de-ligne] lang=fr
+  raw: on se voit demain matin devant l'entrée
+prends les badges au passage
+  A [polish] (1565ms): On se voit demain matin devant l'entrée. Prends les badges au passage.
+  B [smart.translate.en] (1117ms): See you tomorrow morning in front of the entrance
+take the badges as you pass.
+
+━━ [T6-deja-en] lang=en
+  raw: hey so I just got off the phone with the supplier and they can ship on the twelfth but only if we confirm the quantity before friday otherwise it slips to the next batch
+  A [polish] (1649ms): Hey, so I just got off the phone with the supplier, and they can ship on the twelfth, but only if we confirm the quantity before Friday. Otherwise, it will slip to the next batch.
+  B [smart.translate.en] (1295ms): Hey, so I just got off the phone with the supplier and they can ship on the twelfth, but only if we confirm the quantity before Friday, otherwise it slips to the next batch.
