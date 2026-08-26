@@ -212,9 +212,11 @@ class ModelManager: ObservableObject {
 
         // Tracks which phase a failure (if any) belongs to. Download-phase failures
         // keep files on disk (every file is complete thanks to atomic per-file
-        // moves) so a retry resumes where it left off; prewarm-phase failures still
-        // clean up, because ANE compilation failures (E5 bundle errors) can leave
+        // moves) so a retry resumes where it left off; a prewarm failure keeps them
+        // too when it is the deadline guard firing (issue #405) and only cleans up
+        // otherwise, because ANE compilation failures (E5 bundle errors) can leave
         // behind unusable cached files that prevent retry from working.
+        // `ModelCleanupPolicy` owns the rule; this flag is one of its two inputs.
         var downloadPhaseCompleted = false
 
         do {
@@ -282,10 +284,43 @@ class ModelManager: ObservableObject {
             // Phase 37: guard the CoreML prewarm against indefinite hangs.
             // On iPhone ANE, some WhisperKit model variants fail to compile and the
             // async init never returns (E5 bundle load failure — issue #104,
-            // 2026-04-22 iPhone 15 Pro Max). 120s is well above the observed normal
-            // worst case (~17s for Parakeet Encoder on this device) so we don't
-            // false-positive on legitimately long prewarms.
-            let prewarmTimeoutSeconds = 120
+            // 2026-04-22 iPhone 15 Pro Max).
+            //
+            // WHY the number comes from the catalogue (issue #406):
+            // it used to be a flat 120 written here, justified by the ~17s a Parakeet
+            // Encoder compile took on a 15 Pro Max. That was a reading from a different
+            // engine, it was never revisited, and it ended up sitting almost exactly on
+            // Turbo's own compile time — so a TestFlight tester lost a completed Turbo
+            // download to it on 2026-08-25, and the maintainer reproduced it the same
+            // day on the smaller variant from issue #408. Raising the global instead
+            // would have punished the opposite case: Whisper Small on an unsupported
+            // A13 (issue #362) takes far longer than it has any business taking.
+            // `ModelInfo.prewarmTimeoutSeconds` lets the two models disagree.
+            //
+            // WHAT THIS GUARD DOES NOT DO (issue #427): it does not interrupt the
+            // compile. `withPrewarmTimeout` races a sleep against `WhisperKit(config)`
+            // in a task group, and a task group cannot return until every child has
+            // finished — `cancelAll()` is a request, and a Core ML compile neither
+            // checks cancellation nor offers a suspension point where it could. So the
+            // error is thrown on time and surfaces only once the compile has finished
+            // anyway. Measured 2026-08-26: a 5s budget reported failure after 212s, on
+            // a compile that had by then completed and warmed the cache.
+            //
+            // So do not read this budget as protection against a hang. It bounds
+            // nothing; it reports, afterwards, that the work took longer than a number.
+            // #362 in particular is NOT protected by it, whatever an earlier version of
+            // this comment claimed.
+            //
+            // Whatever this resolves to is the number that reaches the user: it is
+            // carried by the thrown `.prewarmTimeout(seconds:)` into both the
+            // `.modelPrewarmTimeout` log line and the error text on the model card, so
+            // the debug log always states the budget that was actually applied.
+            //
+            // The fallback covers an identifier the catalogue does not know, which this
+            // path should never see — `downloadModel` had to resolve the model to route
+            // it here by engine in the first place.
+            let prewarmTimeoutSeconds = ModelInfo.forIdentifier(identifier)?.prewarmTimeoutSeconds
+                ?? ModelInfo.defaultPrewarmTimeoutSeconds
             do {
                 _ = try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
                     try await WhisperKit(config)
@@ -328,18 +363,27 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            if downloadPhaseCompleted {
-                // Prewarm failure: clean up. ANE compilation failures (E5 bundle
-                // errors) leave behind unusable cached files that prevent
-                // re-download from working correctly.
+            // Three failure kinds, one of which deletes anything — see
+            // ModelCleanupPolicy for the rule and its reasons:
+            //   • download failure → keep (issue #210, same policy as the Parakeet
+            //     path): every file on disk is complete, a retry resumes;
+            //   • prewarm timeout → keep (issue #405): the payload is intact and only
+            //     the Core ML compile ran out of clock, so a retry must resume at the
+            //     compile step instead of repaying a 1 GB download;
+            //   • any other prewarm failure → clean up: an E5 bundle error (issue
+            //     #104) leaves a corrupt Core ML cache that fails identically forever.
+            // Since issue #235, tapping the card's "Retry" affordance retries in
+            // place; the full reset stays in the overflow menu's "Delete partial
+            // download" entry (cleanupFailedModel). When nothing is deleted here the
+            // debug log shows .modelPrewarmTimeout with no .modelCleanupPerformed
+            // line after it — that pair is what says the bytes were kept.
+            let isPrewarmTimeout = (error as? ModelManagerError)?.isPrewarmTimeout ?? false
+            if ModelCleanupPolicy.shouldCleanUpFiles(
+                downloadPhaseCompleted: downloadPhaseCompleted,
+                isPrewarmTimeout: isPrewarmTimeout
+            ) {
                 cleanupModelFiles(identifier)
             }
-            // Download failure: deliberately NO cleanup (issue #210, same policy as
-            // the Parakeet path) — the downloader moves each file into place
-            // atomically, so anything on disk is a complete file and a retry skips
-            // it and resumes where it left off. Since issue #235, tapping the card's
-            // "Retry" affordance retries in place; the full reset lives in the
-            // overflow menu's "Delete partial download" entry (cleanupFailedModel).
 
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
@@ -630,6 +674,14 @@ enum ModelManagerError: Error, LocalizedError {
         case .prewarmTimeout(let seconds):
             return "Model optimization did not complete within \(seconds)s"
         }
+    }
+
+    /// Whether this is the prewarm deadline guard firing rather than a real
+    /// failure of the model files (issue #405). The one prewarm failure whose
+    /// downloaded payload is still worth keeping — see `ModelCleanupPolicy`.
+    var isPrewarmTimeout: Bool {
+        if case .prewarmTimeout = self { return true }
+        return false
     }
 }
 

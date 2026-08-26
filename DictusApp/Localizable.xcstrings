@@ -1388,6 +1388,16 @@
         }
       }
     },
+    "Most accurate, and fast" : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le plus précis, et rapide"
+          }
+        }
+      }
+    },
     "New dictation" : {
       "localizations" : {
         "fr" : {

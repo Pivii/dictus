@@ -7,8 +7,10 @@ import DictusCore
 /// Full-screen cover that surfaces long-running model preparation work to the user.
 ///
 /// Why this exists:
-/// Whisper turbo (~954 MB) takes ~2 min of one-off Core ML compilation on a 15 Pro Max
-/// and a couple of seconds to load into RAM after each cold start. Without a blocking UI
+/// Whisper turbo (~645 MB) takes minutes of one-off Core ML compilation on a 15 Pro Max
+/// and a couple of seconds to load into RAM after each cold start. The ~2 min figure
+/// quoted below was measured on the ~954 MB variant that issue #408 replaced; the
+/// smaller one is expected to compile faster but has no on-device reading yet. Without a blocking UI
 /// the user could mistake the wait for a frozen app, tap the keyboard mic mid-load,
 /// and trigger a `Swift.CancellationError` cascade (issue #144). The overlay refuses
 /// any further model interaction until `modelLoadState == .ready`.
@@ -363,11 +365,11 @@ struct ModelLoadingOverlay: View {
     ModelLoadingOverlay(
         modelManager: {
             let m = ModelManager()
-            m.modelStates["openai_whisper-large-v3_turbo_954MB"] = .downloading
-            m.downloadProgress["openai_whisper-large-v3_turbo_954MB"] = 0.42
+            m.modelStates["openai_whisper-large-v3-v20240930_turbo_632MB"] = .downloading
+            m.downloadProgress["openai_whisper-large-v3-v20240930_turbo_632MB"] = 0.42
             return m
         }(),
-        modelIdentifier: "openai_whisper-large-v3_turbo_954MB",
+        modelIdentifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
         isPresented: .constant(true)
     )
     .preferredColorScheme(.light)
@@ -377,10 +379,10 @@ struct ModelLoadingOverlay: View {
     ModelLoadingOverlay(
         modelManager: {
             let m = ModelManager()
-            m.modelStates["openai_whisper-large-v3_turbo_954MB"] = .prewarming
+            m.modelStates["openai_whisper-large-v3-v20240930_turbo_632MB"] = .prewarming
             return m
         }(),
-        modelIdentifier: "openai_whisper-large-v3_turbo_954MB",
+        modelIdentifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
         isPresented: .constant(true)
     )
     .preferredColorScheme(.dark)

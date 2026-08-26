@@ -24,22 +24,48 @@ public final class ProStatusManager: ObservableObject {
     @Published public private(set) var isProActive: Bool
 
     public init() {
-        // Register defaults so per-feature toggles are ON by default
-        // WHY registerDefaults: UserDefaults.bool(forKey:) returns false for unset keys.
-        // Pro features should be enabled by default when user subscribes -- they can
-        // then toggle individual features off in Settings if desired.
-        // CAVEAT: registerDefaults is per-process and never persisted, so the
-        // keyboard extension (which never runs this init) reads false for
-        // un-toggled features. Irrelevant while keyboard gating is unused;
-        // revisit when wiring FeatureGate.isKeyboardFeatureAvailable (issue #79).
-        let defaults = AppGroup.defaults
-        defaults.register(defaults: [
-            SharedKeys.smartModeEnabled: true,
-            SharedKeys.historyEnabled: true,
-            SharedKeys.vocabularyEnabled: true
-        ])
+        // Runs at every app launch (DictusApp.init), which is what makes the
+        // seeding idempotent and always ahead of the first read.
+        ProStatusManager.seedFeatureTogglesIfNeeded()
 
-        self.isProActive = defaults.bool(forKey: SharedKeys.proActive)
+        self.isProActive = AppGroup.defaults.bool(forKey: SharedKeys.proActive)
+    }
+
+    /// Writes the per-feature Pro toggles into the App Group the first time, so that
+    /// the keyboard extension and the app read the same answer (issue #401).
+    ///
+    /// WHY a write and not `register(defaults:)`, which is what this replaced:
+    /// registration is per-process and never hits disk. DictusApp runs this init and
+    /// read `true` for an un-toggled feature; the keyboard extension never runs it and
+    /// read `false`. Same key, two processes, two answers -- a subscriber who never
+    /// opened the Settings toggle got a locked Smart Mode fan while Settings showed it
+    /// on. The App Group is the source of truth both sides already assume it is, so
+    /// the value has to actually be in it.
+    ///
+    /// WHY `object(forKey:) == nil` and not an unconditional write: seed, never
+    /// assign. `SubscriptionManager.updateProStatus()` runs on every launch, so an
+    /// unconditional write would silently switch a feature back on for a user who
+    /// deliberately turned it off. `bool(forKey:)` cannot tell "never set" from "set
+    /// to false"; `object(forKey:)` can.
+    ///
+    /// WHY no `register(defaults:)` survives alongside it: a registered value makes
+    /// `object(forKey:)` return non-nil, which would disarm the guard above and leave
+    /// the keys unpersisted all over again.
+    ///
+    /// Seeding is deliberately not conditioned on Pro being active: `FeatureGate`
+    /// checks `isProActive` first, so a stored `true` grants a free user nothing --
+    /// it is only the on-by-default state waiting for the day they subscribe, which
+    /// is exactly what the registration used to express.
+    nonisolated public static func seedFeatureTogglesIfNeeded() {
+        let defaults = AppGroup.defaults
+        let unseeded = ProFeature.allCases.filter {
+            defaults.object(forKey: $0.settingsKey) == nil
+        }
+        guard !unseeded.isEmpty else { return }
+
+        unseeded.forEach { defaults.set(true, forKey: $0.settingsKey) }
+        // Same reason as setProActive below: the reader is another process.
+        defaults.synchronize()
     }
 
     /// Called by SubscriptionManager after transaction updates (DictusApp only).

@@ -17,16 +17,19 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertTrue(ids.contains("openai_whisper-small_216MB"))
         XCTAssertTrue(ids.contains("openai_whisper-medium"))
         XCTAssertTrue(ids.contains("parakeet-tdt-0.6b-v3"))
-        XCTAssertTrue(ids.contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertTrue(ids.contains("openai_whisper-large-v3-v20240930_turbo_632MB"))
         XCTAssertFalse(ids.contains("openai_whisper-tiny"))
         XCTAssertFalse(ids.contains("openai_whisper-base"))
+        // Issue #408 superseded the `_954MB` Turbo: still resolvable, no longer offered.
+        XCTAssertFalse(ids.contains("openai_whisper-large-v3_turbo_954MB"))
     }
 
     func testAllIncludingDeprecatedContainsEight() {
-        // allIncludingDeprecated should contain all 7 models (2 deprecated + 5 available).
-        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 7)
+        // allIncludingDeprecated should contain all 8 models (3 deprecated + 5 available):
+        // Tiny, Base, and the `_954MB` Turbo superseded by issue #408.
+        XCTAssertEqual(ModelInfo.allIncludingDeprecated.count, 8)
         let deprecated = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .deprecated }
-        XCTAssertEqual(deprecated.count, 2)
+        XCTAssertEqual(deprecated.count, 3)
         let available = ModelInfo.allIncludingDeprecated.filter { $0.visibility == .available }
         XCTAssertEqual(available.count, 5)
     }
@@ -70,7 +73,7 @@ final class ModelInfoTests: XCTestCase {
     func testEngineAssignment() {
         let whisperKitModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .whisperKit }
         let parakeetModels = ModelInfo.allIncludingDeprecated.filter { $0.engine == .parakeet }
-        XCTAssertEqual(whisperKitModels.count, 6, "Should have 6 WhisperKit models (incl. Turbo)")
+        XCTAssertEqual(whisperKitModels.count, 7, "Should have 7 WhisperKit models (incl. both Turbo variants)")
         XCTAssertEqual(parakeetModels.count, 1, "Should have 1 Parakeet model")
         XCTAssertEqual(parakeetModels.first?.identifier, "parakeet-tdt-0.6b-v3")
     }
@@ -99,21 +102,21 @@ final class ModelInfoTests: XCTestCase {
         // iPhone 12 / iPhone SE tier: 4 GB RAM — Turbo must not be runnable.
         // Issue #369: it stays LISTED, disabled with a reason, instead of vanishing.
         let iphone12 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
-        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
-            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3-v20240930_turbo_632MB") else {
+            XCTFail("openai_whisper-large-v3-v20240930_turbo_632MB is missing from the catalogue")
             return
         }
         XCTAssertFalse(turbo.isSupported(on: iphone12))
         XCTAssertEqual(turbo.incompatibilityReason(on: iphone12), .insufficientMemory(requiredGB: 6))
-        XCTAssertTrue(ModelInfo.available(on: iphone12).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertTrue(ModelInfo.available(on: iphone12).map(\.identifier).contains("openai_whisper-large-v3-v20240930_turbo_632MB"))
     }
 
     func testTurboAvailableOnSixGBPlusDevices() {
         // iPhone 14 Pro / iPhone 15 tier: 6 GB — passes the quantized Turbo gate.
         // Argmax lists iPhone14/15/16/17 families as supported for `_954MB`.
         let iphone15 = makeCapabilities(ramGB: 6, model: "iPhone15,4")
-        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
-            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3-v20240930_turbo_632MB") else {
+            XCTFail("openai_whisper-large-v3-v20240930_turbo_632MB is missing from the catalogue")
             return
         }
         XCTAssertTrue(turbo.isSupported(on: iphone15))
@@ -122,12 +125,12 @@ final class ModelInfoTests: XCTestCase {
     func testTurboAvailableOnEightGBDevices() {
         // iPhone 15 Pro Max / iPhone 16: 8 GB — well above the bar.
         let iphone15ProMax = makeCapabilities(ramGB: 8, model: "iPhone16,2")
-        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
-            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3-v20240930_turbo_632MB") else {
+            XCTFail("openai_whisper-large-v3-v20240930_turbo_632MB is missing from the catalogue")
             return
         }
         XCTAssertTrue(turbo.isSupported(on: iphone15ProMax))
-        XCTAssertTrue(ModelInfo.available(on: iphone15ProMax).map(\.identifier).contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertTrue(ModelInfo.available(on: iphone15ProMax).map(\.identifier).contains("openai_whisper-large-v3-v20240930_turbo_632MB"))
 
         let iphone17Pro = makeCapabilities(ramGB: 12, model: "iPhone18,1")
         XCTAssertTrue(turbo.isSupported(on: iphone17Pro))
@@ -137,7 +140,7 @@ final class ModelInfoTests: XCTestCase {
         // Every non-Turbo model must remain visible regardless of RAM tier — Phase 37
         // must not silently shrink the catalog for existing users.
         let lowRam = makeCapabilities(ramGB: 4)
-        for model in ModelInfo.all where model.identifier != "openai_whisper-large-v3_turbo_954MB" {
+        for model in ModelInfo.all where model.identifier != "openai_whisper-large-v3-v20240930_turbo_632MB" {
             XCTAssertTrue(model.isSupported(on: lowRam),
                           "\(model.identifier) must not be gated on low-RAM devices")
         }
@@ -149,7 +152,7 @@ final class ModelInfoTests: XCTestCase {
         for ram in [4, 6, 8, 12, 16] {
             let caps = makeCapabilities(ramGB: ram)
             XCTAssertNotEqual(ModelInfo.recommendedIdentifier(for: caps),
-                              "openai_whisper-large-v3_turbo_954MB",
+                              "openai_whisper-large-v3-v20240930_turbo_632MB",
                               "Turbo must not be recommended at \(ram) GB")
         }
     }
@@ -199,7 +202,7 @@ final class ModelInfoTests: XCTestCase {
                                 "openai_whisper-small_216MB",
                                 "openai_whisper-medium",
                                 "parakeet-tdt-0.6b-v3",
-                                "openai_whisper-large-v3_turbo_954MB"] {
+                                "openai_whisper-large-v3-v20240930_turbo_632MB"] {
                 XCTAssertFalse(runnable.contains(unsupported),
                                "\(identifier) must not be able to run \(unsupported)")
                 XCTAssertTrue(rows.map(\.identifier).contains(unsupported),
@@ -248,8 +251,8 @@ final class ModelInfoTests: XCTestCase {
             XCTFail("openai_whisper-small is missing from the catalogue")
             return
         }
-        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3_turbo_954MB") else {
-            XCTFail("openai_whisper-large-v3_turbo_954MB is missing from the catalogue")
+        guard let turbo = ModelInfo.forIdentifier("openai_whisper-large-v3-v20240930_turbo_632MB") else {
+            XCTFail("openai_whisper-large-v3-v20240930_turbo_632MB is missing from the catalogue")
             return
         }
 
@@ -310,7 +313,7 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertFalse(offered.contains("openai_whisper-base"))
         XCTAssertFalse(offered.contains("openai_whisper-tiny"))
         // Issue #369: Turbo is present but disabled here, not absent.
-        XCTAssertTrue(offered.contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertTrue(offered.contains("openai_whisper-large-v3-v20240930_turbo_632MB"))
     }
 
     /// Guards the >= 6 GB path against collateral damage from the A12/A13 branch.
@@ -320,7 +323,7 @@ final class ModelInfoTests: XCTestCase {
 
         XCTAssertEqual(offered, Set(ModelInfo.all.map(\.identifier)))
         XCTAssertTrue(offered.contains("parakeet-tdt-0.6b-v3"))
-        XCTAssertTrue(offered.contains("openai_whisper-large-v3_turbo_954MB"))
+        XCTAssertTrue(offered.contains("openai_whisper-large-v3-v20240930_turbo_632MB"))
     }
 
     /// Issue #369 criterion: on a 8 GB+ device nothing is disabled and the section
@@ -373,6 +376,132 @@ final class ModelInfoTests: XCTestCase {
         }
     }
 
+    // MARK: - Issue #408: the Turbo swap and the users left on the old variant
+
+    private let turbo632 = "openai_whisper-large-v3-v20240930_turbo_632MB"
+    private let turbo954 = "openai_whisper-large-v3_turbo_954MB"
+
+    /// The swap itself. The byte count is the exact recursive sum of the served
+    /// `<identifier>/` directory, re-derived 2026-08-25 by the same method that
+    /// reproduces the `_954MB` constant below exactly.
+    /// `ModelCatalogueSizeAuditTests` re-measures it against the live repository.
+    func testTurboIsTheV20240930VariantAtItsServedSize() {
+        guard let turbo = ModelInfo.forIdentifier(turbo632) else {
+            XCTFail("\(turbo632) is missing from the catalogue")
+            return
+        }
+        XCTAssertEqual(turbo.sizeBytes, 645_668_913)
+        XCTAssertEqual(turbo.sizeLabel, "~645 MB")
+        XCTAssertEqual(turbo.displayName, "Turbo")
+        XCTAssertEqual(turbo.engine, .whisperKit)
+        XCTAssertEqual(turbo.visibility, .available)
+        // `accuracyScore` is hand-assigned, like every entry's. `speedScore` is not:
+        // it comes from a device reading of 8.78x realtime (see the catalogue comment).
+        XCTAssertEqual(turbo.accuracyScore, 0.9)
+        XCTAssertEqual(turbo.speedScore, 0.75)
+    }
+
+    /// The card has to rank Turbo above Medium on speed, because the device says it is.
+    ///
+    /// Written as an ordering rather than as three constants: the numbers will move
+    /// again when the catalogue gets the WER recalibration it is still owed, and this
+    /// test should survive that and keep defending the thing #408 measured. #171
+    /// predicted the opposite ordering from architecture alone — the encoder is the
+    /// bulk of this variant, so it "should" have stayed slower than Medium — and the
+    /// measurement falsified it. That is the regression worth pinning.
+    func testTurboOutranksMediumOnSpeedAsMeasured() {
+        guard let turbo = ModelInfo.forIdentifier(turbo632),
+              let medium = ModelInfo.forIdentifier("openai_whisper-medium"),
+              let small = ModelInfo.forIdentifier("openai_whisper-small"),
+              let old = ModelInfo.forIdentifier(turbo954) else {
+            XCTFail("the catalogue must resolve all four")
+            return
+        }
+        // Measured RTF on an iPhone 15 Pro Max: Small 17.3x, turbo632 8.78x,
+        // Medium 4.16x, turbo954 2.70x. The scores must carry that same order.
+        XCTAssertGreaterThan(small.speedScore, turbo.speedScore)
+        XCTAssertGreaterThan(turbo.speedScore, medium.speedScore)
+        XCTAssertGreaterThan(medium.speedScore, old.speedScore)
+    }
+
+    /// The swap must be a strict size reduction on the model the user downloads —
+    /// 39% smaller is half of why #408 was worth doing.
+    func testTheNewTurboIsSmallerThanTheOneItReplaces() {
+        guard let new = ModelInfo.forIdentifier(turbo632),
+              let old = ModelInfo.forIdentifier(turbo954) else {
+            XCTFail("both Turbo variants must resolve")
+            return
+        }
+        XCTAssertLessThan(new.sizeBytes, old.sizeBytes)
+        XCTAssertEqual(old.sizeBytes, 1_052_848_880, "the superseded entry keeps its measured size")
+    }
+
+    /// The migration route, stated as the contract it has to honour: a user who
+    /// downloaded 1.05 GB of Turbo on an earlier build keeps that model working.
+    /// Every lookup the dictation path makes must still resolve it.
+    func testTheSupersededTurboStaysResolvableForUsersWhoHoldIt() {
+        guard let old = ModelInfo.forIdentifier(turbo954) else {
+            XCTFail("\(turbo954) must stay resolvable — users have it on disk")
+            return
+        }
+        XCTAssertEqual(old.visibility, .deprecated)
+        XCTAssertTrue(ModelInfo.supportedIdentifiers.contains(turbo954))
+        // The Settings "Downloaded" section filters `allIncludingDeprecated` by
+        // download state, so presence here is what keeps the row (and its Delete
+        // affordance) reachable.
+        XCTAssertTrue(ModelInfo.allIncludingDeprecated.map(\.identifier).contains(turbo954))
+    }
+
+    /// The other half of the contract: it stops being offered. No device tier may
+    /// surface it as something to download, or a user would pay 1.05 GB for the
+    /// variant #171 measured as the worse one.
+    func testTheSupersededTurboIsOfferedToNobody() {
+        XCTAssertFalse(ModelInfo.all.map(\.identifier).contains(turbo954))
+        let devices = [
+            makeCapabilities(ramGB: 4, model: "iPhone11,2"),
+            makeCapabilities(ramGB: 4, model: "iPhone12,1"),
+            makeCapabilities(ramGB: 4, model: "iPhone13,2"),
+            makeCapabilities(ramGB: 6, model: "iPhone15,4"),
+            makeCapabilities(ramGB: 8, model: "iPhone16,2"),
+            makeCapabilities(ramGB: 12, model: "iPhone18,1")
+        ]
+        for device in devices {
+            let offered = ModelInfo.available(on: device).map(\.identifier)
+            XCTAssertFalse(offered.contains(turbo954),
+                           "\(device.deviceModelIdentifier) is still offered the superseded Turbo")
+            XCTAssertTrue(offered.contains(turbo632),
+                          "\(device.deviceModelIdentifier) cannot see the current Turbo")
+        }
+    }
+
+    /// A deprecated entry still has to answer for itself: the "Downloaded" section is
+    /// ungated, so an old-variant row on a 4 GB phone renders disabled and must carry
+    /// the same reason it carried before the swap (issue #369).
+    func testTheSupersededTurboKeepsItsMemoryGate() {
+        guard let old = ModelInfo.forIdentifier(turbo954),
+              let new = ModelInfo.forIdentifier(turbo632) else {
+            XCTFail("both Turbo variants must resolve")
+            return
+        }
+        let a14 = makeCapabilities(ramGB: 4, model: "iPhone13,2")
+        let iphone15ProMax = makeCapabilities(ramGB: 8, model: "iPhone16,2")
+
+        // Argmax lists both variants for exactly the same device families, so the
+        // gate must not diverge between them.
+        XCTAssertEqual(old.incompatibilityReason(on: a14), .insufficientMemory(requiredGB: 6))
+        XCTAssertEqual(new.incompatibilityReason(on: a14), .insufficientMemory(requiredGB: 6))
+        XCTAssertNil(old.incompatibilityReason(on: iphone15ProMax))
+        XCTAssertNil(new.incompatibilityReason(on: iphone15ProMax))
+    }
+
+    /// Two rows both called "Turbo" is what a user holding both variants would read
+    /// in the "Downloaded" section, with only the size to tell them apart.
+    func testTheTwoTurboVariantsAreDistinguishableInTheUI() {
+        let names = ModelInfo.allIncludingDeprecated.map(\.displayName)
+        XCTAssertEqual(Set(names).count, names.count, "two catalogue rows share a display name")
+        XCTAssertEqual(ModelInfo.forIdentifier(turbo954)?.displayName, "Turbo (Legacy)")
+    }
+
     /// The predicate behind the `modelDownloadSizeMismatch` log line. The 250 MB case
     /// is the bug this issue was filed for: that was the announced size while the
     /// repository served 486 MB, and it has to read as drift.
@@ -388,5 +517,89 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertTrue(small.sizeHasDrifted(fromMeasured: 250_000_000))
         // A repository that reports no sizes is a missing measurement, not drift.
         XCTAssertFalse(small.sizeHasDrifted(fromMeasured: 0))
+    }
+
+    // MARK: - Per-model prewarm budget (issue #406)
+
+    /// The acceptance criterion, stated as the comparison that motivated the issue.
+    ///
+    /// The only documented Turbo compile duration anyone has is the "~2 min on a
+    /// 15 Pro Max" in `ModelLoadingOverlay.swift` — 120s, which is exactly where the
+    /// old global guard sat. A budget equal to the compile it is supposed to survive
+    /// is not a guard, it is a coin flip, and the field flipped it twice on
+    /// 2026-08-25. Turbo's budget must clear that figure with room to spare.
+    ///
+    /// Deliberately written as `> documented`, not `== 300`: the number is expected
+    /// to move once a real compile duration exists (see the catalogue comment). What
+    /// must not move is the relationship.
+    func testTurboBudgetExceedsItsDocumentedCompileDuration() {
+        let documentedCompileSeconds = 120
+        guard let turbo = ModelInfo.forIdentifier(turbo632) else {
+            XCTFail("\(turbo632) is missing from the catalogue")
+            return
+        }
+        XCTAssertGreaterThan(turbo.prewarmTimeoutSeconds, documentedCompileSeconds)
+        XCTAssertEqual(turbo.prewarmTimeoutSeconds, 300)
+        // The superseded variant is the one that actually timed out at 120s in the
+        // TestFlight report, so it must not be left asserting 120 either.
+        XCTAssertEqual(ModelInfo.forIdentifier(turbo954)?.prewarmTimeoutSeconds, 300)
+    }
+
+    /// The default exists so that giving Turbo a budget did not silently re-time
+    /// every other model. Everything that is not Turbo stays on the Phase 37 value.
+    func testEveryNonTurboModelKeepsTheDefaultBudget() {
+        XCTAssertEqual(ModelInfo.defaultPrewarmTimeoutSeconds, 120)
+        let turboIdentifiers: Set<String> = [turbo632, turbo954]
+        for model in ModelInfo.allIncludingDeprecated where !turboIdentifiers.contains(model.identifier) {
+            XCTAssertEqual(
+                model.prewarmTimeoutSeconds,
+                ModelInfo.defaultPrewarmTimeoutSeconds,
+                "\(model.identifier) should inherit the default budget, not declare its own"
+            )
+        }
+    }
+
+    /// Issue #362 is the reason the global value was not simply doubled: on an
+    /// unsupported A13, Whisper Small never finishes compiling and this guard is the
+    /// only thing that ends the spinner. Widening Turbo must not widen that wait.
+    func testWhisperSmallKeepsTheShortBudgetThatEndsTheA13Spinner() {
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-small")?.prewarmTimeoutSeconds, 120)
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-base")?.prewarmTimeoutSeconds, 120)
+    }
+
+    /// Why a five-minute budget is safe to declare at all: no #362-class device can
+    /// ever be handed it. Both Turbo variants are gated out on A12/A13 by the Argmax
+    /// support matrix and on sub-6 GB devices by RAM, so a prewarm carrying 300s can
+    /// only start on hardware where a long compile is the expected outcome.
+    func testTheWiderBudgetIsUnreachableFromTheDevicesThatNeedTheShortOne() {
+        let constrained = [
+            makeCapabilities(ramGB: 4, model: "iPhone12,1"),   // iPhone 11, A13 — issue #362
+            makeCapabilities(ramGB: 4, model: "iPhone11,2"),   // iPhone XS, A12
+            makeCapabilities(ramGB: 4, model: "iPhone13,2")    // iPhone 12, A14, supported but 4 GB
+        ]
+        for capabilities in constrained {
+            for identifier in [turbo632, turbo954] {
+                guard let turbo = ModelInfo.forIdentifier(identifier) else {
+                    XCTFail("\(identifier) is missing from the catalogue")
+                    return
+                }
+                XCTAssertFalse(
+                    turbo.isSupported(on: capabilities),
+                    "\(identifier) must stay gated on \(capabilities.deviceModelIdentifier)"
+                )
+            }
+        }
+    }
+
+    /// Every budget has to be a usable deadline. A zero or negative value would make
+    /// `withPrewarmTimeout` fire before the compile starts.
+    func testEveryCatalogueEntryDeclaresAUsableBudget() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertGreaterThan(
+                model.prewarmTimeoutSeconds,
+                0,
+                "\(model.identifier) declares a non-positive prewarm budget"
+            )
+        }
     }
 }

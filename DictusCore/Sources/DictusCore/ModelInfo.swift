@@ -59,6 +59,67 @@ public struct ModelInfo: Identifiable {
     /// Whether this model is shown in the download catalog or only kept for backward compat.
     public let visibility: CatalogVisibility
 
+    /// How long the Core ML prewarm is allowed to run for this model before the
+    /// deadline guard gives up (issue #406).
+    ///
+    /// WHY the budget belongs to the model and not to the app:
+    /// the guard serves two opposite jobs at once. On a compile that will never
+    /// finish — Whisper Small on an unsupported A13, issue #362 — it is the only
+    /// thing standing between the user and an endless spinner, so it wants to be
+    /// short. On Turbo it has to let a legitimately long compile run to the end, so
+    /// it wants to be long. One number cannot be both, and raising the global one to
+    /// suit Turbo would make every #362-class device wait twice as long to be told
+    /// what it could have been told in two minutes.
+    ///
+    /// Only the WhisperKit download path consumes this today
+    /// (`ModelManager.downloadWhisperKitModel`). The Parakeet path compiles through
+    /// FluidAudio and has never carried a deadline guard of any kind, so the value on
+    /// `parakeet-tdt-0.6b-v3` is declarative until one exists.
+    public let prewarmTimeoutSeconds: Int
+
+    /// The budget a model gets when its entry does not ask for another one.
+    ///
+    /// 120s was the Phase 37 global (issue #104), calibrated against the ~17s a
+    /// Parakeet Encoder compile took on an iPhone 15 Pro Max. It stays the default:
+    /// issue #406 established that it is wrong for Turbo, not that it is wrong
+    /// everywhere, and no other variant has been reported timing out.
+    ///
+    /// Declared here rather than at the call site so the catalogue's default and
+    /// `ModelManager`'s fallback for an unknown identifier cannot drift apart.
+    public static let defaultPrewarmTimeoutSeconds = 120
+
+    /// WHY an initializer written by hand:
+    /// `prewarmTimeoutSeconds` needs a default, so that giving models their own
+    /// budget did not mean writing `120` onto seven entries with nothing to say
+    /// about it. A `let` carrying an inline initial value is excluded from the
+    /// implicit memberwise initializer entirely, so a default is only reachable
+    /// through an explicit initializer — or by making the property a `var`, which
+    /// would leave the catalogue with one mutable stored field among eight.
+    ///
+    /// Deliberately internal rather than public: nothing outside DictusCore builds a
+    /// `ModelInfo`, and the implicit initializer this replaces was internal too.
+    init(
+        identifier: String,
+        displayName: String,
+        sizeBytes: Int64,
+        engine: SpeechEngine,
+        accuracyScore: Double,
+        speedScore: Double,
+        description: String,
+        visibility: CatalogVisibility,
+        prewarmTimeoutSeconds: Int = ModelInfo.defaultPrewarmTimeoutSeconds
+    ) {
+        self.identifier = identifier
+        self.displayName = displayName
+        self.sizeBytes = sizeBytes
+        self.engine = engine
+        self.accuracyScore = accuracyScore
+        self.speedScore = speedScore
+        self.description = description
+        self.visibility = visibility
+        self.prewarmTimeoutSeconds = prewarmTimeoutSeconds
+    }
+
     // MARK: - Deprecated label properties (backward compat)
 
     /// Use accuracyScore instead. Kept temporarily for existing UI references.
@@ -189,22 +250,112 @@ public struct ModelInfo: Identifiable {
             description: "Fast and accurate (NVIDIA)",
             visibility: .available
         ),
-        // Phase 37 (issue #104): Whisper Turbo re-introduced using Argmax's
-        // iPhone-supported quantized variant `openai_whisper-large-v3_turbo_954MB`.
+        // Phase 37 (issue #104): Whisper Turbo re-introduced using an Argmax
+        // iPhone-supported QUANTIZED variant.
         //
         // The previous non-quantized `openai_whisper-large-v3_turbo` identifier was
         // the root cause of the historical failures (2026-03 removals + 2026-04-22
         // retest on iPhone 15 Pro Max): that build is M-series-only and triggers
         // `ANE model load has failed ... Must re-compile the E5 bundle` on iPhone
         // ANE regardless of chip generation, because the non-quantized TextDecoder
-        // exceeds the mobile ANE's memory budget.
+        // exceeds the mobile ANE's memory budget. That remains true of the identifier
+        // it names; both quantized variants below are unaffected by it.
+        //
+        // Issue #408 changed WHICH quantized variant "Turbo" means. On the French
+        // dictation corpus measured 2026-08-25 for #171
+        // (https://github.com/getdictus/dictus-ios/issues/171#issuecomment-5409496092)
+        // `_954MB` won no clip of five and hallucinated on three, and translated a
+        // French sentence carrying English loanwords into English instead of
+        // transcribing it. `_v20240930_turbo_632MB` won or tied on four of five,
+        // hallucinated on one, and is 39% smaller. Both ship the same four
+        // `.mlmodelc` artefacts and carry the same Argmax device gate, so
+        // `directoryPatterns`, `requiredPaths` and the RAM rule all stay as they were.
         //
         // Source of truth: https://huggingface.co/argmaxinc/whisperkit-coreml/blob/main/config.json
-        // iPhone 14/15/16/17 families (identifiers iPhone15,iPhone16,iPhone17,iPhone18)
-        // list this `_954MB` variant as supported.
+        // The A15 family (iPhone14) and the A16/A17 Pro/A18/A19 family (iPhone15,
+        // iPhone16, iPhone17, iPhone18, iPad15,7-8, iPad16,1-2) list BOTH quantized
+        // turbo variants as supported. Neither is listed for A12/A13 or A14.
+        ModelInfo(
+            identifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
+            displayName: "Turbo",
+            // 645 MB measured against a name that says 632 MB — the same gap the
+            // `_954MB` entry below carries, for the same reason. AudioEncoder
+            // (429 MB) + TextDecoder (203 MB) come to the 632 MB in the name, which
+            // is the model; `directoryPatterns: ["<variant>/"]` then pulls the whole
+            // folder, including the 12 MB TextDecoderContextPrefill.mlmodelc that
+            // `requiredPaths` does not require. The name describes the model; this
+            // constant describes the download.
+            //
+            // Re-derived 2026-08-25 by the method described above
+            // `allIncludingDeprecated`, which reproduces `1_052_848_880` exactly.
+            sizeBytes: 645_668_913,
+            engine: .whisperKit,
+            // `speedScore` MEASURED on device 2026-08-25, iPhone 15 Pro Max, iOS 26.6,
+            // build `0d88286@HEAD`: 47.33 s of French dictation transcribed in 5 393 ms,
+            // so **8.78x realtime**, and 8.8x to 12.5x across the shorter clips in the
+            // same session. That falsifies #171's hypothesis 1, which predicted this
+            // variant would stay slower than Medium because turbo distils only the
+            // decoder.
+            //
+            // Medium's comparison points, both on this device and both slower: 4.16x
+            // measured warm in #171 (2026-05-09, a different build), and 6.10x measured
+            // cold in the same session as the reading above. Turbo beats it either way,
+            // by somewhere between 1.4x and 2.1x — the spread is what happens when the
+            // two numbers come from different sessions and different warm states, and
+            // it is stated here rather than collapsed into the flattering end of it.
+            //
+            // The scale's other measured anchors, all iPhone 15 Pro Max: Small 17.3x at
+            // 0.95, Medium 4.16x at 0.55. 8.78x sits between them, hence 0.75 — one
+            // notch under Parakeet, clearly above Medium, which is what the numbers say
+            // and what the card has to convey.
+            //
+            // `accuracyScore` 0.9 is unchanged and still HAND-ASSIGNED, like every other
+            // entry's. The #171 corpus run puts this variant at or above Parakeet (0.85)
+            // and above Medium (0.8), so 0.9 is consistent with what was measured — but
+            // consistent is not derived. A real WER recalibration of the whole catalogue
+            // is still owed and still needs its own issue.
+            accuracyScore: 0.9,
+            speedScore: 0.75,
+            description: "Most accurate, and fast",
+            visibility: .available,
+            // 300s, and it is a GUESS rather than a measurement (issue #406).
+            //
+            // Nobody has ever watched a Turbo compile finish on an iPhone. The flat
+            // 120s guard cut every attempt short, on both variants, so the real
+            // duration is unknown for both. The only figure that exists at all is the
+            // "~2 min on a 15 Pro Max" quoted in `ModelLoadingOverlay.swift`, and that
+            // prose describes the `_954MB` variant this entry replaced. 300 is 2.5x
+            // it: room for a slow-but-real compile under thermal throttling or disk
+            // pressure. It does NOT bound a hang — see #427 and the note at the call
+            // site: this budget reports, it does not interrupt.
+            //
+            // The maintainer's iPhone 15 Pro Max hit the 120s guard on THIS variant on
+            // 2026-08-25, which is what shows issue #408's 39% size cut does not on
+            // its own bring the compile inside the old budget.
+            //
+            // This number is meant to be replaced by a measurement, and produces one
+            // for free: the first compile that completes under it logs
+            // `modelCompilationCompleted durationMs`, the first real reading of a Turbo
+            // compile anyone will have. Do not then shrink 300 to hug that reading —
+            // it will be one device, in one thermal state, with one amount of free
+            // disk. The TestFlight reporter had 5.3 GB free of 254 GB.
+            prewarmTimeoutSeconds: 300
+        ),
+        // Superseded by the entry above (issue #408). Kept resolvable, and only
+        // resolvable: a user who already pulled 1.05 GB of Turbo on an earlier build
+        // keeps dictating with it, keeps seeing it in the Settings "Downloaded"
+        // section, and can delete it from there — while `available(on:)` stops
+        // offering it, so nobody downloads it again. Same soft-deprecation contract
+        // as Tiny/Base, and the reason there is no launch-time `activeModel` rewrite:
+        // that would have cost an existing Turbo user either a 645 MB download they
+        // did not ask for or a silent move off the model they picked.
+        //
+        // WHY the display name gains a qualifier: a user who holds both variants
+        // would otherwise read two rows both called "Turbo" in that section, with
+        // nothing but the size to separate them. Follows "Small (Quantized)".
         ModelInfo(
             identifier: "openai_whisper-large-v3_turbo_954MB",
-            displayName: "Turbo",
+            displayName: "Turbo (Legacy)",
             // 1052 MB measured against a name that says 954 MB, and both are right:
             // TextDecoder + AudioEncoder + their `.mil` files come to ~954 MB, which
             // is the model. The folder also ships TextDecoderContextPrefill.mlmodelc
@@ -216,7 +367,16 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.9,
             speedScore: 0.2,
             description: "Most accurate but slowest",
-            visibility: .available
+            visibility: .deprecated,
+            // The same 300s as the entry that supersedes it, for a stronger reason:
+            // `_954MB` is the variant the 2026-08-25 TestFlight report actually timed
+            // out on at 120s. Declaring 120 here would leave the catalogue asserting a
+            // budget the field has already disproved for this exact model.
+            //
+            // Unreachable in practice: `available(on:)` no longer offers this variant,
+            // so no download — and therefore no prewarm — can start for it. Kept
+            // correct rather than kept convenient.
+            prewarmTimeoutSeconds: 300
         )
     ]
 
@@ -301,10 +461,11 @@ public struct ModelInfo: Identifiable {
 
     /// Whether this model is safe to expose on a device with the given capabilities.
     ///
-    /// For the quantized Whisper Turbo (`_954MB`): requires ≥ 6 GB RAM. This matches
-    /// Argmax's published compatibility matrix: all iPhone 14/15/16/17 families
-    /// (iPhone15,X through iPhone18,X in Apple identifier nomenclature) list this
-    /// variant as supported, and those devices ship with 6 GB+ RAM.
+    /// For the quantized Whisper Turbo variants (`_v20240930_turbo_632MB` and the
+    /// deprecated `_954MB`): requires ≥ 6 GB RAM. This matches Argmax's published
+    /// compatibility matrix: the iPhone 14/15/16/17 families (iPhone14,X through
+    /// iPhone18,X in Apple identifier nomenclature) list both variants as supported,
+    /// and those devices ship with 6 GB+ RAM.
     /// For every other model: returns true — existing catalog entries have already
     /// been validated on the minimum supported device class.
     ///
@@ -357,7 +518,11 @@ public struct ModelInfo: Identifiable {
             return Self.a12a13SupportedIdentifiers.contains(identifier) ? nil : .hardwareGeneration
         }
         switch identifier {
-        case "openai_whisper-large-v3_turbo_954MB":
+        // Both quantized Turbo variants (issue #408): Argmax lists them for exactly
+        // the same device families, so they share one rule. The deprecated `_954MB`
+        // is matched here too — it is still installed on devices, so the Settings
+        // "Downloaded" row it renders must be able to say why it is disabled.
+        case "openai_whisper-large-v3-v20240930_turbo_632MB", "openai_whisper-large-v3_turbo_954MB":
             return capabilities.physicalMemoryGB >= 6 ? nil : .insufficientMemory(requiredGB: 6)
         default:
             return nil

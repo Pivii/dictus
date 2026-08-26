@@ -229,11 +229,14 @@ public enum SharedKeys {
     /// Bool: true when the user has an active Pro subscription.
     /// Written by SubscriptionManager (DictusApp), read by the keyboard extension.
     public static let proActive = "dictus.proActive"
-    /// Bool: per-feature toggle for Smart Mode, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for Smart Mode. Seeded to true, once, by
+    /// `ProStatusManager.seedFeatureTogglesIfNeeded()`; written afterwards only by the
+    /// Settings toggle. Stored, never merely registered -- the keyboard extension reads
+    /// these and a registered default would not reach it (#401).
     public static let smartModeEnabled = "dictus.smartModeEnabled"
-    /// Bool: per-feature toggle for History, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for History. Seeded like `smartModeEnabled` above.
     public static let historyEnabled = "dictus.historyEnabled"
-    /// Bool: per-feature toggle for Vocabulary, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for Vocabulary. Seeded like `smartModeEnabled` above.
     public static let vocabularyEnabled = "dictus.vocabularyEnabled"
 
     // MARK: - Retired keys

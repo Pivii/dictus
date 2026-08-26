@@ -1,0 +1,11 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.13s)
+✓ [T1-fr-casual]  (success, 1768ms)
+✓ [T2-fr-deja-partiellement-en]  (success, 1578ms)
+✓ [T3-it-clavier-fr]  (success, 1714ms)
+✓ [T4-it-auto]  (success, 1716ms)
+✓ [T5-saut-de-ligne]  (success, 1079ms)
+✓ [T6-deja-en]  (success, 1321ms)
+
+Summary: 6/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
