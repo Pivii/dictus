@@ -294,9 +294,22 @@ class ModelManager: ObservableObject {
             // download to it on 2026-08-25, and the maintainer reproduced it the same
             // day on the smaller variant from issue #408. Raising the global instead
             // would have punished the opposite case: Whisper Small on an unsupported
-            // A13 (issue #362) never finishes compiling, and this guard is the only
-            // thing that ends that spinner. `ModelInfo.prewarmTimeoutSeconds` lets the
-            // two models disagree.
+            // A13 (issue #362) takes far longer than it has any business taking.
+            // `ModelInfo.prewarmTimeoutSeconds` lets the two models disagree.
+            //
+            // WHAT THIS GUARD DOES NOT DO (issue #427): it does not interrupt the
+            // compile. `withPrewarmTimeout` races a sleep against `WhisperKit(config)`
+            // in a task group, and a task group cannot return until every child has
+            // finished — `cancelAll()` is a request, and a Core ML compile neither
+            // checks cancellation nor offers a suspension point where it could. So the
+            // error is thrown on time and surfaces only once the compile has finished
+            // anyway. Measured 2026-08-26: a 5s budget reported failure after 212s, on
+            // a compile that had by then completed and warmed the cache.
+            //
+            // So do not read this budget as protection against a hang. It bounds
+            // nothing; it reports, afterwards, that the work took longer than a number.
+            // #362 in particular is NOT protected by it, whatever an earlier version of
+            // this comment claimed.
             //
             // Whatever this resolves to is the number that reaches the user: it is
             // carried by the thrown `.prewarmTimeout(seconds:)` into both the
