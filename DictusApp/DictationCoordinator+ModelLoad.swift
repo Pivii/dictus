@@ -9,6 +9,32 @@
 import Foundation
 import DictusCore
 
+/// Where a path logs `engineWarmUpAttempt`, which is not the same for all of them.
+enum WarmUpAttemptPosition {
+    /// Before the model load. The only marker a hang on this path leaves in the log.
+    case beforeModelLoad
+    /// Immediately before the audio warm-up, where the launch path has always put it.
+    case beforeAudioWarmUp
+}
+
+/// One-shot latch deciding which of a launch preload's two arms gets to publish.
+///
+/// The load and its deadline race, the first to finish wins, and the loser writes
+/// nothing. Kept separate from `modelLoadEpoch` deliberately (second review, finding 5):
+/// settling a race is a per-run question and must not move shared state that other loads
+/// read to decide whether they were abandoned.
+@MainActor
+final class LaunchPreloadOutcome {
+    private var isSettled = false
+
+    /// Returns `true` to exactly one caller, ever.
+    func settle() -> Bool {
+        if isSettled { return false }
+        isSettled = true
+        return true
+    }
+}
+
 extension DictationCoordinator {
 
     /// Load the active model at launch, under a deadline the app actually honours.
@@ -32,7 +58,7 @@ extension DictationCoordinator {
     func runLaunchPreload() async {
         let modelName = defaults.string(forKey: SharedKeys.activeModel) ?? "openai_whisper-small"
         let deadlineSeconds = ModelInfo.preloadDeadlineSeconds(for: modelName)
-        let epoch = modelLoadEpoch
+        let outcome = LaunchPreloadOutcome()
 
         setModelLoadState(.loading, reason: "init-preload")
 
@@ -60,7 +86,9 @@ extension DictationCoordinator {
         // screen stops covering the app.
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(deadlineSeconds) * 1_000_000_000)
-            guard let self, self.claimModelLoadOutcome(epoch: epoch) else { return }
+            guard let self, outcome.settle() else { return }
+            // Giving up IS what moves the epoch — nothing else does.
+            self.modelLoadEpoch += 1
             // Remember what we gave up on, so returning to the foreground does not
             // quietly start the same compile again (finding 3).
             self.abandonedModel = modelName
@@ -76,9 +104,12 @@ extension DictationCoordinator {
         // The load arm. The same work as before; the only new thing is that it has to
         // claim the outcome before publishing it, because the deadline may have won.
         do {
-            let loadedName = try await loadActiveModelIntoMemory(context: "init-preload")
+            let loadedName = try await loadActiveModelIntoMemory(
+                context: "init-preload",
+                attemptLog: .beforeAudioWarmUp
+            )
             PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
-            guard claimModelLoadOutcome(epoch: epoch) else {
+            guard outcome.settle() else {
                 // Reachable only in the narrow window where the load published its
                 // engine and the deadline claimed the outcome immediately afterwards.
                 // A load abandoned any earlier than that throws instead and lands in
@@ -100,7 +131,7 @@ extension DictationCoordinator {
                 context: "init-preload",
                 error: error.localizedDescription
             ))
-            guard claimModelLoadOutcome(epoch: epoch) else { return }
+            guard outcome.settle() else { return }
             setModelLoadState(.idle, reason: "init-preload-failed")
         }
     }
@@ -140,19 +171,22 @@ extension DictationCoordinator {
         do {
             try configureAudioSessionForWarmUp()
             setModelLoadState(.loading, reason: "didBecomeActive-warmup")
-            _ = try await loadActiveModelIntoMemory(context: "didBecomeActive")
+            _ = try await loadActiveModelIntoMemory(
+                context: "didBecomeActive",
+                attemptLog: .beforeModelLoad
+            )
             PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
             // Claim before publishing, as the launch preload does: this warm-up can be
             // abandoned mid-flight too, and `.ready` would then announce an engine that
             // was discarded before it was installed (finding 5).
-            guard claimModelLoadOutcome(epoch: epoch) else { return }
+            guard !loadWasAbandoned(since: epoch) else { return }
             setModelLoadState(.ready, reason: "didBecomeActive-success")
         } catch {
             PersistentLog.log(.engineWarmUpFailed(
                 context: "didBecomeActive",
                 error: error.localizedDescription
             ))
-            guard claimModelLoadOutcome(epoch: epoch) else { return }
+            guard !loadWasAbandoned(since: epoch) else { return }
             setModelLoadState(.idle, reason: "didBecomeActive-failed")
         }
     }
@@ -174,6 +208,12 @@ extension DictationCoordinator {
     ///   - remembering the model stops `didBecomeActive` restarting the same compile
     ///     the moment the user backgrounds the app and comes back (finding 3).
     ///
+    /// `modelIdentifier` is what the SCREEN was preparing, not whatever `activeModel`
+    /// happens to be (second review, finding 4). A freshly downloaded model is prepared
+    /// before it becomes active, so reading the active model here recorded the wrong one
+    /// and then suppressed every foreground warm-up for the rest of the process on
+    /// behalf of a model nobody had abandoned.
+    ///
     /// WHAT IT DELIBERATELY DOES NOT DO is take the init lock away. An earlier version
     /// did, and that was worse than the bug it fixed: the abandoned compile keeps
     /// running, the Neural Engine cannot compile two models at once, and a model picked
@@ -187,8 +227,8 @@ extension DictationCoordinator {
     /// keyboard — comes back the moment they tap it. The model they pick next starts
     /// loading when the abandoned compile lets go of the hardware, and not before.
     /// See `awaitInFlightEngineInit` for why that trade is the right way round.
-    func abandonInFlightModelLoad(reason: String) {
-        let modelName = defaults.string(forKey: SharedKeys.activeModel) ?? "unknown"
+    func abandonInFlightModelLoad(reason: String, modelIdentifier: String) {
+        let modelName = modelIdentifier
         modelLoadEpoch += 1
         abandonedModel = modelName
         setModelLoadState(.idle, reason: reason)
@@ -198,6 +238,40 @@ extension DictationCoordinator {
             action: "abandonedByUser",
             details: "reason=\(reason) compileStillRunning=true nextLoadQueuesBehindIt=true"
         ))
+    }
+
+    /// Wait for the Neural Engine to be free of any Core ML compile, then take it.
+    ///
+    /// Balanced by `releaseNeuralEngine(from:)`, and every caller must balance it —
+    /// `defer` is the only safe way to do that, because the work in between can throw.
+    ///
+    /// WHY POLLING: it is the idiom `ModelManager` already used for the same job, it
+    /// composes with `@MainActor` without a continuation, and the thing being waited on
+    /// takes minutes. A 500ms granularity costs nothing against a 200s compile.
+    ///
+    /// The check and the take are not separated by a suspension point, so no two callers
+    /// can leave this function holding the engine at once.
+    func acquireNeuralEngine(for holder: String) async {
+        if let current = neuralEngineHolder, current != holder {
+            PersistentLog.log(.diagnosticProbe(
+                component: "NeuralEngine",
+                instanceID: holder,
+                action: "queuedBehindCompile",
+                details: "heldBy=\(current)"
+            ))
+        }
+        while neuralEngineHolder != nil {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        neuralEngineHolder = holder
+    }
+
+    /// Give the Neural Engine back, if this holder still has it.
+    ///
+    /// The identity check makes a mismatched release a no-op rather than a way to hand
+    /// somebody else's compile away — the same reasoning as `clearInitTask(ifStillCurrent:)`.
+    func releaseNeuralEngine(from holder: String) {
+        if neuralEngineHolder == holder { neuralEngineHolder = nil }
     }
 
     /// Wait until no engine init is in flight, and report whether the one that finished
@@ -328,15 +402,20 @@ extension DictationCoordinator {
         return false
     }
 
-    /// Take ownership of the outcome for `epoch`, or report that someone already has.
+    /// Whether anything abandoned a load since `epoch` was captured.
     ///
-    /// The arbiter of the race above: the load and its deadline both call it, the first
-    /// one wins, and the loser writes nothing. Claiming bumps the epoch, so any load
-    /// still running against the claimed generation is left unable to publish — which is
-    /// exactly what an abandoned load should be.
-    func claimModelLoadOutcome(epoch: Int) -> Bool {
-        guard epoch == modelLoadEpoch else { return false }
-        modelLoadEpoch += 1
-        return true
+    /// Read-only, and that is the point (second review, finding 5). This used to be a
+    /// claim that bumped the epoch on its way out, including on the happy path, which
+    /// made the epoch mean two things at once: "someone gave up" and "someone finished".
+    /// A load created in the window between another load completing and claiming
+    /// captured the pre-bump value and was then discarded as abandoned — leaving the
+    /// state `.ready` for one model while `currentModelName` held another, and the
+    /// preparation screen dismissing on a model that was not loaded.
+    ///
+    /// The epoch now moves for exactly one reason: a load was abandoned. Deciding which
+    /// of two racing arms publishes is a different question, and `LaunchPreloadOutcome`
+    /// answers it without touching state other loads read.
+    func loadWasAbandoned(since epoch: Int) -> Bool {
+        epoch != modelLoadEpoch
     }
 }

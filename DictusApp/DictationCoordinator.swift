@@ -168,6 +168,21 @@ class DictationCoordinator: ObservableObject {
     /// Internal for the same reason as `initTask`, and written only beside it.
     var initTaskEpoch = 0
 
+    /// Who holds the Neural Engine for a Core ML compile right now, or nil if it is free.
+    ///
+    /// THE ANE IS ONE PIECE OF HARDWARE AND IT NEEDS ONE LOCK. It had two, neither aware
+    /// of the other: `ModelManager.isPrewarming` covered the download path, `initTask`
+    /// covered `ensureEngineReady`, and nothing covered the pair. That gap is how the
+    /// same "two simultaneous compiles" hazard was found twice by two reviews, through
+    /// two different doors — the second one being a model card tapped on a list the
+    /// escape had just uncovered. Fixing the door each time would have left a third.
+    ///
+    /// Written and read only through `acquireNeuralEngine`/`releaseNeuralEngine` in
+    /// `DictationCoordinator+ModelLoad.swift`. It lives on the singleton deliberately:
+    /// `ModelManager` is instantiated more than once (onboarding builds its own), so a
+    /// lock owned by an instance never covered the other instance either.
+    var neuralEngineHolder: String?
+
     /// The model the user walked away from preparing, or that blew its launch deadline.
     ///
     /// Process-scoped on purpose, and the reason is the shape of issue #428 itself: what
@@ -219,12 +234,27 @@ class DictationCoordinator: ObservableObject {
     /// length budget issue #146 calibrated against it. One named entry point is a
     /// cheaper thing to expose than the private members it touches.
     ///
-    /// `context` is passed rather than fixed: both the launch preload and the
-    /// foreground warm-up run this, and a log line naming the wrong one is the kind of
-    /// small lie the debug log cannot afford — its reader is an agent.
-    func loadActiveModelIntoMemory(context: String) async throws -> String {
+    /// `context` is passed rather than fixed: both the launch preload and the foreground
+    /// warm-up run this, and a log line naming the wrong one is the kind of small lie the
+    /// debug log cannot afford — its reader is an agent.
+    ///
+    /// `attemptLog` exists because the two paths have always logged the attempt at
+    /// different points and must keep doing so. The launch path logs it immediately
+    /// before the audio warm-up, where it has always been. The foreground path logs it
+    /// before the model load, because that line is the ONLY marker a hang on that path
+    /// leaves behind — and a hang there is the thing this whole branch is about (second
+    /// review, finding 6).
+    func loadActiveModelIntoMemory(
+        context: String,
+        attemptLog: WarmUpAttemptPosition
+    ) async throws -> String {
+        if attemptLog == .beforeModelLoad {
+            PersistentLog.log(.engineWarmUpAttempt(context: context))
+        }
         try await ensureEngineReady()
-        PersistentLog.log(.engineWarmUpAttempt(context: context))
+        if attemptLog == .beforeAudioWarmUp {
+            PersistentLog.log(.engineWarmUpAttempt(context: context))
+        }
         try audioEngine.warmUp()
         return currentModelName ?? "unknown"
     }
@@ -1342,17 +1372,17 @@ class DictationCoordinator: ObservableObject {
             do {
                 try await ensureEngineReady()
                 PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
-                // Claim before publishing (finding 5). This load can be abandoned mid
-                // flight like any other, and writing `.ready` afterwards would announce
-                // an engine that was discarded before it was ever installed.
-                guard self.claimModelLoadOutcome(epoch: epoch) else { return }
+                // Check before publishing (first review, finding 5). This load can be
+                // abandoned mid-flight like any other, and writing `.ready` afterwards
+                // would announce an engine that was discarded before it was installed.
+                guard !self.loadWasAbandoned(since: epoch) else { return }
                 self.setModelLoadState(.ready, reason: "selectModel-proactive-success")
             } catch {
                 PersistentLog.log(.engineWarmUpFailed(
                     context: "selectModel-proactive",
                     error: error.localizedDescription
                 ))
-                guard self.claimModelLoadOutcome(epoch: epoch) else { return }
+                guard !self.loadWasAbandoned(since: epoch) else { return }
                 self.setModelLoadState(.idle, reason: "selectModel-proactive-failed")
             }
         }
@@ -1424,6 +1454,15 @@ private extension DictationCoordinator {
             ))
             throw error
         }
+
+        // Nothing else may be compiling while this one runs, whichever path started it.
+        let engineHolder = "WhisperKitLoad:\(modelName)"
+        await acquireNeuralEngine(for: engineHolder)
+        defer { releaseNeuralEngine(from: engineHolder) }
+
+        // Re-check after the wait: whatever we queued behind may have loaded exactly
+        // what this caller wanted, and a redundant compile is still a compile.
+        if whisperKit != nil, currentModelName == modelName { return }
 
         PersistentLog.log(.diagnosticProbe(
             component: "WhisperKitLoad",
@@ -1536,6 +1575,13 @@ private extension DictationCoordinator {
                 ))
                 throw error
             }
+
+            // Same gate as the WhisperKit path: one compile on the ANE at a time.
+            let engineHolder = "ParakeetLoad:\(modelName)"
+            await acquireNeuralEngine(for: engineHolder)
+            defer { releaseNeuralEngine(from: engineHolder) }
+
+            if currentModelName == modelName, whisperKit == nil { return }
 
             PersistentLog.log(.diagnosticProbe(
                 component: "ParakeetLoad",

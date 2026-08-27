@@ -100,10 +100,12 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
 
-    /// Serial prewarm lock — only one CoreML compilation at a time.
-    /// The Neural Engine cannot handle multiple models compiling simultaneously
-    /// (causes ANE "E5 bundle" errors). Downloads are parallel, prewarms are serial.
-    private var isPrewarming = false
+    /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
+    /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
+    /// compile two models at once, and a lock owned by this class covered neither
+    /// `ensureEngineReady` — which compiles too and never consulted it — nor the second
+    /// `ModelManager` that onboarding builds. One piece of hardware, one lock, on the
+    /// singleton that both paths can reach.
 
     /// Directory inside the App Group container where model files are stored.
     /// Using the shared container means the keyboard extension could also access
@@ -279,13 +281,12 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Wait for any other prewarm to finish (poll on MainActor is safe)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000) // 500ms
-            }
-
-            isPrewarming = true
-            defer { isPrewarming = false }
+            // Take the Neural Engine. This waits out any compile already running,
+            // including one started by `ensureEngineReady` on the dictation path, which
+            // the old instance-owned flag could not see (issue #428, second review).
+            let engineHolder = "prewarm:\(identifier)"
+            await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             PersistentLog.log(.modelCompilationStarted(name: identifier))
 
@@ -451,19 +452,18 @@ class ModelManager: ObservableObject {
                 }
             }
 
-            // Step 2: Wait for any other prewarm to finish (ANE conflict avoidance)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
+            // Step 2: take the Neural Engine, waiting out any compile already on it —
+            // this path's or the dictation path's (issue #428, second review).
+            let engineHolder = "prewarm:\(identifier)"
+            await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
-            isPrewarming = true
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
-            defer { isPrewarming = false }
 
             // Step 4: Load and compile CoreML models.
             // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
@@ -571,9 +571,12 @@ class ModelManager: ObservableObject {
     ///
     /// What does NOT happen is the compile stopping. It cannot be stopped; see
     /// `DictationCoordinator.abandonInFlightModelLoad`.
-    func abandonPreparation() {
+    func abandonPreparation(modelIdentifier: String) {
         preparationDismissedByUser = true
-        DictationCoordinator.shared.abandonInFlightModelLoad(reason: "user-left-preparation-screen")
+        DictationCoordinator.shared.abandonInFlightModelLoad(
+            reason: "user-left-preparation-screen",
+            modelIdentifier: modelIdentifier
+        )
     }
 
     /// Deletes a model from disk and updates state.

@@ -426,7 +426,9 @@ struct ModelLoadingOverlay: View {
     /// there is no live preparation left for it to re-cover the screen with.
     private func escape() {
         modelManager.preparationWaitStartedAt = nil
-        modelManager.abandonPreparation()
+        // The model this SCREEN was preparing, which is not always the active one
+        // (second review, finding 4).
+        modelManager.abandonPreparation(modelIdentifier: modelIdentifier)
         isPresented = false
         onEscape?()
     }
@@ -437,6 +439,12 @@ struct ModelLoadingOverlay: View {
         // "Model ready" celebration on a failure (issue #207). The parent view
         // surfaces the error message once the cover is gone.
         if case .error = currentModelState {
+            // Clear the clock on the way out, or the next attempt inherits it: the
+            // stamp was taken during the failed prewarm, so a Retry would compute a
+            // negative remaining time and reveal the escape in the first frames of a
+            // healthy compile — the one thing `revealDelaySeconds` forbids (second
+            // review, finding 3).
+            modelManager.preparationWaitStartedAt = nil
             isPresented = false
             return
         }

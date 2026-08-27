@@ -74,12 +74,20 @@ struct DictusApp: App {
         // preparation screen — no Settings, no model list, no way to pick something
         // else. One dead compile locked the app out of itself on every later launch.
         //
-        // WHY here, above everything: this must run before any reader. The one thing
-        // that touches shared state earlier is `DictationCoordinator.shared`, built as
-        // this struct's stored-property default before this body runs — and it neither
-        // reads nor writes this key synchronously. Its own preload writes "loading"
-        // from a `Task` on the main actor, which cannot start until this initializer
-        // returns, and that write is the honest one: that load really is in flight.
+        // WHY here, above everything: this must run before any reader.
+        //
+        // The reader that could plausibly beat it is `DictationCoordinator.shared`, and
+        // it cannot. `@StateObject`'s initializer takes its value as an
+        // `@autoclosure @escaping` closure, so `DictationCoordinator.shared` is not
+        // built when this struct is initialized at all — SwiftUI calls that closure the
+        // first time it needs the object, which is during the first `body` evaluation,
+        // after `init()` has returned. (An earlier version of this comment said it was
+        // built as a stored-property default before the body ran. The conclusion was
+        // right and the reason was wrong, which is worse than saying nothing: the next
+        // person checks the reason.)
+        //
+        // The coordinator's own preload then writes "loading" from a main-actor `Task`,
+        // later still, and that write is the honest one — that load really is in flight.
         if ModelLoadState.clearStaleLoadingState(in: AppGroup.defaults) {
             // Two lines on purpose, and neither is redundant.
             //
