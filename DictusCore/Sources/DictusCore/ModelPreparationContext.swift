@@ -75,4 +75,24 @@ public enum ModelPreparationEscape {
     /// the screen refuses input for a real reason (#144) and a routine load must be
     /// allowed to finish undisturbed.
     public static let revealDelaySeconds = 45
+
+    /// The `setModelLoadState` reasons that mean "the app stopped waiting", as opposed
+    /// to "the load finished" (third review, finding D).
+    ///
+    /// Both outcomes write `.idle`, and a screen that cannot tell them apart congratulates
+    /// the user on a model that is not loaded. Kept here, next to the escape it belongs
+    /// to, so the strings the coordinator writes and the string the view tests have one
+    /// home rather than two.
+    /// The launch preload's deadline expired. Written by `runLaunchPreload`.
+    public static let deadlineExpiredReason = "init-preload-deadline"
+
+    /// The user took the escape. Written by `abandonInFlightModelLoad`.
+    public static let userLeftScreenReason = "user-left-preparation-screen"
+
+    public static let gaveUpReasons: Set<String> = [deadlineExpiredReason, userLeftScreenReason]
+
+    /// Whether a load-state reason means the app gave up rather than finished.
+    public static func reasonMeansGaveUp(_ reason: String) -> Bool {
+        gaveUpReasons.contains(reason)
+    }
 }

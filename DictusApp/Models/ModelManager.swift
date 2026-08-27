@@ -288,6 +288,14 @@ class ModelManager: ObservableObject {
             try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
             defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
+            // Captured before the compile, checked after it (third review, finding B).
+            // This prewarm compiles its own throwaway WhisperKit outside the coordinator's
+            // init lock, so abandoning a load does not stop it — and #174 has it adopt the
+            // model as active when it finishes. A user who escapes this preparation and
+            // picks a lighter model would have had their choice silently reverted, and
+            // the model they walked away from loaded into RAM instead.
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
+
             PersistentLog.log(.modelCompilationStarted(name: identifier))
 
             // Phase 37 instrumentation: capture timing + jetsam-headroom delta across prewarm.
@@ -370,10 +378,24 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one.
-            // The user explicitly chose it; without this they had to tap the card
-            // a second time, triggering a redundant second RAM load.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one. The user
+            // explicitly chose it; without this they had to tap the card a second time,
+            // triggering a redundant second RAM load.
+            //
+            // Unless they have since chosen otherwise. Escaping this preparation and
+            // picking another model is exactly that, and #174's convenience must not
+            // overrule it (finding B).
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -393,7 +415,12 @@ class ModelManager: ObservableObject {
             // Issue #144: eagerly load the now-active model into the coordinator's
             // RAM-resident WhisperKit instance. The compile above used a throwaway
             // WhisperKit just to populate the Core ML cache.
-            DictationCoordinator.shared.preloadActiveModel()
+            //
+            // Skipped when the user moved on: this would load the abandoned model into
+            // RAM and clear the memory that keeps it from being re-warmed (finding B).
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -466,6 +493,11 @@ class ModelManager: ObservableObject {
             try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
             defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
+            // Same guard as the WhisperKit path (finding B): captured before the compile,
+            // checked after it, so a preparation the user walked away from cannot make
+            // itself the active model behind their back.
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
+
             // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
@@ -496,9 +528,19 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one —
-            // see comment in the WhisperKit path.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one — see the
+            // comment in the WhisperKit path, including why the user's later choice wins.
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -511,8 +553,11 @@ class ModelManager: ObservableObject {
             // Released early for the same reason as the WhisperKit path above.
             DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
 
-            // Issue #144: same proactive load as the WhisperKit path — see comment there.
-            DictationCoordinator.shared.preloadActiveModel()
+            // Issue #144: same proactive load as the WhisperKit path — see comment there,
+            // including why an abandoned preparation does not get one.
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -564,8 +609,19 @@ class ModelManager: ObservableObject {
     /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
-        // A fresh request: the preparation screen is welcome again (issue #428).
-        preparationDismissedByUser = false
+
+        // DELIBERATELY DOES NOT clear `preparationDismissedByUser` (third review,
+        // finding C). Clearing it here contradicted the whole point of the escape: the
+        // user takes it, lands on this list, taps a lighter model — the one obvious
+        // thing to do — and the full-screen cover came straight back for as long as that
+        // load took, which behind an abandoned compile is minutes. They ended up exactly
+        // where they escaped from, with a second 45s wait for a second escape.
+        //
+        // Once someone has told us they want the app rather than the waiting screen,
+        // that answer holds for the session. The model card still shows its own state,
+        // so the load is not invisible — it just no longer takes the app hostage.
+        // `downloadModel` still clears it: starting a download is a new, explicit,
+        // long-running request rather than a choice among things already on disk.
         activeModel = identifier
         persistState()
         PersistentLog.log(.modelSelected(name: identifier))
@@ -585,7 +641,7 @@ class ModelManager: ObservableObject {
     func abandonPreparation(modelIdentifier: String) {
         preparationDismissedByUser = true
         DictationCoordinator.shared.abandonInFlightModelLoad(
-            reason: "user-left-preparation-screen",
+            reason: ModelPreparationEscape.userLeftScreenReason,
             modelIdentifier: modelIdentifier
         )
     }

@@ -60,6 +60,13 @@ extension DictationCoordinator {
         let deadlineSeconds = ModelInfo.preloadDeadlineSeconds(for: modelName)
         let outcome = LaunchPreloadOutcome()
 
+        // `outcome` settles the race between THIS preload's two arms. It knows nothing
+        // about loads started later, so the epoch is checked as well before either arm
+        // writes: a user who escapes at 45s and picks another model owns the shared
+        // state from that moment, and this preload must not write over it when its
+        // compile finally lands (third review, finding A).
+        let epoch = modelLoadEpoch
+
         setModelLoadState(.loading, reason: "init-preload")
 
         // The deadline arm. An independent task, NOT a child in a task group, and that
@@ -84,15 +91,15 @@ extension DictationCoordinator {
         // is the only thing ever available: the app stops *waiting*. `modelLoadState`
         // goes back to idle, the keyboard stops refusing mic taps, and the preparation
         // screen stops covering the app.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(deadlineSeconds) * 1_000_000_000)
-            guard let self, outcome.settle() else { return }
+        let deadlineArm = Task { @MainActor [weak self] in
+            try await Task.sleep(nanoseconds: UInt64(deadlineSeconds) * 1_000_000_000)
+            guard let self, !self.loadWasAbandoned(since: epoch), outcome.settle() else { return }
             // Giving up IS what moves the epoch — nothing else does.
             self.modelLoadEpoch += 1
             // Remember what we gave up on, so returning to the foreground does not
             // quietly start the same compile again (finding 3).
             self.abandonedModel = modelName
-            self.setModelLoadState(.idle, reason: "init-preload-deadline")
+            self.setModelLoadState(.idle, reason: ModelPreparationEscape.deadlineExpiredReason)
             PersistentLog.log(.diagnosticProbe(
                 component: "ModelPreload",
                 instanceID: modelName,
@@ -109,6 +116,17 @@ extension DictationCoordinator {
                 attemptLog: .beforeAudioWarmUp
             )
             PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
+            deadlineArm.cancel()
+            // A newer load owns the shared state now; this one publishes nothing.
+            guard !loadWasAbandoned(since: epoch) else {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPreload",
+                    instanceID: modelName,
+                    action: "supersededByNewerLoad",
+                    details: "loadedModel=\(loadedName)"
+                ))
+                return
+            }
             guard outcome.settle() else {
                 // Reachable only in the narrow window where the load published its
                 // engine and the deadline claimed the outcome immediately afterwards.
@@ -131,7 +149,8 @@ extension DictationCoordinator {
                 context: "init-preload",
                 error: DictationFailureMessage.diagnostic(for: error)
             ))
-            guard outcome.settle() else { return }
+            deadlineArm.cancel()
+            guard !loadWasAbandoned(since: epoch), outcome.settle() else { return }
             setModelLoadState(.idle, reason: "init-preload-failed")
         }
     }

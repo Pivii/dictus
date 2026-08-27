@@ -47,6 +47,16 @@ struct ModelLoadingOverlay: View {
     /// `ModelPreparationEscape.revealDelaySeconds` without finishing (issue #428).
     @State private var showEscape = false
 
+    /// Set when the load ended because the app STOPPED WAITING for it, rather than
+    /// because it finished (third review, finding D).
+    ///
+    /// Both outcomes leave `modelLoadState == .idle`, and `rawPhase` maps a downloaded
+    /// model plus `.idle` to `.ready` — so a deadline expiring with this screen up, the
+    /// keyboard-cold-start case issue #428 exists for, showed the user the "Model ready"
+    /// checkmark while the compile was still running and no engine was loaded. The
+    /// reason travels on the notification that already drives this screen.
+    @State private var loadGaveUp = false
+
     /// Tracks whether we have ever observed an active prep phase (downloading,
     /// compiling, or loading). Without this, the overlay would auto-dismiss
     /// when presented synchronously by the parent before `downloadModel`
@@ -158,7 +168,11 @@ struct ModelLoadingOverlay: View {
                 showEscape = true
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { note in
+            if let reason = note.userInfo?["reason"] as? String,
+               ModelPreparationEscape.reasonMeansGaveUp(reason) {
+                loadGaveUp = true
+            }
             checkForCompletion()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardPreparationRequested)) { _ in
@@ -469,6 +483,13 @@ struct ModelLoadingOverlay: View {
 
         // The wait is over, so the next one starts its own clock.
         modelManager.preparationWaitStartedAt = nil
+
+        // Nothing to celebrate: the app gave up on this load, the compile is still
+        // running, and no engine arrived. Leave without the checkmark (finding D).
+        guard !loadGaveUp else {
+            isPresented = false
+            return
+        }
 
         withAnimation(.easeInOut(duration: 0.35)) {
             showCompletion = true
