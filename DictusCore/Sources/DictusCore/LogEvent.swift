@@ -102,6 +102,13 @@ public enum LogEvent: Sendable {
     /// Emitted once per download, only past the tolerance, so its presence in a log
     /// is itself the signal that a hardcoded size has drifted.
     case modelDownloadSizeMismatch(name: String, catalogMB: Int, actualMB: Int)
+    /// A model whose files were already complete on disk was added back to the
+    /// downloaded list at launch (issue #433). One line per model, and the
+    /// reconciliation runs once per process, so these lines appear only on the
+    /// launch that repairs the disagreement and never on a later one. A line here
+    /// means a preparation died between its download and its compile — never an
+    /// ordinary download in flight.
+    case modelReconciledFromDisk(name: String)
 
     // MARK: Keyboard
     case keyboardDidAppear
@@ -355,7 +362,8 @@ public enum LogEvent: Sendable {
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelDeleteFailed, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged,
-             .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch:
+             .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch,
+             .modelReconciledFromDisk:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .keyRepeatStarted, .keyRepeatStopped,
@@ -438,6 +446,7 @@ public enum LogEvent: Sendable {
              .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadProgress,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
+             .modelReconciledFromDisk,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
              .dictationMessageSet, .dictationMessageDisplayed,
@@ -535,6 +544,7 @@ public enum LogEvent: Sendable {
         case .modelDeleteFailed: return "modelDeleteFailed"
         case .modelPrewarmStarted: return "modelPrewarmStarted"
         case .modelCleanupPerformed: return "modelCleanupPerformed"
+        case .modelReconciledFromDisk: return "modelReconciledFromDisk"
         case .keyboardDidAppear: return "keyboardDidAppear"
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
@@ -689,6 +699,8 @@ public enum LogEvent: Sendable {
             return "name=\(name)"
         case .modelCleanupPerformed(let name, let reason):
             return "name=\(name) reason=\(reason)"
+        case .modelReconciledFromDisk(let name):
+            return "name=\(name)"
         case .modelLoadStateChanged(let from, let to, let reason):
             return "from=\(from) to=\(to) reason=\(reason)"
         case .modelDownloadProgress(let name, let percent, let mbDownloaded, let mbTotal):
