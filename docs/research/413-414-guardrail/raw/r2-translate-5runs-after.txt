@@ -1,0 +1,86 @@
+
+━━ [T1-fr-casual] lang=fr stt=PK
+  raw:      salut Sophie alors pour le rendez-vous de jeudi je peux pas avant quinze heures j'ai un truc qui traîne le matin par contre après je suis libre toute l'après-midi dis moi si ça te va
+  polished #1: Hi Sophie, so for Thursday's appointment, I can't make it before 3 PM. I have a project that's taking up my morning, but after that, I'm free all afternoon. Let me know if that works for you.
+            (success, 3001ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: Hello Sophie, so for Thursday's appointment, I can't make it before 3 PM. I have something that's dragging me down in the morning, but after that I'm free all afternoon. Let me know if that works for you.
+            (success, 2520ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: Hi Sophie, so for Thursday's appointment, I can't come before 3 PM. I have something that's dragging me down in the morning, but after that, I'm free all afternoon. Let me know if that works for you.
+            (success, 2962ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: Hi Sophie, so for Thursday's appointment, I can't make it before 3 PM. I have a little issue in the morning, but after that, I'm free all afternoon. Let me know if that works for you.
+            (success, 1783ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: Hi Sophie, so for Thursday's meeting, I can't make it before 3 PM. I have something that's been hanging over me in the morning, but after that I'm free all afternoon. Let me know if that works for you.
+            (success, 1841ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+
+━━ [T2-fr-deja-partiellement-en] lang=fr stt=PK
+  raw:      bon alors pendant le call de ce matin le client a demandé si on pouvait avancer la deadline d'une semaine et euh moi j'ai dit que c'était jouable seulement si on fait un rollback sur la partie search parce que sinon on tient pas
+  polished #1: So, during this morning's call, the client asked if we could extend the deadline by a week. And I said that it was possible only if we did a rollback on the search part, because otherwise, we wouldn't be able to meet the deadline.
+            (success, 1774ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: Well, during this morning's call, the client asked if we could extend the deadline by a week, and I said it was possible only if we do a rollback on the search part because otherwise we won't be able to keep up.
+            (success, 1630ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: Well, during this morning's call, the client asked if we could extend the deadline by a week, and I said it was possible only if we rollback the search part because otherwise, we won't be able to
+            (success, 1619ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: Anyway, during this morning's call, the client asked if we could move the deadline forward by a week. And I said that it was possible only if we did a rollback on the search part because otherwise, we wouldn't be able to hold it.
+            (success, 1679ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: Well, during this morning's call, the client asked if we could extend the deadline by a week, and I said that it was possible only if we do a rollback on the search part because otherwise, we won't be able to
+            (success, 1602ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+
+━━ [T3-it-clavier-fr] lang=fr stt=PK
+  raw:      allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre
+  polished #1: Anyway, I wanted to tell you that tomorrow I won't be able to come to the office because I have something at the dentist at 11, but in the afternoon, if you want, we can meet around 3.
+            (success, 1723ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: Anyway, I feel like I wanted to tell you that I can't come to the office tomorrow because I have something from the dentist at 11, but in the afternoon, if you want, we can meet at 3.
+            (success, 2076ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: Okay, so I wanted to tell you that tomorrow I won't be able to come to the office because I have something with the dentist at 11, but in the afternoon we can meet around 3.
+            (success, 1843ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: Okay, I wanted to tell you that I'm not going to the office tomorrow because I have something to do with the dentist at 11, but in the afternoon, if you want, we can meet around 3.
+            (success, 1960ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: So, I wanted to tell you that I won't be able to come to the office tomorrow because I have something with the dentist at 11 AM. However, in the afternoon, if you want, we can meet around 3 PM.
+            (success, 1715ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+
+━━ [T4-it-auto] lang=it stt=PK
+  raw:      allora senti volevo dirti che domani non riesco a venire in ufficio perché ho una cosa dal dentista alle undici però nel pomeriggio ci sono se vuoi ci sentiamo verso le tre
+  polished #1: So, I wanted to tell you that tomorrow I won't be able to come to the office because I have something with the dentist at 11, but in the afternoon, if you want, we can meet around 3.
+            (success, 1816ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: Okay, so I feel like I wanted to tell you that tomorrow I won't be able to come to the office because I have something with the dentist at 11, but in the afternoon, if you want, we can meet around 3.
+            (success, 2333ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: Anyway, I felt like I wanted to tell you that I can't come to the office tomorrow because I have something with the dentist at 11. However, in the afternoon, if you want, we can meet around 3.
+            (success, 1741ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: So, I wanted to tell you that I won't be able to come to the office tomorrow because I have something with the dentist at 11 AM, but in the afternoon, if you want, we can meet at 3 PM.
+            (success, 1994ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: So you wanted to tell me that tomorrow I can't come to the office because I have something with the dentist at 11, but in the afternoon there are you want to meet around 3.
+            (success, 1678ms, detected=it→smart.translate.en, contract=0.40–3.00/en)
+
+━━ [T5-saut-de-ligne] lang=fr stt=PK
+  raw:      on se voit demain matin devant l'entrée
+prends les badges au passage
+  polished #1: See you tomorrow morning in front of the entrance
+take the badges as you pass.
+            (success, 1079ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: See you tomorrow morning in front of the entrance
+Take the badges as you pass
+            (success, 1084ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: See you tomorrow morning in front of the entrance
+take the badges on your way
+            (success, 1084ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: See you tomorrow morning in front of the entrance
+take the badges as you pass
+            (success, 1160ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: See you tomorrow morning in front of the entrance
+take the badges on your way
+            (success, 1076ms, detected=fr→smart.translate.en, contract=0.40–3.00/en)
+
+━━ [T6-deja-en] lang=en stt=PK
+  raw:      hey so I just got off the phone with the supplier and they can ship on the twelfth but only if we confirm the quantity before friday otherwise it slips to the next batch
+  polished #1: Hey, so I just got off the phone with the supplier and they can ship on the twelfth, but only if we confirm the quantity before Friday, otherwise it slips to the next batch.
+            (success, 1294ms, detected=en→smart.translate.en, contract=0.40–3.00/en)
+  polished #2: Hey, so I just got off the phone with the supplier, and they can ship on the twelfth, but only if we confirm the quantity before Friday, otherwise it slips to the next batch.
+            (success, 1333ms, detected=en→smart.translate.en, contract=0.40–3.00/en)
+  polished #3: Hey, so I just got off the phone with the supplier and they can ship on the twelfth, but only if we confirm the quantity before Friday, otherwise it slips to the next batch.
+            (success, 1305ms, detected=en→smart.translate.en, contract=0.40–3.00/en)
+  polished #4: Hey, so I just got off the phone with the supplier and they can ship on the twelfth but only if we confirm the quantity before Friday otherwise it slips to the next batch.
+            (success, 1237ms, detected=en→smart.translate.en, contract=0.40–3.00/en)
+  polished #5: Hey, so I just got off the phone with the supplier and they can ship on the twelfth but only if we confirm the quantity before Friday otherwise it slips to the next batch.
+            (success, 1222ms, detected=en→smart.translate.en, contract=0.40–3.00/en)
+
+── outcomes: 30/30 success

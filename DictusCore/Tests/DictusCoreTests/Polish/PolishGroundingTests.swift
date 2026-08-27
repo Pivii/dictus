@@ -140,6 +140,34 @@ final class PolishGroundingTests: XCTestCase {
         )
     }
 
+    /// MEASURED LIVE on 2026-08-27, in the 30-call Notes run made to verify this
+    /// very change. The Sophie fabrication reproduced with one clause reworded, and
+    /// the check **accepted it**.
+    ///
+    /// `NLTagger` tags `Sophie` in `Appeler Sophie avant : elle a les données…` and
+    /// does not tag it in `Appeler Sophie avant parce qu'elle a les données…` —
+    /// same name, same position, same language, a different continuation. No
+    /// framing recovers it: the tagger was run over the whole output, over each
+    /// line with its marker, and over each line without, and none of the three
+    /// finds it.
+    ///
+    /// This test asserts the MISS on purpose. #414's first acceptance criterion is
+    /// not met, and a test that records the gap is worth more than a sentence in a
+    /// report nobody re-reads. **When a future primitive closes it, this assertion
+    /// flips — that is the signal, and it is the point of writing it down.**
+    func testTheSameFabricationWithOneClauseRewordedIsMISSED() {
+        let output = """
+        - Récupérer les chiffres de janvier auprès de Marion
+        - Appeler le prestataire pour validé le devis
+        - Appeler Sophie avant parce qu'elle a les données de décembre
+        """
+        XCTAssertEqual(
+            PolishGrounding.ungroundedAnchors(in: output, input: sophieRaw, languageCode: "fr").map(\.text),
+            [],
+            "if this now finds Sophie, #414's remaining gap has closed — update the issue and this test"
+        )
+    }
+
     // MARK: - Which contracts ask for it
 
     func testTheFaithfulContractsAskForGroundingAndTheReconstructingOnesDoNot() {
