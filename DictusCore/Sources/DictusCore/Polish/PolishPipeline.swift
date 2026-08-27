@@ -114,10 +114,17 @@ public enum PolishPipeline {
                 raw: preprocessed, polished: polished, contract: job.task.contract
             ) else {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "length", task: job.task)
                 return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
             }
             guard languageGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "language", task: job.task)
+                return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
+            }
+            guard groundingGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
+                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "grounding", task: job.task)
                 return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
             }
             let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
@@ -167,6 +174,34 @@ public enum PolishPipeline {
                 polished: polished, inputLanguageCode: inputCode
             )
         }
+    }
+
+    /// Grounding guardrail (#414): every person, place and organisation the output
+    /// names must already appear in the input.
+    ///
+    /// Runs only where the task's contract says it is sound — see
+    /// `PolishAcceptanceContract.requiresGroundedNames`, which is a field precisely
+    /// so a mode has to answer the question rather than have it derived here.
+    ///
+    /// The language handed to `NLTagger` is a hint, not a filter, and it is the one
+    /// the OUTPUT is expected to read as: the input's own for `.sameAsInput`, the
+    /// prompt's for `.polishTarget`. `.fixed` never reaches this function, because
+    /// a translation's contract answers `false` above — but it is handled rather
+    /// than trapped, since a custom mode (#269) could answer `true` on a contract
+    /// nobody here anticipated.
+    private static func groundingGuardrailPasses(polished: String,
+                                                 preprocessed: String,
+                                                 job: PolishJob) -> Bool {
+        guard job.task.contract.requiresGroundedNames else { return true }
+        let outputCode: String?
+        switch job.task.contract.outputLanguage {
+        case .polishTarget: outputCode = job.promptLanguage.rawValue
+        case .fixed(let language): outputCode = language.rawValue
+        case .sameAsInput: outputCode = detectLanguageCode(in: preprocessed)
+        }
+        return PolishGrounding.ungroundedAnchors(
+            in: polished, input: preprocessed, languageCode: outputCode
+        ).isEmpty
     }
 
     /// The string the user actually receives, given a transform `Result` and the

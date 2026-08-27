@@ -25,6 +25,39 @@ import Foundation
 /// user cannot tell what was added without re-reading carefully, and a Smart Mode
 /// output is one they are about to send.
 ///
+/// ### Why no example names a person, and why the counter-example is about plants
+///
+/// Measured 2026-08-27, 239 Apple FM calls over four prompt candidates (#414,
+/// `docs/research/414-prompt-examples.md`). The model **copies whichever concrete
+/// example content it is shown**, and the shipping prompt's first worked example was
+/// reproduced verbatim into an accepted user output: `- Appeler Sophie avant : elle
+/// a les données de décembre`, on a dictation naming neither Sophie nor December.
+///
+/// Two findings shaped what is written below, and both contradict the obvious fix:
+///
+/// 1. **Deleting the worked examples makes it worse, not better.** With them gone
+///    the model simply copied the COUNTER-example instead — `- Rappeler le client
+///    cette semaine` reached **9 of 30** accepted outputs, against 1 of 29 for the
+///    variant that ships. Removing examples relocates and amplifies the copying. PR
+///    #388's finding that examples are load-bearing holds here.
+/// 2. **Neutralising only the worked example is not enough**, because the
+///    counter-example is concrete too and becomes the next thing copied. The
+///    shipping prompt copied `- Rappeler le client cette semaine` in its own stress
+///    round.
+///
+/// So every example here is neutralised together: no person is named anywhere, and
+/// the counter-example's subject is deliberately **off-domain** — watering plants
+/// fits no business dictation, so on the residual occasions a line is copied the
+/// user sees something obviously not theirs instead of a plausible fabricated task.
+/// That is the real defence: **severity, not rate.** The rate is a property of
+/// showing examples at all.
+///
+/// The one example still carrying concrete content is the short-input one, and it is
+/// the one the measured residual came from (`racheter du café demain matin`, 1/29).
+/// It stays because it is what teaches "one idea in, one bullet out", which measures
+/// 5/5 across every candidate. Neutralising it is the obvious next edit if the rate
+/// ever needs to come down further.
+///
 /// ### Why this prompt never says the word "notes"
 ///
 /// **Naming a written genre pulls in that genre's furniture, whether or not the
@@ -91,11 +124,11 @@ enum SmartModeNotesPrompt {
 
         Examples — the input language varies; the output language always matches it:
 
-        INPUT: alors euh pour la réunion de jeudi il faut que je prépare les chiffres du trimestre et aussi euh le budget marketing et puis faut que j'appelle Sophie avant parce qu'elle a les données de décembre
+        INPUT: alors euh pour la réunion de jeudi il faut que je prépare les chiffres du trimestre et aussi euh le budget marketing et puis faut que j'appelle le comptable avant parce qu'il a les données manquantes
         OUTPUT:
         - Préparer les chiffres du trimestre pour la réunion de jeudi
         - Préparer le budget marketing
-        - Appeler Sophie avant : elle a les données de décembre
+        - Appeler le comptable avant : il a les données manquantes
 
         INPUT: ok so uh the build is failing on ios twenty six we think it's the swift six mode thing and uh I'll try pinning the toolchain first and if that doesn't work we roll back the dependency
         OUTPUT:
@@ -111,10 +144,10 @@ enum SmartModeNotesPrompt {
 
         COUNTER-EXAMPLES — the WRONG outputs below invent content or translate. Never produce them.
 
-        INPUT: faut que je rappelle le client cette semaine
-        WRONG (translated): - Call the client this week
-        WRONG (invented a second bullet): - Rappeler le client cette semaine / - Préparer un compte rendu de l'appel
-        RIGHT: - Rappeler le client cette semaine
+        INPUT: faut que j'arrose les plantes du hall avant de partir
+        WRONG (translated): - Water the lobby plants before leaving
+        WRONG (invented a second bullet): - Arroser les plantes du hall avant de partir / - Acheter un arrosoir
+        RIGHT: - Arroser les plantes du hall avant de partir
         """
     }
 }
