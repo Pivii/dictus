@@ -74,6 +74,11 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
 
+    /// Whether this process has already reconciled `downloadedModels` against the
+    /// disk (issue #433). Static because the promise is per process, not per
+    /// instance: onboarding builds a second `ModelManager` of its own.
+    private static var hasReconciledThisProcess = false
+
     /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
     /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
     /// compile two models at once, and a lock owned by this class covered neither
@@ -108,6 +113,10 @@ class ModelManager: ObservableObject {
 
     init() {
         loadState()
+        // Believe the disk over the bookkeeping, before the states below are seeded
+        // from it (#433). Deliberately here and not inside `loadState`, which three
+        // views call on `.onAppear` — see `reconcileDownloadedModelsWithDisk`.
+        reconcileDownloadedModelsWithDisk()
         // Initialize states for all known models (including deprecated Tiny/Base so
         // already-downloaded deprecated models still get their state set to .ready).
         for model in ModelInfo.allIncludingDeprecated {
@@ -163,6 +172,68 @@ class ModelManager: ObservableObject {
                 modelStates[model.identifier] = .ready
             }
         }
+    }
+
+    /// Adds back any WhisperKit variant whose files are completely on disk while
+    /// `downloadedModels` says it is not there (issue #433).
+    ///
+    /// WHY the two can disagree: the identifier is appended only after the whole
+    /// download-and-prewarm sequence returns. A compile ended by a force quit or by
+    /// iOS reclaiming the process leaves every byte on disk and the list unaware, so
+    /// the model reappears under "Available" — where there is no delete affordance,
+    /// because the app does not believe you have it. The user is then paying 500 MB
+    /// to 1.5 GB for something they cannot see and cannot reclaim.
+    ///
+    /// WHY there is no third state for it: a model whose files are complete IS
+    /// downloaded. Selecting it runs the compile that was interrupted, which is the
+    /// ordinary preparation flow `ModelLoadingOverlay` already covers, so nothing new
+    /// needs presenting — and the delete entry in the card's overflow menu becomes
+    /// reachable, which is the whole point.
+    ///
+    /// WHAT IT MUST NEVER DO is touch `activeModel`. `persistState` derives
+    /// `SharedKeys.modelReady` from this pair, and every reader of that flag treats it
+    /// as "there is a model to load". Electing a model whose compile has never
+    /// succeeded would announce a working engine on a device that has none. Adding to
+    /// the list is a statement about disk; choosing what to load is the user's, or
+    /// that of the download that finishes.
+    ///
+    /// WHY WhisperKit only: Parakeet arrives through FluidAudio, whose cache is one
+    /// directory per `AsrModelVersion` shared by every model of that version — so
+    /// "are its files complete" and "which model do they belong to" are not the same
+    /// question there, and deleting one version's directory removes them all.
+    /// Reconciling it is a separate problem and is out of scope here.
+    ///
+    /// WHY once per process, and why this is not called from `loadState`: what it
+    /// repairs is the wreckage of a process that DIED between a finished download and
+    /// a finished compile, so the only honest moment to run it is before this process
+    /// has done anything of its own. `loadState` is called by `HomeView` and
+    /// `ModelManagerView` on `.onAppear` and again when onboarding completes, and a
+    /// perfectly ordinary download sits in exactly the repaired state — files
+    /// complete, identifier not yet appended — for the entire prewarm window, which
+    /// is 27 s for Small and about 3 min 30 for Turbo. Navigating between two tabs in
+    /// that window would have adopted the in-flight model early and written
+    /// `modelReconciledFromDisk` for a download nobody interrupted, which is both a
+    /// race against the prewarm's own bookkeeping and a lie in a log whose reader is
+    /// an agent. The flag rather than init alone: onboarding builds its own
+    /// `ModelManager`, so "once per instance" is not the same promise.
+    private func reconcileDownloadedModelsWithDisk() {
+        guard !Self.hasReconciledThisProcess else { return }
+        Self.hasReconciledThisProcess = true
+
+        let whisperIdentifiers = ModelInfo.allIncludingDeprecated
+            .filter { $0.engine == .whisperKit }
+            .map(\.identifier)
+        let recovered = WhisperModelRepository.unlistedCompleteDownloads(
+            among: whisperIdentifiers,
+            listedAsDownloaded: downloadedModels
+        )
+        guard !recovered.isEmpty else { return }
+
+        downloadedModels.append(contentsOf: recovered)
+        for identifier in recovered {
+            PersistentLog.log(.modelReconciledFromDisk(name: identifier))
+        }
+        persistState()
     }
 
     /// Downloads a model variant, prewarms it, and updates state.
@@ -715,7 +786,15 @@ class ModelManager: ObservableObject {
             defaults.set(data, forKey: SharedKeys.downloadedModels)
         }
         defaults.set(activeModel, forKey: SharedKeys.activeModel)
-        defaults.set(!downloadedModels.isEmpty, forKey: SharedKeys.modelReady)
+        // WHY `isModelReady` and not `!downloadedModels.isEmpty` (issue #433): the two
+        // could not disagree before, because the only writer of `downloadedModels` set
+        // `activeModel` in the same breath. The launch reconciliation adds a model
+        // without electing one, so a device whose first ever download was interrupted
+        // now reaches this line with a populated list and no active model. Every reader
+        // of this flag — the launch preload, `startDictation`, the foreground warm-up —
+        // takes it as "there is a model to load", and there is not one until something
+        // chooses it. The stricter definition is the one the flag has always claimed.
+        defaults.set(isModelReady, forKey: SharedKeys.modelReady)
         defaults.synchronize()
     }
 }

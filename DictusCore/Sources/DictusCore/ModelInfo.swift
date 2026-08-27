@@ -84,6 +84,38 @@ public struct ModelInfo: Identifiable {
     /// through the launch preload.
     public let prewarmTimeoutSeconds: Int
 
+    /// How long this model's FIRST preparation took on the reference device, in
+    /// seconds, or `nil` where nobody has watched one finish (issue #432).
+    ///
+    /// WHY this is a second number and not derived from `prewarmTimeoutSeconds`:
+    /// the two are opposite kinds of figure. The budget above is a ceiling, sized so
+    /// a slow-but-real compile on a cold, throttled, nearly full device is still
+    /// allowed to finish. This one is what actually happens on a working device.
+    /// Deriving would be wrong in both directions: Turbo's 300s budget divided by the
+    /// 2.5x factor it was built from gives "2 minutes", which is precisely the stale
+    /// figure issue #432 exists to correct, and Medium's 120s default gives 48s
+    /// against a measured 32s. They also move for different reasons — a budget grows
+    /// the day a device is found that needs more room, an expectation moves when the
+    /// typical device changes — so tying them together would mean the first person to
+    /// shrink a budget silently promised the user a shorter wait.
+    ///
+    /// WHAT it covers: the one-off Core ML compile that builds the bundle cache, plus
+    /// the RAM load behind it. Every later load of the same model finds that cache and
+    /// takes seconds instead (3636 ms, measured on Turbo in issue #427), which is the
+    /// other half of what the preparation screen has to say and the half that matters
+    /// more: the user needs to know this does not happen before every dictation.
+    ///
+    /// WORTH KNOWING and deliberately NOT on screen: the cache lives in the app
+    /// container, so every development install throws it away and a tester pays the
+    /// full figure again on the next launch. That is a development concern rather than
+    /// a shipping one — nothing a user of a released build can act on — so it stays a
+    /// comment.
+    ///
+    /// All readings are iPhone 15 Pro Max, iOS 26.6, which is the fastest hardware the
+    /// slow models are even offered on. A supported A15 will be slower. That is why
+    /// the copy rounds up rather than down; see `ModelPreparationWait`.
+    public let firstPreparationSeconds: Int?
+
     /// The budget a model gets when its entry does not ask for another one.
     ///
     /// 120s was the Phase 37 global (issue #104), calibrated against the ~17s a
@@ -133,7 +165,10 @@ public struct ModelInfo: Identifiable {
     /// WHY an initializer written by hand:
     /// `prewarmTimeoutSeconds` needs a default, so that giving models their own
     /// budget did not mean writing `120` onto seven entries with nothing to say
-    /// about it. A `let` carrying an inline initial value is excluded from the
+    /// about it. `firstPreparationSeconds` (issue #432) needs one for the stronger
+    /// reason that most entries have no measurement, and `nil` has to stay
+    /// distinguishable from a number somebody typed. A `let` carrying an inline
+    /// initial value is excluded from the
     /// implicit memberwise initializer entirely, so a default is only reachable
     /// through an explicit initializer — or by making the property a `var`, which
     /// would leave the catalogue with one mutable stored field among eight.
@@ -149,7 +184,8 @@ public struct ModelInfo: Identifiable {
         speedScore: Double,
         description: String,
         visibility: CatalogVisibility,
-        prewarmTimeoutSeconds: Int = ModelInfo.defaultPrewarmTimeoutSeconds
+        prewarmTimeoutSeconds: Int = ModelInfo.defaultPrewarmTimeoutSeconds,
+        firstPreparationSeconds: Int? = nil
     ) {
         self.identifier = identifier
         self.displayName = displayName
@@ -160,6 +196,7 @@ public struct ModelInfo: Identifiable {
         self.description = description
         self.visibility = visibility
         self.prewarmTimeoutSeconds = prewarmTimeoutSeconds
+        self.firstPreparationSeconds = firstPreparationSeconds
     }
 
     // MARK: - Deprecated label properties (backward compat)
@@ -279,7 +316,12 @@ public struct ModelInfo: Identifiable {
             accuracyScore: 0.8,
             speedScore: 0.55,
             description: "Best accuracy",
-            visibility: .available
+            visibility: .available,
+            // 32s cold, the figure issue #432 sets against the Turbo readings as the
+            // gap the preparation copy has to carry. A model that is ready in half a
+            // minute and one that takes four cannot honestly share one sentence, and
+            // before #432 they did.
+            firstPreparationSeconds: 32
         ),
         ModelInfo(
             identifier: "parakeet-tdt-0.6b-v3",
@@ -360,28 +402,32 @@ public struct ModelInfo: Identifiable {
             speedScore: 0.75,
             description: "Most accurate, and fast",
             visibility: .available,
-            // 300s, and it is a GUESS rather than a measurement (issue #406).
+            // 300s. It began as a GUESS (issue #406) — 2.5x a "~2 min" figure that
+            // described the `_954MB` variant this entry replaced, at a time when the
+            // flat 120s guard had cut every attempt short and nobody had watched a
+            // Turbo compile finish on an iPhone. The readings have since arrived and
+            // the guess survives them, so it stays.
             //
-            // Nobody has ever watched a Turbo compile finish on an iPhone. The flat
-            // 120s guard cut every attempt short, on both variants, so the real
-            // duration is unknown for both. The only figure that exists at all is the
-            // "~2 min on a 15 Pro Max" quoted in `ModelLoadingOverlay.swift`, and that
-            // prose describes the `_954MB` variant this entry replaced. 300 is 2.5x
-            // it: room for a slow-but-real compile under thermal throttling or disk
-            // pressure. It does NOT bound a hang — see #427 and the note at the call
-            // site: this budget reports, it does not interrupt.
+            // Four cold readings, iPhone 15 Pro Max, set out in full above
+            // `preloadDeadlineSeconds(for:)`: 236s, 212s and still running when
+            // interrupted, 202s, 210s. 300 clears the slowest of them by 27%, which is
+            // the headroom a colder, busier or fuller device needs. Do NOT shrink 300
+            // to hug 236: that is one device, in one thermal state, with one amount of
+            // free disk, and the TestFlight report behind issue #406 came from a phone
+            // with 5.3 GB free of 254 GB.
             //
-            // The maintainer's iPhone 15 Pro Max hit the 120s guard on THIS variant on
-            // 2026-08-25, which is what shows issue #408's 39% size cut does not on
-            // its own bring the compile inside the old budget.
+            // It does NOT bound a hang — see #427 and the note at the call site: this
+            // budget reports, it does not interrupt.
             //
-            // This number is meant to be replaced by a measurement, and produces one
-            // for free: the first compile that completes under it logs
-            // `modelCompilationCompleted durationMs`, the first real reading of a Turbo
-            // compile anyone will have. Do not then shrink 300 to hug that reading —
-            // it will be one device, in one thermal state, with one amount of free
-            // disk. The TestFlight reporter had 5.3 GB free of 254 GB.
-            prewarmTimeoutSeconds: 300
+            // The maintainer's iPhone 15 Pro Max hit the old flat 120s guard on THIS
+            // variant on 2026-08-25, which is what shows issue #408's 39% size cut
+            // does not on its own bring the compile inside the old budget.
+            prewarmTimeoutSeconds: 300,
+            // 236s: the SLOWEST of those four readings, not their middle. This number
+            // is turned into a promise on the preparation screen (issue #432), and the
+            // only expensive error a promise about a wait can make is being shorter
+            // than the wait.
+            firstPreparationSeconds: 236
         ),
         // Superseded by the entry above (issue #408). Kept resolvable, and only
         // resolvable: a user who already pulled 1.05 GB of Turbo on an earlier build
@@ -419,6 +465,11 @@ public struct ModelInfo: Identifiable {
             // so no download — and therefore no prewarm — can start for it. Kept
             // correct rather than kept convenient.
             prewarmTimeoutSeconds: 300
+            // No `firstPreparationSeconds`, and that is a fact rather than an
+            // oversight: the flat 120s guard cut every compile of this variant short,
+            // so nobody has ever seen one finish. A user who still holds it can reach
+            // the preparation screen through a launch preload, and there it is told
+            // the wait happens once — with no duration invented for it (issue #432).
         )
     ]
 

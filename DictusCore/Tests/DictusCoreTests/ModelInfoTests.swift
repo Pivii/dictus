@@ -523,22 +523,26 @@ final class ModelInfoTests: XCTestCase {
 
     /// The acceptance criterion, stated as the comparison that motivated the issue.
     ///
-    /// The only documented Turbo compile duration anyone has is the "~2 min on a
-    /// 15 Pro Max" in `ModelLoadingOverlay.swift` — 120s, which is exactly where the
-    /// old global guard sat. A budget equal to the compile it is supposed to survive
-    /// is not a guard, it is a coin flip, and the field flipped it twice on
-    /// 2026-08-25. Turbo's budget must clear that figure with room to spare.
+    /// When #406 was written the only documented Turbo compile duration was the
+    /// "~2 min on a 15 Pro Max" in `ModelLoadingOverlay.swift` — 120s, exactly where
+    /// the old global guard sat, and measured on a variant #408 has since replaced. A
+    /// budget equal to the compile it is supposed to survive is not a guard, it is a
+    /// coin flip, and the field flipped it twice on 2026-08-25.
     ///
-    /// Deliberately written as `> documented`, not `== 300`: the number is expected
-    /// to move once a real compile duration exists (see the catalogue comment). What
-    /// must not move is the relationship.
-    func testTurboBudgetExceedsItsDocumentedCompileDuration() {
-        let documentedCompileSeconds = 120
+    /// Issue #432 replaced that prose with a measurement, so the comparison is now
+    /// made against the catalogue's own reading rather than against a remembered
+    /// figure. Deliberately written as `>`, not `== 300`: both numbers are expected
+    /// to move as more devices report. What must not move is the relationship.
+    func testTurboBudgetExceedsItsMeasuredCompileDuration() {
         guard let turbo = ModelInfo.forIdentifier(turbo632) else {
             XCTFail("\(turbo632) is missing from the catalogue")
             return
         }
-        XCTAssertGreaterThan(turbo.prewarmTimeoutSeconds, documentedCompileSeconds)
+        guard let measuredCompileSeconds = turbo.firstPreparationSeconds else {
+            XCTFail("\(turbo632) no longer carries the measurement the budget is sized against")
+            return
+        }
+        XCTAssertGreaterThan(turbo.prewarmTimeoutSeconds, measuredCompileSeconds)
         XCTAssertEqual(turbo.prewarmTimeoutSeconds, 300)
         // The superseded variant is the one that actually timed out at 120s in the
         // TestFlight report, so it must not be left asserting 120 either.
@@ -634,6 +638,44 @@ final class ModelInfoTests: XCTestCase {
                 ModelInfo.preloadDeadlineSeconds(for: model.identifier),
                 model.prewarmTimeoutSeconds,
                 "\(model.identifier) does not resolve to the budget it declares"
+            )
+        }
+    }
+
+    // MARK: - Measured first preparation (issue #432)
+
+    /// The two readings the preparation screen speaks from. Written as literals rather
+    /// than derived from anything, because they are measurements: if one changes it is
+    /// because somebody watched a device, and this test is where that gets noticed.
+    func testTheCatalogueCarriesTheTwoMeasuredPreparationTimes() {
+        XCTAssertEqual(ModelInfo.forIdentifier(turbo632)?.firstPreparationSeconds, 236)
+        XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-medium")?.firstPreparationSeconds, 32)
+    }
+
+    /// A measurement is a thing somebody watched happen. Every other entry has to hold
+    /// `nil`, including the superseded `_954MB` Turbo, whose every compile was cut
+    /// short by the old flat guard before anyone saw one finish.
+    func testNoModelClaimsAPreparationTimeNobodyMeasured() {
+        let measured: Set<String> = [turbo632, "openai_whisper-medium"]
+        for model in ModelInfo.allIncludingDeprecated where !measured.contains(model.identifier) {
+            XCTAssertNil(
+                model.firstPreparationSeconds,
+                "\(model.identifier) declares a first preparation time that no reading supports"
+            )
+        }
+        XCTAssertNil(ModelInfo.forIdentifier(turbo954)?.firstPreparationSeconds)
+    }
+
+    /// The budget and the expectation are two different kinds of number (see the field
+    /// comment), and this is the relationship that has to hold between them wherever
+    /// both exist: a model may not be expected to take longer than it is allowed to.
+    func testNoMeasuredPreparationOutlivesItsOwnBudget() {
+        for model in ModelInfo.allIncludingDeprecated {
+            guard let measured = model.firstPreparationSeconds else { continue }
+            XCTAssertGreaterThan(
+                model.prewarmTimeoutSeconds,
+                measured,
+                "\(model.identifier) is expected to take \(measured)s but is only allowed \(model.prewarmTimeoutSeconds)s"
             )
         }
     }
