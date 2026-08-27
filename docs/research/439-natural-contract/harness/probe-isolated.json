@@ -1,0 +1,15 @@
+[
+  { "id": "P1-salle", "lang": "fr", "sttEngine": "PK",
+    "_note": "#439 R1 in isolation. If Apple FM cannot repair a homophone in ONE sentence, no amount of prompt work will get it to repair one buried in 1,283 characters.",
+    "raw": "Sinon je me débrouillerai pour suivre une visio depuis la salle à tante mais ce sera moyen" },
+  { "id": "P2-morceaux", "lang": "fr", "sttEngine": "PK",
+    "raw": "Le système le découpe en petits morceaux. Le modèle prend ses morceaux et il essaye de deviner quels sons ont été prononcés" },
+  { "id": "P3-comptable", "lang": "fr", "sttEngine": "PK",
+    "raw": "Il faut que je répète le comptable, le comptable je l'ai eu vendredi, c'est l'assurance qu'il faut que je rappelle" },
+  { "id": "P4-appstore", "lang": "fr", "sttEngine": "PK",
+    "raw": "Thomas a fini l'intégration StoreKit et ça passe en sandbox, je vois Sarah jeudi pour caler la partie Apple Store et si tout se passe bien on soumet la semaine du 12" },
+  { "id": "P5-zappe", "lang": "fr", "sttEngine": "PK",
+    "raw": "Ça fait une semaine et demie qu'il attend, je crois qu'il commence à se demander si je les zappais" },
+  { "id": "P6-calcul", "lang": "fr", "sttEngine": "PK",
+    "raw": "Le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul, la deuxième c'est 90% du temps" }
+]
