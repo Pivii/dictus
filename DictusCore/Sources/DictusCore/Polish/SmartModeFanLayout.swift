@@ -17,14 +17,32 @@ public enum SmartModeFanEntry: Equatable, Sendable, Identifiable {
     /// A pinned Smart Mode.
     case mode(SmartMode)
 
+    /// The Dictus Pro row, and the whole of a non-subscriber's fan (#404, decided in
+    /// #392).
+    ///
+    /// Not a button: `SmartModeFanView` is `allowsHitTesting(false)` by construction,
+    /// because the finger went down on the mic pill and one gesture tracks it to the
+    /// release. As a *row* it is selected by that same drag and committed by the same
+    /// release — `commit()` opens the app's paywall instead of arming anything. That
+    /// is what makes it reachable at all, and it costs no row budget: there is no
+    /// competition for `maximumEntries` when there is one entry.
+    case pro
+
     public var id: String {
         switch self {
         case .normal: return "normal"
         case .mode(let mode): return mode.id
+        case .pro: return "pro"
         }
     }
 
-    /// The armed mode this row selects, or nil for Normal.
+    /// The armed mode this row selects, or nil for Normal **and for the Pro row**.
+    ///
+    /// Nil for two rows that mean different things, which is why nothing decides
+    /// what a release does from this property alone — `SmartModeFanState` and
+    /// `KeyboardSmartModeState.commit()` switch over the case. Reading nil as
+    /// "disarm" would make the Pro row silently clear the user's mode on the way to
+    /// the paywall.
     public var smartMode: SmartMode? {
         guard case .mode(let mode) = self else { return nil }
         return mode
@@ -39,6 +57,7 @@ public enum SmartModeFanEntry: Equatable, Sendable, Identifiable {
         switch self {
         case .normal: return "mic.fill"
         case .mode(let mode): return mode.icon
+        case .pro: return "sparkles"
         }
     }
 }
@@ -107,7 +126,30 @@ public enum SmartModeFanLayout {
     /// `armed` is the resolved record, not the stored identifier: an identifier this
     /// build cannot resolve reads as nil, and refusing on it is right — that user is
     /// already getting Normal, so there is nothing to escape from.
-    public static func entries(pinned: [SmartMode], armed: SmartMode?) -> [SmartModeFanEntry] {
+    ///
+    /// ### The non-subscriber's fan is one row and nothing else (#404)
+    ///
+    /// `offersProUpgrade` replaces the whole list rather than adding to it, which is
+    /// #392's decision in Pierre's words: *"qu'on n'ait plus trois modes, mais une
+    /// seule pilule Dictus Pro"*. Three unusable rows and a reason line is a worse
+    /// advertisement than one control that leads somewhere, and the paywall is one
+    /// screen later with room to describe what the modes actually do.
+    ///
+    /// **It opens whatever is pinned or armed**, and that is the decision #404 left
+    /// open about #403's armed-mode-alone fan. There is no Normal row here, and
+    /// Normal is normally how a sticky mode is cleared — but a user without
+    /// entitlement is *already* getting Normal, because `resolveArmedMode()` refuses
+    /// to honour a mode without it (#395). #402's stranding needs a mode that is
+    /// actually applying, so it cannot happen here. The armed value survives
+    /// untouched and comes back with the subscription.
+    ///
+    /// The caller decides whether the offer is on, because it also owes the #236
+    /// gate: while the paywall is hidden there is nothing to sell and a row leading
+    /// to it is a dead end.
+    public static func entries(pinned: [SmartMode],
+                               armed: SmartMode?,
+                               offersProUpgrade: Bool = false) -> [SmartModeFanEntry] {
+        if offersProUpgrade { return [.pro] }
         guard !pinned.isEmpty || armed != nil else { return [] }
         return [.normal] + pinned.prefix(SmartModeCatalogue.maximumPinnedModes).map(SmartModeFanEntry.mode)
     }

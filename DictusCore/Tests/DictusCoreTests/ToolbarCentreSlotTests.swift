@@ -14,6 +14,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
                          hasSuggestions: Bool = false,
                          polishUnavailable: Bool = false,
                          armedModeName: String? = nil,
+                         armedModeIsEffective: Bool = true,
                          offersDiscoveryHint: Bool = false) -> ToolbarCentreSlot {
         ToolbarCentreSlot.resolve(
             isChoosingMode: isChoosingMode,
@@ -22,6 +23,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
             hasSuggestions: hasSuggestions,
             polishUnavailable: polishUnavailable,
             armedModeName: armedModeName,
+            armedModeIsEffective: armedModeIsEffective,
             offersDiscoveryHint: offersDiscoveryHint
         )
     }
@@ -35,7 +37,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
             resolve(
                 isChoosingMode: true, errorMessage: "boom", offersDictationUndo: true,
                 hasSuggestions: true, polishUnavailable: true,
-                armedModeName: "Notes", offersDiscoveryHint: true
+                armedModeName: "List", offersDiscoveryHint: true
             ),
             .choosingMode
         )
@@ -45,7 +47,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 errorMessage: "boom", offersDictationUndo: true, hasSuggestions: true,
-                polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true
+                polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true
             ),
             .error("boom")
         )
@@ -55,7 +57,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 offersDictationUndo: true, hasSuggestions: true,
-                polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true
+                polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true
             ),
             .dictationUndo
         )
@@ -65,7 +67,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 hasSuggestions: true, polishUnavailable: true,
-                armedModeName: "Notes", offersDiscoveryHint: true
+                armedModeName: "List", offersDiscoveryHint: true
             ),
             .suggestions
         )
@@ -76,7 +78,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
     /// already stopped doing.
     func testThePolishNoticeOutranksTheArmedMode() {
         XCTAssertEqual(
-            resolve(polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true),
+            resolve(polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true),
             .polishUnavailable
         )
     }
@@ -108,8 +110,49 @@ final class ToolbarCentreSlotTests: XCTestCase {
 
         XCTAssertFalse(ToolbarCentreSlot.choosingMode.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.polishUnavailable.evictsHamburger)
-        XCTAssertFalse(ToolbarCentreSlot.armedMode("Notes").evictsHamburger)
+        XCTAssertFalse(ToolbarCentreSlot.armedMode("List").evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.discoveryHint.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.empty.evictsHamburger)
+    }
+
+    // MARK: - Armed but not in force (#423)
+
+    /// The defect: the bar named the armed mode as though it were running while
+    /// every dictation went in as Normal. Same rung, different case, so the view
+    /// cannot draw one as the other.
+    func testAnArmedModeThatWillNotRunGetsItsOwnCase() {
+        XCTAssertEqual(
+            resolve(armedModeName: "\u{2192} EN", armedModeIsEffective: false),
+            .armedModeInactive("\u{2192} EN")
+        )
+        XCTAssertEqual(
+            resolve(armedModeName: "\u{2192} EN", armedModeIsEffective: true),
+            .armedMode("\u{2192} EN")
+        )
+    }
+
+    /// It keeps the slot rather than falling through: the choice is still there, and
+    /// re-teaching the gesture to someone who has armed a mode would be absurd.
+    func testAnInactiveArmedModeStillOutranksTheDiscoveryHint() {
+        XCTAssertEqual(
+            resolve(armedModeName: "List", armedModeIsEffective: false, offersDiscoveryHint: true),
+            .armedModeInactive("List")
+        )
+    }
+
+    /// And it loses to everything `armedMode` loses to, for the same reasons.
+    func testAnInactiveArmedModeYieldsToTheNoticeAboveIt() {
+        XCTAssertEqual(
+            resolve(
+                polishUnavailable: true, armedModeName: "List", armedModeIsEffective: false
+            ),
+            .polishUnavailable
+        )
+    }
+
+    /// Both shapes share the bar with the hamburger: neither arrives mid-task.
+    func testNeitherArmedModeShapeEvictsTheHamburger() {
+        XCTAssertFalse(ToolbarCentreSlot.armedMode("List").evictsHamburger)
+        XCTAssertFalse(ToolbarCentreSlot.armedModeInactive("List").evictsHamburger)
     }
 }

@@ -196,4 +196,28 @@ final class SmartModeCatalogueTests: XCTestCase {
         )
         XCTAssertEqual(decoded.badge, .symbol("list.bullet"))
     }
+
+    // MARK: - The 2026-08-27 rename
+
+    /// Display name only. The identifier is the session-cache key, what a metrics
+    /// event records, and what every persisted armed mode and pinned list refers to
+    /// — renaming it would invalidate all three on every device that ever armed the
+    /// mode, for a label change.
+    func testTheBulletModeKeepsItsIdentifierAfterTheRename() {
+        XCTAssertEqual(SmartModeCatalogue.notesIdentifier, "notes")
+        XCTAssertEqual(SmartModeCatalogue.notes.id, "notes")
+        XCTAssertEqual(SmartModeCatalogue.mode(withIdentifier: "notes")?.id, "notes")
+    }
+
+    /// English here, because DictusCore ships no string catalog and its strings are
+    /// the log form and the fallback. "Liste" is the surfaces' business.
+    func testTheBulletModeIsNamedList() {
+        XCTAssertEqual(SmartModeCatalogue.notes.displayName, "List")
+    }
+
+    /// The seed still names it by identifier, so a fresh install pins the same two
+    /// rows it always did.
+    func testTheDefaultPinsAreUnchangedByTheRename() {
+        XCTAssertEqual(SmartModeCatalogue.defaultPinnedIdentifiers, ["notes", "translate.en"])
+    }
 }

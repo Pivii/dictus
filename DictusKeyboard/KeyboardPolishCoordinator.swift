@@ -89,6 +89,7 @@ final class KeyboardPolishCoordinator {
             raw: raw,
             policy: policy,
             smartMode: storedSmartMode(),
+            skippedSmartMode: storedSkippedSmartMode(),
             recordingDuration: duration,
             documentIdentifier: KeyboardState.shared.currentDocumentIdentifier
         )
@@ -97,6 +98,7 @@ final class KeyboardPolishCoordinator {
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartModeSkipped)
         defaults.removeObject(forKey: SharedKeys.handoffToken)
         PersistentLog.log(.polishHandoff(step: "claimed", outcome: "pending", chars: raw.count))
 
@@ -213,6 +215,12 @@ final class KeyboardPolishCoordinator {
 
         PersistentLog.log(.polishHandoff(step: "recovered", outcome: "raw", chars: pending.raw.count))
         finish(text: DictationTail.apply(pending.raw, policy: pending.policy), insert: true)
+        // The dictation this record carries ran Normal because a mode was resolved
+        // away, and it is still owed the sentence (#423). After `finish`, for the
+        // same reason as in `run(_:)`.
+        if let skipped = pending.skippedSmartMode {
+            announceSkip(skipped)
+        }
     }
 
     // MARK: - The run
@@ -294,6 +302,12 @@ final class KeyboardPolishCoordinator {
         // raised first would be wiped by the very insertion it is explaining.
         if let failure {
             announce(failure, degraded: degraded)
+        } else if let skipped = pending.skippedSmartMode {
+            // Mutually exclusive with the branch above by construction: a mode that
+            // was skipped never ran, so it cannot also have failed. `else if` says
+            // so rather than relying on it — two sentences in the same slot would
+            // leave whichever arrived second, and the user with half the story.
+            announceSkip(skipped)
         }
     }
 
@@ -312,9 +326,10 @@ final class KeyboardPolishCoordinator {
     ///   otherwise; it matches the in-app wording (`DictationHandoff`) word for word,
     ///   so the same failure reads the same on both surfaces.
     ///
-    /// The mode name is interpolated unlocalised on purpose: it is the catalogue's
-    /// own label — "Notes", "→ EN" — and naming it in one language everywhere is what
-    /// makes it recognisable as the thing the user armed.
+    /// The mode name is the catalogue's own label — "→ EN" — so it reads as the
+    /// thing the user armed. It goes through `SmartMode.localizedDisplayName` since
+    /// the 2026-08-27 rename, because one mode's label is now a word rather than a
+    /// symbol and a word has to be said in the user's language.
     ///
     /// WHY the name is a colon-label rather than the sentence's subject: the
     /// translation modes are called "→ EN", so "→ EN could not transform this text"
@@ -324,7 +339,9 @@ final class KeyboardPolishCoordinator {
     /// alternative and was rejected — `SmartModeCatalogue` picked a language-neutral
     /// label on purpose, and the fan is where that label mostly lives.
     private func announce(_ failure: SmartModeFailure, degraded: Bool) {
-        let name = failure.modeDisplayName
+        let name = SmartMode.localizedDisplayName(
+            identifier: failure.modeIdentifier, fallback: failure.modeDisplayName
+        )
         let overflowed = failure.outcome == PolishMetrics.Outcome.exceededContextBudget.rawValue
         let message: String
         switch (overflowed, degraded) {
@@ -348,6 +365,44 @@ final class KeyboardPolishCoordinator {
             message,
             reason: "smartModeFailed-\(failure.outcome)",
             timeoutReason: "smartModeFailed-timeout"
+        )
+    }
+
+    /// Tell the user their armed mode did not run, and that the dictation went in as
+    /// Normal (#423).
+    ///
+    /// ### Why this exists at all
+    ///
+    /// Because the alternative was silence. With a translation mode armed and Smart Modes
+    /// switched off, the dictation ran Normal, the outcome was an ordinary success,
+    /// and the only trace was a WARNING in a log the user never reads — French in,
+    /// French out, nothing on screen. #79 specifies that an unavailable Smart Mode
+    /// fails closed with an explicit message; this path fails *open*, so the message
+    /// is the whole of what it owes.
+    ///
+    /// ### Why it is a notice and not an error
+    ///
+    /// **Nothing failed.** The user switched the feature off, or their subscription
+    /// lapsed, or Apple Intelligence is off — every one of those is a state they are
+    /// in, not a fault. The wording says what happened and why, and never "failed",
+    /// "error" or "try again". It goes through the same slot as an error and that
+    /// slot has been grey since #313, deliberately: red is the recording overlay's
+    /// colour and an alarm here would be claiming the app is broken.
+    ///
+    /// ### Why once
+    ///
+    /// The state that produced it can last weeks, and a sentence on every dictation
+    /// forever is how a notice becomes noise. `SmartModeStore` holds what the user
+    /// was last told and forgets it the moment the state changes — arming,
+    /// disarming, or a dictation the mode actually runs. The standing signal is the
+    /// toolbar's inactive armed-mode label, which does not expire.
+    private func announceSkip(_ notice: SmartModeSkipNotice) {
+        guard !SmartModeStore.hasAnnouncedSkip(notice) else { return }
+        SmartModeStore.noteSkipAnnounced(notice)
+        KeyboardState.shared.presentStatusMessage(
+            KeyboardSmartModeState.localizedSkipNotice(notice),
+            reason: "smartModeSkipped-\(notice.reason.slug)",
+            timeoutReason: "smartModeSkipped-timeout"
         )
     }
 
@@ -534,6 +589,20 @@ final class KeyboardPolishCoordinator {
             return nil
         }
         return mode
+    }
+
+    /// The mode DictusApp resolved away for this dictation, or nil when none was
+    /// (#423).
+    ///
+    /// Absent is the ordinary case and means nothing to say. A blob that will not
+    /// decode is silently ignored rather than logged loudly: unlike its neighbour it
+    /// cannot cost a dictation anything — the worst outcome is a transient sentence
+    /// the user does not get, and the skip is in the persistent log either way.
+    private func storedSkippedSmartMode() -> SmartModeSkipNotice? {
+        guard let data = defaults.data(forKey: SharedKeys.lastTranscriptionSmartModeSkipped) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(SmartModeSkipNotice.self, from: data)
     }
 
 }

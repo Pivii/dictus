@@ -9,7 +9,9 @@ final class SmartModeStoreTests: XCTestCase {
 
     private var defaults: UserDefaults { AppGroup.defaults }
 
-    private let keys = [SharedKeys.smartModeArmed, SharedKeys.smartModePinned]
+    private let keys = [
+        SharedKeys.smartModeArmed, SharedKeys.smartModePinned, SharedKeys.smartModeSkipAnnounced
+    ]
 
     override func setUp() {
         super.setUp()
@@ -63,8 +65,11 @@ final class SmartModeStoreTests: XCTestCase {
     /// lift on its own. An identifier no mode answers to is one of those.
     func testResolveArmedModeClearsAnIdentifierThisBuildDoesNotKnow() {
         defaults.set("translate.klingon", forKey: SharedKeys.smartModeArmed)
-        XCTAssertNil(SmartModeStore.resolveArmedMode())
+        let resolution = SmartModeStore.resolveArmedMode()
+        XCTAssertNil(resolution.mode)
         XCTAssertNil(SmartModeStore.armedIdentifier)
+        // No notice: there is no mode to name and no choice of the user's to explain.
+        XCTAssertNil(resolution.skipped)
     }
 
     /// A recoverable outage must not cost the user their setting: a model still
@@ -85,8 +90,92 @@ final class SmartModeStoreTests: XCTestCase {
     }
 
     func testResolveArmedModeIsANoOpWhenNothingIsArmed() {
-        XCTAssertNil(SmartModeStore.resolveArmedMode())
+        let resolution = SmartModeStore.resolveArmedMode()
+        XCTAssertNil(resolution.mode)
+        XCTAssertNil(resolution.skipped)
         XCTAssertNil(SmartModeStore.armedIdentifier)
+    }
+
+    // MARK: - The silent fallback (#423)
+
+    /// The contract #423 adds, and the one assertion that holds on any machine:
+    /// **either the armed mode runs, or the user is told which one did not.** What
+    /// this host's Apple Intelligence and entitlement happen to say decides which
+    /// branch, and neither of them may produce silence.
+    func testAnArmedModeEitherRunsOrProducesANotice() {
+        SmartModeStore.arm(SmartModeCatalogue.notes)
+        let resolution = SmartModeStore.resolveArmedMode()
+        if let mode = resolution.mode {
+            XCTAssertEqual(mode.id, SmartModeCatalogue.notesIdentifier)
+            XCTAssertNil(resolution.skipped, "a mode that ran was not skipped")
+        } else {
+            XCTAssertEqual(resolution.skipped?.modeIdentifier, SmartModeCatalogue.notesIdentifier)
+            XCTAssertEqual(resolution.skipped?.modeDisplayName, SmartModeCatalogue.notes.displayName)
+        }
+    }
+
+    /// The notice fires once. The state behind it can last weeks, and a sentence on
+    /// every dictation forever is how a notice becomes noise.
+    func testASkipIsAnnouncedOncePerStateRatherThanOnEveryDictation() {
+        let notice = SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .switchedOff
+        )
+        XCTAssertFalse(SmartModeStore.hasAnnouncedSkip(notice))
+        SmartModeStore.noteSkipAnnounced(notice)
+        XCTAssertTrue(SmartModeStore.hasAnnouncedSkip(notice))
+    }
+
+    /// A different reason for the same mode is a new thing to say.
+    func testTheSameModeFailingForANewReasonIsAnnouncedAgain() {
+        let switchedOff = SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .switchedOff
+        )
+        SmartModeStore.noteSkipAnnounced(switchedOff)
+        let appleIntelligenceOff = SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .appleIntelligenceNotEnabled
+        )
+        XCTAssertFalse(SmartModeStore.hasAnnouncedSkip(appleIntelligenceOff))
+    }
+
+    /// And so is a different mode failing for the same one.
+    func testADifferentModeIsAnnouncedAgain() {
+        SmartModeStore.noteSkipAnnounced(SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .notSubscribed
+        ))
+        XCTAssertFalse(SmartModeStore.hasAnnouncedSkip(SmartModeSkipNotice(
+            modeIdentifier: "translate.en", modeDisplayName: "\u{2192} EN", reason: .notSubscribed
+        )))
+    }
+
+    /// Arming is the state changing, so the user is owed the sentence again.
+    func testArmingForgetsWhatTheUserWasToldAboutASkip() {
+        let notice = SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .switchedOff
+        )
+        SmartModeStore.noteSkipAnnounced(notice)
+        SmartModeStore.arm(SmartModeCatalogue.translate(to: .english))
+        XCTAssertFalse(SmartModeStore.hasAnnouncedSkip(notice))
+    }
+
+    func testDisarmingForgetsItToo() {
+        let notice = SmartModeSkipNotice(
+            modeIdentifier: "notes", modeDisplayName: "List", reason: .switchedOff
+        )
+        SmartModeStore.noteSkipAnnounced(notice)
+        SmartModeStore.disarm()
+        XCTAssertFalse(SmartModeStore.hasAnnouncedSkip(notice))
+    }
+
+    /// The notice has to survive the App Group trip, because the process that
+    /// resolves it is not the process that says it.
+    func testASkipNoticeRoundTripsThroughItsCoding() throws {
+        let notice = SmartModeSkipNotice(
+            modeIdentifier: "translate.en", modeDisplayName: "\u{2192} EN", reason: .other("newThing")
+        )
+        let decoded = try JSONDecoder().decode(
+            SmartModeSkipNotice.self, from: JSONEncoder().encode(notice)
+        )
+        XCTAssertEqual(decoded, notice)
     }
 
     // MARK: - Pinning

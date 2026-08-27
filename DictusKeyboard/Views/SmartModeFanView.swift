@@ -39,7 +39,11 @@ struct SmartModeFanView: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(state.entries.enumerated()), id: \.element.id) { index, entry in
-                row(entry, isHighlighted: index == state.highlightedIndex)
+                if case .pro = entry {
+                    proRow(isHighlighted: index == state.highlightedIndex)
+                } else {
+                    row(entry, isHighlighted: index == state.highlightedIndex)
+                }
             }
 
             if let reason = state.unavailableReason {
@@ -102,6 +106,8 @@ struct SmartModeFanView: View {
             Text(name(entry))
                 .font(.system(size: 17, weight: isHighlighted ? .semibold : .regular))
                 .lineLimit(1)
+
+            marker(for: entry)
         }
         .foregroundColor(foreground(isHighlighted: isHighlighted, isEnabled: isEnabled))
         .padding(.horizontal, 20)
@@ -109,6 +115,96 @@ struct SmartModeFanView: View {
         .frame(height: rowHeight)
         .background(rowSurface(isHighlighted: isHighlighted))
         .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    /// What a row says about itself when the finger is not on it (#423).
+    ///
+    /// Two markers, because "armed" and "in force" stopped being the same thing the
+    /// moment a mode could stay armed and not run. Greying the mode rows says *you
+    /// cannot pick this*; it does not say *the thing you already picked will not
+    /// happen*, and only the second was true when the maintainer hit this.
+    ///
+    /// - The row that **will run** carries the check. When the armed mode is
+    ///   honoured that is the mode; when it is not, it is Normal, because Normal is
+    ///   what the dictation does.
+    /// - The armed row, when it is not the one running, carries a muted `Off`
+    ///   instead. The choice survived — `resolveArmedMode` keeps it deliberately, so
+    ///   re-subscribing or switching the feature back on restores it without
+    ///   re-arming — and the marker is what says so without claiming it is active.
+    ///
+    /// A row can never carry both: the check is on `effectiveEntryID` and the `Off`
+    /// only on an armed row that is not it.
+    @ViewBuilder
+    private func marker(for entry: SmartModeFanEntry) -> some View {
+        if entry.id == state.effectiveEntryID {
+            Image(systemName: "checkmark")
+                .font(.system(size: 13, weight: .bold))
+        } else if entry.id == state.armedEntryID {
+            Text(
+                "Off",
+                comment: "Marker on the Smart Mode fan row the user armed, when that mode will not run and the dictation goes in as Normal."
+            )
+            .font(.system(size: 11, weight: .semibold))
+            .textCase(.uppercase)
+            .padding(.horizontal, 6)
+            .frame(height: 16)
+            .background(Capsule().fill(Color.secondary.opacity(0.18)))
+        }
+    }
+
+    /// The Dictus Pro row: the whole of a non-subscriber's fan (#404, decided in
+    /// #392).
+    ///
+    /// ### Why it does not look like a mode row
+    ///
+    /// It is not one. Every other row changes a setting and stays in the keyboard;
+    /// this one leaves for the app's paywall. It wears the paywall's own gradient —
+    /// the same one `ToolbarView.proEntry` carries — so the Pro signal reads
+    /// identically across surfaces, and it says out loud what releasing on it does,
+    /// because a blind release at the end of a drag is not a place to be surprised.
+    ///
+    /// ### Why a rounded rectangle and not the capsule its neighbours use
+    ///
+    /// Because it has no neighbours. As the only entry it gets the whole area —
+    /// about 205 pt on a standard iPhone — and a capsule that tall is a lozenge with
+    /// a 100 pt radius, which reads as a shape rather than as a control. The capsule
+    /// exists to make a row look like one of the wide keys it replaced; one row
+    /// covering the whole keyboard is not that, and should not pretend to be.
+    private func proRow(isHighlighted: Bool) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 24, weight: .medium))
+
+            Text(verbatim: "Dictus Pro")
+                .font(.system(size: 22, weight: .bold))
+
+            Text(
+                "Release here to see the plans",
+                comment: "Caption on the Dictus Pro row of the Smart Mode fan, telling the user what releasing the long-press does."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
+            .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(
+            LinearGradient(
+                colors: [.dictusGradientStart, .dictusGradientEnd],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .frame(height: rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.dictusAccent.opacity(isHighlighted ? 0.25 : 0))
+                .dictusGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+        )
     }
 
     /// The capsule under a row: glass at rest, washed accent under the finger.
@@ -150,11 +246,10 @@ struct SmartModeFanView: View {
     /// catalog, and every other mode's label is the catalogue's own — deliberately
     /// language-neutral, so "→ EN" reads the same in every UI locale.
     private func name(_ entry: SmartModeFanEntry) -> String {
-        entry.smartMode?.displayName
+        entry.smartMode?.localizedDisplayName
             ?? String(
                 localized: "Normal",
                 comment: "The Smart Mode fan row that clears the armed mode and returns to the free polish."
             )
     }
-
 }

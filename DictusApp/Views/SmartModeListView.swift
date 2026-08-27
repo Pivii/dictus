@@ -156,7 +156,7 @@ struct SmartModeListView: View {
     /// where there is width to spare and an arrow with no verb reads as a glyph
     /// rather than a mode. The catalogue's own doc comment leaves this to the app.
     static func listName(for mode: SmartMode) -> String {
-        guard mode.id.hasPrefix("translate.") else { return mode.displayName }
+        guard mode.id.hasPrefix("translate.") else { return mode.localizedDisplayName }
         return "Translate \(mode.displayName)"
     }
 

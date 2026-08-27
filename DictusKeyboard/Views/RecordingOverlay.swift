@@ -42,7 +42,7 @@ struct RecordingOverlay: View {
     /// **This is the indicator that makes a sticky mode safe.** The mode survives
     /// restarts and can have been armed a week ago; the mic pill's badge names it,
     /// but by the time the overlay is up the mic is gone and the badge with it.
-    /// Naming it here means the user reads "Notes" while speaking, with the cancel
+    /// Naming it here means the user reads "List" while speaking, with the cancel
     /// button one tap away — which is the difference between a setting they forgot
     /// and a setting that cost them a dictation.
     var armedSmartMode: SmartMode?
@@ -217,7 +217,7 @@ struct RecordingOverlay: View {
                 Image(systemName: armedSmartMode.icon)
                     .font(.system(size: 12, weight: .semibold))
 
-                Text(armedSmartMode.displayName)
+                Text(armedSmartMode.localizedDisplayName)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
             }
