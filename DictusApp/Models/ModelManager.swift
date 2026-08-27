@@ -71,15 +71,35 @@ class ModelManager: ObservableObject {
 
     /// Set when the user dismisses the preparation screen by hand (issue #428).
     ///
-    /// WHY it has to exist: the escape lands the user on the Models tab, and
-    /// `ModelManagerView` auto-presents the very same screen from live state the
-    /// moment that tab appears. Without a memory of the user's decision, escaping
-    /// would re-cover the screen on the next frame and the way out would be no way
-    /// out at all.
+    /// THE INVARIANT, and it is the second of the two this feature turns on. The first
+    /// says WHICH model a preparation screen is about (`liveActivePrepModel`). This one
+    /// says WHEN that screen may appear at all:
     ///
-    /// Cleared the moment the user asks for model work again (`downloadModel`,
-    /// `selectModel`), because from then on the screen is answering a fresh request
-    /// rather than replaying the one they walked away from.
+    ///     A screen the user has dismissed may only come back on work the user asked
+    ///     for AFTER dismissing it, and never on work that was already running when
+    ///     they dismissed it.
+    ///
+    /// Both halves earned their place. Without a memory of the dismissal at all, the
+    /// escape lands on the Models tab and `ModelManagerView` re-presents the same screen
+    /// on the next frame, so the way out is no way out. And with the memory cleared by
+    /// `selectModel`, the user takes the escape, taps a lighter model — the one obvious
+    /// next action — and the cover returns for as long as that load takes, which behind
+    /// an abandoned compile is minutes. Either way they end up back where they escaped
+    /// from; the second way just takes one more tap to get there.
+    ///
+    /// WHAT IS IMPLEMENTED IS STRICTLY STRONGER THAN THE INVARIANT, deliberately. Once
+    /// dismissed, model SELECTION never re-presents the screen again this session, even
+    /// after the abandoned compile finishes and the chosen model genuinely starts
+    /// compiling — which the invariant would permit. The finer rule is not implementable
+    /// here: at the moment the screen decides whether to present, `modelLoadState` is
+    /// `.loading` for both "queued behind an abandoned compile" and "actually
+    /// compiling", and telling those apart needs exactly the information the open
+    /// follow-up about the model card is asking for. Until that exists, the stronger
+    /// rule is the one that cannot re-create the lockout.
+    ///
+    /// `downloadModel` still clears it: starting a download is a new, explicit,
+    /// long-running request rather than a choice among things already on disk, and it is
+    /// unambiguously work asked for after the dismissal.
     @Published var preparationDismissedByUser = false
 
     /// When the current compile-or-load wait began (issue #428 review, findings 3 and 7).
