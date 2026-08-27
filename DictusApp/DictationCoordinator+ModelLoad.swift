@@ -24,6 +24,11 @@ extension DictationCoordinator {
     /// ever one number per model to keep true. Those numbers are sized against a
     /// variant's FIRST compile on a device, which runs into the minutes; a load that
     /// finds a warm Core ML cache takes seconds.
+    ///
+    /// The measurement that matters most here is the one taken through this very path:
+    /// on 2026-08-27 a cold launch preload of turbo_632MB took 202s and COMPLETED. This
+    /// deadline is not guarding against a compile that never returns — it is guarding
+    /// against the app having no way to know the difference.
     func runLaunchPreload() async {
         let modelName = defaults.string(forKey: SharedKeys.activeModel) ?? "openai_whisper-small"
         let deadlineSeconds = ModelInfo.preloadDeadlineSeconds(for: modelName)
@@ -56,9 +61,9 @@ extension DictationCoordinator {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(deadlineSeconds) * 1_000_000_000)
             guard let self, self.claimModelLoadOutcome(epoch: epoch) else { return }
-            // Release the dedupe lock so a model the user picks next can actually load,
-            // instead of awaiting the compile this deadline just gave up on.
-            self.releaseEngineInitLock()
+            // Remember what we gave up on, so returning to the foreground does not
+            // quietly start the same compile again (finding 3).
+            self.abandonedModel = modelName
             self.setModelLoadState(.idle, reason: "init-preload-deadline")
             PersistentLog.log(.diagnosticProbe(
                 component: "ModelPreload",
@@ -71,17 +76,21 @@ extension DictationCoordinator {
         // The load arm. The same work as before; the only new thing is that it has to
         // claim the outcome before publishing it, because the deadline may have won.
         do {
-            let loadedName = try await loadActiveModelIntoMemory()
+            let loadedName = try await loadActiveModelIntoMemory(context: "init-preload")
             PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
             guard claimModelLoadOutcome(epoch: epoch) else {
-                // Late, but not wasted: the engine is loaded and the next dictation will
-                // use it. The state stays idle, which is true — nothing is in flight any
-                // more — and idle is what lets the keyboard accept a mic tap.
+                // Reachable only in the narrow window where the load published its
+                // engine and the deadline claimed the outcome immediately afterwards.
+                // A load abandoned any earlier than that throws instead and lands in
+                // the catch below, which is why this line no longer has to guess
+                // whether an engine survived: it reports the name the load actually
+                // published (finding 6 — the details here used to be hardcoded, and
+                // were false on the very path they described).
                 PersistentLog.log(.diagnosticProbe(
                     component: "ModelPreload",
                     instanceID: modelName,
                     action: "completedAfterDeadline",
-                    details: "engineLoaded=true state=idle"
+                    details: "loadedModel=\(loadedName) state=idle"
                 ))
                 return
             }
@@ -96,6 +105,58 @@ extension DictationCoordinator {
         }
     }
 
+    /// Warm the engine when the app comes back to the foreground.
+    ///
+    /// WHY it lives here rather than inline in the `didBecomeActive` observer: what this
+    /// decides is no longer "warm up" but "may we start a load the user did not ask
+    /// for?", which is a model-load policy question and belongs beside the rest of them.
+    func warmUpEngineOnForeground() async {
+        guard !isAudioEngineRunning else {
+            PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive-already-running"))
+            return
+        }
+        guard defaults.bool(forKey: SharedKeys.modelReady) else {
+            PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: "modelReady=false"))
+            return
+        }
+
+        // Returning to the foreground is not a request to retry a load the user just
+        // walked away from (finding 3). Without this, escaping the preparation screen
+        // and then backgrounding the app — the natural thing to do while waiting —
+        // restarted the very same compile, wrote `.loading` again, and put the user
+        // straight back on the screen they had escaped, with the 45 seconds reset.
+        let activeModel = defaults.string(forKey: SharedKeys.activeModel)
+        if let abandoned = abandonedModel, abandoned == activeModel {
+            PersistentLog.log(.diagnosticProbe(
+                component: "ModelPreload",
+                instanceID: abandoned,
+                action: "warmUpSkippedAfterAbandon",
+                details: "context=didBecomeActive"
+            ))
+            return
+        }
+
+        let epoch = modelLoadEpoch
+        do {
+            try configureAudioSessionForWarmUp()
+            setModelLoadState(.loading, reason: "didBecomeActive-warmup")
+            _ = try await loadActiveModelIntoMemory(context: "didBecomeActive")
+            PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
+            // Claim before publishing, as the launch preload does: this warm-up can be
+            // abandoned mid-flight too, and `.ready` would then announce an engine that
+            // was discarded before it was installed (finding 5).
+            guard claimModelLoadOutcome(epoch: epoch) else { return }
+            setModelLoadState(.ready, reason: "didBecomeActive-success")
+        } catch {
+            PersistentLog.log(.engineWarmUpFailed(
+                context: "didBecomeActive",
+                error: error.localizedDescription
+            ))
+            guard claimModelLoadOutcome(epoch: epoch) else { return }
+            setModelLoadState(.idle, reason: "didBecomeActive-failed")
+        }
+    }
+
     /// Stop waiting for the model load in flight, at the user's request (issue #428).
     ///
     /// Called when the user takes the escape the preparation screen offers after
@@ -106,22 +167,97 @@ extension DictationCoordinator {
     /// work keeps running and keeps burning CPU until it finishes on its own. What this
     /// does is unpick every way that work was holding the app hostage:
     ///   - bumping the epoch makes the abandoned load discard its result instead of
-    ///     swapping the engine under whatever model the user picks next;
-    ///   - releasing the init lock means the next `ensureEngineReady` starts a load
-    ///     rather than awaiting the hung one, so the user's new choice can arrive;
+    ///     swapping the engine under whatever model the user picks next, and makes it
+    ///     fail its awaiters rather than hand them an engine that was thrown away;
     ///   - `.idle` lets the keyboard accept a mic tap again, and stops the views that
-    ///     auto-present the screen from re-covering the one the user just left.
+    ///     auto-present the screen from re-covering the one the user just left;
+    ///   - remembering the model stops `didBecomeActive` restarting the same compile
+    ///     the moment the user backgrounds the app and comes back (finding 3).
+    ///
+    /// WHAT IT DELIBERATELY DOES NOT DO is take the init lock away. An earlier version
+    /// did, and that was worse than the bug it fixed: the abandoned compile keeps
+    /// running, the Neural Engine cannot compile two models at once, and a model picked
+    /// straight afterwards would have started a second compile on top of it — the "E5
+    /// bundle" failure `ModelManager` serialises its own prewarms to avoid (finding 2).
+    /// So the next load queues behind the abandoned one instead. The user gets their
+    /// app back immediately, which is what this is for; they get their next model when
+    /// the hardware is free, which is the most anyone can offer.
     func abandonInFlightModelLoad(reason: String) {
         let modelName = defaults.string(forKey: SharedKeys.activeModel) ?? "unknown"
         modelLoadEpoch += 1
-        releaseEngineInitLock()
+        abandonedModel = modelName
         setModelLoadState(.idle, reason: reason)
         PersistentLog.log(.diagnosticProbe(
             component: "ModelPreload",
             instanceID: modelName,
             action: "abandonedByUser",
-            details: "reason=\(reason) compileStillRunning=true"
+            details: "reason=\(reason) compileStillRunning=true nextLoadQueuesBehindIt=true"
         ))
+    }
+
+    /// Wait until no engine init is in flight, and report whether the one that finished
+    /// has already done this caller's work.
+    ///
+    /// WHY WAIT rather than take the lock away (issue #428 review, finding 2): the
+    /// Neural Engine cannot compile two models at once. `ModelManager` serialises its
+    /// own prewarms for exactly that reason — simultaneous compiles produce the "E5
+    /// bundle" failure — and `ensureEngineReady` is not covered by that lock. An
+    /// abandoned compile cannot be stopped, so the only safe thing a later caller can do
+    /// is queue behind it. An earlier version of the escape cleared the lock instead,
+    /// which meant "choose another model after escaping" started a second compile on
+    /// top of the first: a lockout traded for a hardware-level failure.
+    ///
+    /// WHY A LOOP: `await` is a suspension point, and another caller may have installed
+    /// a lock of its own while this one was parked. Going straight to the compile after
+    /// a single wait would be the double compile this exists to prevent.
+    ///
+    /// - Returns: `true` when the caller can return immediately because the load that
+    ///   just finished was the one it wanted.
+    func awaitInFlightEngineInit(
+        modelName: String,
+        component: String,
+        isAlreadyLoaded: () -> Bool
+    ) async throws -> Bool {
+        while let inFlight = initTask {
+            let isCurrentGeneration = initTaskEpoch == modelLoadEpoch
+            if #available(iOS 14.0, *) {
+                DictusLogger.app.info("Engine init already in progress — awaiting existing task")
+            }
+            do {
+                try await inFlight.value
+                // Only a load of the current generation can have loaded our model: an
+                // abandoned one discarded its engine rather than publishing it.
+                if isCurrentGeneration, isAlreadyLoaded() {
+                    return true
+                }
+            } catch {
+                // A load the app is still waiting for rethrows to every awaiter, so it
+                // is localised here too (issue #249) — a cold start that piggybacks on
+                // the launch preload takes this branch. An abandoned load's failure is
+                // not this caller's failure: it is noted and stepped over.
+                if isCurrentGeneration {
+                    throw Self.loadFailure(for: modelName, from: error)
+                }
+                PersistentLog.log(.diagnosticProbe(
+                    component: component,
+                    instanceID: modelName,
+                    action: "waitedOutAbandonedLoad",
+                    details: "reason=\(Self.loadFailure(for: modelName, from: error).diagnosticDescription)"
+                ))
+            }
+            clearInitTask(ifStillCurrent: inFlight)
+        }
+        return false
+    }
+
+    /// Release the engine-init lock, but only if it still points at `task`.
+    ///
+    /// WHY the identity check: an abandoned load eventually completes and runs its own
+    /// cleanup. A bare `initTask = nil` there would clear whatever task a *newer* load
+    /// had since installed, and the caller after that would see no lock, start a second
+    /// init, and put two Core ML compiles on the Neural Engine at once.
+    func clearInitTask(ifStillCurrent task: Task<Void, Error>) {
+        if initTask == task { initTask = nil }
     }
 
     /// Wrap a raw engine error for the caller, without flattening an abandonment.

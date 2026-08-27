@@ -106,11 +106,19 @@ public struct ModelInfo: Identifiable {
     /// time the two drifted the launch path would be the one holding the wrong number.
     ///
     /// What the budget has to survive is a variant's FIRST compile on a device, which
-    /// builds the Core ML bundle cache and runs into the minutes: an iPhone 15 Pro Max
-    /// log shows a Turbo compile still running 212s in, and the same device measured
-    /// 236s on 2026-08-25. Every load after that finds the cache and takes seconds
-    /// (3636ms measured). A budget sized against the warm figure would fire on every
-    /// first install; these are sized against the cold one.
+    /// builds the Core ML bundle cache and runs into the minutes. Three cold readings of
+    /// turbo_632MB on the same iPhone 15 Pro Max agree: 236s (2026-08-25), still running
+    /// at 212s (2026-08-26), and 202s start to finish (2026-08-27, the one that
+    /// completed inside a launch preload and was measured end to end). Every load that
+    /// finds the cache afterwards takes seconds — 3636ms measured. A budget sized
+    /// against the warm figure would fire on every first install; these are sized
+    /// against the cold one, which leaves 300s a real 33% of headroom over the only
+    /// complete cold measurement anyone has.
+    ///
+    /// WORTH KNOWING when reading a device log: the bundle cache lives in the app
+    /// container, so every development install throws it away. The first launch after
+    /// any install pays a full cold compile, and a preload that takes minutes there is
+    /// the expected reading rather than a fault.
     ///
     /// Neither figure is a ceiling for a colder or busier device, which is why the
     /// deadline frees the UI rather than failing the model — see the call site.

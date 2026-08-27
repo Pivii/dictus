@@ -53,8 +53,13 @@ public enum ModelPreparationEscape {
     ///     09:28:48Z modelCompilationCompleted turbo_632MB duration=3636ms
     ///
     /// The FIRST compile of a variant on a device builds the Core ML bundle cache and
-    /// runs into the minutes (212s and still going here; 236s measured on the same
-    /// device on 2026-08-25). Every load after it finds that cache and takes seconds.
+    /// runs into the minutes. Three cold readings on that iPhone agree: 212s and still
+    /// going above, 236s on 2026-08-25, and 202s start to finish on 2026-08-27. Every
+    /// load after it finds that cache and takes seconds.
+    ///
+    /// The cache lives in the app container, so every development install discards it:
+    /// the first launch after an install always pays a cold compile, which is why this
+    /// button shows up so readily during testing.
     ///
     /// So 45s sits above every routine wait — a warm load is seconds, and the slowest
     /// preparation measured outside a first compile is Medium at 32s — and below every

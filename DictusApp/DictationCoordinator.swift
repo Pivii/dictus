@@ -144,7 +144,11 @@ class DictationCoordinator: ObservableObject {
     /// If startDictation() arrives while pre-load is still running, it must AWAIT
     /// the ongoing init instead of starting a duplicate one. This Task acts as
     /// a concurrency lock — the first caller creates it, subsequent callers await it.
-    private var initTask: Task<Void, Error>?
+    ///
+    /// Not `private` only because the waiting rule that governs it lives in
+    /// `DictationCoordinator+ModelLoad.swift` and Swift scopes `private` to the file.
+    /// One owner: nothing outside `ensureEngineReady` and that file may touch it.
+    var initTask: Task<Void, Error>?
 
     /// Generation counter for model loads (issue #428).
     ///
@@ -158,6 +162,24 @@ class DictationCoordinator: ObservableObject {
     /// Not `private` only because `DictationCoordinator+ModelLoad.swift` arbitrates the
     /// launch race through it and Swift scopes `private` to the file. One owner.
     var modelLoadEpoch = 0
+
+    /// The generation `initTask` was created in, so a caller arriving later can tell an
+    /// abandoned load from the one everybody is still waiting for (issue #428).
+    /// Internal for the same reason as `initTask`, and written only beside it.
+    var initTaskEpoch = 0
+
+    /// The model the user walked away from preparing, or that blew its launch deadline.
+    ///
+    /// Process-scoped on purpose: a fresh launch is entitled to try again, now that a
+    /// stale "loading" is cleared at startup and the launch preload carries a deadline.
+    /// What this stops is the app quietly re-attempting the same doomed compile WITHIN
+    /// the session, behind the user's back — `didBecomeActive` fires every time they
+    /// return from the home screen, and backgrounding is the natural thing to do while
+    /// waiting (issue #428 review, finding 3).
+    ///
+    /// It never blocks something the user asked for: picking a model, or tapping the
+    /// mic, still loads it.
+    var abandonedModel: String?
 
     /// Re-entry flag for stopDictation. Prevents the 3+ concurrent transcribe()
     /// calls observed in #144 when a user taps stop multiple times during a model
@@ -173,38 +195,32 @@ class DictationCoordinator: ObservableObject {
     private var energyCancellable: AnyCancellable?
     private var secondsCancellable: AnyCancellable?
 
-    /// Release the engine-init dedupe lock, but only if it still points at `task`.
-    ///
-    /// WHY the identity check: an abandoned load eventually completes and runs its own
-    /// cleanup. A bare `initTask = nil` there would clear whatever task a *newer* load
-    /// had since installed, and the caller after that would see no lock, start a second
-    /// WhisperKit init, and put two Core ML compiles on the Neural Engine at once —
-    /// the "E5 bundle" failure the prewarm serialisation in `ModelManager` exists to
-    /// avoid.
-    private func clearInitTask(ifStillCurrent task: Task<Void, Error>) {
-        if initTask == task { initTask = nil }
+    /// Configure the audio session, from the orchestration file. A tiny seam rather
+    /// than exposing `audioEngine`, which nothing outside this file has any business
+    /// holding (issue #428).
+    func configureAudioSessionForWarmUp() throws {
+        try audioEngine.configureAudioSession()
     }
 
-    /// The work the launch deadline is measured against: compile if needed, load into
-    /// RAM, warm the audio path. Returns the model that ended up loaded, for the log.
+    /// Whether the audio engine is already running, for the foreground warm-up policy.
+    var isAudioEngineRunning: Bool { audioEngine.isEngineRunning }
+
+    /// Compile if needed, load into RAM, warm the audio path. Returns the model that
+    /// ended up loaded, for the log.
     ///
-    /// WHY it exists as a seam rather than being inlined where it is used: the deadline
-    /// that races it lives in `DictationCoordinator+ModelLoad.swift`, because this file
-    /// is at the length budget issue #146 calibrated against it. One named entry point
-    /// is a cheaper thing to expose than the four private members it touches.
-    func loadActiveModelIntoMemory() async throws -> String {
+    /// WHY it exists as a seam rather than being inlined where it is used: the callers
+    /// live in `DictationCoordinator+ModelLoad.swift`, because this file is at the
+    /// length budget issue #146 calibrated against it. One named entry point is a
+    /// cheaper thing to expose than the private members it touches.
+    ///
+    /// `context` is passed rather than fixed: both the launch preload and the
+    /// foreground warm-up run this, and a log line naming the wrong one is the kind of
+    /// small lie the debug log cannot afford — its reader is an agent.
+    func loadActiveModelIntoMemory(context: String) async throws -> String {
         try await ensureEngineReady()
-        PersistentLog.log(.engineWarmUpAttempt(context: "init-preload"))
+        PersistentLog.log(.engineWarmUpAttempt(context: context))
         try audioEngine.warmUp()
         return currentModelName ?? "unknown"
-    }
-
-    /// Drop the engine-init dedupe lock unconditionally, so the next `ensureEngineReady`
-    /// starts a load instead of awaiting one that has been given up on (issue #428).
-    /// The abandoned task keeps running; `clearInitTask(ifStillCurrent:)` is what stops
-    /// its eventual cleanup from clearing whatever replaced it.
-    func releaseEngineInitLock() {
-        initTask = nil
     }
 
     private init() {
@@ -384,28 +400,7 @@ class DictationCoordinator: ObservableObject {
                     return
                 }
 
-                guard !self.audioEngine.isEngineRunning else {
-                    PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive-already-running"))
-                    return
-                }
-                let modelReady = self.defaults.bool(forKey: SharedKeys.modelReady)
-                guard modelReady else {
-                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: "modelReady=false"))
-                    return
-                }
-
-                do {
-                    try self.audioEngine.configureAudioSession()
-                    PersistentLog.log(.engineWarmUpAttempt(context: "didBecomeActive"))
-                    self.setModelLoadState(.loading, reason: "didBecomeActive-warmup")
-                    try await self.ensureEngineReady()
-                    try self.audioEngine.warmUp()
-                    PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
-                    self.setModelLoadState(.ready, reason: "didBecomeActive-success")
-                } catch {
-                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: error.localizedDescription))
-                    self.setModelLoadState(.idle, reason: "didBecomeActive-failed")
-                }
+                await self.warmUpEngineOnForeground()
             }
         }
     }
@@ -1332,17 +1327,26 @@ class DictationCoordinator: ObservableObject {
     /// scoped the deadline to launch): a load started from this path always has the
     /// preparation screen in front of it, and that screen now offers its own escape.
     func preloadActiveModel() {
+        // An explicit choice clears the memory of what was walked away from: the user
+        // is asking for this load, so nothing here should be suppressed on their behalf.
+        abandonedModel = nil
         Task {
+            let epoch = self.modelLoadEpoch
             self.setModelLoadState(.loading, reason: "selectModel-proactive")
             do {
                 try await ensureEngineReady()
                 PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
+                // Claim before publishing (finding 5). This load can be abandoned mid
+                // flight like any other, and writing `.ready` afterwards would announce
+                // an engine that was discarded before it was ever installed.
+                guard self.claimModelLoadOutcome(epoch: epoch) else { return }
                 self.setModelLoadState(.ready, reason: "selectModel-proactive-success")
             } catch {
                 PersistentLog.log(.engineWarmUpFailed(
                     context: "selectModel-proactive",
                     error: error.localizedDescription
                 ))
+                guard self.claimModelLoadOutcome(epoch: epoch) else { return }
                 self.setModelLoadState(.idle, reason: "selectModel-proactive-failed")
             }
         }
@@ -1392,18 +1396,12 @@ private extension DictationCoordinator {
             return
         }
 
-        if let existingTask = initTask {
-            if #available(iOS 14.0, *) {
-                DictusLogger.app.info("Engine init already in progress — awaiting existing task")
-            }
-            // The in-flight task rethrows its raw error to every awaiting caller, so
-            // localise here too (issue #249) — a cold start that piggybacks on the
-            // launch preload takes this branch.
-            do {
-                try await existingTask.value
-            } catch {
-                throw Self.loadFailure(for: modelName, from: error)
-            }
+        // One Core ML compile at a time, whoever asked for it (finding 2).
+        if try await awaitInFlightEngineInit(
+            modelName: modelName,
+            component: "WhisperKitLoad",
+            isAlreadyLoaded: { self.whisperKit != nil && self.currentModelName == modelName }
+        ) {
             return
         }
 
@@ -1476,6 +1474,7 @@ private extension DictationCoordinator {
             }
         }
         initTask = task
+        initTaskEpoch = epoch
 
         do {
             try await task.value
@@ -1509,17 +1508,12 @@ private extension DictationCoordinator {
         }
 
         if #available(iOS 17.0, *) {
-            if let existingTask = initTask {
-                if #available(iOS 14.0, *) {
-                    DictusLogger.app.info("Parakeet init already in progress — awaiting existing task")
-                }
-                // Same reason as the WhisperKit path (issue #249): the in-flight task
-                // rethrows its raw FluidAudio/Core ML error to every awaiting caller.
-                do {
-                    try await existingTask.value
-                } catch {
-                    throw Self.loadFailure(for: modelName, from: error)
-                }
+            // Same rule, same hardware reason (finding 2).
+            if try await awaitInFlightEngineInit(
+                modelName: modelName,
+                component: "ParakeetLoad",
+                isAlreadyLoaded: { self.currentModelName == modelName && self.whisperKit == nil }
+            ) {
                 return
             }
 
@@ -1574,6 +1568,7 @@ private extension DictationCoordinator {
                 }
             }
             initTask = task
+            initTaskEpoch = epoch
 
             do {
                 try await task.value

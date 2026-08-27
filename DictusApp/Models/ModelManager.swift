@@ -82,6 +82,19 @@ class ModelManager: ObservableObject {
     /// rather than replaying the one they walked away from.
     @Published var preparationDismissedByUser = false
 
+    /// When the current compile-or-load wait began (issue #428 review, findings 3 and 7).
+    ///
+    /// The escape is offered relative to THIS, not to when a given screen appeared. Two
+    /// things used to restart the user's 45 seconds from zero: the screen being
+    /// dismissed and re-presented (a keyboard prepare URL arriving, a tab change), and
+    /// the preparation context changing mid-wait. Both are invisible to the user, who
+    /// only knows they have been waiting a long time and are being asked to wait 45
+    /// seconds more.
+    ///
+    /// Deliberately not set while a download is running: a download is not what the
+    /// escape is for (finding 4), so the clock starts when the compile does.
+    @Published var preparationWaitStartedAt: Date?
+
     // MARK: - Private
 
     private let defaults = AppGroup.defaults

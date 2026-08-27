@@ -121,7 +121,7 @@ struct ModelLoadingOverlay: View {
                 VStack(spacing: 20) {
                     stayOnPageNotice
 
-                    if showEscape && !showCompletion {
+                    if showEscape && escapeIsAvailable && !showCompletion {
                         escapeOffer
                             .transition(.opacity)
                     }
@@ -131,19 +131,29 @@ struct ModelLoadingOverlay: View {
         }
         .interactiveDismissDisabled(true)
         // Reveal the escape late, not at once. The screen exists to stop the user
-        // tapping the mic mid-load (issue #144) and that reason holds for every
-        // healthy load; a button at second zero would break what the screen is for.
-        // `.task` is cancelled when the screen goes away, so a load that finishes
-        // normally never gets here.
-        // Keyed on the context because the keyboard can change it mid-wait
-        // (`dictusKeyboardPreparationRequested`), and a context that was not allowed an
-        // escape when the screen opened must get one from the moment it is.
-        .task(id: activeContext) {
-            guard activeContext.allowsEscape else { return }
-            try? await Task.sleep(
-                nanoseconds: UInt64(ModelPreparationEscape.revealDelaySeconds) * 1_000_000_000
-            )
-            guard !Task.isCancelled else { return }
+        // tapping the mic mid-load (issue #144) and that reason holds for every healthy
+        // load; a button at second zero would break what the screen is for.
+        //
+        // The delay is measured from when the WAIT began, not from when this screen
+        // appeared, and the start time lives on the shared `ModelManager` (issue #428
+        // review, findings 3 and 7). A screen dismissed and re-presented — a keyboard
+        // prepare URL arriving, a context change mid-wait — used to hand the user a
+        // fresh 45 seconds, which from where they sit is the offer being taken away.
+        //
+        // Keyed on availability, so the clock starts when a download finishes and the
+        // compile begins, and not before.
+        .task(id: escapeIsAvailable) {
+            guard escapeIsAvailable else { return }
+            if modelManager.preparationWaitStartedAt == nil {
+                modelManager.preparationWaitStartedAt = Date()
+            }
+            let waitStart = modelManager.preparationWaitStartedAt ?? Date()
+            let remaining = Double(ModelPreparationEscape.revealDelaySeconds)
+                - Date().timeIntervalSince(waitStart)
+            if remaining > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+            }
             withAnimation(.easeInOut(duration: 0.3)) {
                 showEscape = true
             }
@@ -308,6 +318,24 @@ struct ModelLoadingOverlay: View {
         modelManager.modelStates[modelIdentifier] ?? .notDownloaded
     }
 
+    /// Whether this screen can offer a way out at all (issue #428 review, finding 4).
+    ///
+    /// Not during a download. The escape exists for work that cannot be interrupted and
+    /// gives no sign of progress — a Core ML compile. A download is the opposite: it has
+    /// a progress bar and a byte counter, it is not holding the Neural Engine, and
+    /// abandoning "the load" mid-download would bump the epoch and disown a compile that
+    /// has not started, while the download carried on regardless and the copy said
+    /// nothing about it.
+    ///
+    /// Read from `currentModelState` rather than `currentPhase`, deliberately: the phase
+    /// reports `.downloading` for a model that is merely sitting in the pre-work limbo
+    /// (see `currentPhase`), which is exactly the stuck case the escape is for.
+    private var escapeIsAvailable: Bool {
+        guard activeContext.allowsEscape else { return false }
+        if case .downloading = currentModelState { return false }
+        return true
+    }
+
     private var currentPhase: Phase {
         let raw = rawPhase
         // While we have not yet seen a real work phase, treat `.ready` as the
@@ -397,6 +425,7 @@ struct ModelLoadingOverlay: View {
     /// state to idle, so by the time the presenter's auto-presentation logic re-runs
     /// there is no live preparation left for it to re-cover the screen with.
     private func escape() {
+        modelManager.preparationWaitStartedAt = nil
         modelManager.abandonPreparation()
         isPresented = false
         onEscape?()
@@ -429,6 +458,9 @@ struct ModelLoadingOverlay: View {
             return
         }
         guard !showCompletion else { return }
+
+        // The wait is over, so the next one starts its own clock.
+        modelManager.preparationWaitStartedAt = nil
 
         withAnimation(.easeInOut(duration: 0.35)) {
             showCompletion = true
