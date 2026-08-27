@@ -71,17 +71,22 @@ public struct ModelInfo: Identifiable {
     /// suit Turbo would make every #362-class device wait twice as long to be told
     /// what it could have been told in two minutes.
     ///
-    /// Two paths consume this. The WhisperKit download path
-    /// (`ModelManager.downloadWhisperKitModel`) races it against the first compile,
-    /// and issue #427 established that this use bounds nothing: a task group cannot
-    /// return while a child runs, so it reports lateness after the fact. The launch
-    /// preload (`DictationCoordinator.runLaunchPreload`, issue #428) reads the same
-    /// number through `preloadDeadlineSeconds(for:)` and does honour it, because it
-    /// arbitrates between two independent tasks instead of awaiting a group.
+    /// WHAT IT BOUNDS: the wait, never the compile. Nothing can interrupt a Core ML
+    /// compile, so when a budget expires the work carries on and finishes on its own;
+    /// what ends is the app waiting for it. Read every sentence above with that in
+    /// mind — the #362 spinner ends at 120s, the compile behind it may not.
     ///
-    /// The Parakeet path compiles through FluidAudio and has never carried a deadline
-    /// guard of its own, so the value on `parakeet-tdt-0.6b-v3` is reachable only
-    /// through the launch preload.
+    /// Three paths consume this, and since issue #427 all three honour it the same
+    /// way, by arbitrating between two independent tasks rather than awaiting a task
+    /// group that cannot return while a child runs. Until #427 the WhisperKit download
+    /// path did await such a group, which is why a 5s budget once reported failure 212s
+    /// later, and why anything written before that date describes a guard that only
+    /// reported lateness after the fact.
+    ///   - `ModelManager.downloadWhisperKitModel`, on the first compile of a download;
+    ///   - `ModelManager.downloadParakeetModel`, which read nothing at all until issue
+    ///     #422 and left the default onboarding model unguarded;
+    ///   - `DictationCoordinator.runLaunchPreload` (issue #428), through
+    ///     `preloadDeadlineSeconds(for:)`.
     public let prewarmTimeoutSeconds: Int
 
     /// How long this model's FIRST preparation took on the reference device, in

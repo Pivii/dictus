@@ -564,8 +564,9 @@ final class ModelInfoTests: XCTestCase {
     }
 
     /// Issue #362 is the reason the global value was not simply doubled: on an
-    /// unsupported A13, Whisper Small never finishes compiling and this guard is the
-    /// only thing that ends the spinner. Widening Turbo must not widen that wait.
+    /// unsupported A13, Whisper Small never finishes compiling, and this guard is the
+    /// only thing that ends the SPINNER — it does not end the compile, which nothing
+    /// can (issue #427). Widening Turbo must not widen that wait.
     func testWhisperSmallKeepsTheShortBudgetThatEndsTheA13Spinner() {
         XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-small")?.prewarmTimeoutSeconds, 120)
         XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-base")?.prewarmTimeoutSeconds, 120)
@@ -617,7 +618,8 @@ final class ModelInfoTests: XCTestCase {
     }
 
     /// Every budget has to be a usable deadline. A zero or negative value would make
-    /// `withPrewarmTimeout` fire before the compile starts.
+    /// `withPrewarmTimeout` fire before the compile starts, which since issue #427
+    /// means abandoning it the instant it begins.
     func testEveryCatalogueEntryDeclaresAUsableBudget() {
         for model in ModelInfo.allIncludingDeprecated {
             XCTAssertGreaterThan(

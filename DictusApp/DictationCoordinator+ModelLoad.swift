@@ -73,19 +73,21 @@ extension DictationCoordinator {
         // The deadline arm. An independent task, NOT a child in a task group, and that
         // is the entire point.
         //
-        // WHY NOT `withPrewarmTimeout`: issue #427 measured what that primitive actually
-        // does. It races a sleep against the compile inside a throwing task group, and a
-        // task group cannot return until every child has finished — so the deadline
-        // error surfaces only once the compile it was meant to bound has completed
-        // anyway. A 5s budget reported failure after 212s. `cancelAll()` does not help
-        // either: cancellation is a request, and a Core ML compile checks no flag and
-        // offers no suspension point at which it could notice one.
+        // WHY AN INDEPENDENT TASK: because the alternative was measured and does not
+        // work. Racing a sleep against the compile inside a throwing task group cannot
+        // bound anything — a task group cannot return until every child has finished, so
+        // the deadline error surfaces only once the compile it was meant to bound has
+        // completed anyway, and `cancelAll()` does not help because cancellation is a
+        // request and a Core ML compile checks no flag and offers no suspension point at
+        // which it could notice one. The maintainer's device log has it firing in the
+        // wild exactly this way: `modelPrewarmTimeout timeout=5s`, logged 212 seconds
+        // after the compile it names started.
         //
-        // That is not only a lab result. The maintainer's device log shows the old
-        // guard firing in the wild exactly this way: `modelPrewarmTimeout timeout=5s`
-        // logged 212 seconds after the compile it names started, because the group it
-        // was racing in could not return until that compile did. A budget that only
-        // reports lateness after the fact is worth nothing to the user waiting.
+        // This path was written this way from the start (issue #428). Issue #427 then
+        // moved the download path onto the same shape, so `withPrewarmTimeout` now
+        // arbitrates between two independent tasks too, and the two paths no longer
+        // disagree about what a budget means. What follows below is the reasoning both
+        // of them rest on.
         //
         // So this deadline interrupts nothing, and no deadline can. The compile keeps
         // running and keeps burning CPU until it finishes on its own. What expiry buys
