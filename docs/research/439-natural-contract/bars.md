@@ -146,3 +146,21 @@ Ordered, with what verifies each step.
 - **Apple FM is non-deterministic and the Mac is not the iPhone.** Everything here is a Mac
   measurement over 5 samples per fixture. It cannot replace a device pass, and the device
   pass is on the manual list.
+
+### 4.1 One amendment, made at the baseline and before any prompt was touched
+
+The baseline run showed the scorer classifying three things as **deleted content**
+that are not deletions, and the classification is corrected rather than the threshold:
+
+- `11h` → `11 h` and `11 heures`. The content survives; the *format* does not, which
+  ADR 0003's Preserve list covers under *"number formats like `19h`, `25€`, `2k` stay"*.
+  Moved to bar 2, where it is still a 0-tolerance check.
+- `6 mois` → `six mois`, `15 trucs` → `quinze trucs`. Same shape, digits spelled back
+  out against rule 3. New 0-tolerance check under bar 2.
+- `dictus` left lowercase. That is a rule-2 capitalization miss, not a deletion, and
+  #439 bars neither. The deletion check now matches case-insensitively and the
+  capitalization behaviour is reported in the findings without being a bar.
+
+**No threshold moved, and nothing was relaxed** — bar 2 gained two checks and bar 3
+lost three false positives. The fixture `expect` blocks are untouched, so `eval` keeps
+reporting `contains "11h"` and `contains "14h"` as the failures they are.

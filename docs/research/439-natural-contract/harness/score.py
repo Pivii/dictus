@@ -40,24 +40,38 @@ REPAIRS = [
 ]
 
 # ── Register preserved (ADR 0003 Preserve), 0 occurrences tolerated ───────────
+# The hour and number checks are here rather than under "deleted" because a
+# format change is not a deletion: `11h` → `11 h` and `6 mois` → `six mois` keep
+# the content and break the Preserve list's *"number formats like 19h stay"*.
+# Classified during the baseline run, before any prompt was edited — see
+# ../bars.md §4.1. No threshold moved.
 REGISTER = [
     ("cela for ça", None, lambda t: "cela" not in t.lower()),
     ("added ne (c'est pas → ce n'est pas)", "6-unscripted",
      lambda t: "ce n'est pas vraiment ma voix" not in t and "c'est pas" in t),
-    ("19h/11h/14h not expanded", None,
-     lambda t: not re.search(r"\b\d{1,2} heures\b", t)),
+    ("hour format expanded (11h → 11 h / 11 heures)", None,
+     lambda t: not re.search(r"\b\d{1,2}\s+h(eures)?\b", t)),
     ("machin not substituted", "5-rambling", lambda t: "machine" not in t),
 ]
 
+# Digits the speaker's transcript carried, which must not be spelled back out.
+NUMBERS = {
+    "1-free-form": ["6 mois", "15 trucs"],
+    "2-project-update": ["412", "1000", "19"],
+    "5-rambling": ["19 euros", "6 mois"],
+}
+
 # ── Dictated content deleted, 0 occurrences tolerated ─────────────────────────
-# Spans the measured run dropped, plus the figures/names/trailing sentence the
-# same run kept: a deletion fix that costs one of those is not a fix.
+# Spans the measured run dropped, plus the figures, names and the trailing
+# sentence the same run kept: a deletion fix that costs one of those is not a fix.
+# Matched case-insensitively — a proper noun the model failed to capitalize is a
+# rule-2 miss, not a deletion, and #439 does not bar it.
 KEEP = {
-    "1-free-form": ["bosser", "trucs", "6 mois"],
-    "2-project-update": ["StoreKit", "Thomas", "Sarah", "412", "1000", "14h", "fin octobre"],
-    "3-message-draft": ["11h", "dentiste", "t'arrange"],
+    "1-free-form": ["bosser", "trucs"],
+    "2-project-update": ["StoreKit", "Thomas", "Sarah", "fin octobre"],
+    "3-message-draft": ["dentiste", "t'arrange"],
     "4-explanation": ["en calcul", "trois étapes", "90"],
-    "5-rambling": ["ça me reviendra", "19 euros", "Julien", "mardi", "février"],
+    "5-rambling": ["ça me reviendra", "Julien", "mardi", "février"],
     "6-unscripted": ["Dictus", "gros pavé", "c'est pas"],
 }
 
@@ -115,8 +129,12 @@ def score(path):
                     violations.append(f"register: {name} [{fixture}]")
         for fixture, needles in KEEP.items():
             for needle in needles:
-                if fixture in outputs and needle not in outputs[fixture]:
+                if fixture in outputs and needle.lower() not in outputs[fixture].lower():
                     violations.append(f"deleted: \"{needle}\" [{fixture}]")
+        for fixture, needles in NUMBERS.items():
+            for needle in needles:
+                if fixture in outputs and needle not in outputs[fixture]:
+                    violations.append(f"number reworded: \"{needle}\" [{fixture}]")
         for fixture, text in outputs.items():
             ratio = len(text) / len(raws[fixture])
             if not RATIO_MIN <= ratio <= RATIO_MAX:
