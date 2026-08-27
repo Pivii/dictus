@@ -336,7 +336,21 @@ class ModelManager: ObservableObject {
 
             let engineHolder = "prewarm:\(identifier)"
             try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
-            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
+
+            // WHY A FLAG AND NOT A BARE `defer` (issue #427): the engine belongs to
+            // whoever is actually compiling on it, and after a deadline expiry that is
+            // no longer this scope. The compile carries on — nothing can stop it — so
+            // releasing here would let the next model start a second compile on top of
+            // it, which is precisely the E5-class failure `acquireNeuralEngine` spends
+            // a paragraph telling the next reader not to cause. On expiry the flag goes
+            // down and the abandoned compile hands the engine back itself, from
+            // `whenLateCompilationLands` below.
+            var engineIsOursToRelease = true
+            defer {
+                if engineIsOursToRelease {
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                }
+            }
 
             // This prewarm compiles its own throwaway WhisperKit outside the coordinator's
             // init lock, so abandoning a load does not stop it — and #174 has it adopt the
@@ -382,19 +396,25 @@ class ModelManager: ObservableObject {
             // A13 (issue #362) takes far longer than it has any business taking.
             // `ModelInfo.prewarmTimeoutSeconds` lets the two models disagree.
             //
-            // WHAT THIS GUARD DOES NOT DO (issue #427): it does not interrupt the
-            // compile. `withPrewarmTimeout` races a sleep against `WhisperKit(config)`
-            // in a task group, and a task group cannot return until every child has
-            // finished — `cancelAll()` is a request, and a Core ML compile neither
-            // checks cancellation nor offers a suspension point where it could. So the
-            // error is thrown on time and surfaces only once the compile has finished
-            // anyway. Measured 2026-08-26: a 5s budget reported failure after 212s, on
-            // a compile that had by then completed and warmed the cache.
+            // WHAT THIS GUARD DOES AND DOES NOT DO (issue #427): it bounds the WAIT,
+            // never the compile. Nothing can interrupt a Core ML compile — it checks no
+            // cancellation flag and offers no suspension point at which it could notice
+            // one — so on expiry the compile runs on, keeps the Neural Engine, and
+            // finishes on its own. What the budget buys is that the app stops waiting
+            // for it, at the deadline, and hands the user back a card they can act on.
             //
-            // So do not read this budget as protection against a hang. It bounds
-            // nothing; it reports, afterwards, that the work took longer than a number.
-            // #362 in particular is NOT protected by it, whatever an earlier version of
-            // this comment claimed.
+            // It did not always buy that. Until #427 this raced a sleep against the
+            // compile inside a task group, and a task group cannot return while a child
+            // runs: the error was thrown on time and then queued behind the very compile
+            // it was meant to bound. Measured 2026-08-26, a 5s budget reported failure
+            // after 212s, on a compile that had by then completed and warmed the cache.
+            // Any comment or issue reasoning from that behaviour is describing the old
+            // code.
+            //
+            // #362 — Whisper Small on an unsupported A13 — is the case this has to be
+            // right for, because there the compile may genuinely never return. It is now
+            // bounded, in the only sense available: the spinner ends at 120s even though
+            // the compile behind it does not.
             //
             // Whatever this resolves to is the number that reaches the user: it is
             // carried by the thrown `.prewarmTimeout(seconds:)` into both the
@@ -409,9 +429,26 @@ class ModelManager: ObservableObject {
             do {
                 _ = try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
                     try await WhisperKit(config)
+                } whenLateCompilationLands: { result in
+                    // The compile the app gave up on has landed. Two things follow.
+                    // The engine is free, and this is the only place that knows it.
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                    // And the debug log gets the line that closes the story it opened
+                    // with `.modelPrewarmTimeout` — without it, a reader sees a compile
+                    // start, a timeout, and no ending, which is the shape of a hang.
+                    let landedAfterMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
+                    PersistentLog.log(.diagnosticProbe(
+                        component: "ModelPrewarm",
+                        instanceID: identifier,
+                        action: "abandonedCompileLanded",
+                        details: "afterMs=\(landedAfterMs) budget=\(prewarmTimeoutSeconds)s "
+                            + "outcome=\(ModelManager.landingOutcome(of: result))"
+                    ))
                 }
             } catch let err as ModelManagerError {
                 if case .prewarmTimeout(let s) = err {
+                    // The compile is still on the Neural Engine; it releases it above.
+                    engineIsOursToRelease = false
                     PersistentLog.log(.modelPrewarmTimeout(name: identifier, timeoutSeconds: s))
                 }
                 throw err
@@ -779,6 +816,21 @@ class ModelManager: ObservableObject {
 
     // MARK: - Private
 
+    /// How a compile the app had already given up on eventually ended, for the debug
+    /// log (issue #427). Nothing branches on this: by the time it is known the download
+    /// has already reported its failure and the user has already been told to retry.
+    /// It exists so the log reader can tell "abandoned and finished" — the normal case,
+    /// and the one that leaves a warm cache — from "abandoned and never came back",
+    /// which is the only shape a true hang can now leave.
+    private static func landingOutcome<T>(of result: Result<T, Error>) -> String {
+        switch result {
+        case .success:
+            return "success"
+        case .failure(let error):
+            return "failure:\(error.localizedDescription)"
+        }
+    }
+
     /// Persists model state to App Group UserDefaults so the keyboard extension
     /// can read which model is active and whether transcription is available.
     private func persistState() {
@@ -815,7 +867,19 @@ enum ModelManagerError: Error, LocalizedError {
         case .parakeetUnavailable:
             return "Parakeet requires iOS 17+ or FluidAudio is not linked"
         case .prewarmTimeout(let seconds):
-            return "Model optimization did not complete within \(seconds)s"
+            // WHY this no longer says the optimization "did not complete" (issue #427):
+            // it did, almost every time. The old guard could not interrupt the compile,
+            // so it announced a failure for work that finished moments later; and now
+            // that the app really does stop waiting at the deadline, the compile it
+            // stopped waiting for is still running as this sentence is written. Late is
+            // the true claim, failed is not. The compile also warms the Core ML cache on
+            // its way out, which is what makes retrying the useful next move rather than
+            // a second full wait.
+            //
+            // No promise about how fast the retry will be: it queues behind the compile
+            // still on the Neural Engine, so "in a moment" is as precise as we can
+            // honestly be.
+            return String(localized: "Optimization did not finish within \(seconds)s. It is still running, so try again in a moment.")
         }
     }
 
@@ -828,34 +892,40 @@ enum ModelManagerError: Error, LocalizedError {
     }
 }
 
-/// Races an async operation against a timeout. Cancels the operation and throws
-/// `.prewarmTimeout` if the deadline expires first.
+/// Runs a Core ML prewarm under the catalogue's budget, and stops waiting on it when
+/// the budget runs out.
 ///
-/// WHY: WhisperKit's async init for certain model variants on iPhone ANE can hang
-/// indefinitely when CoreML fails to compile the model (see issue #104,
+/// WHY THE GUARD EXISTS: WhisperKit's async init for certain model variants on iPhone
+/// ANE can hang indefinitely when Core ML fails to compile the model (issue #104,
 /// 2026-04-22 on-device test: `ANE model load has failed … Must re-compile the E5
-/// bundle` followed by `await WhisperKit(config)` never returning). Without a
-/// timeout, ModelManager stays stuck in `.prewarming` forever and the Settings
-/// UI shows the optimization spinner indefinitely, forcing the user to force-quit.
+/// bundle` followed by `await WhisperKit(config)` never returning). Without a deadline,
+/// `ModelManager` stays in `.prewarming` for the life of the process and the Settings
+/// spinner never stops.
+///
+/// WHY IT IS NOT A TASK GROUP ANY MORE (issue #427): it was, and that version bounded
+/// nothing — see `withDetachedDeadline`, which carries the measurement and the reason.
+/// This is now a thin translation of that primitive into `ModelManager`'s vocabulary:
+/// the same budget, the same `.prewarmTimeout`, and an expiry that actually returns at
+/// the deadline.
+///
+/// THE OPERATION IS ABANDONED, NOT STOPPED. Nothing can stop a Core ML compile. On
+/// expiry it keeps running, keeps the Neural Engine, and finishes on its own — which is
+/// why `whenLateCompilationLands` exists and why every caller has to use it to hand the
+/// engine back. Releasing at the throw instead would let a second compile start on top
+/// of the first, and `acquireNeuralEngine` documents at length what that costs.
 @MainActor
 func withPrewarmTimeout<T: Sendable>(
     seconds: Int,
-    _ operation: @escaping @Sendable () async throws -> T
+    operation: @escaping @Sendable () async throws -> T,
+    whenLateCompilationLands: @escaping @MainActor @Sendable (Result<T, Error>) -> Void
 ) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
-            throw ModelManagerError.prewarmTimeout(seconds: seconds)
-        }
-        // First to finish wins. Cancel the other before returning.
-        //
-        // WHY the force unwrap cannot trap: `next()` returns nil only when the
-        // group has no unfinished child tasks. Two were just added above and
-        // none has been awaited yet, so there is always one result to take.
-        // swiftlint:disable:next force_unwrapping
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
+    do {
+        return try await withDetachedDeadline(
+            seconds: seconds,
+            operation: operation,
+            onLateCompletion: whenLateCompilationLands
+        )
+    } catch let expiry as DeadlineExpired {
+        throw ModelManagerError.prewarmTimeout(seconds: expiry.seconds)
     }
 }
