@@ -289,17 +289,41 @@ extension DictationCoordinator {
 
     /// Whether a load that has just produced an engine is still the one the app wants.
     ///
-    /// A Core ML compile cannot be stopped, so a load may finish minutes after the user
-    /// gave up on it and chose another model. Publishing it then would make the app
-    /// dictate with a model the user did not pick, and leave `currentModelName`
-    /// disagreeing with `activeModel` with nothing to reconcile the two (issue #428).
+    /// TWO questions, and only the second one is about abandonment.
+    ///
+    /// An engine is wrong to publish when it is for a model the user has since moved
+    /// off: doing so would dictate with a model they did not pick and leave
+    /// `currentModelName` disagreeing with `activeModel` with nothing to reconcile them.
+    /// That is what the epoch was introduced to prevent.
+    ///
+    /// An engine is NOT wrong to publish merely because the app stopped waiting for it.
+    /// Gating on the epoch alone conflated the two and cost a working dictation (second
+    /// review, finding 1): a keyboard cold start parks on the launch preload's task by
+    /// the #167 rule; the deadline expires at 120s and bumps the epoch; the compile then
+    /// SUCCEEDS at 150s and was thrown away, failing the parked recording with
+    /// "preparation was interrupted" — a dictation that transcribed normally before this
+    /// branch existed. The deadline's job is to free the UI, never to fail a model.
+    ///
+    /// So a load still carrying the active model publishes, whatever the epoch says.
     func shouldPublishLoad(epoch: Int, component: String, modelName: String) -> Bool {
         if epoch == modelLoadEpoch { return true }
+
+        // The epoch moved on, but that alone does not make this engine the wrong one.
+        if modelName == defaults.string(forKey: SharedKeys.activeModel) {
+            PersistentLog.log(.diagnosticProbe(
+                component: component,
+                instanceID: modelName,
+                action: "publishedLateLoad",
+                details: "epoch=\(epoch) current=\(modelLoadEpoch) stillActiveModel=true"
+            ))
+            return true
+        }
+
         PersistentLog.log(.diagnosticProbe(
             component: component,
             instanceID: modelName,
             action: "discardedAbandonedLoad",
-            details: "epoch=\(epoch) current=\(modelLoadEpoch)"
+            details: "epoch=\(epoch) current=\(modelLoadEpoch) activeModel=\(defaults.string(forKey: SharedKeys.activeModel) ?? "nil")"
         ))
         return false
     }
