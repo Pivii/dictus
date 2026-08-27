@@ -129,7 +129,7 @@ extension DictationCoordinator {
         } catch {
             PersistentLog.log(.engineWarmUpFailed(
                 context: "init-preload",
-                error: error.localizedDescription
+                error: DictationFailureMessage.diagnostic(for: error)
             ))
             guard outcome.settle() else { return }
             setModelLoadState(.idle, reason: "init-preload-failed")
@@ -184,7 +184,7 @@ extension DictationCoordinator {
         } catch {
             PersistentLog.log(.engineWarmUpFailed(
                 context: "didBecomeActive",
-                error: error.localizedDescription
+                error: DictationFailureMessage.diagnostic(for: error)
             ))
             guard !loadWasAbandoned(since: epoch) else { return }
             setModelLoadState(.idle, reason: "didBecomeActive-failed")

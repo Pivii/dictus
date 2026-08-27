@@ -40,6 +40,7 @@
 		AA000038 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100038 /* KeyboardLayout.swift */; };
 		AA000041 /* TranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100041 /* TranscriptionService.swift */; };
 		AA0003A1 /* WhisperComputeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1003A1 /* WhisperComputeOptions.swift */; };
+		AA0003B0 /* DictationFailureMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1003B0 /* DictationFailureMessage.swift */; };
 		AA000042 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA900020 /* WhisperKit */; };
 		AA000043 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100043 /* RecordingView.swift */; };
 		AA000045 /* UnifiedAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100045 /* UnifiedAudioEngine.swift */; };
@@ -208,6 +209,7 @@
 		AA100038 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
 		AA100041 /* TranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionService.swift; sourceTree = "<group>"; };
 		AA1003A1 /* WhisperComputeOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperComputeOptions.swift; sourceTree = "<group>"; };
+		AA1003B0 /* DictationFailureMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationFailureMessage.swift; sourceTree = "<group>"; };
 		AA100043 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		AA100045 /* UnifiedAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedAudioEngine.swift; sourceTree = "<group>"; };
 		AA100200 /* ObjCExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ObjCExceptionCatcher.m; sourceTree = "<group>"; };
@@ -496,6 +498,7 @@
 				AA100041 /* TranscriptionService.swift */,
 				AA100045 /* UnifiedAudioEngine.swift */,
 				AA1003A1 /* WhisperComputeOptions.swift */,
+				AA1003B0 /* DictationFailureMessage.swift */,
 				AA100201 /* ObjCExceptionCatcher.h */,
 				AA100200 /* ObjCExceptionCatcher.m */,
 			);
@@ -983,6 +986,7 @@
 				AA000200 /* ObjCExceptionCatcher.m in Sources */,
 				AA000041 /* TranscriptionService.swift in Sources */,
 				AA0003A1 /* WhisperComputeOptions.swift in Sources */,
+				AA0003B0 /* DictationFailureMessage.swift in Sources */,
 				AA000043 /* RecordingView.swift in Sources */,
 				AA000050 /* ModelManager.swift in Sources */,
 				AA000052 /* ModelRepoDownloader.swift in Sources */,

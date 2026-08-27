@@ -41,7 +41,10 @@ protocol SpeechModelProtocol {
 /// and try again.") straight into the keyboard's error banner. These cases carry
 /// localised, user-actionable text instead, while `diagnosticDescription` keeps the
 /// English technical detail for `PersistentLog`.
-enum SpeechModelError: LocalizedError {
+///
+/// This shape is now named and shared: `DiagnosableError`, in
+/// `DictationFailureMessage.swift`, is #313's generalisation of this type.
+enum SpeechModelError: DiagnosableError {
     /// The selected variant is absent from the local model repository, or its
     /// folder holds no compiled Core ML bundle.
     case modelNotInstalled(identifier: String)
@@ -68,7 +71,13 @@ enum SpeechModelError: LocalizedError {
         case .engineLoadFailed:
             return String(localized: "The transcription model could not be loaded. Open Dictus and try again.")
         case .loadAbandoned:
-            return String(localized: "The model preparation was interrupted. Tap the microphone again to retry.")
+            // A NOTICE, not a fault (#313). Nothing is broken: a load the app stopped
+            // waiting for is the expected outcome of a deadline expiring or of the user
+            // leaving the preparation screen, and tapping again starts or joins the next
+            // one. "Interrupted", which this said first, reads as damage and sends the
+            // user looking for something to fix. Same register as `noWordsDetected`:
+            // state the situation, name the one action that works, assign no blame.
+            return String(localized: "The model is still getting ready. Tap the microphone again.")
         }
     }
 
@@ -223,7 +232,9 @@ class WhisperKitEngine: SpeechModelProtocol {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmed.isEmpty else {
-            throw TranscriptionError.transcriptionFailed("Empty transcription result")
+            // Nothing wrong happened: the model ran on a normal-length clip and heard
+            // no words. A notice, not a fault (#313).
+            throw TranscriptionError.noSpeechDetected(context: "empty WhisperKit transcription result")
         }
 
         return trimmed

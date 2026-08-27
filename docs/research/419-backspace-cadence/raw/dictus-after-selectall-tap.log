@@ -1,0 +1,8 @@
+1487230122.0	launch
+1487230256.5	seeded	len=19	text="alpha bravo charlie"
+1487230412.8	selectedAll	range=0..<19
+1487230414.1	firstResponder	field=text	value=true
+1487234898.8	shouldChange	loc=0	len=19	repl=""
+1487234901.7	deleteBackward.in	len=19
+1487234903.4	didChange	len=0	tail=""
+1487234903.6	deleteBackward.out	len=0	deleted=19

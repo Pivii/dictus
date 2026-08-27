@@ -728,6 +728,17 @@
         }
       }
     },
+    "Dictus needs microphone access. Turn it on in iPhone Settings." : {
+      "comment" : "Shown when microphone permission is denied or has not been granted (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictus a besoin d'accéder au micro. Activez-le dans les Réglages de l'iPhone."
+          }
+        }
+      }
+    },
     "Dictus needs the microphone to transcribe your voice. Your recordings stay on your device." : {
       "localizations" : {
         "fr" : {
@@ -1451,6 +1462,17 @@
       }
     },
     "No polish events yet. Toggle on, dictate something, then come back." : {},
+    "No words detected" : {
+      "comment" : "Shown when a dictation produced no text: nothing was captured, or nothing was understood. Not an error, the app is working, there was simply nothing to transcribe (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun mot détecté"
+          }
+        }
+      }
+    },
     "Not supported on this iPhone" : {
       "comment" : "Reason shown on a disabled model card when the device's chip is too old to run the model (issue #369). Names the hardware, not an error.",
       "localizations" : {
@@ -2364,6 +2386,17 @@
         }
       }
     },
+    "The dictation failed. Tap the microphone to try again." : {
+      "comment" : "Shown when a dictation fails for a reason the app cannot name. Deliberately names no cause (issues #313, #320).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dictée a échoué. Touchez le micro pour réessayer."
+          }
+        }
+      }
+    },
     "The download stalled. Check your internet connection and try again." : {
       "comment" : "Model download error when no bytes arrive for the stall window (issue #207).",
       "localizations" : {
@@ -2395,6 +2428,39 @@
         }
       }
     },
+    "The microphone is busy on a call. Try again once the call ends." : {
+      "comment" : "Shown when a dictation cannot start because a phone call holds the microphone (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro est occupé par un appel. Réessayez une fois l'appel terminé."
+          }
+        }
+      }
+    },
+    "The microphone is not available right now. Try again in a moment." : {
+      "comment" : "Shown when the audio hardware reports no usable input format (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro n'est pas disponible pour le moment. Réessayez dans un instant."
+          }
+        }
+      }
+    },
+    "The microphone stopped responding. Close Dictus and open it again." : {
+      "comment" : "Shown when the audio engine reports running but captures no samples, and a forced restart does not recover it (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro ne répond plus. Fermez Dictus puis rouvrez-le."
+          }
+        }
+      }
+    },
     "The model download is incomplete. Please try again." : {
       "comment" : "Model download error when a required file is missing after download (issue #207).",
       "localizations" : {
@@ -2406,12 +2472,12 @@
         }
       }
     },
-    "The model preparation was interrupted. Tap the microphone again to retry." : {
+    "The model is still getting ready. Tap the microphone again." : {
       "localizations" : {
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La préparation du modèle a été interrompue. Appuyez à nouveau sur le micro pour réessayer."
+            "value" : "Le modèle est encore en préparation. Appuyez à nouveau sur le micro."
           }
         }
       }
@@ -2445,6 +2511,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La rangée de chiffres s'affiche uniquement sur iPhone, en mode portrait."
+          }
+        }
+      }
+    },
+    "The transcription engine is not ready. Open Dictus and try again." : {
+      "comment" : "Shown when a dictation reaches transcription with no engine initialized (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le moteur de transcription n'est pas prêt. Ouvrez Dictus et réessayez."
+          }
+        }
+      }
+    },
+    "The transcription failed. Tap the microphone to try again." : {
+      "comment" : "Shown when the transcription engine fails for a reason the app cannot name. Deliberately names no cause (issues #313, #320).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La transcription a échoué. Touchez le micro pour réessayer."
           }
         }
       }
@@ -2488,6 +2576,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce modèle n'est pas installé. Ouvrez Dictus et téléchargez-le dans l'onglet Modèles."
+          }
+        }
+      }
+    },
+    "This model needs a newer version of iOS. Open Dictus and choose another model." : {
+      "comment" : "Shown when the selected model requires an iOS version this device does not run (issue #313).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce modèle nécessite une version plus récente d'iOS. Ouvrez Dictus et choisissez un autre modèle."
           }
         }
       }

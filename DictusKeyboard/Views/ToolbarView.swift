@@ -231,11 +231,26 @@ struct ToolbarView: View {
         }
     }
 
+    /// WHY not red (#313, decided 2026-08-25): red is the recording overlay's colour in
+    /// this keyboard, and a message in that same red one second after the overlay in that
+    /// red disappears reads as an alarm. Half of what lands here is not an alarm at all —
+    /// "No words detected" is the user having stopped the mic a beat early — and the other
+    /// half is not helped by shouting. Grey, the treatment the bar already gives
+    /// `polishUnavailableNotice`, says the same thing without claiming the app is broken.
     private func errorMessage(_ message: String) -> some View {
         Text(message)
             .font(.caption)
-            .foregroundColor(.red)
-            .lineLimit(1)
+            .foregroundStyle(.secondary)
+            // WHY two lines (#313): the sentences this slot now shows are written
+            // instructions, not codes, and the longest French one runs 96 characters
+            // against roughly 50 that fit on one `.caption` line here -- one line
+            // truncates "Activez-le dans les Reglages de l'iPhone" away and leaves the
+            // user with only the half that states the problem. The bar's 52pt frame is
+            // fixed above, so two 15pt lines cost no height: this cannot move the
+            // keyboard's declared height (#166).
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             // Instrumentation only (#261). "The message was assigned" and
             // "a live view put it on screen" are different facts, and only
@@ -563,11 +578,13 @@ struct ToolbarView: View {
 
     /// Polish is not running, and will not run again until DictusApp restarts (#315).
     ///
-    /// WHY secondary and not the red of `statusMessage`: nothing failed for the
-    /// user. The dictation still arrives, as the deterministic floor it already
-    /// takes when a guardrail rejects the model's output — what is missing is the
-    /// polish on top. Red is this bar's colour for a dictation that did not
-    /// happen, and reusing it here would say something untrue.
+    /// WHY secondary: nothing failed for the user. The dictation still arrives, as
+    /// the deterministic floor it already takes when a guardrail rejects the model's
+    /// output — what is missing is the polish on top.
+    ///
+    /// This used to be the exception, the one message in the bar that was not red.
+    /// Since #313 it is the rule: no message in this keyboard is red, and the
+    /// argument written here is the one that generalised.
     ///
     /// The copy names the state and stops. No cause, no remedy, no "try again
     /// later": Apple's background rate limit is only refunded by a fresh app

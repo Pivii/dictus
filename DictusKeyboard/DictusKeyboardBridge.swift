@@ -206,20 +206,45 @@ final class DictusKeyboardBridge: NSObject,
     /// makes "is there still a document to delete into" a question this class can
     /// answer and the view cannot.
     ///
-    /// WHY the answer is proxy availability and not "did the document change": a host
-    /// may withhold `documentContextBeforeInput` -- a secure field reports none -- while
-    /// still accepting the deletion, so gating the feedback on the context would silence
-    /// a backspace that works, and #286 must not regress. A deletion issued into a live
-    /// proxy is a deletion issued.
-    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> Bool {
-        guard controller?.textDocumentProxy != nil else { return false }
+    /// WHY the answer is not simply "did the document change": a host may withhold
+    /// `documentContextBeforeInput` -- a secure field reports none -- while still
+    /// accepting the deletion, so gating the feedback on the context alone would
+    /// silence a backspace that works, and #286 must not regress.
+    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> KeyRepeatOutcome {
+        guard let proxy = controller?.textDocumentProxy else { return .unavailable }
+        guard !hasNothingToDelete(proxy) else { return .nothingToDelete }
 
         if wordMode {
             didTriggerHoldKey(key)
         } else {
             didTriggerKey(key)
         }
-        return true
+        return .deleted
+    }
+
+    /// Whether the held backspace provably has nothing left to delete.
+    ///
+    /// WHY three conditions rather than just the context (#419): **"nothing before the
+    /// cursor" does not mean "nothing to delete"**. Select all three words of a field
+    /// and the selection starts at offset 0, so the before-context is empty while a
+    /// perfectly valid deletion is pending. A context-only rule shipped once and was
+    /// reverted for exactly that case; `selectedText` (iOS 11+) is what tells the two
+    /// apart, and it is why this predicate can exist at all.
+    ///
+    /// `hasText` comes from `UIKeyInput`, which `UITextDocumentProxy` inherits. It
+    /// answers with a boolean rather than with content, so a host that withholds the
+    /// context can still answer it -- which is what a secure field needs, since there
+    /// an empty context must never be read as an empty document.
+    ///
+    /// **Not verified.** No case could be constructed in the simulator in which this
+    /// extension serves a secure field: iOS declined to offer Dictus at all to a host
+    /// app that merely had a secure field in its hierarchy. If a secure field did
+    /// report `hasText == false` while holding text, the cost is a missing tap on a
+    /// backspace that still works -- not a deletion that fails to happen.
+    private func hasNothingToDelete(_ proxy: UITextDocumentProxy) -> Bool {
+        guard !proxy.hasText else { return false }
+        guard (proxy.selectedText ?? "").isEmpty else { return false }
+        return (proxy.documentContextBeforeInput ?? "").isEmpty
     }
 
     func didMoveCursor(_ movement: Int) {

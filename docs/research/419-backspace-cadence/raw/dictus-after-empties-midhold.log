@@ -1,0 +1,95 @@
+1487172925.6	launch
+1487173029.9	seeded	len=30	text="alpha bravo charlie delta echo"
+1487173148.5	firstResponder	field=text	value=true
+1487177645.5	shouldChange	loc=29	len=1	repl=""
+1487177648.7	deleteBackward.in	len=30
+1487177651.7	didChange	len=29	tail="lpha bravo charlie delta ech"
+1487177652.0	deleteBackward.out	len=29	deleted=1
+1487178149.6	shouldChange	loc=28	len=1	repl=""
+1487178150.7	deleteBackward.in	len=29
+1487178153.6	didChange	len=28	tail="alpha bravo charlie delta ec"
+1487178153.9	deleteBackward.out	len=28	deleted=1
+1487178250.9	shouldChange	loc=27	len=1	repl=""
+1487178251.9	deleteBackward.in	len=28
+1487178255.0	didChange	len=27	tail="alpha bravo charlie delta e"
+1487178255.6	deleteBackward.out	len=27	deleted=1
+1487178350.4	shouldChange	loc=26	len=1	repl=""
+1487178351.3	deleteBackward.in	len=27
+1487178354.5	didChange	len=26	tail="alpha bravo charlie delta "
+1487178355.1	deleteBackward.out	len=26	deleted=1
+1487178450.0	shouldChange	loc=25	len=1	repl=""
+1487178451.0	deleteBackward.in	len=26
+1487178454.2	didChange	len=25	tail="alpha bravo charlie delta"
+1487178454.8	deleteBackward.out	len=25	deleted=1
+1487178549.3	shouldChange	loc=24	len=1	repl=""
+1487178550.2	deleteBackward.in	len=25
+1487178553.2	didChange	len=24	tail="alpha bravo charlie delt"
+1487178553.9	deleteBackward.out	len=24	deleted=1
+1487178648.9	shouldChange	loc=23	len=1	repl=""
+1487178649.9	deleteBackward.in	len=24
+1487178652.8	didChange	len=23	tail="alpha bravo charlie del"
+1487178653.4	deleteBackward.out	len=23	deleted=1
+1487178748.7	shouldChange	loc=22	len=1	repl=""
+1487178749.6	deleteBackward.in	len=23
+1487178752.7	didChange	len=22	tail="alpha bravo charlie de"
+1487178753.4	deleteBackward.out	len=22	deleted=1
+1487178850.1	shouldChange	loc=21	len=1	repl=""
+1487178851.2	deleteBackward.in	len=22
+1487178854.0	didChange	len=21	tail="alpha bravo charlie d"
+1487178854.8	deleteBackward.out	len=21	deleted=1
+1487178949.9	shouldChange	loc=20	len=1	repl=""
+1487178950.9	deleteBackward.in	len=21
+1487178953.7	didChange	len=20	tail="alpha bravo charlie "
+1487178954.2	deleteBackward.out	len=20	deleted=1
+1487179050.3	shouldChange	loc=19	len=1	repl=""
+1487179051.3	deleteBackward.in	len=20
+1487179054.4	didChange	len=19	tail="alpha bravo charlie"
+1487179055.0	deleteBackward.out	len=19	deleted=1
+1487179150.5	shouldChange	loc=18	len=1	repl=""
+1487179151.6	deleteBackward.in	len=19
+1487179154.6	didChange	len=18	tail="alpha bravo charli"
+1487179155.3	deleteBackward.out	len=18	deleted=1
+1487179250.8	shouldChange	loc=17	len=1	repl=""
+1487179251.8	deleteBackward.in	len=18
+1487179254.8	didChange	len=17	tail="alpha bravo charl"
+1487179255.6	deleteBackward.out	len=17	deleted=1
+1487179351.2	shouldChange	loc=16	len=1	repl=""
+1487179352.3	deleteBackward.in	len=17
+1487179354.9	didChange	len=16	tail="alpha bravo char"
+1487179355.6	deleteBackward.out	len=16	deleted=1
+1487179450.8	shouldChange	loc=15	len=1	repl=""
+1487179451.8	deleteBackward.in	len=16
+1487179454.4	didChange	len=15	tail="alpha bravo cha"
+1487179455.1	deleteBackward.out	len=15	deleted=1
+1487179549.0	shouldChange	loc=14	len=1	repl=""
+1487179550.1	deleteBackward.in	len=15
+1487179552.9	didChange	len=14	tail="alpha bravo ch"
+1487179553.5	deleteBackward.out	len=14	deleted=1
+1487179650.7	shouldChange	loc=13	len=1	repl=""
+1487179651.8	deleteBackward.in	len=14
+1487179654.3	didChange	len=13	tail="alpha bravo c"
+1487179655.1	deleteBackward.out	len=13	deleted=1
+1487179750.7	shouldChange	loc=12	len=1	repl=""
+1487179751.6	deleteBackward.in	len=13
+1487179754.3	didChange	len=12	tail="alpha bravo "
+1487179755.0	deleteBackward.out	len=12	deleted=1
+1487179850.6	shouldChange	loc=11	len=1	repl=""
+1487179851.6	deleteBackward.in	len=12
+1487179854.3	didChange	len=11	tail="alpha bravo"
+1487179855.0	deleteBackward.out	len=11	deleted=1
+1487179950.1	shouldChange	loc=10	len=1	repl=""
+1487179951.1	deleteBackward.in	len=11
+1487179953.4	didChange	len=10	tail="alpha brav"
+1487179954.1	deleteBackward.out	len=10	deleted=1
+1487180051.3	shouldChange	loc=9	len=1	repl=""
+1487180052.3	deleteBackward.in	len=10
+1487180054.8	didChange	len=9	tail="alpha bra"
+1487180055.4	deleteBackward.out	len=9	deleted=1
+1487180150.4	shouldChange	loc=6	len=3	repl=""
+1487180154.1	deleteBackward.in	len=7
+1487180155.9	didChange	len=6	tail="alpha "
+1487180156.4	deleteBackward.out	len=6	deleted=1
+1487180498.6	shouldChange	loc=0	len=6	repl=""
+1487180506.1	deleteBackward.in	len=1
+1487180507.6	didChange	len=0	tail=""
+1487180508.0	deleteBackward.out	len=0	deleted=1
