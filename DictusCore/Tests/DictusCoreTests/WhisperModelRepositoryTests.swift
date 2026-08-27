@@ -47,24 +47,40 @@ final class WhisperModelRepositoryTests: XCTestCase {
         return folder
     }
 
+    /// Writes one compiled Core ML bundle into `folder`.
+    ///
+    /// `complete: false` leaves out `weights/weight.bin` and keeps everything else,
+    /// which is the exact shape an interrupted download leaves behind: the directory
+    /// and its small top-level files landed, the weights did not.
+    private func makeBundle(_ name: String, in folder: URL, complete: Bool) throws {
+        let bundleURL = folder.appendingPathComponent("\(name).mlmodelc", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: bundleURL.appendingPathComponent("weights", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data("payload".utf8).write(to: bundleURL.appendingPathComponent("coremldata.bin"))
+        try Data("payload".utf8).write(to: bundleURL.appendingPathComponent("model.mil"))
+        if complete {
+            try Data("payload".utf8).write(to: bundleURL.appendingPathComponent("weights/weight.bin"))
+        }
+    }
+
     /// Creates the variant folder with the exact file set a FINISHED download leaves
-    /// behind: `config.json` plus the three compiled bundles, each holding the entries
-    /// `hasCompleteDownload` requires. Used by the issue #433 tests, which care about
-    /// what is inside a bundle and not merely that it exists.
+    /// behind: `config.json` plus the three compiled bundles every variant ships, each
+    /// holding the entries `hasCompleteDownload` requires. `extraBundles` adds the ones
+    /// only some variants have — the turbos' `TextDecoderContextPrefill`.
     @discardableResult
-    private func makeCompleteDownload(_ identifier: String) throws -> URL {
+    private func makeCompleteDownload(_ identifier: String, extraBundles: [String] = []) throws -> URL {
         let folder = try makeModelFolder(identifier, withCompiledModels: true)
-        for bundle in WhisperModelRepository.requiredCompiledBundleNames {
-            let bundleURL = folder.appendingPathComponent("\(bundle).mlmodelc", isDirectory: true)
-            try FileManager.default.createDirectory(
-                at: bundleURL.appendingPathComponent("weights", isDirectory: true),
-                withIntermediateDirectories: true
-            )
-            for entry in ["coremldata.bin", "model.mil", "weights/weight.bin"] {
-                try Data("payload".utf8).write(to: bundleURL.appendingPathComponent(entry))
-            }
+        for bundle in WhisperModelRepository.requiredCompiledBundleNames + extraBundles {
+            try makeBundle(bundle, in: folder, complete: true)
         }
         return folder
+    }
+
+    /// Root of the fake repository, which is what `requiredDownloadPaths` takes.
+    private var repositoryDirectory: URL {
+        documents.appendingPathComponent(WhisperModelRepository.relativeRepositoryPath, isDirectory: true)
     }
 
     // MARK: - Path construction
@@ -247,14 +263,19 @@ final class WhisperModelRepositoryTests: XCTestCase {
         )
     }
 
-    func testRequiredDownloadPathsNameTheLeafFilesInsideEachBundle() {
+    func testRequiredDownloadPathsNameTheLeafFilesInsideEachBundle() throws {
         // The downloader's final tripwire and this check read the same list, which is
         // the only reason the reconciliation may trust files the download placed. The
         // list has to name leaves: the tripwire checks with `FileManager.fileExists`,
         // which answers true for a directory, so a bundle-level list would let an
         // interrupted download through the very check meant to catch it.
+        try makeCompleteDownload("openai_whisper-small")
+
         XCTAssertEqual(
-            WhisperModelRepository.requiredDownloadPaths(forVariant: "openai_whisper-small"),
+            WhisperModelRepository.requiredDownloadPaths(
+                forVariant: "openai_whisper-small",
+                in: repositoryDirectory
+            ),
             [
                 "openai_whisper-small/MelSpectrogram.mlmodelc/coremldata.bin",
                 "openai_whisper-small/MelSpectrogram.mlmodelc/model.mil",
@@ -270,17 +291,74 @@ final class WhisperModelRepositoryTests: XCTestCase {
         )
     }
 
+    func testRequiredDownloadPathsCoverABundleTheVariantAddsBeyondTheThree() throws {
+        // The turbos ship a fourth bundle. The required set is read off the disk so it
+        // grows with the variant instead of going stale the next time the repository
+        // adds one.
+        let turbo = "openai_whisper-large-v3-v20240930_turbo_632MB"
+        try makeCompleteDownload(turbo, extraBundles: ["TextDecoderContextPrefill"])
+
+        let paths = WhisperModelRepository.requiredDownloadPaths(
+            forVariant: turbo,
+            in: repositoryDirectory
+        )
+
+        XCTAssertEqual(paths.count, 13, "four bundles x three entries, plus config.json")
+        XCTAssertTrue(paths.contains("\(turbo)/TextDecoderContextPrefill.mlmodelc/weights/weight.bin"))
+    }
+
+    func testAVariantFolderWithNoExtraBundlesRequiresOnlyTheThree() throws {
+        try makeCompleteDownload("openai_whisper-medium")
+
+        let paths = WhisperModelRepository.requiredDownloadPaths(
+            forVariant: "openai_whisper-medium",
+            in: repositoryDirectory
+        )
+
+        XCTAssertEqual(paths.count, 10)
+    }
+
+    func testATurboWhoseLastBundleLostItsWeightsIsNotComplete() throws {
+        // THE CASE THIS EXISTS FOR. `listRequiredFiles` walks the repository breadth
+        // first, so every bundle's small top-level files are fetched before any
+        // bundle's `weights/`, and the prefill bundle is enqueued last — its
+        // `weights/weight.bin` (12 MB on this variant) is the final file of the whole
+        // download. Interrupt it there and the three universal bundles are complete
+        // while the fourth is hollow. WhisperKit gates on the directory existing and
+        // then throws loading it, so listing this as downloaded would give the user a
+        // card that fails every selection.
+        let turbo = "openai_whisper-large-v3-v20240930_turbo_632MB"
+        let folder = try makeCompleteDownload(turbo)
+        try makeBundle("TextDecoderContextPrefill", in: folder, complete: false)
+
+        XCTAssertFalse(WhisperModelRepository.hasCompleteDownload(turbo, documentsDirectory: documents))
+    }
+
+    func testATurboWithEveryBundleCompleteIsComplete() throws {
+        // The other half of the pair: widening the required set must not refuse a
+        // download that actually finished.
+        let turbo = "openai_whisper-large-v3-v20240930_turbo_632MB"
+        try makeCompleteDownload(turbo, extraBundles: ["TextDecoderContextPrefill"])
+
+        XCTAssertTrue(WhisperModelRepository.hasCompleteDownload(turbo, documentsDirectory: documents))
+    }
+
     func testEveryRequiredPathIsPresentAfterACompleteDownload() throws {
         // Ties the two together from the other side: the exact shape the test helper
         // builds — which mirrors what a finished download leaves — satisfies every
         // path the tripwire would check, so making the tripwire stricter cannot fail
-        // a healthy download.
-        let folder = try makeCompleteDownload("openai_whisper-medium")
-        let repository = folder.deletingLastPathComponent()
+        // a healthy download. Run on the turbo shape, which is the one that gained
+        // paths.
+        let turbo = "openai_whisper-large-v3-v20240930_turbo_632MB"
+        try makeCompleteDownload(turbo, extraBundles: ["TextDecoderContextPrefill"])
 
-        for path in WhisperModelRepository.requiredDownloadPaths(forVariant: "openai_whisper-medium") {
+        let paths = WhisperModelRepository.requiredDownloadPaths(
+            forVariant: turbo,
+            in: repositoryDirectory
+        )
+        for path in paths {
             XCTAssertTrue(
-                FileManager.default.fileExists(atPath: repository.appendingPathComponent(path).path),
+                FileManager.default.fileExists(atPath: repositoryDirectory.appendingPathComponent(path).path),
                 "missing \(path)"
             )
         }

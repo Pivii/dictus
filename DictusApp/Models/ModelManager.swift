@@ -74,6 +74,11 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
 
+    /// Whether this process has already reconciled `downloadedModels` against the
+    /// disk (issue #433). Static because the promise is per process, not per
+    /// instance: onboarding builds a second `ModelManager` of its own.
+    private static var hasReconciledThisProcess = false
+
     /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
     /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
     /// compile two models at once, and a lock owned by this class covered neither
@@ -108,6 +113,10 @@ class ModelManager: ObservableObject {
 
     init() {
         loadState()
+        // Believe the disk over the bookkeeping, before the states below are seeded
+        // from it (#433). Deliberately here and not inside `loadState`, which three
+        // views call on `.onAppear` — see `reconcileDownloadedModelsWithDisk`.
+        reconcileDownloadedModelsWithDisk()
         // Initialize states for all known models (including deprecated Tiny/Base so
         // already-downloaded deprecated models still get their state set to .ready).
         for model in ModelInfo.allIncludingDeprecated {
@@ -155,9 +164,6 @@ class ModelManager: ObservableObject {
         }
         activeModel = defaults.string(forKey: SharedKeys.activeModel)
 
-        // Believe the disk over the bookkeeping before anything reads either (#433).
-        reconcileDownloadedModelsWithDisk()
-
         // Resync modelStates with loaded downloadedModels so models downloaded
         // by onboarding's separate ModelManager instance show as .ready here.
         for model in ModelInfo.allIncludingDeprecated
@@ -196,7 +202,24 @@ class ModelManager: ObservableObject {
     /// "are its files complete" and "which model do they belong to" are not the same
     /// question there, and deleting one version's directory removes them all.
     /// Reconciling it is a separate problem and is out of scope here.
+    ///
+    /// WHY once per process, and why this is not called from `loadState`: what it
+    /// repairs is the wreckage of a process that DIED between a finished download and
+    /// a finished compile, so the only honest moment to run it is before this process
+    /// has done anything of its own. `loadState` is called by `HomeView` and
+    /// `ModelManagerView` on `.onAppear` and again when onboarding completes, and a
+    /// perfectly ordinary download sits in exactly the repaired state — files
+    /// complete, identifier not yet appended — for the entire prewarm window, which
+    /// is 27 s for Small and about 3 min 30 for Turbo. Navigating between two tabs in
+    /// that window would have adopted the in-flight model early and written
+    /// `modelReconciledFromDisk` for a download nobody interrupted, which is both a
+    /// race against the prewarm's own bookkeeping and a lie in a log whose reader is
+    /// an agent. The flag rather than init alone: onboarding builds its own
+    /// `ModelManager`, so "once per instance" is not the same promise.
     private func reconcileDownloadedModelsWithDisk() {
+        guard !Self.hasReconciledThisProcess else { return }
+        Self.hasReconciledThisProcess = true
+
         let whisperIdentifiers = ModelInfo.allIncludingDeprecated
             .filter { $0.engine == .whisperKit }
             .map(\.identifier)

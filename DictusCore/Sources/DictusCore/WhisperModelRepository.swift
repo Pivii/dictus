@@ -101,14 +101,25 @@ public enum WhisperModelRepository {
     // MARK: - Download completeness (issue #433)
 
     /// The compiled Core ML bundles every variant in the catalogue ships, without
-    /// their `.mlmodelc` extension.
+    /// their `.mlmodelc` extension. Verified against the repository tree of all seven
+    /// catalogue variants (tiny, base, small, small_216MB, medium, both turbos) on
+    /// 2026-08-27.
     ///
-    /// Verified against the repository tree of all seven catalogue variants (tiny,
-    /// base, small, small_216MB, medium, and both turbos) on 2026-08-27. The turbos
-    /// additionally ship `TextDecoderContextPrefill.mlmodelc`, which is deliberately
-    /// NOT required here: it exists for two variants out of seven, and requiring it
-    /// would make the check disagree with the download tripwire that is the only
-    /// thing guaranteeing the files in the first place.
+    /// This is a FLOOR, not the whole required set. It exists to catch the one shape
+    /// on-disk enumeration cannot see — a bundle that was never created at all — and
+    /// `requiredDownloadPaths` adds every other `.mlmodelc` the variant folder
+    /// actually holds. An earlier version of this fix treated the three as the whole
+    /// answer and argued the omission of the turbos' `TextDecoderContextPrefill`
+    /// was safe. It was not, and download order is why: `listRequiredFiles` walks
+    /// the repository breadth first, so every bundle's small top-level files are
+    /// fetched before any bundle's `weights/`, and the prefill bundle is enqueued
+    /// last. Its `weights/weight.bin` (12 MB on turbo_632MB, ~98 MB on the 954MB
+    /// legacy variant) is therefore the very last file of the whole download. A
+    /// force quit, a dropped network or a jetsam in that final stretch left all
+    /// three bundles above complete and the prefill one hollow — and WhisperKit's
+    /// `prefillData?.loadModel(at:)` throws on exactly that, after
+    /// `FileManager.fileExists` on the directory waved it through. The model would
+    /// have been listed as downloaded and failed every selection.
     public static let requiredCompiledBundleNames = ["MelSpectrogram", "AudioEncoder", "TextDecoder"]
 
     /// Root metadata file present in every variant folder.
@@ -137,14 +148,39 @@ public enum WhisperModelRepository {
     private static let requiredBundleEntries = ["coremldata.bin", "model.mil", "weights/weight.bin"]
 
     /// Repo-relative paths a completed download of `variant` must have produced: the
-    /// leaf files inside each compiled bundle, plus the root `config.json`.
+    /// leaf files inside every compiled bundle it ships, plus the root `config.json`.
     ///
     /// Single source of truth for the downloader's own final-verification tripwire
     /// and for `hasCompleteDownload` below, so the two cannot drift apart: the
     /// reconciliation is only allowed to trust files the download promised to place,
     /// and that promise is worth exactly as much as what the tripwire checks.
-    public static func requiredDownloadPaths(forVariant variant: String) -> [String] {
-        requiredCompiledBundleNames.flatMap { bundle in
+    ///
+    /// WHY it reads the disk instead of returning a fixed list: the set of bundles is
+    /// a property of the variant, not of this file. Hardcoding three made the check
+    /// blind to the turbos' fourth bundle (see `requiredCompiledBundleNames`), and
+    /// hardcoding four would only move the blindness to whatever the repository adds
+    /// next. Every `.mlmodelc` the folder holds has to be complete; the floor above
+    /// covers the bundles that are missing outright.
+    ///
+    /// - Parameter repositoryDirectory: root of the local WhisperKit repository —
+    ///   the directory the variant folder sits in. The downloader passes the cache
+    ///   directory it wrote into; `hasCompleteDownload` passes `repositoryURL`.
+    public static func requiredDownloadPaths(
+        forVariant variant: String,
+        in repositoryDirectory: URL,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        let variantFolder = repositoryDirectory.appendingPathComponent(variant, isDirectory: true)
+        let shipped = (try? fileManager.contentsOfDirectory(atPath: variantFolder.path)) ?? []
+        let extraBundles = shipped
+            .filter { ($0 as NSString).pathExtension == compiledModelExtension }
+            .map { ($0 as NSString).deletingPathExtension }
+            .filter { !requiredCompiledBundleNames.contains($0) }
+            // Sorted because `contentsOfDirectory` gives no ordering guarantee, and a
+            // list that reorders itself between calls is one no test can pin down.
+            .sorted()
+
+        return (requiredCompiledBundleNames + extraBundles).flatMap { bundle in
             requiredBundleEntries.map { entry in
                 "\(variant)/\(bundle).\(compiledModelExtension)/\(entry)"
             }
@@ -177,7 +213,12 @@ public enum WhisperModelRepository {
         guard let repository = repositoryURL(documentsDirectory: documentsDirectory) else {
             return false
         }
-        return requiredDownloadPaths(forVariant: identifier).allSatisfy { path in
+        let required = requiredDownloadPaths(
+            forVariant: identifier,
+            in: repository,
+            fileManager: fileManager
+        )
+        return required.allSatisfy { path in
             isRegularFile(repository.appendingPathComponent(path), fileManager: fileManager)
         }
     }

@@ -103,8 +103,11 @@ public enum LogEvent: Sendable {
     /// is itself the signal that a hardcoded size has drifted.
     case modelDownloadSizeMismatch(name: String, catalogMB: Int, actualMB: Int)
     /// A model whose files were already complete on disk was added back to the
-    /// downloaded list at launch (issue #433). One line per model, only on the
-    /// launch that repairs the disagreement.
+    /// downloaded list at launch (issue #433). One line per model, and the
+    /// reconciliation runs once per process, so these lines appear only on the
+    /// launch that repairs the disagreement and never on a later one. A line here
+    /// means a preparation died between its download and its compile — never an
+    /// ordinary download in flight.
     case modelReconciledFromDisk(name: String)
 
     // MARK: Keyboard
