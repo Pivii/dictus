@@ -72,9 +72,20 @@ struct ToolbarView: View {
     /// Pro entry, panel presentation only. Non-subscribers only.
     var onProTap: (() -> Void)?
 
-    /// The armed Smart Mode, or nil for Normal (#79). Drives the centre slot's
-    /// priority-4 occupant and the mic pill's corner badge.
+    /// The armed Smart Mode, or nil for Normal (#79). Names the centre slot's
+    /// priority-5 occupant, in one of its two shapes.
     var armedSmartMode: SmartMode?
+
+    /// The armed Smart Mode **when a dictation starting now would actually run it**
+    /// (#423), which is what the mic pill's corner badge draws.
+    ///
+    /// Two properties because they are two facts, and the bug was drawing one from
+    /// the other: with the mode armed and Smart Modes switched off, the badge said EN
+    /// over a dictation that returned French. A badge is an assertion about the next
+    /// dictation, so it comes from what the next dictation will do; the centre slot's
+    /// label is a statement about a setting, so it comes from the setting and says,
+    /// greyed, that it is not in force.
+    var effectiveSmartMode: SmartMode?
 
     /// Whether the "long-press for Smart Modes" hint is still worth showing. The
     /// policy is `SmartModeDiscovery`'s; this is only the answer.
@@ -200,6 +211,7 @@ struct ToolbarView: View {
             hasSuggestions: !suggestions.isEmpty,
             polishUnavailable: showsPolishUnavailable,
             armedModeName: armedSmartMode?.localizedDisplayName,
+            armedModeIsEffective: effectiveSmartMode != nil,
             offersDiscoveryHint: offersSmartModeHint
         )
     }
@@ -224,6 +236,8 @@ struct ToolbarView: View {
             polishUnavailableNotice
         case .armedMode(let name):
             armedModeLabel(name)
+        case .armedModeInactive(let name):
+            inactiveArmedModeLabel(name)
         case .discoveryHint:
             discoveryHint
         case .empty:
@@ -282,7 +296,7 @@ struct ToolbarView: View {
         AnimatedMicButton(
             status: dictationStatus,
             isPill: true,
-            badge: armedSmartMode?.badge,
+            badge: effectiveSmartMode?.badge,
             onTap: {
                 guard !fanGestureDidOpen else {
                     fanGestureDidOpen = false
@@ -416,6 +430,42 @@ struct ToolbarView: View {
                 .lineLimit(1)
         }
         .foregroundColor(.dictusAccent)
+        .padding(.leading, 6)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The armed mode's name for a mode that will not run, same rung (#423).
+    ///
+    /// ### Why it is still here at all
+    ///
+    /// Because the setting survived, deliberately: `resolveArmedMode` keeps a mode
+    /// through every recoverable condition — a lapsed subscription, a switched-off
+    /// feature, Apple Intelligence off — so that switching it back on restores the
+    /// user's choice without re-arming. Hiding the label would make that invisible
+    /// and leave the user wondering where their mode went.
+    ///
+    /// ### And why it must not look like `armedModeLabel`
+    ///
+    /// That one is accent blue and it is a claim: this is what the next dictation
+    /// does. Here that claim is false. Same glyph and same name — it is the same
+    /// setting — in grey and followed by "off", which says the true thing instead:
+    /// yours, and not in force. Grey is the register this bar already uses for a
+    /// state rather than an alarm (`polishUnavailableNotice`, and every message in
+    /// the slot since #313); nothing failed here either.
+    private func inactiveArmedModeLabel(_ name: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: armedSmartMode?.icon ?? "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+
+            Text(String(
+                localized: "\(name) · off",
+                comment: "Toolbar label for an armed Smart Mode that will not run, so the dictation goes in as Normal. The placeholder is the mode's name."
+            ))
+            .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(.secondary)
         .padding(.leading, 6)
         .frame(maxWidth: .infinity)
     }

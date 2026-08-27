@@ -1,6 +1,39 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is unavailable. Dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run for a reason the user cannot act on. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est indisponible. Dicté en Normal."
+          }
+        }
+      }
+    },
+    "%@ needs Dictus Pro. Dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run for lack of a Pro subscription. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ demande Dictus Pro. Dicté en Normal."
+          }
+        }
+      }
+    },
+    "%@ · off" : {
+      "comment" : "Toolbar label for an armed Smart Mode that will not run, so the dictation goes in as Normal. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · inactif"
+          }
+        }
+      }
+    },
     "%@: could not be applied. Try again." : {
       "comment" : "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name.",
       "localizations" : {
@@ -45,6 +78,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apple Intelligence est occupé. Les modes reviennent dans un moment."
+          }
+        }
+      }
+    },
+    "Apple Intelligence is off. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because Apple Intelligence is switched off. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence est désactivé. %@ a été dicté en Normal."
+          }
+        }
+      }
+    },
+    "Apple Intelligence is still downloading. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because the on-device model is still downloading. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence télécharge encore. %@ a été dicté en Normal."
           }
         }
       }
@@ -185,6 +240,17 @@
         }
       }
     },
+    "Off" : {
+      "comment" : "Marker on the Smart Mode fan row the user armed, when that mode will not run and the dictation goes in as Normal.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inactif"
+          }
+        }
+      }
+    },
     "Open Dictus" : {
       "localizations" : {
         "fr" : {
@@ -249,6 +315,17 @@
         }
       }
     },
+    "Release here to see the plans" : {
+      "comment" : "Caption on the Dictus Pro row of the Smart Mode fan, telling the user what releasing the long-press does.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relâche ici pour voir les offres"
+          }
+        }
+      }
+    },
     "Search Emoji" : {
       "localizations" : {
         "fr" : {
@@ -266,6 +343,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les modes ne sont pas disponibles dans cette version."
+          }
+        }
+      }
+    },
+    "Smart Modes are off. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because the user switched Smart Modes off. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes sont désactivés. %@ a été dicté en Normal."
+          }
+        }
+      }
+    },
+    "Smart Modes are off. Turn them back on in Dictus." : {
+      "comment" : "Shown in the Smart Mode fan when a subscriber has switched Smart Modes off in Settings.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes sont désactivés. Réactive-les dans Dictus."
           }
         }
       }
