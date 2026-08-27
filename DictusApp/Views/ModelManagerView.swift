@@ -103,25 +103,26 @@ struct ModelManagerView: View {
     /// First model identifier currently in a user-facing prep phase.
     /// Priority: active load > prewarming > downloading.
     private var liveActivePrepModel: String? {
+        // THE INVARIANT THIS ORDER EXISTS FOR (audit finding 3): whatever this returns
+        // is the model the screen names and the model whose progress it draws. Those
+        // two must be the same one.
+        //
+        // A per-model state is specific evidence — THIS model is compiling, THIS model
+        // is downloading. `modelLoadState == .loading` is a global flag that only says
+        // some load is in flight, and it was checked first. So a mic tap loading X while
+        // the user downloaded Y put X's name and X's phase on screen while Y's progress
+        // bar was invisible. Specific evidence wins; the global flag is the fallback.
+        for model in ModelInfo.allIncludingDeprecated
+        where modelManager.modelStates[model.identifier] == .prewarming {
+            return model.identifier
+        }
+        for model in ModelInfo.allIncludingDeprecated
+        where modelManager.modelStates[model.identifier] == .downloading {
+            return model.identifier
+        }
         if modelManager.modelLoadState == .loading,
            let active = modelManager.activeModel {
             return active
-        }
-        for model in ModelInfo.allIncludingDeprecated {
-            switch modelManager.modelStates[model.identifier] ?? .notDownloaded {
-            case .prewarming:
-                return model.identifier
-            default:
-                continue
-            }
-        }
-        for model in ModelInfo.allIncludingDeprecated {
-            switch modelManager.modelStates[model.identifier] ?? .notDownloaded {
-            case .downloading:
-                return model.identifier
-            default:
-                continue
-            }
         }
         return nil
     }

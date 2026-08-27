@@ -602,4 +602,39 @@ final class ModelInfoTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Launch preload deadline (issue #428)
+
+    /// The launch preload reads the same per-model budget the download path does. The
+    /// point of routing it through one accessor is that Turbo's disagreement with
+    /// everything else (issue #406) cannot be true in one place and false in the other.
+    func testThePreloadDeadlineIsThePerModelBudget() {
+        XCTAssertEqual(ModelInfo.preloadDeadlineSeconds(for: turbo632), 300)
+        XCTAssertEqual(ModelInfo.preloadDeadlineSeconds(for: turbo954), 300)
+        XCTAssertEqual(ModelInfo.preloadDeadlineSeconds(for: "openai_whisper-medium"), 120)
+        XCTAssertEqual(ModelInfo.preloadDeadlineSeconds(for: "openai_whisper-small"), 120)
+    }
+
+    /// An identifier the catalogue does not know must still get a deadline. Before #428
+    /// this path had none at all, and "no entry" is exactly the shape a model left over
+    /// from an older build has — the one case where waiting forever is most likely.
+    func testAnUnknownModelStillGetsADeadline() {
+        XCTAssertEqual(
+            ModelInfo.preloadDeadlineSeconds(for: "openai_whisper-from-a-future-build"),
+            ModelInfo.defaultPrewarmTimeoutSeconds
+        )
+        XCTAssertGreaterThan(ModelInfo.preloadDeadlineSeconds(for: ""), 0)
+    }
+
+    /// Every catalogue entry has to be reachable through the accessor, or a model would
+    /// silently fall back to the default while declaring something else.
+    func testEveryCatalogueEntryResolvesToItsOwnDeadline() {
+        for model in ModelInfo.allIncludingDeprecated {
+            XCTAssertEqual(
+                ModelInfo.preloadDeadlineSeconds(for: model.identifier),
+                model.prewarmTimeoutSeconds,
+                "\(model.identifier) does not resolve to the budget it declares"
+            )
+        }
+    }
 }

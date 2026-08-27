@@ -74,10 +74,12 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
 
-    /// Serial prewarm lock — only one CoreML compilation at a time.
-    /// The Neural Engine cannot handle multiple models compiling simultaneously
-    /// (causes ANE "E5 bundle" errors). Downloads are parallel, prewarms are serial.
-    private var isPrewarming = false
+    /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
+    /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
+    /// compile two models at once, and a lock owned by this class covered neither
+    /// `ensureEngineReady` — which compiles too and never consulted it — nor the second
+    /// `ModelManager` that onboarding builds. One piece of hardware, one lock, on the
+    /// singleton that both paths can reach.
 
     /// Directory inside the App Group container where model files are stored.
     /// Using the shared container means the keyboard extension could also access
@@ -251,13 +253,25 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Wait for any other prewarm to finish (poll on MainActor is safe)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000) // 500ms
-            }
+            // Take the Neural Engine. This waits out any compile already running,
+            // including one started by `ensureEngineReady` on the dictation path, which
+            // the old instance-owned flag could not see (issue #428, second review).
+            // Captured BEFORE the wait for the Neural Engine, not after it (fourth
+            // review, finding 1). The wait is unbounded — it can last as long as another
+            // compile runs — and everything this guard exists to notice happens during
+            // it. Capturing on the far side made the guard blind to exactly the window
+            // it was written for.
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
 
-            isPrewarming = true
-            defer { isPrewarming = false }
+            let engineHolder = "prewarm:\(identifier)"
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
+
+            // This prewarm compiles its own throwaway WhisperKit outside the coordinator's
+            // init lock, so abandoning a load does not stop it — and #174 has it adopt the
+            // model as active when it finishes. Without the guard below, a user who moved
+            // to a different model mid-prewarm had their choice silently reverted, and the
+            // model they moved off loaded into RAM instead.
 
             PersistentLog.log(.modelCompilationStarted(name: identifier))
 
@@ -341,10 +355,24 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one.
-            // The user explicitly chose it; without this they had to tap the card
-            // a second time, triggering a redundant second RAM load.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one. The user
+            // explicitly chose it; without this they had to tap the card a second time,
+            // triggering a redundant second RAM load.
+            //
+            // Unless they have since chosen otherwise. Escaping this preparation and
+            // picking another model is exactly that, and #174's convenience must not
+            // overrule it (finding B).
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -353,10 +381,23 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelSelected(name: identifier))
 
+            // Hand the Neural Engine back BEFORE kicking off the eager load, not at the
+            // end of this scope where the `defer` would do it (audit finding 5). The
+            // load below would otherwise spend its first 500ms poll queued behind a lock
+            // this scope is about to drop anyway. The `defer` still runs and finds the
+            // holder changed, so it is a no-op — that identity check is what makes an
+            // early release safe.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+
             // Issue #144: eagerly load the now-active model into the coordinator's
             // RAM-resident WhisperKit instance. The compile above used a throwaway
             // WhisperKit just to populate the Core ML cache.
-            DictationCoordinator.shared.preloadActiveModel()
+            //
+            // Skipped when the user moved on: this would load the abandoned model into
+            // RAM and clear the memory that keeps it from being re-warmed (finding B).
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -423,19 +464,25 @@ class ModelManager: ObservableObject {
                 }
             }
 
-            // Step 2: Wait for any other prewarm to finish (ANE conflict avoidance)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
+            // Same guard as the WhisperKit path, captured before the wait (finding 1).
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
 
-            // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
-            isPrewarming = true
+            // Step 2: Switch to prewarming state BEFORE queueing for the Neural Engine,
+            // which is the order the WhisperKit path uses (fourth review, finding 3).
+            // Taking the lock first left the card saying "Downloading" at 100% with no
+            // progress for as long as another compile held the hardware — the download
+            // has finished, and the screen should say what is actually happening.
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
-            defer { isPrewarming = false }
+
+            // Step 3: take the Neural Engine, waiting out any compile already on it —
+            // this path's or the dictation path's (issue #428, second review).
+            let engineHolder = "prewarm:\(identifier)"
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             // Step 4: Load and compile CoreML models.
             // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
@@ -460,9 +507,19 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one —
-            // see comment in the WhisperKit path.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one — see the
+            // comment in the WhisperKit path, including why the user's later choice wins.
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -472,8 +529,14 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
             PersistentLog.log(.modelSelected(name: identifier))
 
-            // Issue #144: same proactive load as the WhisperKit path — see comment there.
-            DictationCoordinator.shared.preloadActiveModel()
+            // Released early for the same reason as the WhisperKit path above.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+
+            // Issue #144: same proactive load as the WhisperKit path — see comment there,
+            // including why an abandoned preparation does not get one.
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
@@ -525,6 +588,7 @@ class ModelManager: ObservableObject {
     /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
+
         activeModel = identifier
         persistState()
         PersistentLog.log(.modelSelected(name: identifier))

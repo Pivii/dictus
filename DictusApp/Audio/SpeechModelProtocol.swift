@@ -52,6 +52,16 @@ enum SpeechModelError: DiagnosableError {
     /// The model files are present but the engine failed to load them.
     case engineLoadFailed(identifier: String, underlying: Error)
 
+    /// The load completed, but the app had already stopped waiting for it: the user
+    /// left the preparation screen, or the launch deadline expired (issue #428).
+    ///
+    /// WHY this is an error and not a silent success: the in-flight load is shared, and
+    /// every caller parked on it reads a plain `return` as "the engine is ready". One of
+    /// those callers is a cold-start dictation, which would then write `.ready` with no
+    /// engine behind it and call `transcribe` on nothing. An abandoned load has to fail
+    /// its awaiters so they can rethrow and start a load of their own.
+    case loadAbandoned(identifier: String)
+
     /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
     /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
@@ -60,7 +70,24 @@ enum SpeechModelError: DiagnosableError {
             return String(localized: "This model is not installed. Open Dictus and download it in the Models tab.")
         case .engineLoadFailed:
             return String(localized: "The transcription model could not be loaded. Open Dictus and try again.")
+        case .loadAbandoned:
+            // A NOTICE, not a fault (#313). Nothing is broken: a load the app stopped
+            // waiting for is the expected outcome of a deadline expiring or of the user
+            // leaving the preparation screen, and tapping again starts or joins the next
+            // one. "Interrupted", which this said first, reads as damage and sends the
+            // user looking for something to fix. Same register as `noWordsDetected`:
+            // state the situation, name the one action that works, assign no blame.
+            return String(localized: "The model is still getting ready. Tap the microphone again.")
         }
+    }
+
+    /// Whether this is a load the app walked away from rather than a failure of the
+    /// model files. The wrapping in `ensureEngineReady` preserves it: a caller told
+    /// "preparation was interrupted, tap again" can act on that, where "the model could
+    /// not be loaded" would send them looking for a broken download (issue #428).
+    var isLoadAbandoned: Bool {
+        if case .loadAbandoned = self { return true }
+        return false
     }
 
     /// English technical detail for the log. Never shown to the user.
@@ -70,6 +97,8 @@ enum SpeechModelError: DiagnosableError {
             return "model not installed locally: \(identifier)"
         case .engineLoadFailed(let identifier, let underlying):
             return "engine load failed for \(identifier): \(underlying)"
+        case .loadAbandoned(let identifier):
+            return "load abandoned before it completed: \(identifier)"
         }
     }
 }

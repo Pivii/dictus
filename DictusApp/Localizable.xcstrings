@@ -2462,6 +2462,16 @@
         }
       }
     },
+    "The model is still getting ready. Tap the microphone again." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle est encore en préparation. Appuyez à nouveau sur le micro."
+          }
+        }
+      }
+    },
     "The model server is busy. Please try again in a few minutes." : {
       "comment" : "Model download error when HuggingFace rate-limits (HTTP 429/503, issue #207).",
       "localizations" : {
