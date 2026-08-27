@@ -47,6 +47,26 @@ final class WhisperModelRepositoryTests: XCTestCase {
         return folder
     }
 
+    /// Creates the variant folder with the exact file set a FINISHED download leaves
+    /// behind: `config.json` plus the three compiled bundles, each holding the entries
+    /// `hasCompleteDownload` requires. Used by the issue #433 tests, which care about
+    /// what is inside a bundle and not merely that it exists.
+    @discardableResult
+    private func makeCompleteDownload(_ identifier: String) throws -> URL {
+        let folder = try makeModelFolder(identifier, withCompiledModels: true)
+        for bundle in WhisperModelRepository.requiredCompiledBundleNames {
+            let bundleURL = folder.appendingPathComponent("\(bundle).mlmodelc", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: bundleURL.appendingPathComponent("weights", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            for entry in ["coremldata.bin", "model.mil", "weights/weight.bin"] {
+                try Data("payload".utf8).write(to: bundleURL.appendingPathComponent(entry))
+            }
+        }
+        return folder
+    }
+
     // MARK: - Path construction
 
     func testRepositoryURLMatchesTheHubApiLayout() {
@@ -174,5 +194,143 @@ final class WhisperModelRepositoryTests: XCTestCase {
             WhisperModelRepository.cachedTokenizerRepositoryNames(documentsDirectory: documents),
             ["whisper-medium", "whisper-small"]
         )
+    }
+
+    // MARK: - Download completeness (issue #433)
+
+    func testCompleteDownloadIsRecognized() throws {
+        try makeCompleteDownload("openai_whisper-small")
+
+        XCTAssertTrue(
+            WhisperModelRepository.hasCompleteDownload("openai_whisper-small", documentsDirectory: documents)
+        )
+    }
+
+    func testDownloadInterruptedInsideABundleIsNotComplete() throws {
+        // The shape an interrupted download actually leaves: every bundle directory
+        // exists, because the downloader creates each file's parent before fetching
+        // the file, but the weights never landed. `isModelInstalled` says yes to this
+        // and is allowed to — it answers a different question (see the doc comment).
+        try makeModelFolder("openai_whisper-medium", withCompiledModels: true)
+
+        XCTAssertTrue(
+            WhisperModelRepository.isModelInstalled("openai_whisper-medium", documentsDirectory: documents)
+        )
+        XCTAssertFalse(
+            WhisperModelRepository.hasCompleteDownload("openai_whisper-medium", documentsDirectory: documents)
+        )
+    }
+
+    func testAMissingWeightFileAloneMakesTheDownloadIncomplete() throws {
+        let folder = try makeCompleteDownload("openai_whisper-medium")
+        try FileManager.default.removeItem(
+            at: folder.appendingPathComponent("AudioEncoder.mlmodelc/weights/weight.bin")
+        )
+
+        XCTAssertFalse(
+            WhisperModelRepository.hasCompleteDownload("openai_whisper-medium", documentsDirectory: documents)
+        )
+    }
+
+    func testAMissingConfigFileMakesTheDownloadIncomplete() throws {
+        let folder = try makeCompleteDownload("openai_whisper-small_216MB")
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("config.json"))
+
+        XCTAssertFalse(
+            WhisperModelRepository.hasCompleteDownload("openai_whisper-small_216MB", documentsDirectory: documents)
+        )
+    }
+
+    func testAModelThatWasNeverDownloadedIsNotComplete() {
+        XCTAssertFalse(
+            WhisperModelRepository.hasCompleteDownload("openai_whisper-small", documentsDirectory: documents)
+        )
+    }
+
+    func testRequiredDownloadPathsMatchTheBundlesTheCheckLooksFor() {
+        // The downloader's final tripwire and this check read the same list, which is
+        // the only reason the reconciliation may trust files the download placed.
+        XCTAssertEqual(
+            WhisperModelRepository.requiredDownloadPaths(forVariant: "openai_whisper-small"),
+            [
+                "openai_whisper-small/MelSpectrogram.mlmodelc",
+                "openai_whisper-small/AudioEncoder.mlmodelc",
+                "openai_whisper-small/TextDecoder.mlmodelc",
+                "openai_whisper-small/config.json"
+            ]
+        )
+    }
+
+    // MARK: - Reconciliation (issue #433)
+
+    func testCompleteFilesAbsentFromTheListAreReconciledIn() throws {
+        // The reported bug: the compile was interrupted, so the identifier was never
+        // appended, while 500 MB of weights sit on disk unseen and undeletable.
+        try makeCompleteDownload("openai_whisper-small")
+
+        let reconciled = WhisperModelRepository.unlistedCompleteDownloads(
+            among: ["openai_whisper-small", "openai_whisper-medium"],
+            listedAsDownloaded: ["openai_whisper-medium"],
+            documentsDirectory: documents
+        )
+
+        XCTAssertEqual(reconciled, ["openai_whisper-small"])
+    }
+
+    func testPartialFilesAbsentFromTheListAreLeftOut() throws {
+        // An interrupted DOWNLOAD, as opposed to an interrupted compile. Listing this
+        // would trade one lie for another: the user would be shown a model that cannot
+        // load, and selecting it would fail rather than resume.
+        try makeModelFolder("openai_whisper-small", withCompiledModels: true)
+
+        let reconciled = WhisperModelRepository.unlistedCompleteDownloads(
+            among: ["openai_whisper-small"],
+            listedAsDownloaded: [],
+            documentsDirectory: documents
+        )
+
+        XCTAssertTrue(reconciled.isEmpty)
+    }
+
+    func testCompleteFilesAlreadyInTheListChangeNothing() throws {
+        try makeCompleteDownload("openai_whisper-small")
+
+        let reconciled = WhisperModelRepository.unlistedCompleteDownloads(
+            among: ["openai_whisper-small"],
+            listedAsDownloaded: ["openai_whisper-small"],
+            documentsDirectory: documents
+        )
+
+        XCTAssertTrue(reconciled.isEmpty)
+    }
+
+    func testReconciliationReportsOnlyIdentifiersAndNeverElectsAnActiveModel() throws {
+        // The regression this guards against is architectural rather than numeric: if
+        // reconciliation could name an active model, a device could come up believing
+        // transcription is available with no engine loaded. The function returns
+        // `[String]` in catalogue order and has no other output, so there is nothing
+        // for a caller to mistake for a selection.
+        try makeCompleteDownload("openai_whisper-medium")
+        try makeCompleteDownload("openai_whisper-small")
+
+        let reconciled = WhisperModelRepository.unlistedCompleteDownloads(
+            among: ["openai_whisper-small", "openai_whisper-medium"],
+            listedAsDownloaded: [],
+            documentsDirectory: documents
+        )
+
+        XCTAssertEqual(reconciled, ["openai_whisper-small", "openai_whisper-medium"])
+    }
+
+    func testReconciliationIgnoresAVariantWithNoFilesAtAll() throws {
+        try makeCompleteDownload("openai_whisper-small")
+
+        let reconciled = WhisperModelRepository.unlistedCompleteDownloads(
+            among: ["openai_whisper-tiny", "openai_whisper-small"],
+            listedAsDownloaded: [],
+            documentsDirectory: documents
+        )
+
+        XCTAssertEqual(reconciled, ["openai_whisper-small"])
     }
 }
