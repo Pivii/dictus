@@ -13,23 +13,16 @@ final class PolishNaturalPromptFRTests: XCTestCase {
         PolishNaturalPromptFR.instructions(glossary: PolishGlossary.promptBlock)
     }
 
-    /// #439 A. Rule 8 has to cover the shape that actually occurs — a homophone
-    /// the STT split or joined wrongly — not only the off-language fragment the
-    /// prompt used to demonstrate.
-    func testRuleEightCoversTheHomophoneShapeAndNotOnlyOffLanguageFragments() {
+    /// Rule 8 stays exactly as ADR 0003 shipped it. #439 measured that widening
+    /// it changes nothing — Apple FM does not detect a homophone that reads as
+    /// fluent French, 0/5 even alone in one sentence — and the words would be
+    /// paid for in input headroom, since instructions share the window with the
+    /// input (#270). This pins the decision, not just the text.
+    func testRuleEightIsNotWidened() {
         XCTAssertTrue(prompt.contains("ASR error repair"))
         XCTAssertTrue(prompt.contains("off-language fragment"))
-        XCTAssertTrue(prompt.contains("real French words that mean nothing where they stand"))
-        XCTAssertTrue(prompt.contains("determiner, agreement or verb form that contradicts"))
-    }
-
-    /// #439 B and C, the two constraints that make a repair a repair: it replaces
-    /// the broken segment rather than removing it, and it lands in the speaker's
-    /// register. Both were measured broken on the same run.
-    func testRuleEightRequiresRepairInPlaceAndInRegister() {
-        XCTAssertTrue(prompt.contains("Repair IN PLACE"))
-        XCTAssertTrue(prompt.contains("Repair IN THE SPEAKER'S REGISTER"))
-        XCTAssertTrue(prompt.contains("deleting the segment is not a repair"))
+        XCTAssertFalse(prompt.contains("Repair IN PLACE"))
+        XCTAssertFalse(prompt.contains("homophone"))
     }
 
     /// #439 C. Deletion was only implied by the Preserve list; the measured run

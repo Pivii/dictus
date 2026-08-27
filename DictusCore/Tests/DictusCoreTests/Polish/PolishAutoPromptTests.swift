@@ -37,19 +37,17 @@ final class PolishAutoPromptTests: XCTestCase {
         XCTAssertFalse(prompt.contains("`Punkt`"), "bare German 'Punkt' must stay excluded (#185)")
     }
 
-    /// #439. The prompt that took all six measured runs carried no ASR-repair rule
-    /// at all, so "rule 8 is never applied" was a prompt that never carried it.
-    /// The rule is now here — and so is the guard that keeps it from becoming a
-    /// licence to translate, which is this prompt's one unforgivable failure.
-    func testAutoPromptCarriesASRRepairWithoutWeakeningTheAntiTranslationContract() {
+    /// #439. This prompt carries no ASR-repair rule, and that is now a measured
+    /// decision rather than an oversight: all six defects the issue lists came
+    /// through here, and adding the rule moved none of them (0-1 of 6, before and
+    /// after). Its words would be paid for in input headroom on the longest prompt
+    /// this build sends, so they are not spent. If a future engine can do the
+    /// repair, this test is the thing to delete first.
+    func testAutoPromptDoesNotCarryASRRepair() {
         let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
-        XCTAssertTrue(prompt.contains("ASR error repair"))
-        XCTAssertTrue(prompt.contains("IN THE INPUT'S OWN LANGUAGE"))
-        XCTAssertTrue(prompt.contains("Incoherence is the trigger, never foreignness"))
-        XCTAssertTrue(prompt.contains("Repair IN PLACE"))
-        XCTAssertTrue(prompt.contains("Repair IN THE SPEAKER'S REGISTER"))
-        // The contract the rule sits next to, restated here so a future widening of
-        // rule 8 cannot quietly cost the clauses that make this prompt what it is.
+        XCTAssertFalse(prompt.contains("ASR error repair"))
+        XCTAssertFalse(prompt.contains("Repair IN PLACE"))
+        // The clauses a repair rule would sit next to and could undermine.
         XCTAssertTrue(prompt.contains("NEVER translate"))
         XCTAssertTrue(prompt.contains("Do NOT translate"))
     }

@@ -81,32 +81,40 @@ The length-ratio guardrail from ADR 0002 is unchanged at `[0.5, 2.0]` for Natura
 ## Amendment — 2026-08-27 (#439)
 
 Six French dictations measured end to end on device broke this contract in three
-directions at once (#439, raw pairs in #437). The contract is unchanged in substance;
-three things it left implicit are now written down, because the prompts could honour
-every sentence above and still produce what was measured.
+directions at once (#439, raw pairs in #437). Measuring the fix against those six
+fixtures changed what the amendment is: **one clarification lands, and one proposed
+change is measured and rejected.**
 
-**1. A rule-8 repair is substitutional, not subtractive.** The reconstructed words take
-the broken segment's position and nothing else moves. Deleting an incoherent segment is
-a repair only when nothing in it is recoverable. As written, rule 8 said "reconstruct the
-speaker's intent" and the FR prompt's only demonstration of it *deleted* a fragment; the
-measured run deleted `en calcul` from `le même prix en calcul` and called it polish.
+**What lands: the Forbidden list bans deletion explicitly.** It banned adding, reordering
+and translating; *removing dictated content* was only implied by the Preserve list, and
+the measured run deleted `en calcul` from `le même prix en calcul` and still passed every
+gate. It is now stated: rules 6 and 7 (stutters, fillers) are the only licence to remove
+a word, rule 8 the only licence to change one. The Preserve list gains the two shapes the
+run lost by name — placeholder words (`machin`, `truc`, `bidule`, which came back as
+`machine`) and the spoken forms `ça` and `ça va` + infinitive.
 
-**2. A rule-8 repair happens in the speaker's register.** The Preserve list already says
-*Familiar register* and *Tone and register*, but it read as a rule about text the model
-leaves alone. It also governs text the model writes: the one repair that did fire returned
-`et je pense que cela débordera` for `et je pense que ça va déborder`. A repair that
-arrives in written French has changed the message as surely as a wrong word would.
+Applied to `(.natural, .french)` and to `.auto`. EN/ES/DE follow once FR is confirmed on
+device, per #439's Scope.
 
-**3. The Forbidden list bans deletion explicitly.** It banned adding, reordering and
-translating; "removing dictated content" was only implied by the Preserve list. It is now
-stated: rules 6 and 7 (stutters, fillers) are the only licences to remove a word, and
-rule 8 the only licence to change one.
+**What is measured and rejected: widening rule 8.** #439 proposed extending it from
+pseudo-words and off-language fragments to the shape that actually occurs — a homophone
+the STT split or joined wrongly. Written, shipped to the harness and scored over 60
+outputs, it repaired **none** of the six segments the issue lists. Handed each segment
+**alone, in one sentence, with the context that makes the intended word obvious**: 0 out
+of 5, five times over. Under a 1.5 KB prompt whose stated primary job was finding
+misheard words: still 0 out of 5. See `docs/research/439-natural-contract/findings.md`.
 
-**And one gap that was in the dispatch rather than in the contract.** All six measured
-runs went through `PolishAutoPrompt` (#239), because the device was in Auto-detect —
-and that prompt carried **no rule 8 at all**. "Rule 8 is never applied" was a prompt that
-never carried it. It does now, with an extra guard the per-language prompts do not need:
-incoherence is the trigger, never foreignness, or the rule becomes a licence to translate.
+Rule 8 therefore stands exactly as written above. It works on the shape it was authored
+from — a whole-clause language switch, which fires 5/5 — and Apple FM does not generalise
+it to a homophone that reads as fluent French. That is an engine limit, not a contract
+one, and the words would have been paid for in input headroom: instructions and input
+share one 4096-token window (#270). The risk this ADR already recorded — *"a future Apple
+FM update could stop honouring rule 8"* — now has a companion: **rule 8's reach is
+narrower than the contract's wording suggests**, and the six probes in
+`harness/probe-isolated.json` are the standing test for any future engine.
 
-Applied to `(.natural, .french)` and to `.auto`. EN/ES/DE follow the same edit once FR
-is confirmed on device, per #439's Scope.
+**One gap that was in the dispatch rather than in the contract**, recorded because it
+explains the measurement: all six device runs went through `PolishAutoPrompt` (#239),
+because the device was in Auto-detect — and that prompt carries no rule 8 at all. "Rule 8
+is never applied" was, for those six, a prompt that never carried it. It still does not,
+now as a measured decision rather than an oversight.

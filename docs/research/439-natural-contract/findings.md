@@ -146,3 +146,79 @@ The issue's three defects do not share the lever it proposes.
 The honest recommendation is that **#439 as written cannot be closed by this PR**, and
 that its bar 1 should be re-cut against what the engine can actually do — with the six
 probes above as the evidence, since they are cheap to re-run against any future engine.
+
+---
+
+# Addendum — the short version, measured (2026-08-27)
+
+The maintainer read the above and cut the edit: **keep the two PRESERVE lines and the
+explicit deletion ban, drop the rule-8 widening**, on both prompts. His reasoning, which
+the numbers support: the measured return on the full edit is one Preserve item, the
+product's central complaint is that *long* dictations come back as a wall of text, and
+trading long-dictation headroom for a marginal fidelity win — on the free tier, while
+#437 is about to make long dictations better — is backwards.
+
+The auto arm supports dropping rule 8 rather than trimming it: it went 1,1,1,0,1 →
+0,1,1,0,0 with the widening in, and fixture 3's off-language repair fired on the auto
+path *before* any rule 8 existed there. The wording is not what buys that repair.
+
+## The ceiling comes back
+
+Measured with the same binary search `PolishContextBudgetTests` uses, on the resolved
+French Natural prompt:
+
+| | Prompt | Transcript ceiling |
+|---|---|---|
+| `develop` | 5 483 chars | **4 160** |
+| Full edit (previous commits) | 7 096 chars | 3 580 |
+| **Short edit (this branch)** | **6 009 chars** | **3 969** |
+
+**The cost falls from 580 characters of maximum dictation length to 191** — about 31
+words. `PolishContextBudgetTests` passes on both bounds, and the 3 500 floor #270 measured
+was never moved. The Swift helper and an independent replica of the estimator agree on
+3 969 to the character; the replica also reproduces `develop`'s 4 160 exactly, which is
+the number #270 recorded.
+
+## Same bars, same fixtures, same run count
+
+Occurrences over 5 runs × 6 fixtures per arm per path. `before` is `develop`, `full` is
+the rule-8 version, `short` is what ships.
+
+| | FR before → full → short | Auto before → full → short |
+|---|---|---|
+| **Bar 1** runs clearing ≥4/6 | 0/5 → 0/5 → **0/5** | 0/5 → 0/5 → **0/5** |
+| **Bar 2** `machin` → `machine` | 4 → 2 → **1** | 3 → 0 → **2** |
+| `cela` for `ça` | 4 → 4 → **4** | 2 → 4 → **4** |
+| hour format expanded | 2 → 1 → **0** | 0 → 2 → **0** |
+| digits spelled back out | 0 → 0 → **0** | 2 → 0 → **0** |
+| **Bar 3** `en calcul` deleted | 4 → 4 → **5** | 5 → 4 → **4** |
+| trailing sentence deleted | 0 → 1 → **1** | 0 → 0 → **1** |
+| **Bar 4** content invented | 0 → 0 → **0** | 0 → 0 → **0** |
+| **Bar 5** guardrail rejections | 0/30 → 0/30 → **0/30** | 0/30 → 0/30 → **0/30** |
+| **Bar 6** line breaks · `<<NL>>` | 0 · 0 → 0 · 0 → **0 · 0** | 0 · 0 → 0 · 0 → **0 · 0** |
+
+- **The `machin` win survives the cut.** 7 occurrences in 10 runs on `develop`, 2 with the
+  full edit, **3 with the short one**. The PRESERVE line is what was buying it, as
+  expected — it is the only item in this PR that moves a number.
+- **Bar 4 holds, 60/60.** No salutation, sign-off, bracket placeholder or invented fact
+  in any output, on either path.
+- **Bar 5 holds.** 60/60 `success`, zero guardrail rejections, every ratio inside the
+  [0.92, 1.15] tripwire.
+- **Bar 6 holds.** Zero line breaks and zero `<<NL>>` leaks in 60 outputs. The scope fence
+  with #437 is intact.
+- **Bars 1, 2 (`cela`) and 3 fail, unchanged**, for the reasons already measured above:
+  the engine cannot do the repair, and the deletion is a segmentation defect. The `cela`
+  PRESERVE line does not work in either version — 4/5 on both paths, against 4/5 and 2/5
+  on `develop`. It is kept because it is one line and it is the correct statement of the
+  contract, not because it was shown to help.
+- **One thing to watch, not a proven regression.** Fixture 5's trailing
+  `ça m'échappe mais ça me reviendra` — #385's exact signature — was dropped **twice in
+  60 outputs**, against 0 in 10 baseline runs. Two occurrences is not a signal at this
+  resolution, but it has now appeared in three separate arms and never on `develop`.
+
+## Regression on the untargeted sets
+
+- `seed.json`: **14/14 on all three passes** (`develop`: 3/3 clean; full edit: 5/6 clean).
+- `auto.json`: **10/10, 9/10, 9/10** — identical to `develop`'s 10/10, 9/10, 9/10. The two
+  misses are the `auto-verbal-*` fixtures dropping a `!`, the same sampling noise the
+  baseline had.
