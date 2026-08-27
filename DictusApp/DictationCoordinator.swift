@@ -248,13 +248,9 @@ class DictationCoordinator: ObservableObject {
         context: String,
         attemptLog: WarmUpAttemptPosition
     ) async throws -> String {
-        if attemptLog == .beforeModelLoad {
-            PersistentLog.log(.engineWarmUpAttempt(context: context))
-        }
+        if attemptLog == .beforeModelLoad { PersistentLog.log(.engineWarmUpAttempt(context: context)) }
         try await ensureEngineReady()
-        if attemptLog == .beforeAudioWarmUp {
-            PersistentLog.log(.engineWarmUpAttempt(context: context))
-        }
+        if attemptLog == .beforeAudioWarmUp { PersistentLog.log(.engineWarmUpAttempt(context: context)) }
         try audioEngine.warmUp()
         return currentModelName ?? "unknown"
     }
@@ -1469,7 +1465,7 @@ private extension DictationCoordinator {
 
         // Nothing else may be compiling while this one runs, whichever path started it.
         let engineHolder = "WhisperKitLoad:\(modelName)"
-        await acquireNeuralEngine(for: engineHolder)
+        try await acquireNeuralEngine(for: engineHolder)
         defer { releaseNeuralEngine(from: engineHolder) }
 
         // Re-check after the wait: whatever we queued behind may have loaded exactly
@@ -1486,6 +1482,13 @@ private extension DictationCoordinator {
         // Captured before the task starts, checked after the compile returns: a load
         // the app has since abandoned must not publish an engine (issue #428).
         let epoch = modelLoadEpoch
+
+        // An unstructured `Task` does NOT inherit cancellation from whoever created it,
+        // so a compile started here outlives the dictation that asked for it and holds
+        // the Neural Engine while the next real load queues behind it (audit finding 1,
+        // second order). Checked here rather than trusted from `acquireNeuralEngine`,
+        // because the re-check above it is a suspension point away.
+        try Task.checkCancellation()
 
         let task = Task<Void, Error> {
             if #available(iOS 14.0, *) {
@@ -1518,6 +1521,8 @@ private extension DictationCoordinator {
 
             self.whisperKit = kit
             self.currentModelName = modelName
+            // This model is loaded and working, whatever was decided about it earlier.
+            self.clearAbandonedModel(ifMatches: modelName)
 
             // Share with TranscriptionService only — UnifiedAudioEngine doesn't need WhisperKit
             transcriptionService.prepare(whisperKit: kit)
@@ -1590,7 +1595,7 @@ private extension DictationCoordinator {
 
             // Same gate as the WhisperKit path: one compile on the ANE at a time.
             let engineHolder = "ParakeetLoad:\(modelName)"
-            await acquireNeuralEngine(for: engineHolder)
+            try await acquireNeuralEngine(for: engineHolder)
             defer { releaseNeuralEngine(from: engineHolder) }
 
             if currentModelName == modelName, whisperKit == nil { return }
@@ -1604,6 +1609,10 @@ private extension DictationCoordinator {
 
             // Same abandonment rule as the WhisperKit path (issue #428).
             let epoch = modelLoadEpoch
+
+            // Same reason as the WhisperKit path: an unstructured task would carry on
+            // compiling for a caller that no longer exists (audit finding 1).
+            try Task.checkCancellation()
 
             let task = Task<Void, Error> {
                 if #available(iOS 14.0, *) {
@@ -1624,6 +1633,7 @@ private extension DictationCoordinator {
 
                 self.whisperKit = nil
                 self.currentModelName = modelName
+                self.clearAbandonedModel(ifMatches: modelName)
 
                 transcriptionService.prepare(engine: parakeetEngine)
 

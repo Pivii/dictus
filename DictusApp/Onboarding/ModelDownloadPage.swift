@@ -187,16 +187,22 @@ struct ModelDownloadPage: View {
     /// First identifier currently in a user-facing prep phase. Mirrors the same
     /// computation as `ModelManagerView` so the overlay behavior is identical.
     private var liveActivePrepModel: String? {
-        if modelManager.modelLoadState == .loading,
-           let active = modelManager.activeModel {
-            return active
-        }
+        // Same order as `ModelManagerView`, for the same reason (audit finding 3): a
+        // per-model state is evidence about a specific model, the global load flag is
+        // not, so the specific evidence is consulted first. Onboarding only ever has one
+        // model in flight, which makes this ordering invisible here — it is kept
+        // identical because the comment on this property promises it is.
         switch modelManager.modelStates[recommendedModel] ?? .notDownloaded {
         case .prewarming, .downloading:
             return recommendedModel
         default:
-            return nil
+            break
         }
+        if modelManager.modelLoadState == .loading,
+           let active = modelManager.activeModel {
+            return active
+        }
+        return nil
     }
 
     // MARK: - Model Card

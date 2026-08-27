@@ -107,25 +107,29 @@ struct ModelManagerView: View {
         // this tab is where the escape sends them, so re-presenting it here would undo
         // the escape on the very next frame.
         if modelManager.preparationDismissedByUser { return nil }
+
+        // THE INVARIANT THIS ORDER EXISTS FOR (audit finding 3): whatever this returns
+        // is the model the screen names, the model whose progress it draws, AND the
+        // model the escape abandons. Those three must be the same one.
+        //
+        // A per-model state is specific evidence — THIS model is compiling, THIS model
+        // is downloading. `modelLoadState == .loading` is a global flag that only says
+        // some load is in flight, and it was checked first. So a mic tap loading X while
+        // the user downloaded Y put X's name and X's phase on screen with Y's progress
+        // bar invisible, and the escape then abandoned X: a load that was about to
+        // publish, while Y's compile — the one the user asked for — carried on with no
+        // UI at all. Specific evidence wins; the global flag is the fallback.
+        for model in ModelInfo.allIncludingDeprecated
+        where modelManager.modelStates[model.identifier] == .prewarming {
+            return model.identifier
+        }
+        for model in ModelInfo.allIncludingDeprecated
+        where modelManager.modelStates[model.identifier] == .downloading {
+            return model.identifier
+        }
         if modelManager.modelLoadState == .loading,
            let active = modelManager.activeModel {
             return active
-        }
-        for model in ModelInfo.allIncludingDeprecated {
-            switch modelManager.modelStates[model.identifier] ?? .notDownloaded {
-            case .prewarming:
-                return model.identifier
-            default:
-                continue
-            }
-        }
-        for model in ModelInfo.allIncludingDeprecated {
-            switch modelManager.modelStates[model.identifier] ?? .notDownloaded {
-            case .downloading:
-                return model.identifier
-            default:
-                continue
-            }
         }
         return nil
     }

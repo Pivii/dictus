@@ -151,25 +151,35 @@ extension DictationCoordinator {
             return
         }
 
-        // Returning to the foreground is not a request to retry a load the user just
-        // walked away from (finding 3). Without this, escaping the preparation screen
-        // and then backgrounding the app — the natural thing to do while waiting —
-        // restarted the very same compile, wrote `.loading` again, and put the user
-        // straight back on the screen they had escaped, with the 45 seconds reset.
+        // Returning to the foreground is not a request to retry a MODEL load the user
+        // just walked away from (first review, finding 3). Without this, escaping the
+        // preparation screen and then backgrounding the app — the natural thing to do
+        // while waiting — restarted the very same compile, wrote `.loading` again, and
+        // put the user straight back on the screen they had escaped, 45 seconds reset.
+        //
+        // WHAT IT MUST NOT SKIP is the audio session (audit finding 2). An earlier
+        // version returned before `configureAudioSessionForWarmUp()`, so a stale
+        // `abandonedModel` cost audio reconfiguration on every foreground return for the
+        // rest of the process. The session is what #123 is about — a stale input node
+        // reports `invalid hwFormat: sr=0.0 ch=2` — and it is cheap. Whatever happens to
+        // the model, the audio path gets set up.
         let activeModel = defaults.string(forKey: SharedKeys.activeModel)
-        if let abandoned = abandonedModel, abandoned == activeModel {
-            PersistentLog.log(.diagnosticProbe(
-                component: "ModelPreload",
-                instanceID: abandoned,
-                action: "warmUpSkippedAfterAbandon",
-                details: "context=didBecomeActive"
-            ))
-            return
-        }
+        let modelWasAbandoned = abandonedModel != nil && abandonedModel == activeModel
 
         let epoch = modelLoadEpoch
         do {
             try configureAudioSessionForWarmUp()
+
+            if modelWasAbandoned {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPreload",
+                    instanceID: abandonedModel ?? "unknown",
+                    action: "warmUpSkippedAfterAbandon",
+                    details: "context=didBecomeActive audioSessionConfigured=true"
+                ))
+                return
+            }
+
             setModelLoadState(.loading, reason: "didBecomeActive-warmup")
             _ = try await loadActiveModelIntoMemory(
                 context: "didBecomeActive",
@@ -251,7 +261,16 @@ extension DictationCoordinator {
     ///
     /// The check and the take are not separated by a suspension point, so no two callers
     /// can leave this function holding the engine at once.
-    func acquireNeuralEngine(for holder: String) async {
+    ///
+    /// `try await` ON THE SLEEP, NEVER `try?`. This is measured, not argued: `Task.sleep`
+    /// throws the instant its task is cancelled, so swallowing that error stops the
+    /// waiting and turns this poll into a spin — 105,533 iterations in the first second
+    /// after cancellation, against 3 in 1.2s while healthy, on the main actor, for as
+    /// long as the holder holds it. A first Turbo compile holds it for about 200s. It is
+    /// not a deadlock and other main-actor work still interleaves; it simply burns the
+    /// main actor, the battery and the thermal budget for the length of a compile.
+    /// `develop` never had this — its version of this wait used `try await`.
+    func acquireNeuralEngine(for holder: String) async throws {
         if let current = neuralEngineHolder, current != holder {
             PersistentLog.log(.diagnosticProbe(
                 component: "NeuralEngine",
@@ -261,8 +280,13 @@ extension DictationCoordinator {
             ))
         }
         while neuralEngineHolder != nil {
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(nanoseconds: 500_000_000)
         }
+        // A waiter cancelled while the engine was free — or on the same turn it came
+        // free — must not go on to take it. The work it was queued for is gone, and the
+        // compile it would start cannot be cancelled once begun: it would hold the
+        // engine, and make the next real load queue behind a dictation the user stopped.
+        try Task.checkCancellation()
         neuralEngineHolder = holder
     }
 
@@ -400,6 +424,25 @@ extension DictationCoordinator {
             details: "epoch=\(epoch) current=\(modelLoadEpoch) activeModel=\(defaults.string(forKey: SharedKeys.activeModel) ?? "nil")"
         ))
         return false
+    }
+
+    /// Forget that a model was abandoned, once a load of it has actually succeeded.
+    ///
+    /// WHY it has to be cleared at all (audit finding 2): a load can be abandoned by its
+    /// deadline and then finish anyway — which, since the publish gate learned to accept
+    /// a load still carrying the active model, is now the COMMON outcome rather than a
+    /// rare one. The engine is installed and working, and nothing was reconciling the
+    /// memory that said otherwise. It would have gone on suppressing the foreground
+    /// warm-up for the rest of the process, for a model that had been ready for minutes.
+    func clearAbandonedModel(ifMatches modelName: String) {
+        guard abandonedModel == modelName else { return }
+        abandonedModel = nil
+        PersistentLog.log(.diagnosticProbe(
+            component: "ModelPreload",
+            instanceID: modelName,
+            action: "abandonMemoryCleared",
+            details: "reason=loadSucceededAnyway"
+        ))
     }
 
     /// Whether anything abandoned a load since `epoch` was captured.

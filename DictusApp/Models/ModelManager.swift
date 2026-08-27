@@ -285,7 +285,7 @@ class ModelManager: ObservableObject {
             // including one started by `ensureEngineReady` on the dictation path, which
             // the old instance-owned flag could not see (issue #428, second review).
             let engineHolder = "prewarm:\(identifier)"
-            await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
             defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             PersistentLog.log(.modelCompilationStarted(name: identifier))
@@ -382,6 +382,14 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelSelected(name: identifier))
 
+            // Hand the Neural Engine back BEFORE kicking off the eager load, not at the
+            // end of this scope where the `defer` would do it (audit finding 5). The
+            // load below would otherwise spend its first 500ms poll queued behind a lock
+            // this scope is about to drop anyway. The `defer` still runs and finds the
+            // holder changed, so it is a no-op — that identity check is what makes an
+            // early release safe.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+
             // Issue #144: eagerly load the now-active model into the coordinator's
             // RAM-resident WhisperKit instance. The compile above used a throwaway
             // WhisperKit just to populate the Core ML cache.
@@ -455,7 +463,7 @@ class ModelManager: ObservableObject {
             // Step 2: take the Neural Engine, waiting out any compile already on it —
             // this path's or the dictation path's (issue #428, second review).
             let engineHolder = "prewarm:\(identifier)"
-            await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
             defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
@@ -499,6 +507,9 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
             PersistentLog.log(.modelSelected(name: identifier))
+
+            // Released early for the same reason as the WhisperKit path above.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
 
             // Issue #144: same proactive load as the WhisperKit path — see comment there.
             DictationCoordinator.shared.preloadActiveModel()
