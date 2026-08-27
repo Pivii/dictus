@@ -170,8 +170,14 @@ class DictationCoordinator: ObservableObject {
 
     /// The model the user walked away from preparing, or that blew its launch deadline.
     ///
-    /// Process-scoped on purpose: a fresh launch is entitled to try again, now that a
-    /// stale "loading" is cleared at startup and the launch preload carries a deadline.
+    /// Process-scoped on purpose, and the reason is the shape of issue #428 itself: what
+    /// made that bug unrecoverable was state that outlived the process that wrote it. A
+    /// per-process memory of "the user walked away from this model" is the deliberate
+    /// opposite. Persisting it would buy a little polish and re-introduce the exact
+    /// failure mode — a flag no live process owns, quietly deciding what the app may do.
+    ///
+    /// A fresh launch is therefore entitled to try again, which is safe now that a stale
+    /// "loading" is cleared at startup and the launch preload carries a deadline.
     /// What this stops is the app quietly re-attempting the same doomed compile WITHIN
     /// the session, behind the user's back — `didBecomeActive` fires every time they
     /// return from the home screen, and backgrounding is the natural thing to do while
