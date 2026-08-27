@@ -6,9 +6,9 @@ import Foundation
 ///
 /// WHY this is not just a nil check on `PremiumFlags.lifetimeFounderOfferEnd`:
 /// the constant is compiled into a build, and builds outlive the window. The
-/// price rises to 79,99 € in App Store Connect on the announced day, but a user
-/// who has not updated keeps running the build that announced the offer — so
-/// the row would read "79,99 €" with "Offre fondateur jusqu'au 12 septembre
+/// price rises to 149,99 € in App Store Connect on the announced day, but a
+/// user who has not updated keeps running the build that announced the offer —
+/// so the row would read "149,99 €" with "Offre fondateur jusqu'au 12 septembre
 /// 2026" underneath it, promising a price that is already gone, on a date
 /// already past. The date has to be checked against the clock, not only
 /// against nil.
