@@ -177,6 +177,7 @@ struct KeyboardRootView: View {
             isProActive: isProActive,
             onProTap: { leavePanel { state.openDictusApp(intent: "pro") } },
             armedSmartMode: smartModes.armedMode,
+            effectiveSmartMode: smartModes.effectiveMode,
             offersSmartModeHint: smartModes.offersHint,
             onSmartModeFanOpen: { smartModes.open() },
             onSmartModeFanDrag: { y in smartModes.track(y: y) },
@@ -259,7 +260,12 @@ struct KeyboardRootView: View {
                     waveformDriver: waveformDriver,
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() },
-                    armedSmartMode: smartModes.armedMode
+                    // The effective mode, not the armed one (#423): the overlay's
+                    // capsule is the guaranteed-visible indicator that makes a
+                    // sticky mode safe, so naming a mode this dictation will not
+                    // run is the one thing it must never do. It already draws
+                    // nothing for Normal, and a mode that will not run *is* Normal.
+                    armedSmartMode: smartModes.effectiveMode
                 )
             } else {
                 // ONE toolbar, outside the switch, for every non-recording mode.

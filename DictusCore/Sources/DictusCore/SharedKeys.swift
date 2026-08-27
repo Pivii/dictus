@@ -186,6 +186,28 @@ public enum SharedKeys {
     /// while transcription was running reach a dictation that was started under a
     /// different one — and the keyboard is exactly where the mode is armed.
     public static let lastTranscriptionSmartMode = "dictus.lastTranscriptionSmartMode"
+    /// Data: the JSON-encoded `SmartModeSkipNotice` for a dictation whose armed mode
+    /// was resolved away, or absent when nothing was skipped (#423).
+    ///
+    /// The mirror image of the key above, and it exists because the two ends of the
+    /// fact are in different processes: DictusApp resolves the armed mode at
+    /// transcription start and decides it will not run; the toolbar that has to say
+    /// so belongs to the keyboard. Without this the fallback is silent — text is
+    /// inserted, the outcome is an ordinary success, and the only trace is a WARNING
+    /// in a log the user never reads.
+    ///
+    /// Written and cleared beside `lastTranscriptionSmartMode`, so the two can never
+    /// both be set: a mode that ran was not skipped.
+    public static let lastTranscriptionSmartModeSkipped = "dictus.lastTranscriptionSmartModeSkipped"
+    /// String: the `identifier|reason` of the last skip the user was actually told
+    /// about, or absent when there is nothing outstanding (#423).
+    ///
+    /// What makes the notice fire **once, the first time it happens after the state
+    /// changes** rather than on every dictation forever. Cleared by arming, by
+    /// disarming, and by any resolve that succeeds — each of those is the state
+    /// changing. Written only by the surface that showed the sentence, never by the
+    /// resolve, so an in-app dictation cannot burn the token with nobody told.
+    public static let smartModeSkipAnnounced = "dictus.smartModeSkipAnnounced"
 
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
