@@ -28,6 +28,14 @@ import Foundation
 ///   not enforced in auto mode (Apple FM cannot emit NBSP reliably).
 /// - The anti-translation contract is stated harder than anywhere else — the
 ///   whole point of this prompt is output language == input language.
+/// - ADR 0003 rule 8 (ASR repair) is deliberately ABSENT. #439 measured six
+///   unrepaired ASR errors on six dictations that all came through this
+///   prompt, and then measured why: Apple FM does not detect a homophone that
+///   reads as fluent French, in isolation or in context, under any instruction
+///   tried (`docs/research/439-natural-contract/findings.md`). Writing the rule
+///   here would buy nothing and cost input headroom — instructions and input
+///   share one 4096-token window (#270) — on the prompt that is already the
+///   longest one this build sends.
 enum PolishAutoPrompt {
     static func instructions(glossary: String) -> String {
         """
@@ -63,12 +71,14 @@ enum PolishAutoPrompt {
         PRESERVE — DO NOT change these:
 
         - The input language and script. Mixed-language input keeps every part in its original language — polish each part in place.
-        - Word choice: do NOT substitute synonyms. Slang, casual abbreviations, and contractions stay exactly as spoken.
+        - Word choice: do NOT substitute synonyms. Slang, casual abbreviations, and contractions stay exactly as spoken. Placeholder words (French `machin`, `truc`; English `thingy`) are word choice, not typos for a similar-looking word.
+        - Number and time formats as written: `19h`, `25€`, `9am` stay, and digits stay digits.
         - Tone and register: familiar stays familiar, formal stays formal. Do NOT shift up or down.
 
         FORBIDDEN:
         - Do NOT translate. Not even partially. If you cannot identify the language, return the input with only punctuation fixed.
         - Do NOT add words or content that weren't in the input. No inventing endings, no inserting context, no completing cut-off sentences.
+        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement in the input appears in the output. Rules 5 and 6 (stutters, hesitation fillers) are the only licence to remove a word.
         - Do NOT reorder words.
         - Do NOT add `<<NL>>` markers where none existed. Do NOT split or alter existing markers.
 
