@@ -4,8 +4,9 @@
 // WHY a file of its own: DictationCoordinator.swift sits at the file-length budget that
 // issue #146 calibrated against it, and that budget exists to catch exactly this — the
 // file growing again. Everything here reaches the coordinator through two named seams
-// (`loadActiveModelIntoMemory`, `releaseEngineInitLock`) plus the load epoch, so moving
-// it out did not mean opening up the coordinator's private state.
+// (`loadActiveModelIntoMemory`, `configureAudioSessionForWarmUp`) plus the load epoch
+// and the init lock, so moving it out did not mean opening up the coordinator's
+// private state wholesale.
 import Foundation
 import DictusCore
 
@@ -139,6 +140,14 @@ extension DictationCoordinator {
                     details: "loadedModel=\(loadedName) activeModel=\(defaults.string(forKey: SharedKeys.activeModel) ?? "nil")"
                 ))
                 guard enginePublished else { return }
+                // The deadline can land between the engine being published and
+                // `warmUp()` returning, which means `abandonedModel` was set AFTER
+                // `clearAbandonedModel` already ran for this load. Publishing `.ready`
+                // while the model is still marked abandoned makes every later foreground
+                // warm-up skip work that is perfectly valid, for a model that is loaded
+                // and running. Clear it here too: this is the branch that knows the
+                // engine survived. (CodeRabbit, against 809a63f.)
+                clearAbandonedModel(ifMatches: modelName)
                 setModelLoadState(.ready, reason: "init-preload-late-success")
                 return
             }
@@ -264,6 +273,14 @@ extension DictationCoordinator {
                 details: "heldBy=\(current)"
             ))
         }
+        // The deferral covers THIS wait and nothing else (CodeRabbit, on the fix for
+        // fourth-review finding 2). It is raised only when somebody else already holds
+        // the gate, and it comes down when this loop ends — which is the moment the
+        // caller takes the hardware and starts being responsible for its own progress.
+        let deferralIsOurs = isInsideEngineLoadForDictation && neuralEngineHolder != nil
+        if deferralIsOurs { isWaitingForNeuralEngine = true }
+        defer { if deferralIsOurs { isWaitingForNeuralEngine = false } }
+
         while neuralEngineHolder != nil {
             try await Task.sleep(nanoseconds: 500_000_000)
         }
@@ -411,13 +428,23 @@ extension DictationCoordinator {
         return false
     }
 
-    /// Run `work` with the "parked on hardware" flag raised, lowered whatever happens.
+    /// Mark that a dictation is inside the engine load, so `acquireNeuralEngine` knows
+    /// a queue wait it is about to enter belongs to one.
     ///
-    /// The flag has to come down on the throwing path too, which is the whole reason
-    /// this is a wrapper rather than two assignments around a call (finding 2).
+    /// This flag is NOT what the watchdog reads, and the difference is the whole point.
+    /// An earlier version raised the watchdog deferral here, around the entire call —
+    /// which meant that once a dictation reached this line the watchdog could never act
+    /// again, including when the dictation acquired the hardware itself and its OWN
+    /// compile hung. That is an unbounded hang with no recovery: the exact shape of the
+    /// bug this branch exists to remove, re-created by the fix for it.
+    ///
+    /// The rule the watchdog needs is narrower: **defer only while ANOTHER holder owns
+    /// the gate.** The moment this caller takes it, the work is its own and the watchdog
+    /// must be allowed to do its job. So the deferral is raised inside the queue wait
+    /// (see `acquireNeuralEngine`) and comes down the instant the gate is taken.
     func waitingForNeuralEngine<T>(_ work: () async throws -> T) async rethrows -> T {
-        isWaitingForNeuralEngine = true
-        defer { isWaitingForNeuralEngine = false }
+        isInsideEngineLoadForDictation = true
+        defer { isInsideEngineLoadForDictation = false }
         return try await work()
     }
 
@@ -427,6 +454,11 @@ extension DictationCoordinator {
     /// captured and safe, the wait ends when the hardware frees, and cancelling here
     /// threw away a dictation the user had already finished speaking (finding 2). The
     /// watchdog is for a stage that will never hand over; this one will.
+    ///
+    /// STRICTLY WHILE ANOTHER HOLDER OWNS THE GATE. A dictation that has taken the
+    /// hardware itself is responsible for its own progress again, and if its compile
+    /// hangs the watchdog must be free to act — otherwise deferring here turns a
+    /// recoverable failure into an unbounded one, which is what this branch is about.
     func shouldDeferStageWatchdog(for status: DictationStatus) -> Bool {
         guard isWaitingForNeuralEngine else { return false }
         PersistentLog.log(.diagnosticProbe(

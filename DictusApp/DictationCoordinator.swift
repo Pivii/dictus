@@ -168,6 +168,11 @@ class DictationCoordinator: ObservableObject {
     /// Internal for the same reason as `initTask`, and written only beside it.
     var initTaskEpoch = 0
 
+    /// Set while a dictation is somewhere inside `ensureEngineReady`. On its own it says
+    /// nothing about whose work is blocking; `isQueuedForNeuralEngine` is the one the
+    /// watchdog reads. Raised only by `waitingForNeuralEngine`, at the one call site.
+    var isInsideEngineLoadForDictation = false
+
     /// Set while a dictation is parked waiting for the Neural Engine rather than doing
     /// any work of its own (fourth review, finding 2).
     ///
