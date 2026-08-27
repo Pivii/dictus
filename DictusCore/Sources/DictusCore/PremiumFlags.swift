@@ -37,7 +37,7 @@ public enum PremiumFlags {
     ///
     /// WHY it governs copy only: the price comes from StoreKit, so the App
     /// Store Connect price change at the end of the window is what moves
-    /// 79,99 € to 119,99 €. Setting this constant announces the deadline; it
+    /// 79,99 € to 149,99 €. Setting this constant announces the deadline; it
     /// does not enforce it. Both have to be done on the same day.
     ///
     /// To open the window, give it the **last day the offer stands**:
