@@ -1,10 +1,10 @@
 // DictusKeyboard/DictusKeyboardBridge.swift
 // Delegate bridge from giellakbd-ios GiellaKeyboardView key events to Dictus text actions.
 // Created for Phase 18 Plan 02 -- wires the vendored UICollectionView keyboard
-// to textDocumentProxy operations with haptic feedback and 3-category key sounds.
+// to textDocumentProxy operations. Haptic and key sound both fire on touchDown in
+// GiellaKeyboardView, not here (#286).
 
 import UIKit
-import AudioToolbox
 import DictusCore
 
 /// Adapts GiellaKeyboardView delegate callbacks into Dictus keyboard actions.
@@ -17,14 +17,18 @@ import DictusCore
 ///
 /// The bridge receives key events from the UICollectionView keyboard and:
 /// - Inserts/deletes text via textDocumentProxy
-/// - Plays haptic feedback via DictusCore's HapticFeedback
-/// - Plays 3-category key sounds via AudioServicesPlaySystemSound
 /// - Manages shift/capslock page state on the keyboard view
 /// - Handles auto-full-stop (double-space -> period)
+///
+/// It emits no key click. The click and the key-tap haptic both fire on touchDown in
+/// GiellaKeyboardView, the only layer that knows when a finger lands. The bridge hears
+/// about a key once its action is due, and for every letter that is on touchUp —
+/// sounding the click from here is what made typing feel out of sync with the
+/// haptic (#286). The haptics that remain here are the ones with no touchDown to
+/// attach to: the cursor-movement tick, and the emoji toggle's own feedback.
 final class DictusKeyboardBridge: NSObject,
     GiellaKeyboardViewDelegate,
-    GiellaKeyboardViewKeyboardKeyDelegate
-{
+    GiellaKeyboardViewKeyboardKeyDelegate {
     // MARK: - Dependencies
 
     /// Weak reference to the input view controller for textDocumentProxy access.
@@ -71,11 +75,20 @@ final class DictusKeyboardBridge: NSObject,
     // MARK: - GiellaKeyboardViewDelegate
 
     func didTriggerKey(_ key: KeyDefinition) {
+        // The first keystroke after a dictation ends its undo offer (#266). The
+        // safety check would refuse anyway once the typed character lands, but the
+        // proxy's view of the document can lag the keystroke by an event, and an
+        // offer that is still on screen for that one event is an offer that can be
+        // tapped. Ending it at the source does not depend on the host's timing.
+        if Self.editsDocument(key) {
+            KeyboardState.shared.invalidateDictationUndo(reason: "keystroke")
+        }
+
         switch key.type {
         case .input(let character, let alternate):
             if alternate == "accent" {
                 handleAdaptiveAccentKey()
-            } else if character == "\u{1F600}" {
+            } else if character == KeyboardLayouts.emojiKeyGlyph {
                 // Emoji button: identified by the emoji glyph on the key.
                 // No alternate text so the key shows only the smiley icon.
                 handleEmojiToggle()
@@ -112,13 +125,13 @@ final class DictusKeyboardBridge: NSObject,
 
         case .keyboard:
             // Globe/next keyboard button -- advance to next input method
-            AudioServicesPlaySystemSound(KeySound.modifier)
             controller?.advanceToNextInputMode()
 
         case .keyboardMode, .splitKeyboard, .normalKeyboard,
              .sideKeyboardLeft, .sideKeyboardRight:
-            // iPad keyboard mode keys -- not supported on iPhone, no-op
-            AudioServicesPlaySystemSound(KeySound.modifier)
+            // iPad keyboard mode keys -- not supported on iPhone, no-op.
+            // The click still plays on touchDown, from KeySound.category(for:).
+            break
 
         case .spacer, .caps:
             // Spacer is a layout element, caps is handled by double-tap shift
@@ -126,12 +139,32 @@ final class DictusKeyboardBridge: NSObject,
         }
     }
 
+    /// Whether triggering `key` changes the document, as opposed to changing only
+    /// what the keyboard itself is showing.
+    ///
+    /// Used by the dictation undo offer (#266): shift, the symbol layers, the globe
+    /// and the emoji key leave the field exactly as the dictation left it, so the
+    /// offer survives them. Switching to the symbol layer to type a character does
+    /// end the offer — on the character, not on the layer switch.
+    ///
+    /// The emoji key is an `.input` key carrying the smiley glyph rather than a
+    /// type of its own; `didTriggerKey` tells the two apart the same way.
+    private static func editsDocument(_ key: KeyDefinition) -> Bool {
+        switch key.type {
+        case .input(let character, _):
+            return character != KeyboardLayouts.emojiKeyGlyph
+        case .backspace, .spacebar, .returnkey, .comma, .fullStop, .tab:
+            return true
+        default:
+            return false
+        }
+    }
+
     func didTriggerDoubleTap(forKey key: KeyDefinition) {
         switch key.type {
         case .shift:
-            // Double-tap shift activates caps lock
-            // Haptic already fired in touchesBegan
-            AudioServicesPlaySystemSound(KeySound.modifier)
+            // Double-tap shift activates caps lock.
+            // Haptic and click already fired in touchesBegan.
             keyboardView?.page = .capslock
             lastShiftTapTime = 0 // Reset to prevent triple-tap confusion
             isManualShift = false // Caps lock is its own mode, not "manual shift"
@@ -149,6 +182,12 @@ final class DictusKeyboardBridge: NSObject,
     }
 
     func didTriggerHoldKey(_ key: KeyDefinition) {
+        // Held backspace does not pass through didTriggerKey, and it is the very
+        // key someone reaches for when they want the dictation gone (#266).
+        if Self.editsDocument(key) {
+            KeyboardState.shared.invalidateDictationUndo(reason: "keystroke-hold")
+        }
+
         switch key.type {
         case .backspace:
             handleWordDelete()
@@ -158,6 +197,10 @@ final class DictusKeyboardBridge: NSObject,
     }
 
     func didMoveCursor(_ movement: Int) {
+        // Moving the caret is what the undo check tests for, so drop the offer
+        // here rather than wait for the host to report the selection change (#266).
+        KeyboardState.shared.invalidateDictationUndo(reason: "cursor-moved")
+
         // Spacebar trackpad cursor movement
         controller?.textDocumentProxy.adjustTextPosition(byCharacterOffset: movement)
         HapticFeedback.cursorMoved()
@@ -174,19 +217,48 @@ final class DictusKeyboardBridge: NSObject,
         controller?.handleInputModeList(from: sender, with: event)
     }
 
+    // MARK: - Host Field Policy (#200)
+
+    /// Re-reads the host field's input traits and updates the cached policy on
+    /// SuggestionState. Called whenever the focused field can have changed:
+    /// keyboard appearance, textDidChange/selectionDidChange, and before
+    /// autocorrect-on-space.
+    ///
+    /// WHY cached on SuggestionState: updateAsync/updatePredictions run on a
+    /// background queue and cannot read UITextDocumentProxy (main-thread only).
+    func refreshHostPolicy() {
+        guard let proxy = controller?.textDocumentProxy else { return }
+        let policy = HostInputTraits.policy(for: proxy)
+        guard policy != suggestionState?.hostPolicy else { return }
+
+        #if DEBUG
+        AutocorrectDebugLog.hostPolicy(
+            autocorrectAllowed: policy.autocorrectAllowed,
+            suggestionsAllowed: policy.suggestionsAllowed,
+            reason: policy.reason
+        )
+        #endif
+
+        suggestionState?.hostPolicy = policy
+        if !policy.suggestionsAllowed {
+            // Empty the bar immediately — stale suggestions from the previous
+            // field must not survive into a no-suggestions field.
+            suggestionState?.clear()
+        }
+    }
+
     // MARK: - Key Action Handlers
 
     /// Handle character input (letters, numbers, punctuation).
-    /// Inserts the character, plays letter sound, auto-unshifts after one letter,
-    /// then rechecks autocapitalization (e.g., typing "." may prepare shift for next char).
-    /// NOTE: Haptic fires in GiellaKeyboardView.touchesBegan() for ALL keys on touchDown.
+    /// Inserts the character, auto-unshifts after one letter, then rechecks
+    /// autocapitalization (e.g., typing "." may prepare shift for next char).
+    /// NOTE: Haptic and click fire in GiellaKeyboardView.touchesBegan() for ALL keys
+    /// on touchDown, so neither is emitted here.
     private func handleInputKey(_ character: String) {
         // Clear rejected words when starting a new word
         if suggestionState?.currentWord.isEmpty == true {
             suggestionState?.rejectedWords.removeAll()
         }
-
-        AudioServicesPlaySystemSound(KeySound.letter)
 
         // Insert the character. When on shifted/capslock page, the key definition
         // already contains the uppercase character, so we insert as-is.
@@ -215,8 +287,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle backspace/delete key. Always deletes one character.
     /// Autocorrect undo is handled by tapping the suggestion bar, not backspace.
     private func handleBackspace() {
-        AudioServicesPlaySystemSound(KeySound.delete)
-
         controller?.textDocumentProxy.deleteBackward()
         secondToLastInsertedCharacter = nil
         lastInsertedCharacter = nil
@@ -246,7 +316,6 @@ final class DictusKeyboardBridge: NSObject,
     /// The algorithm: trim trailing spaces, find the previous word boundary (last space),
     /// delete everything from cursor back to that boundary.
     private func handleWordDelete() {
-        AudioServicesPlaySystemSound(KeySound.delete)
         suggestionState?.pendingUndo = nil
         guard let proxy = controller?.textDocumentProxy,
               let before = proxy.documentContextBeforeInput, !before.isEmpty else {
@@ -293,7 +362,6 @@ final class DictusKeyboardBridge: NSObject,
     /// behavior -- corrections appear only when the user finishes the word (space/return).
     /// Correcting mid-word would be disorienting as the text changes while typing.
     private func handleSpace() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         secondToLastInsertedCharacter = lastInsertedCharacter
 
         // Next space after autocorrect = undo window closes
@@ -351,54 +419,98 @@ final class DictusKeyboardBridge: NSObject,
             return words[words.count - 2]
         }()
 
+        // Refresh the host-traits policy right before the apply decision (#200):
+        // the proxy read is cheap and this is the freshest possible signal.
+        refreshHostPolicy()
+
+        // Sentence position for the proper-noun guard (#199): an unknown
+        // capitalized word mid-sentence is preserved; at sentence start the
+        // capitalization is just autocap, so corrections stay enabled there.
+        let atSentenceStart: Bool = {
+            guard let ctx = controller?.textDocumentProxy.documentContextBeforeInput else { return true }
+            return ProperNounGuard.isAtSentenceStart(context: ctx, word: freshWord)
+        }()
+
+        // Whether the learning path below may record this word. Learning means
+        // "the pipeline evaluated the word and chose not to correct it" — NOT
+        // "the word reached the space key". Words typed where autocorrect never
+        // ran (search/URL fields, #200) or whose replacement was aborted by the
+        // boundary check (possibly phantom words, #191) must not be learned:
+        // a learned word bypasses autocorrect everywhere afterwards, which is
+        // how test typing in Safari's search bar broke "lai"/"Cest" in Messages.
+        //
+        // The user's own autocorrect switch counts as such a case (#287 decision 8).
+        // With autocorrect off `spellCheck` never runs, so nothing vets the word:
+        // "bonjuor" typed twice would clear the trie filter below and become
+        // permanently immune. Reading only the host policy here — as this line did
+        // until #287 — made the comment above untrue in exactly that configuration.
+        var wordWasEvaluated: Bool = {
+            guard let state = suggestionState else { return false }
+            return state.autocorrectEnabled && state.hostPolicy.autocorrectAllowed
+        }()
+
         if let state = suggestionState, state.autocorrectEnabled,
+           state.hostPolicy.autocorrectAllowed,
            !freshWord.isEmpty,
            !state.rejectedWords.contains(freshWord.lowercased()),
-           let result = state.performSpellCheck(freshWord, previousWord: previousWord),
+           let result = state.performSpellCheck(
+               freshWord,
+               previousWord: previousWord,
+               isAtSentenceStart: atSentenceStart
+           ),
            result.correction.lowercased() != freshWord.lowercased() {
-            // Replace the misspelled word with the correction
-            let proxy = controller?.textDocumentProxy
-            for _ in 0..<freshWord.count {
-                proxy?.deleteBackward()
+            // Boundary-safe replacement (#191): re-read the LIVE context and
+            // verify it still ends with the word we plan to replace, with a
+            // proper boundary before it. Under proxy desync (rapid delete/retype
+            // producing phantom words like "quee"), the captured freshWord can
+            // disagree with the document — a blind count-based delete would eat
+            // the preceding space ("pense quee" -> "penseque"). On failure we
+            // skip the correction and fall through to a normal space.
+            let liveContext = controller?.textDocumentProxy.documentContextBeforeInput
+            switch AutocorrectReplacement.check(context: liveContext, word: freshWord) {
+            case .ok(let deleteCount):
+                applyAutocorrect(
+                    state: state,
+                    freshWord: freshWord,
+                    correction: result.correction,
+                    previousWord: previousWord,
+                    deleteCount: deleteCount
+                )
+                return
+
+            case .failed(let reason):
+                // Proxy desync detected — do NOT correct, do NOT delete.
+                // Fall through to the normal space path below so the user
+                // keeps their typed word and still gets a space. The word may
+                // be a phantom ("quee") — don't learn it either.
+                wordWasEvaluated = false
+                #if DEBUG
+                AutocorrectDebugLog.replacementAborted(
+                    word: freshWord,
+                    reason: reason,
+                    contextTail: Self.contextTail(liveContext)
+                )
+                #endif
             }
-            proxy?.insertText(result.correction)
-            proxy?.insertText(" ")
-            lastInsertedCharacter = " "
-
-            #if DEBUG
-            AutocorrectDebugLog.autocorrectApplied(
-                original: freshWord,
-                corrected: result.correction,
-                prevWord: previousWord
-            )
-            #endif
-
-            // Store undo state — user can tap suggestion bar to revert
-            state.pendingUndo = AutocorrectState(
-                originalWord: freshWord,
-                correctedWord: result.correction,
-                insertedSpace: true
-            )
-            HapticFeedback.autocorrectApplied()
-            // Trigger n-gram predictions after autocorrection too.
-            // The corrected word + space is now in the proxy — predict what comes next.
-            state.clear()
-            state.rejectedWords.removeAll()
-            let correctedContext = controller?.textDocumentProxy.documentContextBeforeInput
-            state.updatePredictions(context: correctedContext)
-            updateCapitalization()
-            updateAccentKeyDisplay()
-            return
         }
 
-        // Repetition learning: word was NOT corrected (user typed it as-is).
-        // Track usage — after 2 occurrences of an unknown word, learn it.
-        if let state = suggestionState, !freshWord.isEmpty {
-            let word = freshWord
-            if UserDictionary.shared.recordUsage(word) {
-                // Word just crossed the learning threshold — notify prediction engine
-                state.learnWord(word)
-            }
+        // Repetition learning: the pipeline evaluated the word and did NOT
+        // correct it (user typed it as-is). Track usage — at the repetition
+        // threshold, learn it. Skipped when autocorrect never ran (see
+        // wordWasEvaluated above): those words were not vetted by the pipeline.
+        //
+        // The dictionary check is the gate this site was missing (#287 decision 2).
+        // Passive typing states nothing about intent, so the only word worth
+        // recording here is one the base dictionary does not have: a word it does
+        // have is never autocorrected anyway, so an entry for it protects nothing
+        // while #288 would go on to feed it into speech recognition. Six ordinary
+        // French phrases used to leave 22 entries behind, 20 of them trie words.
+        //
+        // The check belongs here rather than inside UserDictionary because the undo
+        // site must NOT be subject to it — see `UserDictionary.recordUsage`.
+        if let state = suggestionState, !freshWord.isEmpty, wordWasEvaluated,
+           state.isUnknownToDictionary(freshWord) {
+            UserDictionary.shared.recordUsage(freshWord)
         }
 
         // Normal space handling with double-space period detection
@@ -432,7 +544,6 @@ final class DictusKeyboardBridge: NSObject,
     /// After inserting newline, recheck autocapitalization -- many apps use
     /// .sentences autocap which should capitalize after a newline.
     private func handleReturn() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         suggestionState?.pendingUndo = nil
         controller?.textDocumentProxy.insertText("\n")
         secondToLastInsertedCharacter = lastInsertedCharacter
@@ -473,8 +584,6 @@ final class DictusKeyboardBridge: NSObject,
     /// previous character with the accented version is how iOS native French keyboards
     /// handle accent insertion as well.
     private func handleAdaptiveAccentKey() {
-        AudioServicesPlaySystemSound(KeySound.letter)
-
         let label = FrenchAdaptiveKey.label(
             afterTyping: lastInsertedCharacter,
             precedingChar: secondToLastInsertedCharacter
@@ -506,7 +615,6 @@ final class DictusKeyboardBridge: NSObject,
 
     /// Handle emoji button tap: triggers the emoji picker toggle.
     private func handleEmojiToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
         HapticFeedback.keyTapped()
         onEmojiToggle?()
     }
@@ -530,8 +638,6 @@ final class DictusKeyboardBridge: NSObject,
     /// but we also detect it here as a fallback because the timing can differ between
     /// the gesture recognizer and our manual tracking. Both paths lead to .capslock.
     private func handleShift() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         let now = Date.timeIntervalSinceReferenceDate
@@ -567,8 +673,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle 123/ABC layer switch.
     /// Toggles between letter pages (normal/shifted/capslock) and symbols1.
     private func handleSymbolsToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         switch kbView.page {
@@ -582,8 +686,6 @@ final class DictusKeyboardBridge: NSObject,
     /// Handle #+=/123 toggle on symbols pages.
     /// Toggles between symbols1 and symbols2.
     private func handleShiftSymbolsToggle() {
-        AudioServicesPlaySystemSound(KeySound.modifier)
-
         guard let kbView = keyboardView else { return }
 
         switch kbView.page {
@@ -594,6 +696,81 @@ final class DictusKeyboardBridge: NSObject,
         default:
             break
         }
+    }
+
+    /// Applies a validated autocorrection: deletes the typed word, inserts the
+    /// correction + trailing space, stores undo state and refreshes predictions.
+    /// Only called after AutocorrectReplacement.check confirmed the live context
+    /// ends with `freshWord` (#191) — `deleteCount` comes from that check.
+    private func applyAutocorrect(
+        state: SuggestionState,
+        freshWord: String,
+        correction: String,
+        previousWord: String?,
+        deleteCount: Int
+    ) {
+        let proxy = controller?.textDocumentProxy
+
+        #if DEBUG
+        AutocorrectDebugLog.applyBefore(
+            word: freshWord,
+            correction: correction,
+            prevWord: previousWord,
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        #endif
+
+        for _ in 0..<deleteCount {
+            proxy?.deleteBackward()
+        }
+        #if DEBUG
+        AutocorrectDebugLog.applyAfterDelete(
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        #endif
+
+        proxy?.insertText(correction)
+        proxy?.insertText(" ")
+        lastInsertedCharacter = " "
+
+        #if DEBUG
+        AutocorrectDebugLog.applyAfterInsert(
+            contextTail: Self.contextTail(proxy?.documentContextBeforeInput)
+        )
+        AutocorrectDebugLog.autocorrectApplied(
+            original: freshWord,
+            corrected: correction,
+            prevWord: previousWord
+        )
+        #endif
+
+        // Store undo state — user can tap suggestion bar to revert
+        state.pendingUndo = AutocorrectState(
+            originalWord: freshWord,
+            correctedWord: correction,
+            insertedSpace: true
+        )
+        // No haptic on autocorrect (#224): the spacebar touchDown tick already fired
+        // ~100ms earlier, and stacking a second haptic reads as a keyboard glitch.
+        // Feedback is visual instead — the suggestion bar pulses its undo chip
+        // (SuggestionBarView). HapticFeedback.autocorrectApplied() is kept in
+        // DictusCore so re-adding is a one-line change if dogfooding shows
+        // silent correction hurts awareness.
+        // Trigger n-gram predictions after autocorrection too.
+        // The corrected word + space is now in the proxy — predict what comes next.
+        state.clear()
+        state.rejectedWords.removeAll()
+        let correctedContext = controller?.textDocumentProxy.documentContextBeforeInput
+        state.updatePredictions(context: correctedContext)
+        updateCapitalization()
+        updateAccentKeyDisplay()
+    }
+
+    /// Last ~30 characters of a context string, for DEBUG replacement logs.
+    /// Keeps log lines short while showing the text around the replacement site.
+    static func contextTail(_ context: String?) -> String {
+        guard let context = context else { return "<nil>" }
+        return String(context.suffix(30))
     }
 
     // MARK: - Auto-full-stop
@@ -663,6 +840,10 @@ final class DictusKeyboardBridge: NSObject,
             } else {
                 let trimmed = beforeInput.trimmingCharacters(in: .whitespaces)
                 let lastChar = trimmed.last
+                // Force unwrap: `&&` short-circuits, so the unwrap is only
+                // evaluated once the `lastChar != nil` conjunct to its left has
+                // already succeeded.
+                // swiftlint:disable:next force_unwrapping
                 let endsWithSentencePunctuation = lastChar != nil && ".!?".contains(lastChar!)
                 let lastInputChar = beforeInput.last
 

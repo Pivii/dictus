@@ -84,17 +84,19 @@ public enum AutocorrectDebugLog {
 
     /// N-gram rerank changed the correction.
     /// Useful to diagnose bigram-based overrides that surprise the user.
+    ///
+    /// WHY the candidates are passed as pairs: a correction and its bigram score
+    /// are one fact, never read apart, and pairing them keeps the signature at
+    /// four parameters instead of six.
     public static func bigramRerank(
         word: String,
         prevWord: String,
-        before: String,
-        after: String,
-        beforeScore: UInt16,
-        afterScore: UInt16
+        before: (correction: String, score: UInt16),
+        after: (correction: String, score: UInt16)
     ) {
         guard enabled else { return }
         write("BIGRAM-RERANK word=\"\(word)\" prev=\"\(prevWord)\" "
-            + "\"\(before)\"(\(beforeScore)) → \"\(after)\"(\(afterScore))")
+            + "\"\(before.correction)\"(\(before.score)) → \"\(after.correction)\"(\(after.score))")
     }
 
     /// Trie candidates returned by the spell check engine for a given word.
@@ -126,6 +128,100 @@ public enum AutocorrectDebugLog {
     public static func autocorrectUndone(original: String, rejected: String) {
         guard enabled else { return }
         write("UNDO orig=\"\(original)\" rejected=\"\(rejected)\"")
+    }
+
+    /// A word replacement was aborted because the live context failed the
+    /// boundary-safety check (#191). This is the proxy-desync signature:
+    /// the pipeline decided on a correction but the document no longer ends
+    /// with the word it planned to replace.
+    public static func replacementAborted(word: String, reason: String, contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-ABORT word=\"\(word)\" reason=\(reason) ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context right before an autocorrect replacement (#191).
+    public static func applyBefore(word: String, correction: String, prevWord: String?, contextTail: String) {
+        guard enabled else { return }
+        let prev = prevWord.map { "\"\($0)\"" } ?? "nil"
+        write("AUTOCORRECT-APPLY-BEFORE word=\"\(word)\" corr=\"\(correction)\" prev=\(prev) ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context after the deletion pass of a replacement (#191).
+    public static func applyAfterDelete(contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-APPLY-AFTER-DELETE ctx=\"\(contextTail)\"")
+    }
+
+    /// Snapshot of the live context after inserting the correction + space (#191).
+    public static func applyAfterInsert(contextTail: String) {
+        guard enabled else { return }
+        write("AUTOCORRECT-APPLY-AFTER-INSERT ctx=\"\(contextTail)\"")
+    }
+
+    /// The host field's input traits changed the autocorrect/suggestions policy (#200).
+    /// Logged once per policy change (not per keystroke).
+    public static func hostPolicy(
+        autocorrectAllowed: Bool,
+        suggestionsAllowed: Bool,
+        reason: String
+    ) {
+        guard enabled else { return }
+        write("HOST-TRAITS autocorrect=\(autocorrectAllowed) suggestions=\(suggestionsAllowed) reason=\(reason)")
+    }
+
+    // MARK: - User dictionary (#307)
+    //
+    // The counting half of each event below is in LogEvent and ships in every
+    // build. These add the words, which is why they are here and nowhere else.
+
+    /// A word entered the personal dictionary. `usageCount` is the count it
+    /// entered with, `learnedCount` the size of the dictionary after the write —
+    /// both repeated from the privacy-safe line so this one reads on its own.
+    public static func userDictionaryLearned(word: String, usageCount: Int, learnedCount: Int) {
+        guard enabled else { return }
+        write("USERDICT-LEARN word=\"\(word)\" count=\(usageCount) learnedCount=\(learnedCount)")
+    }
+
+    /// The cap overflowed and these words were dropped (#304).
+    public static func userDictionaryEvicted(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-EVICT words=[\(quoted(words))]")
+    }
+
+    /// The dictionary was cleared, and what it held when it was.
+    public static func userDictionaryReset(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-RESET words=[\(quoted(words))]")
+    }
+
+    /// The words a load stamped as legacy entries (#304). This is the line that
+    /// says, by name, which vocabulary an install carried across the update.
+    public static func userDictionaryMigrated(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-MIGRATE words=[\(quoted(words))]")
+    }
+
+    /// The words a load discarded for going unused too long (#287).
+    public static func userDictionaryStaleDiscarded(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-STALE words=[\(quoted(words))]")
+    }
+
+    /// The words the one-shot prune dropped for already being in the base
+    /// dictionary (#287). This is the line that tells a given user exactly what
+    /// the migration took off them.
+    public static func userDictionaryPruned(words: [String]) {
+        guard enabled else { return }
+        write("USERDICT-PRUNE words=[\(quoted(words))]")
+    }
+
+    /// Words as a sorted, quoted, comma-separated list.
+    ///
+    /// WHY sorted: dictionary iteration order is not stable across runs, so an
+    /// unsorted list makes two exports of the same dictionary look different.
+    /// Only ever called past a `guard enabled`, so the cost is a debug build's.
+    private static func quoted(_ words: [String]) -> String {
+        words.sorted().map { "\"\($0)\"" }.joined(separator: ", ")
     }
 
     /// Free-form note (use sparingly — prefer typed events above).

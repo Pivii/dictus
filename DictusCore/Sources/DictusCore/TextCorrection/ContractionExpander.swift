@@ -47,8 +47,19 @@ public func expandContractions(
         let candidatePrefix = String(lowered.prefix(letterCount)) + "'"
         let suffix = String(lowered.dropFirst(letterCount))
 
-        if candidatePrefix == prefix, !suffix.isEmpty, provider.wordExists(suffix) {
-            return candidatePrefix + suffix
+        if candidatePrefix == prefix, !suffix.isEmpty {
+            if provider.wordExists(suffix) {
+                return candidatePrefix + suffix
+            }
+            // The suffix may be a real word missing its accents:
+            // "Cetait" → suffix "etait" → "était" → "c'était".
+            // Without this fallback the expansion fails and the trie wins with
+            // a destructive correction ("Cetait" → "Était", dropping the c).
+            // expandAccents only returns dictionary words (with the 5x
+            // dominance guard), so this cannot invent contractions.
+            if let accented = expandAccents(profile: profile, word: suffix, provider: provider) {
+                return candidatePrefix + accented
+            }
         }
     }
     return nil

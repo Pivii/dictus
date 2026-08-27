@@ -51,9 +51,10 @@ enum SoundFeedbackService {
 
     private static func volume() -> Float {
         let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        let val = defaults?.double(forKey: SharedKeys.soundVolume)
-        // double(forKey:) returns 0.0 if key not set — treat 0 as "use default"
-        let sliderValue: Float = (val ?? 0) > 0 ? Float(val!) : 0.5
+        // double(forKey:) returns 0.0 if key not set, and `defaults` is nil when the
+        // App Group is unavailable — both collapse to 0, i.e. "use default".
+        let stored = defaults?.double(forKey: SharedKeys.soundVolume) ?? 0
+        let sliderValue: Float = stored > 0 ? Float(stored) : 0.5
         return sliderValue * maxVolume
     }
 
@@ -142,7 +143,7 @@ enum SoundFeedbackService {
             "electronic_04a", "electronic_04b", "electronic_04c",
             "electronic_04d", "electronic_04e", "electronic_04f",
             "electronic_04g",
-            "ui_chime_01",
+            "ui_chime_01"
         ]
     }
 

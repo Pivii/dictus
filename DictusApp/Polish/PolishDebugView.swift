@@ -1,0 +1,374 @@
+// DictusApp/Polish/PolishDebugView.swift
+import SwiftUI
+import UIKit
+import DictusCore
+
+/// Hidden screen surfacing recent polish invocations. Reached by long-pressing
+/// the Version row in Settings for 3 seconds. Round-1 debugging tool — no
+/// analytics, no shipping in product UX. Events persist in the App Group
+/// container for 7 days so cold-start tests survive an app kill.
+struct PolishDebugView: View {
+
+    @State private var entries: [PolishDebugEntry] = []
+    @State private var storedCount: Int = 0
+    @State private var selectedEntry: PolishDebugEntry?
+    @State private var exportURL: URL?
+    @State private var exportError: String?
+    @State private var isExporting = false
+    /// #357 spike, throwaway. Arms ONE Apple FM probe run inside the keyboard
+    /// extension; see `DictusKeyboard/AppleFMExtensionProbe.swift`.
+    @State private var probeArmed = false
+
+    var body: some View {
+        List {
+            if !entries.isEmpty {
+                Section {
+                    BreakdownRow(entries: entries)
+                } header: {
+                    Text("Outcomes (\(entries.count) shown)")
+                } footer: {
+                    if storedCount > entries.count {
+                        Text("\(storedCount) total events persisted (last 7 days). Export ships the full window.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Persisted in App Group for 7 days. Export ships the full window.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("Recent events") {
+                if entries.isEmpty {
+                    Text("No polish events yet. Toggle on, dictate something, then come back.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(entries.reversed()) { entry in
+                        EntryRow(entry: entry)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedEntry = entry }
+                    }
+                }
+            }
+            // #357 spike, throwaway. Delete with the spike.
+            Section {
+                Toggle("Arm keyboard Apple FM probe", isOn: $probeArmed)
+                    .onChange(of: probeArmed) { _, armed in
+                        AppGroup.defaults.set(armed, forKey: SharedKeys.appleFMExtensionProbeArmed)
+                    }
+            } header: {
+                Text("#357 spike")
+            } footer: {
+                Text("Fires a burst of 10 Apple FM calls inside the keyboard "
+                     + "extension, the next time the keyboard appears, then "
+                     + "disarms itself. Takes about a minute, keyboard open. "
+                     + "Results land in the persistent log as diagnosticProbe / "
+                     + "AppleFMExtensionProbe. Arm this only once the app is "
+                     + "already being refused, otherwise the result proves nothing.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Polish debug")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        Task { await handleExport() }
+                    } label: {
+                        Label("Export JSON…", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(storedCount == 0 || isExporting)
+                    Button(role: .destructive) {
+                        Task {
+                            await PolishCoordinator.shared.clearMetricsRing()
+                            await refresh()
+                        }
+                    } label: {
+                        Label("Clear", systemImage: "trash")
+                    }
+                    .disabled(storedCount == 0)
+                } label: {
+                    if isExporting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
+        .sheet(item: $selectedEntry) { entry in
+            NavigationStack {
+                EntryDetailView(entry: entry)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { exportURL != nil },
+            set: { if !$0 { exportURL = nil } }
+        )) {
+            if let exportURL {
+                PolishExportShareSheet(items: [exportURL])
+            }
+        }
+        .alert("Export failed",
+               isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+               ),
+               actions: { Button("OK", role: .cancel) { exportError = nil } },
+               message: { Text(exportError ?? "") })
+        .task { await refresh() }
+        .refreshable { await refresh() }
+    }
+
+    private func handleExport() async {
+        guard !isExporting else { return }
+        isExporting = true
+        // Pull the full 7-day window from disk, not just the in-memory cache.
+        let allEntries = await PolishCoordinator.shared.metricsAllEntries()
+        do {
+            exportURL = try PolishDebugExporter.writeToTempFile(entries: allEntries)
+        } catch {
+            exportError = error.localizedDescription
+        }
+        isExporting = false
+    }
+
+    private func refresh() async {
+        entries = await PolishCoordinator.shared.metricsSnapshot()
+        storedCount = await PolishCoordinator.shared.metricsStoredCount()
+        // #357 spike: read the flag back rather than trusting local state. The
+        // extension clears it when it fires, so a toggle that stays on would
+        // claim a run is still pending after it has already happened.
+        probeArmed = AppGroup.defaults.bool(forKey: SharedKeys.appleFMExtensionProbeArmed)
+    }
+}
+
+// MARK: - Breakdown
+
+private struct BreakdownRow: View {
+    let entries: [PolishDebugEntry]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(PolishMetrics.Outcome.allDisplayCases, id: \.self) { outcome in
+                let count = entries.filter { $0.metrics.outcome == outcome }.count
+                if count > 0 {
+                    VStack(spacing: 2) {
+                        Text("\(count)").font(.headline).foregroundStyle(outcome.tintColor)
+                        Text(outcome.shortLabel).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Row
+
+private struct EntryRow: View {
+    let entry: PolishDebugEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(entry.metrics.outcome.shortLabel)
+                    .font(.caption.bold())
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(entry.metrics.outcome.tintColor.opacity(0.15))
+                    .foregroundStyle(entry.metrics.outcome.tintColor)
+                    .clipShape(Capsule())
+                // The reason takes the mode's slot on a failure (#315): the row
+                // is one line wide, and on a failed event the reason is what
+                // gets read. The mode is still on the detail sheet.
+                if let reason = entry.metrics.failureReason {
+                    Text(reason.slug)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(entry.metrics.outcome.tintColor)
+                        .lineLimit(1)
+                } else if let mode = entry.metrics.mode {
+                    Text(mode.rawValue).font(.caption2).foregroundStyle(.secondary)
+                }
+                // "—" on the auto path, which targets no language at all.
+                Text(entry.metrics.targetLanguage?.rawValue.uppercased() ?? "—")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(entry.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(entry.raw)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            HStack(spacing: 10) {
+                Text(entry.metrics.engine)
+                if let stt = entry.metrics.sttModelID {
+                    Text("stt=\(stt)")
+                }
+                Text("det=\(entry.metrics.detectedLanguage ?? "-")")
+                Text("\(entry.metrics.latencyMs)ms")
+                Text("\(entry.metrics.rawCharCount)→\(entry.metrics.polishedCharCount)")
+            }
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Detail sheet
+
+private struct EntryDetailView: View {
+    let entry: PolishDebugEntry
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                metaRow
+                section("Raw STT output", text: entry.raw)
+                section("Engine output",
+                        text: entry.polished ?? "(engine did not run successfully)")
+            }
+            .padding()
+        }
+        .navigationTitle("Polish event")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+            }
+        }
+    }
+
+    private var metaRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(entry.metrics.outcome.shortLabel)
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(entry.metrics.outcome.tintColor.opacity(0.15))
+                    .foregroundStyle(entry.metrics.outcome.tintColor)
+                    .clipShape(Capsule())
+                Spacer()
+                Text(entry.timestamp.formatted(.dateTime.hour().minute().second()))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                LabeledValue("engine", entry.metrics.engine)
+                LabeledValue("mode", entry.metrics.mode?.rawValue ?? "-")
+                LabeledValue("target", entry.metrics.targetLanguage?.rawValue ?? "none (auto)")
+                LabeledValue("detected", entry.metrics.detectedLanguage ?? "-")
+            }
+            HStack(spacing: 12) {
+                LabeledValue("stt engine", entry.metrics.sttEngine ?? "-")
+                LabeledValue("stt model", entry.metrics.sttModelID ?? "-")
+            }
+            // The rest of the language-resolution trail (#332): reading
+            // "target=de" next to "detected=fr" only means something once the
+            // mode and the keyboard language are visible beside them. Absent
+            // on events persisted by pre-#332 builds.
+            if let resolution = entry.metrics.languageResolution {
+                HStack(spacing: 12) {
+                    LabeledValue("tx mode", resolution.transcriptionMode)
+                    LabeledValue("keyboard", resolution.keyboardLanguage)
+                    LabeledValue(
+                        "stt lang",
+                        resolution.sttLanguageIsEffective
+                            ? resolution.sttLanguageCode
+                            : "\(resolution.sttLanguageCode) (inert)"
+                    )
+                }
+            }
+            HStack(spacing: 12) {
+                LabeledValue("latency", "\(entry.metrics.latencyMs) ms")
+                LabeledValue("chars", "\(entry.metrics.rawCharCount) → \(entry.metrics.polishedCharCount)")
+            }
+            if let reason = entry.metrics.failureReason {
+                LabeledValue("failure reason", reason.slug)
+            }
+        }
+    }
+
+    private func section(_ title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption.bold()).foregroundStyle(.secondary)
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct LabeledValue: View {
+    let label: String
+    let value: String
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.caption.monospaced())
+        }
+    }
+}
+
+// MARK: - Share sheet wrapper
+
+private struct PolishExportShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Outcome display helpers
+
+private extension PolishMetrics.Outcome {
+    static var allDisplayCases: [PolishMetrics.Outcome] {
+        [.success, .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
+         .cancelled, .engineFailed, .engineUnavailable, .exceededContextBudget]
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .success: return "success"
+        case .rejectedGuardrail: return "rejected"
+        case .skipped: return "skipped"
+        case .skippedShort: return "short"
+        case .skippedAutoMode: return "auto"
+        case .cancelled: return "cancelled"
+        case .engineFailed: return "failed"
+        case .engineUnavailable: return "unavailable"
+        case .exceededContextBudget: return "too long"
+        }
+    }
+
+    var tintColor: Color {
+        switch self {
+        case .success: return .green
+        // Orange, not red: an overflow is a refusal, not a breakage — the
+        // engine was never called and the user still got their text (#270).
+        case .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
+             .exceededContextBudget: return .orange
+        // Red, with the failures rather than with the refusals above (#315):
+        // nothing failed on this dictation, but the feature is off for the rest
+        // of the process, which is the worst state on this list and the one that
+        // has to be findable at a glance in a long export.
+        case .cancelled, .engineFailed, .engineUnavailable: return .red
+        }
+    }
+}

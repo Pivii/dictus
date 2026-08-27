@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/AnimatedMicButton.swift
 // Animated microphone button with visual states for idle, recording, transcribing, and success.
 import SwiftUI
@@ -12,9 +13,11 @@ import SwiftUI
 /// State machine:
 /// - idle/ready: soft blue glow pulsing at 2s interval
 /// - recording: red pulse ring scaling 1.0-1.3 at 0.8s interval
-/// - transcribing: blue shimmer sweep moving left-to-right at 1.5s
+/// - transcribing/processing: blue shimmer sweep moving left-to-right at 1.5s
+///   (this button is the main app's; the two stages are told apart in the keyboard
+///   overlay and the Dynamic Island, which is where the user waits -- see #267)
 /// - failed: same as idle (reset to inviting state)
-/// - Transition from transcribing to ready: brief green flash (0.3s fade)
+/// - Transition from either post-recording stage to ready: brief green flash (0.3s fade)
 public struct AnimatedMicButton: View {
     public let status: DictationStatus
     public let isPill: Bool
@@ -59,7 +62,7 @@ public struct AnimatedMicButton: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             // Belt-and-suspenders guard: .disabled should prevent this,
             // but log if somehow reached during a non-tappable state.
             guard isTappable else {
@@ -67,7 +70,7 @@ public struct AnimatedMicButton: View {
                 return
             }
             onTap()
-        }) {
+        } label: {
             ZStack {
                 // Background ring effects
                 ringEffect
@@ -77,8 +80,8 @@ public struct AnimatedMicButton: View {
                     .fill(buttonFillColor)
                     .frame(width: buttonWidth, height: buttonHeight)
 
-                // Shimmer overlay for transcribing state
-                if status == .transcribing {
+                // Shimmer overlay for the two post-recording stages
+                if status == .transcribing || status == .processing {
                     shimmerOverlay
                 }
 
@@ -137,8 +140,8 @@ public struct AnimatedMicButton: View {
                 )
                 .scaleEffect(pulseScale)
 
-        case .transcribing, .requested:
-            // Static glass ring during transcription
+        case .transcribing, .processing, .requested:
+            // Static glass ring during transcription and the LLM stage
             mainShape()
                 .fill(Color.clear)
                 .frame(width: ringWidth, height: ringHeight)
@@ -165,7 +168,7 @@ public struct AnimatedMicButton: View {
                     colors: [
                         Color.white.opacity(0),
                         Color.white.opacity(0.3),
-                        Color.white.opacity(0),
+                        Color.white.opacity(0)
                     ],
                     startPoint: UnitPoint(x: shimmerOffset - 0.3, y: 0.5),
                     endPoint: UnitPoint(x: shimmerOffset + 0.3, y: 0.5)
@@ -180,7 +183,7 @@ public struct AnimatedMicButton: View {
         switch status {
         case .recording:
             return .dictusRecording
-        case .transcribing:
+        case .transcribing, .processing:
             return .dictusAccentHighlight.opacity(0.5)
         default:
             return .dictusAccent
@@ -189,10 +192,17 @@ public struct AnimatedMicButton: View {
 
     // MARK: - Animation Control
 
+    /// WHY there is no log line here any more (#255): this view is instantiated
+    /// once per live keyboard root view, and iOS keeps ~9 of those alive at a time,
+    /// so `statusChanged source=micButton` reported a single transition ~9 times —
+    /// 44 lines for 5 dictations in the measured session. The transition itself is
+    /// already logged exactly once by whoever owns the status: `KeyboardState`
+    /// (`source=keyboardState`) in the extension, `DictationCoordinator`
+    /// (`source=coordinator`) in the app. Nothing is lost.
+    ///
+    /// The animation reset below is deliberately NOT gated: it must keep running on
+    /// every instance, including the app's own visible recording UI.
     private func handleStatusChange(from oldStatus: DictationStatus, to newStatus: DictationStatus) {
-        // Log every status transition for diagnostics
-        PersistentLog.log(.statusChanged(from: oldStatus.rawValue, to: newStatus.rawValue, source: "micButton"))
-
         // Reset ALL animation state to concrete values WITHOUT animation first.
         // WHY: This cancels any existing repeating animations that could stack
         // with the new ones, causing jitter or incorrect visual state.
@@ -203,7 +213,7 @@ public struct AnimatedMicButton: View {
         // Success flash when transitioning from transcribing to ready.
         // WHY withAnimation instead of asyncAfter: SwiftUI animates the transition
         // from true to false over 0.3s, eliminating the timer race condition.
-        if oldStatus == .transcribing && newStatus == .ready {
+        if (oldStatus == .transcribing || oldStatus == .processing) && newStatus == .ready {
             showSuccessFlash = true
             withAnimation(.easeOut(duration: 0.3)) {
                 showSuccessFlash = false
@@ -215,7 +225,7 @@ public struct AnimatedMicButton: View {
             startIdleAnimation()
         case .recording:
             startRecordingAnimation()
-        case .transcribing:
+        case .transcribing, .processing:
             startTranscribingAnimation()
         case .requested:
             // Static state -- no animations. Button is disabled via isTappable.
@@ -267,3 +277,4 @@ public struct AnimatedMicButton: View {
     .padding()
     .background(Color(hex: 0x0A1628))
 }
+#endif

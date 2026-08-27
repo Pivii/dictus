@@ -1,5 +1,6 @@
 // DictusApp/DictusApp.swift
 import SwiftUI
+import StoreKit
 import DictusCore
 
 // MARK: - AppDelegate (sourceApplication diagnostic)
@@ -19,12 +20,33 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Return false so SwiftUI onOpenURL still handles the URL
         return false
     }
+
+    /// Installs `DictusSceneDelegate` so the launch URL can be read at scene connection.
+    ///
+    /// WHY here rather than in Info.plist: the app has no `UISceneConfigurations` entry,
+    /// and UIKit asks the app delegate first. Returning a configuration with our delegate
+    /// class is the least invasive way to get `UIScene.ConnectionOptions` — the only API
+    /// that exposes the launch URL before SwiftUI evaluates its first body (issue #264).
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(
+            name: nil,
+            sessionRole: connectingSceneSession.role
+        )
+        configuration.delegateClass = DictusSceneDelegate.self
+        return configuration
+    }
 }
 
 @main
 struct DictusApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var coordinator = DictationCoordinator.shared
+    @StateObject private var proStatus: ProStatusManager
+    @StateObject private var subscriptionManager: SubscriptionManager
 
     /// Onboarding completion flag stored in App Group for cross-process access.
     ///
@@ -68,12 +90,32 @@ struct DictusApp: App {
         if defaults?.string(forKey: SharedKeys.language) == nil {
             defaults?.set("fr", forKey: SharedKeys.language)
         }
+        // Freeze the layout an updating install is already typing on, before anything can
+        // change the active language (#272). The migration is idempotent and also runs from
+        // the first layout read in either process — the keyboard extension can run before
+        // this app is ever launched again — so this call is only about doing it as early as
+        // possible on the app side.
+        KeyboardLayoutPreference.migrateToPerLanguageLayoutsIfNeeded()
+
         // Register liveActivityEnabled default as true for existing users.
         // WHY: UserDefaults.bool(forKey:) returns false for missing keys.
         // Without this, existing users upgrading would see Live Activity disabled.
         if defaults?.object(forKey: SharedKeys.liveActivityEnabled) == nil {
             defaults?.set(true, forKey: SharedKeys.liveActivityEnabled)
         }
+
+        // Initialize Pro subscription management.
+        // WHY explicit _proStatus / _subscriptionManager initialization:
+        // SubscriptionManager depends on ProStatusManager (it writes Pro status
+        // to App Group). We need to create proStatus first, pass it to
+        // SubscriptionManager, then wrap both in StateObject.
+        let proStatus = ProStatusManager()
+        _proStatus = StateObject(wrappedValue: proStatus)
+        _subscriptionManager = StateObject(wrappedValue: SubscriptionManager(proStatus: proStatus))
+
+        // Warm up the polish engine for the current target language (#141).
+        // No-op when the toggle is off or when the engine has nothing to warm.
+        PolishCoordinator.shared.prewarm()
     }
 
     @Environment(\.scenePhase) private var scenePhase
@@ -82,10 +124,19 @@ struct DictusApp: App {
         WindowGroup {
             MainTabView()
                 .environmentObject(coordinator)
+                .environmentObject(proStatus)
+                .environmentObject(subscriptionManager)
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }
                 .onChange(of: scenePhase) { phase in
+                    // #281 probe: publish the phase before anything else in this
+                    // closure, so the keyboard extension reads a value that is at
+                    // worst microseconds behind the transition it describes. It is
+                    // written from the same callback that logs the lifecycle line
+                    // below, which is what lets the two be compared at all.
+                    AppScenePhaseProbe.record(phase.sceneMarker)
+
                     switch phase {
                     case .active:
                         PersistentLog.log(.appDidBecomeActive)
@@ -94,9 +145,28 @@ struct DictusApp: App {
                     case .background:
                         PersistentLog.log(.appDidEnterBackground)
 
-                        let isRecordingActive = coordinator.status == .recording
-                            || coordinator.status == .requested
-                            || coordinator.status == .transcribing
+                        // A cold start parked waiting for `.active` gets its last
+                        // chance here (#311), because `.active` is not coming — the
+                        // user swiped back before the app settled. Called from this
+                        // handler rather than from a `didEnterBackground` observer of
+                        // its own so the recovery and the `appDidEnterBackground` line
+                        // the regression grep pivots on come from one event and cannot
+                        // drift apart.
+                        let resumedColdStart = coordinator.resolvePendingColdStartOnBackground()
+
+                        // Exhaustive by construction (#267): a status added later
+                        // cannot be left out of this list and silently clear the
+                        // cold-start flag mid-dictation.
+                        //
+                        // A cold start resumed one line above counts as recording even
+                        // though `status` has not moved yet — it starts inside a Task.
+                        // Without the first clause, the two decisions below would clear
+                        // `coldStartActive` out from under it (killing the keyboard's
+                        // 15 s watchdog grace) and race a standby activity against the
+                        // recording one, both of which the comments below already warn
+                        // against for the healthy cold start.
+                        let isRecordingActive = resumedColdStart
+                            || DictationSessionLivenessPolicy.isActive(coordinator.status)
 
                         // Only clear cold start state if NOT recording.
                         // During cold start, the app transitions to background while recording
@@ -138,6 +208,8 @@ struct DictusApp: App {
                 .fullScreenCover(isPresented: .constant(!hasCompletedOnboarding)) {
                     OnboardingView(isComplete: $hasCompletedOnboarding)
                         .environmentObject(coordinator)
+                        .environmentObject(proStatus)
+                        .environmentObject(subscriptionManager)
                 }
         }
     }
@@ -164,10 +236,19 @@ struct DictusApp: App {
 
         switch url.host {
         case "dictate":
-            let isFromKeyboard = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .first(where: { $0.name == "source" })?
-                .value == "keyboard"
+            // Single source of truth for what the keyboard is asking (issue #264).
+            let keyboardIntent = KeyboardDictationURL.intent(from: url)
+            let isFromKeyboard = keyboardIntent != nil
+
+            if keyboardIntent == .prepare {
+                DictusLogger.app.info("Keyboard requested model preparation without recording")
+                PersistentLog.log(.dictationDeferred(reason: "keyboard prepare-only URL"))
+                NotificationCenter.default.post(
+                    name: .dictusKeyboardPreparationRequested,
+                    object: nil
+                )
+                return
+            }
 
             // Show cold start overlay when:
             // 1. TRUE cold start: app was terminated by iOS and keyboard just launched it
@@ -208,4 +289,35 @@ struct DictusApp: App {
             break
         }
     }
+}
+
+extension ScenePhase {
+    /// This phase as the App Group marker the keyboard extension reads (#281).
+    ///
+    /// `ScenePhase` is a SwiftUI type and the keyboard has no business linking SwiftUI
+    /// for a log field, so the crossing happens here, on the app side, and only the
+    /// `String` raw value travels between the processes.
+    var sceneMarker: AppScenePhaseMarker {
+        switch self {
+        case .active: return .active
+        case .inactive: return .inactive
+        case .background: return .background
+        // A phase SwiftUI adds after this was written is reported honestly rather
+        // than guessed at: the probe's value comes from being trustworthy.
+        @unknown default: return .unknown
+        }
+    }
+}
+
+extension Notification.Name {
+    /// Posted by `DictationCoordinator.setModelLoadState` whenever the persisted
+    /// `SharedKeys.modelLoadState` changes. UI overlays observe this to dismiss
+    /// themselves once the model is `.ready` (issue #144).
+    static let dictusModelLoadStateChanged = Notification.Name("DictusModelLoadStateChanged")
+
+    /// Posted when the keyboard opens Dictus only to prepare a model before a
+    /// later, explicit microphone tap (issue #262).
+    static let dictusKeyboardPreparationRequested = Notification.Name(
+        "DictusKeyboardPreparationRequested"
+    )
 }

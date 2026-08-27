@@ -59,6 +59,13 @@ struct DictusLiveActivity: Widget {
             // Pulsing bars at medium height
             MiniLogoBars(levels: [0.4, 0.6, 0.4], animated: true)
                 .frame(width: 20, height: 14)
+        case .processing:
+            // A pronounced centre peak, echoing the localized peak the keyboard
+            // overlay sweeps in this stage (#267). Three bars cannot carry the
+            // sweep itself -- ActivityKit's update budget is ~1/s -- so the shape
+            // and the colour of the trailing label do the distinguishing here.
+            MiniLogoBars(levels: [0.25, 0.85, 0.25], animated: true)
+                .frame(width: 20, height: 14)
         case .ready:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(Color(hex: 0x22C55E))
@@ -86,6 +93,14 @@ struct DictusLiveActivity: Widget {
             // Small spinner-like indicator via SF Symbol
             Image(systemName: "ellipsis")
                 .foregroundColor(.white.opacity(0.7))
+                .font(.system(size: 14))
+        case .processing:
+            // Different glyph AND different colour from transcribing: at compact
+            // size the pill shows one icon, so it has to carry the whole
+            // distinction on its own (#267). Purple is the brand's Smart-mode
+            // colour, which is where this stage is heading (#79).
+            Image(systemName: "sparkles")
+                .foregroundColor(Color(hex: 0x8B5CF6))
                 .font(.system(size: 14))
         case .ready:
             Text("Done")
@@ -132,7 +147,9 @@ struct DictusLiveActivity: Widget {
                 levels: context.state.phase == .recording
                     ? normalizedLevels(context.state.waveformLevels, count: 3)
                     : [0.43, 1.0, 0.64],
-                animated: context.state.phase == .recording || context.state.phase == .transcribing
+                animated: context.state.phase == .recording
+                    || context.state.phase == .transcribing
+                    || context.state.phase == .processing
             )
             .frame(width: 24, height: 18)
 
@@ -154,6 +171,10 @@ struct DictusLiveActivity: Widget {
                     Text("Transcribing...")
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: 0x3D7EFF))
+                case .processing:
+                    Text("Processing...")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: 0x8B5CF6))
                 case .ready:
                     Text("Transcription ready")
                         .font(.system(size: 12))
@@ -186,6 +207,8 @@ struct DictusLiveActivity: Widget {
                 .buttonStyle(.plain)
 
                 // Record button
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://dictate")!) {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -196,6 +219,8 @@ struct DictusLiveActivity: Widget {
                 }
             case .recording:
                 // Stop button (left side)
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://stop")!) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 12, weight: .semibold))
@@ -215,6 +240,9 @@ struct DictusLiveActivity: Widget {
             case .transcribing:
                 ProgressView()
                     .tint(.white)
+            case .processing:
+                ProgressView()
+                    .tint(Color(hex: 0x8B5CF6))
             case .ready, .failed:
                 EmptyView()
             }
@@ -280,6 +308,10 @@ struct DictusLiveActivity: Widget {
                     Text("Transcribing...")
                         .font(.system(size: 13))
                         .foregroundColor(Color(hex: 0x3D7EFF))
+                case .processing:
+                    Text("Processing...")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color(hex: 0x8B5CF6))
                 case .ready:
                     Text(context.state.transcriptionPreview ?? "Transcription ready")
                         .font(.system(size: 13))
@@ -307,6 +339,8 @@ struct DictusLiveActivity: Widget {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                    // swiftlint:disable:next force_unwrapping
                     Link(destination: URL(string: "dictus://dictate")!) {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 14, weight: .semibold))
@@ -317,6 +351,8 @@ struct DictusLiveActivity: Widget {
                     }
                 }
             case .recording:
+                // Force unwrap is safe: compile-time constant deep link, always well-formed.
+                // swiftlint:disable:next force_unwrapping
                 Link(destination: URL(string: "dictus://stop")!) {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 14, weight: .semibold))

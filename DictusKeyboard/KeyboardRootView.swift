@@ -13,12 +13,18 @@ extension DefaultKeyboardLayer {
     }
 }
 
-/// Root SwiftUI view for the keyboard extension chrome (toolbar + recording overlay).
+/// Root SwiftUI view for the keyboard extension chrome (toolbar + full-area
+/// presentations).
 ///
 /// Phase 18 architecture change: The keyboard grid is now a UIKit GiellaKeyboardView
 /// added as a direct subview in KeyboardViewController. This SwiftUI view only renders:
 /// - ToolbarView (always visible when not recording)
 /// - RecordingOverlay (replaces keyboard area during recording)
+/// - EmojiPickerView (replaces the key grid, toolbar stays)
+///
+/// Which of those it renders is decided by a single `KeyboardAreaMode` read from
+/// KeyboardState (#271) — the same value KeyboardViewController switches on for
+/// the layout, so the two layers cannot drift apart.
 ///
 /// WHY SwiftUI for toolbar/overlay but UIKit for keys:
 /// The toolbar and recording overlay are simple SwiftUI layouts that don't need
@@ -29,9 +35,6 @@ struct KeyboardRootView: View {
     @ObservedObject private var state = KeyboardState.shared
     @ObservedObject private var waveformDriver = KeyboardWaveformDriver.shared
     @State private var instanceID = String(UUID().uuidString.prefix(8))
-    /// Whether the emoji picker is currently visible.
-    /// Toggled via NotificationCenter from KeyboardViewController.toggleEmojiPicker().
-    @State private var showingEmoji = false
     /// Observable state for the suggestion bar, owned by KeyboardViewController.
     /// WHY @ObservedObject (not @StateObject): The controller creates and owns SuggestionState,
     /// injecting the same instance into both this view (for display) and the bridge (for updates).
@@ -44,14 +47,23 @@ struct KeyboardRootView: View {
     /// new predictions. The bridge owns textDocumentProxy access and state management.
     var bridge: DictusKeyboardBridge?
 
-    /// Callback when the user cycles language via the toolbar switcher.
+    /// Callback when the user picks a language in the hamburger panel.
     /// The controller uses this to reload the GiellaKeyboardView with the new layout.
     var onLanguageChanged: ((SupportedLanguage) -> Void)?
 
-    /// Invoked when the user taps the emoji picker's dismiss button.
-    /// Supplied by KeyboardViewController with [weak self] capture so we don't
-    /// retain the controller through the hosting view (issue #134).
-    var onEmojiDismiss: (() -> Void)?
+    /// Callback when the user picks a layout for a language in the panel (#272).
+    /// The controller decides whether it has to rebuild — only the active language's
+    /// layout is on screen.
+    var onLayoutChanged: ((LayoutType, SupportedLanguage) -> Void)?
+
+    /// Whether the Pro entry is hidden from the panel bar.
+    ///
+    /// WHY @State refreshed on open rather than an observed ProStatusManager:
+    /// the extension reads Pro status from the App Group, and a subscription
+    /// cannot be bought while the keyboard is the frontmost surface — so a read
+    /// each time the panel opens is both sufficient and cheaper than keeping an
+    /// ObservableObject alive in a 50 MB process.
+    @State private var isProActive = false
 
     /// WHY @Environment here: openURL is the SwiftUI way to open URLs.
     /// Keyboard extensions cannot access UIApplication.shared, but SwiftUI's
@@ -59,37 +71,125 @@ struct KeyboardRootView: View {
     /// chain. We capture it here and inject it into KeyboardState via .onAppear.
     @Environment(\.openURL) private var openURL
 
-    /// Whether the recording overlay should be visible.
-    /// Extracted as a computed property for clear animation binding.
-    private var showsOverlay: Bool {
-        let isActiveStatus = state.dictationStatus == .requested
-            || state.dictationStatus == .recording
-            || state.dictationStatus == .transcribing
-        guard isActiveStatus else { return false }
+    /// Fixed toolbar height, matching `KeyboardViewController.toolbarHeight`.
+    private let toolbarHeight: CGFloat = 52
 
-        // Only the registered active controller shows the overlay.
-        // The legacy `activeControllerID == nil` fallback existed to mask the
-        // controller leak from #128: stale KeyboardRootView instances rendered
-        // RecordingOverlay in parallel with the visible one, producing the
-        // duplicate grey overlay observed in issue #116. With #128 fixed,
-        // stale controllers are dormant and this fallback is unnecessary.
-        return state.activeControllerID == controllerID && state.isKeyboardVisible
+    /// What this view presents.
+    ///
+    /// The mode is owned by KeyboardState; what this adds is the presenter check
+    /// on `.recording` only. iOS caches UIInputViewController instances and their
+    /// KeyboardRootViews keep receiving updates long after they leave the window
+    /// (#128 / #134) — a stale view that rendered the overlay produced the
+    /// duplicate grey panel in #116.
+    ///
+    /// WHY the pickers are deliberately NOT gated the same way, keeping the
+    /// pre-#271 split: `.recording` is pushed from another process and can arrive
+    /// while no controller owns the keyboard (`activeID=none`, #260), so it needs
+    /// an owner to be worth drawing. A picker is opened by a key the user just
+    /// touched on the visible keyboard; gating it on ownership would blank the
+    /// keyboard area for the whole #260 window instead of merely delaying an
+    /// overlay.
+    ///
+    /// That window is now closed from the other side: an area whose owner was
+    /// deallocated is marked reclaimable, and the controller that is actually in a
+    /// window claims it on the next status change (#260). This check is what makes
+    /// the claim visible — ownership moving to our controllerID is what flips this
+    /// from `.keys` to `.recording`.
+    ///
+    /// The legacy `activeControllerID == nil` fallback that used to mask #128 is
+    /// deliberately not reinstated: with #128 fixed, stale controllers are dormant.
+    private var presentedMode: KeyboardAreaMode {
+        let mode = state.areaMode
+        guard mode == .recording else { return mode }
+        guard state.activeControllerID == controllerID, state.isKeyboardVisible else {
+            return .keys
+        }
+        return mode
+    }
+
+    /// The toolbar as it renders above a full-area presentation.
+    ///
+    /// The suggestion slots stay empty: the key grid is hidden in these modes, so
+    /// there is no word being typed to suggest for. Tapping the mic needs no
+    /// dismissal call — `.recording` supersedes whatever fills the area.
+    ///
+    /// `isPanelOpen` picks between the two presentations of the same 52 pt bar:
+    /// the dictation cockpit, and the panel header that replaces the mic with the
+    /// gear (#241).
+    private func fullAreaToolbar(isPanelOpen: Bool = false) -> some View {
+        ToolbarView(
+            hasFullAccess: state.controller?.hasFullAccess ?? false,
+            dictationStatus: state.dictationStatus,
+            onMicTap: { state.startRecording() },
+            statusMessage: state.statusMessage,
+            messageProbeRootViewID: instanceID,
+            messageProbeControllerID: controllerID,
+            showsPolishUnavailable: state.polishUnavailable,
+            suggestions: [],
+            suggestionMode: .idle,
+            onSuggestionTap: { _ in },
+            // Undo survives opening the emoji picker (#266): browsing emoji is not
+            // typing, and the insertion is still the tail of the field. The panel
+            // presentation ignores these — its bar has no centre slot.
+            showsDictationUndo: state.dictationUndoAvailable,
+            onDictationUndoTap: { state.performDictationUndo() },
+            isPanelOpen: isPanelOpen,
+            onPanelToggle: { togglePanel() },
+            onSettingsTap: { leavePanel { state.openDictusApp(intent: "settings") } },
+            isProActive: isProActive,
+            onProTap: { leavePanel { state.openDictusApp(intent: "pro") } }
+        )
+        .frame(height: toolbarHeight)
+    }
+
+    /// Close the panel, then run whatever takes the user out of the keyboard.
+    ///
+    /// WHY (#241 device feedback): the panel is a menu, not a place. Both entries
+    /// in its bar send the user to DictusApp, and coming back to a keyboard still
+    /// showing the menu they left is disorienting — the task that opened it is
+    /// over. Resetting before leaving also means the restore in
+    /// `KeyboardViewController.viewWillAppear` has nothing to put back.
+    private func leavePanel(_ action: @escaping () -> Void) {
+        state.presentAreaMode(.keys)
+        action()
+    }
+
+    /// Open or close the hamburger panel.
+    ///
+    /// The mode change is the only state involved — `KeyboardState` owns it and
+    /// both layers read it (#271), so no flag is duplicated here.
+    ///
+    /// WHY the mode change itself is deliberately NOT animated: the branches of
+    /// the `switch` below are the single child of a VStack, so a transition on
+    /// the branch keeps the outgoing and incoming views alive together and the
+    /// VStack stacks them — the outgoing bar above the incoming one. Two stacked
+    /// bars is the exact artefact this design was reshaped to avoid, and a
+    /// transient one is no better. The bar therefore swaps instantly, ☰ to ✕ in
+    /// place, and the fade lives inside the panel body where it stacks nothing.
+    ///
+    /// Nothing here animates geometry either: the hosting height and bottom
+    /// anchor move synchronously in UIKit, in the same turn as the mode change,
+    /// deliberately (#99, #142).
+    private func togglePanel() {
+        isProActive = ProStatusManager.isProActiveStatic
+        state.togglePanelPresentation()
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if showsOverlay {
+            switch presentedMode {
+            case .recording:
                 // Recording overlay fills the full area (toolbar + keyboard space).
                 // The UIKit keyboard is hidden by KeyboardViewController when recording.
                 RecordingOverlay(
-                    dictationStatus: state.dictationStatus,
+                    dictationStatus: state.displayedDictationStatus,
                     waveformEnergy: state.waveformEnergy,
                     elapsedSeconds: state.recordingElapsed,
                     waveformDriver: waveformDriver,
                     onCancel: { state.requestCancel() },
                     onStop: { state.requestStop() }
                 )
-            } else if showingEmoji {
+            case .emoji:
                 // GeometryReader measures the actual space available to SwiftUI.
                 // WHY: In keyboard extensions, the hosting controller may not give the
                 // full screen width/height to SwiftUI due to safe area or system insets.
@@ -97,20 +197,7 @@ struct KeyboardRootView: View {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
                         // Toolbar stays visible during emoji browsing
-                        ToolbarView(
-                            hasFullAccess: state.controller?.hasFullAccess ?? false,
-                            dictationStatus: state.dictationStatus,
-                            onMicTap: {
-                                showingEmoji = false
-                                state.startRecording()
-                            },
-                            statusMessage: state.statusMessage,
-                            suggestions: [],
-                            suggestionMode: .idle,
-                            onSuggestionTap: { _ in },
-                            onLanguageChanged: onLanguageChanged
-                        )
-                        .frame(height: 52)
+                        fullAreaToolbar()
                         // Emoji picker uses exact measured dimensions
                         EmojiPickerView(
                             onEmojiInsert: { emoji in
@@ -121,31 +208,63 @@ struct KeyboardRootView: View {
                                 state.controller?.textDocumentProxy.deleteBackward()
                                 HapticFeedback.keyTapped()
                             },
-                            onDismiss: {
-                                // Invokes KeyboardViewController.toggleEmojiPicker() via
-                                // [weak self] closure injected at viewDidLoad time.
-                                // Avoids the (controller as? KeyboardViewController) cast
-                                // that used to require a strong controller ref (#134).
-                                onEmojiDismiss?()
-                            },
+                            onDismiss: { state.presentAreaMode(.keys) },
                             availableWidth: geo.size.width,
-                            availableHeight: geo.size.height - 52
+                            // Clamped: the body can be evaluated on a frame where
+                            // the hosting height constraint has not landed yet, so
+                            // `geo.size.height` is still the 52pt toolbar and the
+                            // subtraction goes negative. Handing a negative height
+                            // to the picker is the same family of bug as the blank
+                            // area this refactor already had to fix.
+                            availableHeight: max(0, geo.size.height - toolbarHeight)
                         )
                     }
                 }
-            } else {
+            case .panel:
+                // The hamburger panel (#241). Same layout contract #271 reserved:
+                // the bar on top, the panel filling the rest. The bar keeps its
+                // 52 pt and swaps its contents, so opening the panel moves no
+                // geometry the mode change had not already moved.
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        fullAreaToolbar(isPanelOpen: true)
+                        KeyboardPanelView(
+                            // Clamped for the same reason as the emoji picker: the
+                            // body can be evaluated on a frame where the hosting
+                            // height constraint has not landed yet, leaving
+                            // geo.size.height at the 52 pt bar.
+                            availableHeight: max(0, geo.size.height - toolbarHeight),
+                            // Neither selection closes the panel (#272). A row carries
+                            // two independent choices now — language and layout — and
+                            // closing on the first one takes the second away. The ✕ in
+                            // the bar is the only way out.
+                            onLanguageChanged: { language in
+                                onLanguageChanged?(language)
+                            },
+                            onLayoutChanged: { layout, language in
+                                onLayoutChanged?(layout, language)
+                            }
+                        )
+                    }
+                }
+            case .keys:
                 // Toolbar only -- the keyboard grid is UIKit, managed by KeyboardViewController
                 ToolbarView(
                     hasFullAccess: state.controller?.hasFullAccess ?? false,
                     dictationStatus: state.dictationStatus,
                     onMicTap: { state.startRecording() },
                     statusMessage: state.statusMessage,
+                    messageProbeRootViewID: instanceID,
+                    messageProbeControllerID: controllerID,
+                    showsPolishUnavailable: state.polishUnavailable,
                     suggestions: suggestionState.suggestions,
                     suggestionMode: suggestionState.mode,
                     onSuggestionTap: { index in
                         handleSuggestionTap(index: index)
                     },
-                    onLanguageChanged: onLanguageChanged
+                    showsDictationUndo: state.dictationUndoAvailable,
+                    onDictationUndoTap: { state.performDictationUndo() },
+                    onPanelToggle: { togglePanel() }
                 )
                 // No KeyboardView here -- it's UIKit, added directly by KeyboardViewController
                 // No bottom spacer -- the UIKit keyboard handles its own height
@@ -159,39 +278,56 @@ struct KeyboardRootView: View {
         // animation snapshot freezes that centred-toolbar layout on screen.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
-        .onChange(of: showsOverlay) { _, isShowing in
-            let usedFallback = isShowing && state.activeControllerID == nil
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardRootView",
-                instanceID: instanceID,
-                action: "showsOverlayChanged",
-                details: "isShowing=\(isShowing) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID) usedFallback=\(usedFallback)"
-            ))
-            // Dismiss emoji picker when recording starts
-            if isShowing {
-                showingEmoji = false
+        // Action name kept verbatim (and `isShowing=` with it): #260 and #261 are
+        // open and quote this line from device logs. `mode=` is additive.
+        //
+        // Only the owning view logs (#255). iOS keeps ~9 KeyboardRootView instances
+        // alive at once, so an unrestricted emission here reported one mode change
+        // ~9 times — a reader taking the file at face value sees a controller
+        // lifecycle bug that does not exist. Non-owners present `.keys` by
+        // construction, so their transitions carry no information the owner's line
+        // does not already have. The owner-less window (#260) stays visible without
+        // this line: KeyboardViewController's `dictStatusChange_enter` carries
+        // `activeID=none`, and KeyboardState logs `registerControllerDisappearance`
+        // and `presentAreaMode` at the source.
+        .onChange(of: presentedMode) { _, mode in
+            if state.activeControllerID == controllerID {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardRootView",
+                    instanceID: instanceID,
+                    action: "showsOverlayChanged",
+                    details: "isShowing=\(mode == .recording) mode=\(mode.rawValue) status=\(state.dictationStatus.rawValue) visible=\(state.isKeyboardVisible) owner=\(state.activeControllerID ?? "none") controllerID=\(controllerID)"
+                ))
             }
+            // No emoji dismissal here: `.recording` replaces whatever filled the
+            // area, so mutual exclusion is the type's job now, not this callback's.
             syncWaveformDriver()
         }
-        .onChange(of: state.dictationStatus) { _, newStatus in
-            let showsOverlay = newStatus == .requested || newStatus == .recording || newStatus == .transcribing
-            if showsOverlay {
-                PersistentLog.log(.overlayShown(status: newStatus.rawValue))
-            } else {
-                PersistentLog.log(.overlayHidden(status: newStatus.rawValue))
-            }
+        // overlayShown/overlayHidden moved to KeyboardState (#255): they describe an
+        // app-wide dictation state change, not a per-view event, so they belong
+        // where the status is stored rather than in every observer's onChange.
+        // The *drawn* stage, not the real one (#309). It is the only thing the driver
+        // consumes, and it is the one that still moves when a hold elapses — the real
+        // status changed half a second earlier and would fire nothing here.
+        .onChange(of: state.displayedDictationStatus) { _, _ in
             syncWaveformDriver()
         }
         .onChange(of: state.waveformEnergy) { _, _ in
             syncWaveformDriver()
         }
+        // Only the incoming owner logs (#255). Ownership hand-over is already
+        // recorded once per transition at the source, by KeyboardState's
+        // registerControllerAppearance / registerControllerDisappearance probes;
+        // what this adds is the confirmation that the new owner's view saw it.
         .onChange(of: state.activeControllerID) { _, newOwner in
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardRootView",
-                instanceID: instanceID,
-                action: "activeControllerChanged",
-                details: "newOwner=\(newOwner ?? "none") controllerID=\(controllerID)"
-            ))
+            if newOwner == controllerID {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardRootView",
+                    instanceID: instanceID,
+                    action: "activeControllerChanged",
+                    details: "newOwner=\(newOwner ?? "none") controllerID=\(controllerID)"
+                ))
+            }
             syncWaveformDriver()
         }
         .onChange(of: state.isKeyboardVisible) { _, _ in
@@ -215,8 +351,17 @@ struct KeyboardRootView: View {
             // Refresh cached haptic enabled state from UserDefaults.
             HapticFeedback.refreshEnabledState()
 
+            // Also read here, not only in togglePanel(): iOS can hand the keyboard
+            // to a fresh controller while the panel is open, and viewWillAppear
+            // restores `.panel` — that path never goes through the toggle.
+            isProActive = ProStatusManager.isProActiveStatic
+
             // Language is set in KeyboardViewController.viewWillAppear, which fires
             // on every keyboard appearance and picks up any App Group preference changes.
+
+            // #357 spike, throwaway. Returns immediately unless deliberately armed
+            // from the hidden polish debug screen; see AppleFMExtensionProbe.
+            AppleFMExtensionProbe.runIfArmed()
 
             syncWaveformDriver()
         }
@@ -229,17 +374,25 @@ struct KeyboardRootView: View {
             ))
             syncWaveformDriver(forceHidden: true)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dictusToggleEmoji)) { _ in
-            showingEmoji.toggle()
-        }
     }
 
+    /// Push the current presentation at the waveform driver.
+    ///
+    /// `status:` is the *drawn* stage, not the real one (#309) — the same value the
+    /// overlay's label is built from, deliberately. The label and the animation are
+    /// two halves of one statement about what the phone is doing; feeding them from
+    /// two sources would put the transcription sine under a "Traitement..." label for
+    /// the length of a hold, which is a worse artefact than the flash the hold exists
+    /// to remove.
+    ///
+    /// Everything else here still reads the real status through `presentedMode`, so
+    /// the overlay itself appears and disappears exactly when it did before.
     private func syncWaveformDriver(forceHidden: Bool = false) {
         waveformDriver.sync(
             presenterID: controllerID,
-            status: state.dictationStatus,
+            status: state.displayedDictationStatus,
             energyLevels: state.waveformEnergy,
-            isVisible: !forceHidden && showsOverlay
+            isVisible: !forceHidden && presentedMode == .recording
         )
     }
 
@@ -252,8 +405,12 @@ struct KeyboardRootView: View {
     /// - Correction mode: standard mobile behavior:
     ///   - Tap index 0 (original word): keep as-is + space, reject future autocorrect
     ///   - Tap index 1 (bold correction): apply correction + space
-    ///   - Tap index 2 (alternative): apply alternative + space
+    ///   - Tap index 2 (alternative, or a learned word when one extends the
+    ///     typed prefix — #346): apply it + space. Either way this slot is
+    ///     reached only by a tap, which is what keeps a learned word out of L3.
     /// - Accent mode: replace just the vowel without adding a space.
+    /// - Undo mode: tap index 0 reverts the autocorrect; slots 1-2 are routed by
+    ///   the live document, see applyUndoModeSuggestion.
     private func handleSuggestionTap(index: Int) {
         guard index < suggestionState.suggestions.count else { return }
         let suggestion = suggestionState.suggestions[index]
@@ -273,8 +430,7 @@ struct KeyboardRootView: View {
                 suggestionState.pendingUndo = nil
                 suggestionState.clear()
             } else {
-                suggestionState.pendingUndo = nil
-                bridge?.handlePredictionTap(word: suggestion)
+                applyUndoModeSuggestion(suggestion, proxy: proxy)
             }
             HapticFeedback.keyTapped()
             return
@@ -309,6 +465,43 @@ struct KeyboardRootView: View {
         suggestionState.pendingUndo = nil
         suggestionState.clear()
         HapticFeedback.keyTapped()
+    }
+
+    /// Applies a tap on slot 1-2 of the undo bar (#335).
+    ///
+    /// WHY this is not a plain prediction tap: `.undoAvailable` only says an undo
+    /// chip is showing in slot 0. Slots 1-2 hold predictions when the cursor is
+    /// after a space, but completions of the word IN PROGRESS when the user has
+    /// started typing again — and inserting one of those glued the suggestion to
+    /// the partial word ("concerne" + "concerné" -> "concerneconcerné").
+    /// The live document decides, not the mode: see SuggestionTapRouting.
+    private func applyUndoModeSuggestion(_ suggestion: String, proxy: UITextDocumentProxy) {
+        switch SuggestionTapRouting.decide(
+            context: proxy.documentContextBeforeInput,
+            currentWord: suggestionState.currentWord
+        ) {
+        case .insert:
+            // Cursor is on a boundary: a prediction lands here, insert + space,
+            // and let the bridge chain the next predictions. Unchanged behavior.
+            suggestionState.pendingUndo = nil
+            bridge?.handlePredictionTap(word: suggestion)
+
+        case .replace(let deleteCount):
+            applyReplacement(
+                proxy: proxy,
+                deleteCount: deleteCount,
+                replacement: suggestion,
+                addSpace: true
+            )
+            suggestionState.pendingUndo = nil
+            suggestionState.clear()
+
+        case .abort(let reason):
+            // Stale `currentWord` mid-word: inserting here would reproduce the
+            // very bug this fixes. Swallow the tap — the bar refreshes on the
+            // next keystroke (same outcome as replaceCurrentWord, #191).
+            logReplacementAborted(proxy: proxy, word: suggestionState.currentWord, reason: reason)
+        }
     }
 
     /// Reverts an autocorrection, preserving any characters typed after the correction.
@@ -353,24 +546,71 @@ struct KeyboardRootView: View {
 
         suggestionState.rejectedWords.insert(undo.originalWord.lowercased())
 
-        if UserDictionary.shared.recordUsage(undo.originalWord) {
-            suggestionState.learnWord(undo.originalWord)
-        }
+        // Learn on this single occurrence (#287 decision 4). `learn` and not
+        // `recordUsage`: rejecting a correction is the user saying "no, I meant
+        // this word", which is the strongest signal the keyboard ever gets, and
+        // it is the trigger Apple documents for its own keyboard dictionary. The
+        // repetition counter guards the word-boundary site, where the user has
+        // said nothing at all; applying it here would mean rejecting the same
+        // correction twice before the keyboard stopped making it.
+        UserDictionary.shared.learn(undo.originalWord)
     }
 
     /// Replaces the word currently being typed with a replacement string.
+    ///
+    /// Boundary-safe (#191): `currentWord` comes from SuggestionState's async
+    /// update and can be stale when the user typed fast between the suggestion
+    /// computation and the tap. Deleting a blind `currentWord.count` characters
+    /// could then eat into the preceding word. Validate against the live
+    /// context first; on mismatch, do nothing destructive — the suggestion bar
+    /// refreshes on the next keystroke.
     private func replaceCurrentWord(
         proxy: UITextDocumentProxy,
         currentWord: String,
         replacement: String,
         addSpace: Bool
     ) {
-        for _ in 0..<currentWord.count {
+        switch AutocorrectReplacement.check(
+            context: proxy.documentContextBeforeInput,
+            word: currentWord
+        ) {
+        case .ok(let deleteCount):
+            applyReplacement(
+                proxy: proxy,
+                deleteCount: deleteCount,
+                replacement: replacement,
+                addSpace: addSpace
+            )
+        case .failed(let reason):
+            logReplacementAborted(proxy: proxy, word: currentWord, reason: reason)
+        }
+    }
+
+    /// Executes a validated replacement: deletes exactly `deleteCount` graphemes,
+    /// then inserts. Only ever called with a count that a boundary check produced.
+    private func applyReplacement(
+        proxy: UITextDocumentProxy,
+        deleteCount: Int,
+        replacement: String,
+        addSpace: Bool
+    ) {
+        for _ in 0..<deleteCount {
             proxy.deleteBackward()
         }
         proxy.insertText(replacement)
         if addSpace {
             proxy.insertText(" ")
         }
+    }
+
+    /// Logs a replacement the boundary check refused (#191). Debug builds only.
+    private func logReplacementAborted(proxy: UITextDocumentProxy, word: String, reason: String) {
+        #if DEBUG
+        AutocorrectDebugLog.replacementAborted(
+            word: word,
+            reason: reason,
+            contextTail: DictusKeyboardBridge.contextTail(proxy.documentContextBeforeInput)
+        )
+        #endif
     }
 }

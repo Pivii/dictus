@@ -75,6 +75,54 @@ final class ContractionExpanderTests: XCTestCase {
         XCTAssertEqual(result, "qu'il")
     }
 
+    // MARK: - Accent fallback on the suffix (Cetait → c'était)
+
+    func test_french_cetait_expandsWithAccentedSuffix() {
+        // "etait" is not in the dictionary (missing accents), but "était" is.
+        // The expander must fall back to accent expansion of the suffix
+        // instead of giving up (which let the trie destroy the prefix:
+        // "Cetait" → "Était").
+        let provider = MockFrequencyProvider(frequencies: ["était": 1000])
+        let result = expandContractions(
+            profile: frenchProfile,
+            word: "Cetait",
+            provider: provider
+        )
+        XCTAssertEqual(result, "c'était")
+    }
+
+    func test_french_quetait_expandsTwoCharPrefixWithAccentedSuffix() {
+        let provider = MockFrequencyProvider(frequencies: ["était": 1000])
+        let result = expandContractions(
+            profile: frenchProfile,
+            word: "quetait",
+            provider: provider
+        )
+        XCTAssertEqual(result, "qu'était")
+    }
+
+    func test_french_directSuffixWinsOverAccentFallback() {
+        // When the unaccented suffix IS a dictionary word, the direct path
+        // returns it — the accent fallback never runs.
+        let provider = MockFrequencyProvider(frequencies: ["est": 1000, "ést": 5])
+        let result = expandContractions(
+            profile: frenchProfile,
+            word: "Cest",
+            provider: provider
+        )
+        XCTAssertEqual(result, "c'est")
+    }
+
+    func test_french_accentFallback_returnsNilForGarbageSuffix() {
+        // No accent variant of "xyz" exists — expansion still fails cleanly.
+        let provider = MockFrequencyProvider(frequencies: ["était": 1000])
+        XCTAssertNil(expandContractions(
+            profile: frenchProfile,
+            word: "cxyz",
+            provider: provider
+        ))
+    }
+
     // MARK: - Negative cases
 
     func test_french_returnsNil_whenSuffixNotInDictionary() {

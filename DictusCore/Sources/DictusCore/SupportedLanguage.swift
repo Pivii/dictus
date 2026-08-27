@@ -9,7 +9,7 @@ import Foundation
 /// SettingsView, KeyboardViewController, TextPredictionEngine, and TranscriptionService.
 /// A single enum prevents typos, centralizes display names and layout defaults,
 /// and makes adding new languages a one-place change.
-public enum SupportedLanguage: String, CaseIterable, Codable {
+public enum SupportedLanguage: String, CaseIterable, Codable, Sendable {
     case french = "fr"
     case english = "en"
     case spanish = "es"
@@ -29,12 +29,17 @@ public enum SupportedLanguage: String, CaseIterable, Codable {
     public var shortCode: String { rawValue.uppercased() }
 
     /// Default keyboard layout for this language.
-    /// French defaults to AZERTY; English, Spanish, and German default to QWERTY.
-    /// (German QWERTZ is deferred to follow-up issue #151.)
+    /// French defaults to AZERTY; English and Spanish to QWERTY; German to QWERTZ (#151).
+    ///
+    /// Since #272 this is a *default*, not a rule: it seeds the layout of a language the
+    /// user has never given one, and it keeps applying while they never do. The moment they
+    /// pick a layout for that language, their choice wins and this stops being consulted —
+    /// see `KeyboardLayoutPreference`. Nobody's keyboard changes shape on update.
     public var defaultLayout: LayoutType {
         switch self {
         case .french: return .azerty
-        case .english, .spanish, .german: return .qwerty
+        case .english, .spanish: return .qwerty
+        case .german: return .qwertz
         }
     }
 
@@ -67,11 +72,26 @@ public enum SupportedLanguage: String, CaseIterable, Codable {
         return lang
     }
 
-    /// Cycles to the next language in order: fr -> en -> es -> fr.
-    /// Used by the keyboard toolbar language switcher on tap.
-    public func next() -> SupportedLanguage {
-        let all = SupportedLanguage.allCases
-        guard let idx = all.firstIndex(of: self) else { return .french }
-        return all[(idx + 1) % all.count]
+    /// Makes `language` the active keyboard language.
+    ///
+    /// Writes the language and nothing else about the layout (#272): the layout the user
+    /// now types on is whatever they chose for this language, or its default while they
+    /// never chose one. Before #272 this overwrote the layout with `defaultLayout`, which
+    /// is exactly what made "English autocorrect on an AZERTY keyboard" unreachable.
+    ///
+    /// WHY here and not in the picker view: #241 moved language selection from the
+    /// toolbar into the keyboard panel, and the same write has to happen wherever
+    /// selection ends up living. In DictusCore it is also testable — the keyboard
+    /// extension target has no test bundle.
+    public static func activate(_ language: SupportedLanguage) {
+        // Before the language moves: the #272 migration freezes the stored layout under
+        // whichever language is active *at that moment*, and that has to be the one the
+        // user has been typing on, not the one they are switching to.
+        KeyboardLayoutPreference.migrateToPerLanguageLayoutsIfNeeded()
+
+        AppGroup.defaults.set(language.rawValue, forKey: SharedKeys.language)
+        // The mirror describes the active language's layout, so it is computed after the
+        // switch — see `KeyboardLayoutPreference.mirrorToLegacyKey`.
+        KeyboardLayoutPreference.mirrorToLegacyKey(KeyboardLayoutPreference.layout(for: language))
     }
 }

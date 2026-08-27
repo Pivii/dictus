@@ -34,6 +34,34 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 - Pas d'UIApplication.shared dans l'extension keyboard
 - Toutes les données partagées passent par App Group
 - RequestsOpenAccess = true dans Info.plist de l'extension (pour le micro)
+- L'extension keyboard atteint l'app via `extensionContext`
+- La contrainte de hauteur **déclarée** du clavier est une zone interdite (#166, et trois régressions depuis)
+
+## Git et releases
+
+- Le travail part de `develop`, les PR ciblent `develop`. `main` est ce qui est sur l'App Store.
+- `Closes #N` **n'auto-ferme pas** sur un merge dans `develop` : écrire `refs #N` et fermer l'issue à la main.
+- Merge, jamais squash.
+- Les trois targets partagent un numéro de version et de build. Ne jamais les bumper hors d'une coupe TestFlight (`scripts/cut-testflight.sh`).
+- Une PR n'est pas validée par une CI verte : elle passe par une relecture indépendante et un test sur device avant merge.
+
+## Build, test, lint
+
+- Trois targets à construire : `DictusApp`, `DictusKeyboard`, `DictusCore`.
+- Tests : `cd DictusCore && swift test`. C'est la seule suite du dépôt et elle tourne sur le Mac, sans simulateur. Depuis #301 la destination iOS Simulator passe elle aussi, mais elle exécute exactement les mêmes tests — aucun n'est réservé à iOS — en payant le boot du simulateur. Il n'y a donc jamais de raison de la préférer.
+- Un worktree neuf — comme tout "Reset Package Caches" — résout les packages de zéro et exige `./scripts/patch-fluidaudio-swift5.sh` avant le premier build, sinon il échoue. Le script prend le chemin de derived data du build à venir : `./scripts/patch-fluidaudio-swift5.sh build/DerivedData` pour un build en ligne de commande avec `-derivedDataPath`, sans argument pour un build Xcode. Sans argument il ne patche que la derived data partagée d'Xcode, ce qui ne dit rien du checkout d'un worktree (#285). Il sort en erreur quand il ne trouve aucun checkout sous le chemin demandé.
+- Lint : `swiftlint lint --strict`. Pas de baseline ni de fichier d'exemptions (la baseline a été supprimée en #146), donc toute violation introduite se corrige ou porte un `swiftlint:disable` avec sa raison écrite.
+- Xcode régénère `Localizable.xcstrings` au build (état d'extraction `stale`, newline finale perdue). C'est du bruit de build : le jeter, jamais le committer.
+
+### Rester headless
+
+Pierre travaille sur cette machine : toute fenêtre qui s'ouvre lui vole le focus.
+
+- `xcrun simctl boot <udid>` est headless, donc autorisé.
+- La suite de tests n'a besoin d'aucun simulateur (`cd DictusCore && swift test`). Seuls les builds d'app en demandent un.
+- Ne jamais mettre une fenêtre Simulator au premier plan : `open -a Simulator` est interdit. `open -g -a Simulator` ne l'est pas, et il est requis pour piloter l'UI (`axe` ne peut taper que si Simulator.app est attaché au device booté). Mesuré : `-g` ne change pas l'app au premier plan.
+- Un agent ne peut pas valider sur device physique : ce qui l'exige part dans la liste de validation manuelle, avec les étapes exactes.
+- Le simulateur se pilote au tap, au clavier et par l'arbre d'accessibilité avec `axe`. Le clavier Dictus **peut** y être activé (via Réglages, au tap) ; ce qui reste non résolu, c'est son rendu à l'écran. La recette complète est dans `docs/agents/simulator.md`, qui fait autorité sur ce que le simulateur sait faire.
 
 ## Contexte utilisateur
 
@@ -82,4 +110,8 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Single-context — `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/grill-with-docs`). See `docs/agents/domain.md`.
+Single-context — `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
+
+### Headless simulator
+
+Boot, build, install, launch, capture, and what a simulator cannot show. See `docs/agents/simulator.md`.

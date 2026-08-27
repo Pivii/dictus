@@ -26,7 +26,7 @@ struct ModelDownloadBytes: Equatable {
     let downloadedMB: Int
     let totalMB: Int
 
-    init(_ progress: ParakeetModelDownloader.Progress) {
+    init(_ progress: ModelRepoDownloader.Progress) {
         downloadedMB = Int(progress.bytesDownloaded / 1_000_000)
         totalMB = Int(progress.totalBytes / 1_000_000)
     }
@@ -57,7 +57,8 @@ class ModelManager: ObservableObject {
 
     /// Per-model byte counters ("22 MB of 483 MB") shown alongside the percentage.
     /// A moving byte counter reads as alive even while the percentage crawls
-    /// through the huge Encoder file (issue #207). Parakeet downloads only.
+    /// through a huge weight file (issue #207). Populated for both engines
+    /// since issue #210 unified the download pipeline.
     @Published var downloadByteInfo: [String: ModelDownloadBytes] = [:]
 
     /// Per-model lifecycle state. Updated as models move through download/prewarm/ready.
@@ -84,6 +85,22 @@ class ModelManager: ObservableObject {
     private var modelsDirectory: URL? {
         AppGroup.containerURL?.appendingPathComponent("Models", isDirectory: true)
     }
+
+    /// WhisperKit's on-disk repo directory — the HubApi snapshot layout that
+    /// `WhisperKit.download` historically used and that `WhisperKitConfig(modelFolder:)`
+    /// expects: `Documents/huggingface/models/argmaxinc/whisperkit-coreml/{identifier}`.
+    /// Single source of truth so download, delete, and cleanup stay path-parallel (issue #210).
+    ///
+    /// The path itself now lives in `WhisperModelRepository` so the dictation path can
+    /// resolve the very same folder and load models without touching the network
+    /// (issue #249). This property is kept as the local shorthand for the call sites below.
+    private var whisperKitRepoDirectory: URL? {
+        WhisperModelRepository.repositoryURL()
+    }
+
+    /// Per-model last-logged progress decile, so PersistentLog gets ~10 lines per
+    /// download instead of hundreds. Main-actor confined like all other state here.
+    private var lastLoggedDeciles: [String: Int] = [:]
 
     // MARK: - Init
 
@@ -138,11 +155,10 @@ class ModelManager: ObservableObject {
 
         // Resync modelStates with loaded downloadedModels so models downloaded
         // by onboarding's separate ModelManager instance show as .ready here.
-        for model in ModelInfo.allIncludingDeprecated {
-            if downloadedModels.contains(model.identifier) {
-                if modelStates[model.identifier] == nil || modelStates[model.identifier] == .notDownloaded {
-                    modelStates[model.identifier] = .ready
-                }
+        for model in ModelInfo.allIncludingDeprecated
+        where downloadedModels.contains(model.identifier) {
+            if modelStates[model.identifier] == nil || modelStates[model.identifier] == .notDownloaded {
+                modelStates[model.identifier] = .ready
             }
         }
     }
@@ -150,10 +166,10 @@ class ModelManager: ObservableObject {
     /// Downloads a model variant, prewarms it, and updates state.
     ///
     /// WHY engine-aware download:
-    /// WhisperKit and Parakeet use completely different download pipelines.
-    /// WhisperKit downloads from HuggingFace via WhisperKit.download().
-    /// Parakeet downloads via FluidAudio's AsrModels.downloadAndLoad().
-    /// This method routes to the correct pipeline based on the model's engine.
+    /// Both engines download their HuggingFace repo via the shared
+    /// ModelRepoDownloader (issue #210), but their on-disk layouts and
+    /// prewarm/compile pipelines differ (WhisperKitConfig vs FluidAudio's
+    /// AsrModels). This method routes to the correct path based on the engine.
     ///
     /// WHY foreground download (not background session):
     /// Background URLSession adds significant complexity (delegate callbacks, session
@@ -184,25 +200,41 @@ class ModelManager: ObservableObject {
         // Create the models directory if it doesn't exist
         try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
 
+        guard let repoDir = whisperKitRepoDirectory else {
+            throw ModelManagerError.noContainer
+        }
+
         modelStates[identifier] = .downloading
         downloadProgress[identifier] = 0.0
-        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: 0))
+        lastLoggedDeciles[identifier] = -1
+        let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
+        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
+
+        // Tracks which phase a failure (if any) belongs to. Download-phase failures
+        // keep files on disk (every file is complete thanks to atomic per-file
+        // moves) so a retry resumes where it left off; prewarm-phase failures still
+        // clean up, because ANE compilation failures (E5 bundle errors) can leave
+        // behind unusable cached files that prevent retry from working.
+        var downloadPhaseCompleted = false
 
         do {
-            // Download model files from HuggingFace via WhisperKit's built-in downloader.
-            // The progressCallback closure is called repeatedly with a Progress object,
-            // letting us update the UI with download percentage.
-            let modelFolder = try await WhisperKit.download(
-                variant: identifier,
-                from: "argmaxinc/whisperkit-coreml",
-                progressCallback: { [weak self] progress in
-                    Task { @MainActor in
-                        self?.downloadProgress[identifier] = Float(progress.fractionCompleted)
-                    }
+            // Download the variant's files ourselves instead of WhisperKit.download()
+            // (issue #210): HubApi's progress is file-count weighted (a 5 MB config
+            // moves the bar as much as a 300 MB weight blob), exposes no byte totals
+            // for the MB counter, and has no stall detection or retry. The unified
+            // ModelRepoDownloader gives WhisperKit models the same byte-accurate
+            // progress, stall handling, and resume as Parakeet (issue #207), and
+            // writes the exact on-disk layout WhisperKit already expects.
+            let downloader = ModelRepoDownloader(configuration: .whisperKit(variant: identifier))
+            try await downloader.download(to: repoDir, modelName: identifier) { [weak self] progress in
+                Task { @MainActor in
+                    self?.updateDownloadProgress(progress, identifier: identifier)
                 }
-            )
+            }
+            let modelFolder = repoDir.appendingPathComponent(identifier, isDirectory: true)
 
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
+            downloadPhaseCompleted = true
 
             // Prewarm: compile Core ML model for this device's Neural Engine/GPU.
             // Serialized — only one model compiles at a time. Multiple simultaneous
@@ -214,6 +246,8 @@ class ModelManager: ObservableObject {
             // stuck-at-zero bar. Setting .prewarming first eliminates this gap.
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
+            lastLoggedDeciles.removeValue(forKey: identifier)
 
             // Wait for any other prewarm to finish (poll on MainActor is safe)
             while isPrewarming {
@@ -236,6 +270,9 @@ class ModelManager: ObservableObject {
             let config = WhisperKitConfig(
                 model: identifier,
                 modelFolder: modelFolder.path,
+                // Issue #370: A12/A13 need the audio encoder off the Neural Engine.
+                // This is the site the onboarding hang happens at (prewarm/compile).
+                computeOptions: WhisperComputeOptions.current(),
                 verbose: false,
                 prewarm: true,
                 load: true,
@@ -288,11 +325,21 @@ class ModelManager: ObservableObject {
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
+            lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Clean up partially downloaded/corrupted model files so retry starts fresh.
-            // ANE compilation failures (E5 bundle errors) leave behind unusable cached files
-            // that prevent re-download from working correctly.
-            cleanupModelFiles(identifier)
+            if downloadPhaseCompleted {
+                // Prewarm failure: clean up. ANE compilation failures (E5 bundle
+                // errors) leave behind unusable cached files that prevent
+                // re-download from working correctly.
+                cleanupModelFiles(identifier)
+            }
+            // Download failure: deliberately NO cleanup (issue #210, same policy as
+            // the Parakeet path) — the downloader moves each file into place
+            // atomically, so anything on disk is a complete file and a retry skips
+            // it and resumes where it left off. Since issue #235, tapping the card's
+            // "Retry" affordance retries in place; the full reset lives in the
+            // overflow menu's "Delete partial download" entry (cleanupFailedModel).
 
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
@@ -311,6 +358,7 @@ class ModelManager: ObservableObject {
     private func downloadParakeetModel(_ identifier: String) async throws {
         modelStates[identifier] = .downloading
         downloadProgress[identifier] = 0.0
+        lastLoggedDeciles[identifier] = -1
         let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
         PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
 
@@ -320,30 +368,14 @@ class ModelManager: ObservableObject {
             // URLSession API, which never delivers didWriteData — progress only
             // moved on whole-file completion, and with Encoder's weight.bin being
             // ~92% of the payload the bar froze at ~5% for minutes (App Review
-            // rejected 1.7.1(19) as "frozen at 4%"). ParakeetModelDownloader
-            // downloads the same files into the same cache directory using a
-            // delegate-based downloadTask that does deliver byte callbacks.
+            // rejected 1.7.1(19) as "frozen at 4%"). ModelRepoDownloader downloads
+            // the same files into the same cache directory using a delegate-based
+            // downloadTask that does deliver byte callbacks.
             let cacheDir = AsrModels.defaultCacheDirectory(for: .v3)
-            let downloader = ParakeetModelDownloader()
-            // Log at 10% milestones only (~10 lines per download). Mutated on the
-            // main actor exclusively, so the captured box needs no locking.
-            var lastLoggedDecile = -1
+            let downloader = ModelRepoDownloader(configuration: .parakeet())
             try await downloader.download(to: cacheDir, modelName: identifier) { [weak self] progress in
                 Task { @MainActor in
-                    guard let self else { return }
-                    self.downloadProgress[identifier] = Float(progress.fraction)
-                    self.downloadByteInfo[identifier] = ModelDownloadBytes(progress)
-
-                    let decile = Int(progress.fraction * 10)
-                    if decile > lastLoggedDecile {
-                        lastLoggedDecile = decile
-                        PersistentLog.log(.modelDownloadProgress(
-                            name: identifier,
-                            percent: Int(progress.fraction * 100),
-                            mbDownloaded: Int(progress.bytesDownloaded / 1_000_000),
-                            mbTotal: Int(progress.totalBytes / 1_000_000)
-                        ))
-                    }
+                    self?.updateDownloadProgress(progress, identifier: identifier)
                 }
             }
 
@@ -357,12 +389,14 @@ class ModelManager: ObservableObject {
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
+            lastLoggedDeciles.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
             defer { isPrewarming = false }
 
             // Step 4: Load and compile CoreML models.
-            // ParakeetEngine.prepare() calls AsrModels.downloadAndLoad() which will find
-            // the already-downloaded files and skip straight to compilation.
+            // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
+            // them; it never downloads anything itself (issue #252). This method is the
+            // only place a Parakeet download starts.
             //
             // Phase 37 instrumentation mirrors the WhisperKit path: measure prewarm
             // duration + jetsam-headroom delta so both engines produce comparable
@@ -400,14 +434,36 @@ class ModelManager: ObservableObject {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
+            lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Deliberately NO cleanupModelFiles here (unlike the WhisperKit path):
+            // Deliberately NO cleanupModelFiles here after a download failure:
             // the downloader moves each file into place atomically, so anything on
             // disk is a complete file — leaving the cache intact lets a retry skip
-            // already-downloaded files and resume where it left off. The Settings
-            // "Retry" affordance still offers a full reset via cleanupFailedModel.
+            // already-downloaded files and resume where it left off. Since issue
+            // #235, tapping the card's "Retry" affordance retries in place; the
+            // full reset lives in the overflow menu's "Delete partial download"
+            // entry (cleanupFailedModel).
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
+        }
+    }
+
+    /// Applies one downloader progress tick: percentage bar, MB counter, and
+    /// decile-throttled persistent logging (~10 log lines per download).
+    /// Shared by the WhisperKit and Parakeet download paths (issue #210).
+    private func updateDownloadProgress(_ progress: ModelRepoDownloader.Progress, identifier: String) {
+        downloadProgress[identifier] = Float(progress.fraction)
+        downloadByteInfo[identifier] = ModelDownloadBytes(progress)
+
+        let decile = Int(progress.fraction * 10)
+        if decile > (lastLoggedDeciles[identifier] ?? -1) {
+            lastLoggedDeciles[identifier] = decile
+            PersistentLog.log(.modelDownloadProgress(
+                name: identifier,
+                percent: Int(progress.fraction * 100),
+                mbDownloaded: Int(progress.bytesDownloaded / 1_000_000),
+                mbTotal: Int(progress.totalBytes / 1_000_000)
+            ))
         }
     }
 
@@ -421,9 +477,8 @@ class ModelManager: ObservableObject {
     /// cancelled each other with `Swift.CancellationError`.
     ///
     /// We now flip `modelLoadState` to `.loading` immediately and trigger the load
-    /// up front. The keyboard reads `modelLoadState` and refuses mic taps while a
-    /// load is in flight, and `ModelLoadingOverlay` covers the app to surface the
-    /// wait to the user.
+    /// up front. If the keyboard is tapped while a load is in flight, it opens
+    /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
         activeModel = identifier
@@ -455,10 +510,10 @@ class ModelManager: ObservableObject {
             }
         }
 
-        // Remove from WhisperKit's default download location
-        // WhisperKit.download stores models at Documents/huggingface/models/argmaxinc/whisperkit-coreml/{identifier}
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        if let whisperKitDir = docsDir?.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(identifier)") {
+        // Remove from WhisperKit's on-disk repo location
+        // (Documents/huggingface/models/argmaxinc/whisperkit-coreml/{identifier} —
+        // same path construction as the download, see whisperKitRepoDirectory).
+        if let whisperKitDir = whisperKitRepoDirectory?.appendingPathComponent(identifier) {
             if FileManager.default.fileExists(atPath: whisperKitDir.path) {
                 try FileManager.default.removeItem(at: whisperKitDir)
             }
@@ -499,7 +554,8 @@ class ModelManager: ObservableObject {
     }
 
     /// Cleans up a failed model's files and resets its state to not downloaded.
-    /// Called from UI when user wants to free disk space from a failed download.
+    /// Called from the error card's overflow menu ("Delete partial download",
+    /// issue #235) when the user wants to free disk space instead of retrying.
     func cleanupFailedModel(_ identifier: String) {
         cleanupModelFiles(identifier)
         modelStates[identifier] = .notDownloaded
@@ -514,9 +570,9 @@ class ModelManager: ObservableObject {
             try? FileManager.default.removeItem(at: modelPath)
         }
 
-        // Clean from WhisperKit's default download location
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        if let whisperKitDir = docsDir?.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(identifier)") {
+        // Clean from WhisperKit's on-disk repo location (same path construction
+        // as the download, see whisperKitRepoDirectory).
+        if let whisperKitDir = whisperKitRepoDirectory?.appendingPathComponent(identifier) {
             try? FileManager.default.removeItem(at: whisperKitDir)
         }
 
@@ -598,6 +654,11 @@ func withPrewarmTimeout<T: Sendable>(
             throw ModelManagerError.prewarmTimeout(seconds: seconds)
         }
         // First to finish wins. Cancel the other before returning.
+        //
+        // WHY the force unwrap cannot trap: `next()` returns nil only when the
+        // group has no unfinished child tasks. Two were just added above and
+        // none has been awaited yet, so there is always one result to take.
+        // swiftlint:disable:next force_unwrapping
         let result = try await group.next()!
         group.cancelAll()
         return result

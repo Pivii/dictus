@@ -36,14 +36,12 @@ class TextPredictionEngine {
         SupportedLanguage(rawValue: language)?.profile
     }
 
+    /// Whether this process has already reported that the prune was done in an
+    /// earlier session. See `reportPruneAlreadyDone()`.
+    private var hasReportedPruneAlreadyDone = false
+
     private init() {
-        // Verify language is available in UITextChecker
-        let available = UITextChecker.availableLanguages
-        if !available.contains(where: { $0.hasPrefix(language) }) {
-            print("[TextPredictionEngine] Warning: '\(language)' not in available languages: \(available)")
-        }
-        frequencyDict.load(language: language)
-        aospTrieEngine.load(language: language)
+        loadDictionaries(for: language)
     }
 
     /// Updates the active language for completions and spell-checking.
@@ -54,12 +52,106 @@ class TextPredictionEngine {
     /// to stay within the keyboard extension's ~50MB memory budget.
     func setLanguage(_ lang: String) {
         language = lang
+        loadDictionaries(for: lang)
+    }
+
+    /// Loads both dictionaries for `lang` and runs the work that can only happen
+    /// once a dictionary is actually loaded.
+    private func loadDictionaries(for lang: String) {
+        // Verify language is available in UITextChecker
         let available = UITextChecker.availableLanguages
         if !available.contains(where: { $0.hasPrefix(lang) }) {
             print("[TextPredictionEngine] Warning: '\(lang)' not in available languages: \(available)")
         }
         frequencyDict.load(language: lang)
-        aospTrieEngine.load(language: lang)
+        aospTrieEngine.load(language: lang) { [weak self] _ in
+            // The user dictionary's one-shot prune (#287). This is the first
+            // moment in a cold session at which anything can ask the dictionary a
+            // question, so it has to be one of the triggers — but it is not a
+            // privileged one. A completion can belong to a load that has since
+            // been superseded, and the trie it finds may be another language's
+            // entirely; the gate below is what decides, not the fact of being
+            // called from here.
+            self?.pruneUserDictionaryIfPossible(trigger: "dictionary-loaded")
+        }
+    }
+
+    /// Attempts the user dictionary's one-shot prune, and says so when it cannot.
+    ///
+    /// WHY there are several triggers and no privileged one (#287). Two triggers
+    /// exist because neither is sufficient alone: the load completion is the only
+    /// moment a cold session can ask the dictionary anything, and it is
+    /// systematically starved once a session is warm — `viewWillAppear` issues a
+    /// load on every keyboard appearance, each tearing the mmap down
+    /// synchronously on the main thread before the previous completion, posted
+    /// with `DispatchQueue.main.async`, gets to run. That starvation is why the
+    /// prune never once ran on device. `viewWillAppear` therefore also attempts
+    /// it *before* asking for the next load, while the previous dictionary is
+    /// still mounted.
+    ///
+    /// Neither is trusted, and that is the point. `UserDictionaryPruneGate` holds
+    /// the one precondition — the mounted dictionary is the active language's —
+    /// so a trigger cannot be wrong, only early. Adding another is safe.
+    ///
+    /// Whenever the prune is still owed and cannot be done, a probe says why, so
+    /// an export can never again be ambiguous between "never called", "called and
+    /// declined", and "done long ago".
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        let decision = UserDictionaryPruneGate.decide(
+            alreadyPruned: UserDictionary.shared.hasPrunedTrieDuplicates,
+            mountedLanguage: aospTrieEngine.mountedLanguage,
+            activeLanguage: SupportedLanguage.active.rawValue
+        )
+        switch decision {
+        case .run:
+            UserDictionary.shared.pruneTrieDuplicatesIfNeeded(using: aospTrieEngine)
+        case .alreadyDone:
+            reportPruneAlreadyDone()
+        case .notMounted, .languageMismatch:
+            PersistentLog.log(.diagnosticProbe(
+                component: "UserDictionaryPrune",
+                instanceID: "",
+                action: "skipped",
+                details: "trigger=\(trigger) reason=\(decision.reason)"
+            ))
+        }
+    }
+
+    /// Says, once per keyboard process, that the prune has already been done.
+    ///
+    /// WHY this line has to exist. `userDictionaryPruned` is written once in the
+    /// life of an install, and `PersistentLog` is a 1 MB file trimmed from the
+    /// head — so an hour of ordinary use scrolls that line out of every later
+    /// export. Without a standing statement, "this install was cleaned long ago"
+    /// and "the prune is broken and never ran" are the same observation: silence.
+    /// The third device pass on #287 was spent on exactly that ambiguity.
+    ///
+    /// WHY once per process and not once per call: `viewWillAppear` runs on every
+    /// keyboard appearance, seventeen times in an hour of real use, and iOS keeps
+    /// several controllers alive. One line per process is enough to date the
+    /// state, and anything finer is the noise #255 was about.
+    private func reportPruneAlreadyDone() {
+        guard !hasReportedPruneAlreadyDone else { return }
+        hasReportedPruneAlreadyDone = true
+        PersistentLog.log(.diagnosticProbe(
+            component: "UserDictionaryPrune",
+            instanceID: "",
+            action: "alreadyDone",
+            details: "learnedCount=\(UserDictionary.shared.count)"
+        ))
+    }
+
+    /// Whether `word` is genuinely new to the active language's dictionary —
+    /// the gate the word-boundary learning site needs (#287 decision 2).
+    ///
+    /// WHY false while the dictionary is still loading: the answer would be
+    /// "unknown" for every word typed in that window, and learning them all is
+    /// exactly the pollution this gate exists to stop. AOSP LatinIME takes the
+    /// same position for the same reason — it turns learning off entirely on a
+    /// slow InputConnection, because a word it cannot vet is a word it should
+    /// not keep. If we cannot ask, we do not learn.
+    func isUnknownToDictionary(_ word: String) -> Bool {
+        aospTrieEngine.isReady && !aospTrieEngine.knowsWord(word)
     }
 
     /// Returns up to 3 word completions for a partial word, ranked by frequency.
@@ -67,27 +159,38 @@ class TextPredictionEngine {
     /// HOW IT WORKS:
     /// 1. UITextChecker.completions() returns all possible completions from the system dictionary
     /// 2. We sort those completions by our frequency dictionary (lower rank = more common = first)
-    /// 3. We return only the top 3 to fill the suggestion bar's 3 slots
+    /// 3. LearnedWordCompletions gives one word the user taught us the first slot (#346)
+    /// 4. We return only the top 3 to fill the suggestion bar's 3 slots
     ///
     /// WHY frequency-based ranking:
     /// UITextChecker returns completions in alphabetical order by default. Ranking by
     /// word frequency ensures "les" appears before "lesparre" when typing "le".
+    ///
+    /// WHY the learned set is read here on every keystroke, with no cache:
+    /// it lives in memory, holds tens of entries since #287 stopped learning
+    /// words the trie already knows, and this runs on the suggestion queue. A
+    /// cache would only add an invalidation to get wrong — the other process
+    /// writes to this dictionary too.
     func suggestions(for partialWord: String) -> [String] {
         guard !partialWord.isEmpty else { return [] }
 
         let nsString = partialWord as NSString
         let range = NSRange(location: 0, length: nsString.length)
 
-        guard let completions = textChecker.completions(
+        // `?? []` and not an early return: a prefix the system checker has
+        // nothing to say about is exactly the case a learned word exists for.
+        let completions = textChecker.completions(
             forPartialWordRange: range,
             in: partialWord,
             language: language
-        ) else {
-            return []
-        }
+        ) ?? []
 
         let ranked = completions.sorted { frequencyDict.rank(of: $0) > frequencyDict.rank(of: $1) }
-        return Array(ranked.prefix(3))
+        return LearnedWordCompletions.merge(
+            typedPrefix: partialWord,
+            learnedWords: UserDictionary.shared.learnedWordsByLastUsed,
+            systemCompletions: ranked
+        )
     }
 
     /// Returns the best correction and alternatives for a misspelled word.
@@ -104,7 +207,16 @@ class TextPredictionEngine {
     /// The trie walks candidates during lookup with keyboard proximity scoring,
     /// supporting 100K+ words in ~0.4 MiB per language via mmap. SymSpell pre-generated
     /// all edit-distance deletes, using 15 MiB for just 10K words.
-    func spellCheck(_ word: String) -> (correction: String, alternatives: [String])? {
+    /// - Parameter isAtSentenceStart: whether the word sits at a sentence start
+    ///   in the host document (start-of-field, after newline or after .!?).
+    ///   Drives the proper-noun guard (#199): mid-sentence capitalized unknown
+    ///   words are preserved. Defaults to `true`, the conservative value —
+    ///   callers without position info keep full correction behavior (only the
+    ///   position-independent acronym rule applies).
+    func spellCheck(
+        _ word: String,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
         guard !word.isEmpty else { return nil }
 
         // Language-specific overrides bypass everything — e.g., "ca" is never valid French.
@@ -145,10 +257,13 @@ class TextPredictionEngine {
         // the same apostrophe handling that AOSPTrieEngine uses internally.
         let lowered = word.lowercased()
         let wordToCheck: String
+        let apostrophePrefix: String?
         if let apoIndex = lowered.lastIndex(of: "'") {
             wordToCheck = String(lowered[lowered.index(after: apoIndex)...])
+            apostrophePrefix = String(lowered[...apoIndex])
         } else {
             wordToCheck = lowered
+            apostrophePrefix = nil
         }
         if UserDictionary.shared.isLearned(wordToCheck) {
             #if DEBUG
@@ -161,9 +276,13 @@ class TextPredictionEngine {
         // "tres" may exist in the trie as a low-frequency word, but "très" is far
         // more common. The accent expansion uses frequency comparison to decide.
         // "deja" → "déjà", "apres" → "après", "tres" → "très"
+        // The apostrophe prefix must be reassembled: wordToCheck is only the
+        // part after the apostrophe, so "J'etais" checks "etais" → "étais" and
+        // the correction is "j'" + "étais", not bare "étais".
         if let accented = aospTrieEngine.accentExpansion(wordToCheck) {
+            let full = (apostrophePrefix ?? "") + accented
             let isCapitalized = word.first?.isUppercase == true
-            let corrected = isCapitalized ? accented.capitalized : accented
+            let corrected = isCapitalized ? full.capitalized : full
             #if DEBUG
             AutocorrectDebugLog.autocorrectDecision(
                 original: word, corrected: corrected, branch: "accent", prevWord: nil
@@ -183,6 +302,10 @@ class TextPredictionEngine {
         }
 
         // Contraction expansion: "Cest" → "C'est", "jai" → "j'ai"
+        // Runs BEFORE the proper-noun guard: like accent expansion, it's a
+        // high-confidence exact transformation (registered prefix + dictionary
+        // suffix), so a capitalized "Cest" mid-sentence must correct to "C'est"
+        // rather than be preserved as a pseudo-name (and worse, learned).
         if let expanded = aospTrieEngine.contractionExpansion(word) {
             let isCapitalized = word.first?.isUppercase == true
             let corrected = isCapitalized ? expanded.capitalized : expanded
@@ -192,6 +315,21 @@ class TextPredictionEngine {
             )
             #endif
             return (corrected, [])
+        }
+
+        // Proper-noun guard (#199): only unknown words reach this point.
+        // An unknown capitalized word mid-sentence ("vu Mathilde") or an
+        // all-caps acronym ("SNCF") is most likely intentional — preserve it
+        // instead of forcing the closest dictionary word. Runs AFTER the
+        // high-confidence branches (languageOverride, UserDictionary, accent
+        // and contraction expansion) but BEFORE the fuzzy ones (split, trie).
+        // The preserved word is then learned via handleSpace's recordUsage path,
+        // protecting future occurrences even at sentence start.
+        if ProperNounGuard.isLikelyProperNoun(word: word, isAtSentenceStart: isAtSentenceStart) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectSkipped(word: word, reason: "likely-proper-noun")
+            #endif
+            return nil
         }
 
         // Word splitting + single-word correction comparison.
@@ -211,7 +349,10 @@ class TextPredictionEngine {
         //    where single-word "Pascal" is at ED 2 and split ED is 1.
         //
         // 3. No split → fall through to trie single-word correction.
-        let (splitResult, splitHasBoundary, splitHasBigram) = trySplitWithSignal(wordToCheck)
+        let evaluation = trySplitWithSignal(wordToCheck)
+        let splitResult = evaluation.split
+        let splitHasBoundary = evaluation.hasBoundarySignal
+        let splitHasBigram = evaluation.hasBigramEvidence
         if let split = splitResult {
             let useSplit: Bool
             if splitHasBigram {
@@ -302,8 +443,28 @@ class TextPredictionEngine {
     /// Strategy 2 is the key insight: instead of asking "what are the corrections for sui?"
     /// and hoping "suis" appears, we ask "what does the n-gram model predict after je?"
     /// and check if any prediction (like "suis") is close to what was typed ("sui").
-    func spellCheck(_ word: String, previousWord: String?) -> (correction: String, alternatives: [String])? {
-        let result = spellCheck(word)
+    func spellCheck(
+        _ word: String,
+        previousWord: String?,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
+        // Language overrides are authoritative — return before the bigram
+        // rerank can replace them. Concrete failure this prevents (#222):
+        // "je lai" → override "l'ai", but the corpus tokenizes "j'ai" as ONE
+        // token so bigram("ai" after "je") = 0, while bigram("lui" after "je")
+        // is huge and "lui" sits at edit distance 1 of "lai" — the rerank
+        // replaced the override with "lui" ("je lai fais" → "je lui fais").
+        if let override = aospTrieEngine.languageOverride(for: word) {
+            #if DEBUG
+            AutocorrectDebugLog.autocorrectDecision(
+                original: word, corrected: override.correction,
+                branch: "language-override", prevWord: previousWord
+            )
+            #endif
+            return override
+        }
+
+        let result = spellCheck(word, isAtSentenceStart: isAtSentenceStart)
 
         // If no previous word context or n-grams not loaded, return standard result
         guard let prev = previousWord, !prev.isEmpty, aospTrieEngine.ngramsLoaded else {
@@ -360,7 +521,9 @@ class TextPredictionEngine {
             // Add close predictions (may introduce new candidates like "suis")
             let isCapitalized = word.first?.isUppercase == true
             for (prediction, score) in closePredictions {
-                let full = prefix != nil ? (prefix! + prediction) : prediction
+                // `prefix ?? ""` reproduces the nil branch exactly: prepending the
+                // empty string is the identity, which is what nil returned before.
+                let full = (prefix ?? "") + prediction
                 let display = isCapitalized ? full.capitalized : full
                 if let existing = candidateSet[display] {
                     candidateSet[display] = max(existing, score)
@@ -427,8 +590,8 @@ class TextPredictionEngine {
                 let afterScore = reranked[0].value
                 AutocorrectDebugLog.bigramRerank(
                     word: word, prevWord: prev,
-                    before: result.correction, after: newCorrection,
-                    beforeScore: beforeScore, afterScore: afterScore
+                    before: (result.correction, beforeScore),
+                    after: (newCorrection, afterScore)
                 )
             }
             #endif
@@ -463,12 +626,6 @@ class TextPredictionEngine {
         return dp[b.count]
     }
 
-    /// No-op: user words are handled by the two-pass lookup in spellCheck().
-    /// The mmap'd trie is read-only; user words live in UserDictionary (App Group).
-    func injectUserWord(_ word: String) {
-        // No-op: UserDictionary.shared is checked before trie in spellCheck()
-    }
-
     // MARK: - Word Splitting
 
     /// Keys adjacent to the spacebar on each keyboard layout.
@@ -478,6 +635,8 @@ class TextPredictionEngine {
     /// 3 keys from space, causing false splits like "calvier" → "cal hier".
     /// On QWERTY: bottom row is Z-X-C-V-B-N-M — M is rightmost (next to space),
     /// N and B are close enough to count.
+    /// QWERTZ shares the QWERTY set: its bottom row is Y-X-C-V-B-N-M, so the three
+    /// keys adjacent to the spacebar are the same ones (#151).
     private static let azertySpacebarNeighbors: Set<Character> = ["n", "b", ","]
     private static let qwertySpacebarNeighbors: Set<Character> = ["n", "b", "m"]
 
@@ -485,17 +644,17 @@ class TextPredictionEngine {
     /// Standard split requires ≥3 chars per part to avoid noise like "ho ne",
     /// but French has many 2-char pronouns/articles/connectives that commonly
     /// start missed-space compounds (e.g., "tuboeux" should split as "tu peux",
-    /// "jepense" as "je pense"). This whitelist restricts the 2-char relaxation
+    /// "jepense" as "je pense"). This allowlist restricts the 2-char relaxation
     /// to words that are structurally plausible as a left/right split half.
-    private static let shortSplitWhitelist: Set<String> = [
+    private static let shortSplitAllowlist: Set<String> = [
         "je", "tu", "il", "on", "me", "te", "se", "ne",
         "le", "la", "un", "du", "au", "en",
         "et", "ou", "ni", "si", "ça", "où", "ce"
     ]
 
-    /// Whether a split part is long enough or belongs to the short-word whitelist.
+    /// Whether a split part is long enough or belongs to the short-word allowlist.
     private static func isValidSplitPart(_ part: String) -> Bool {
-        return part.count >= 3 || (part.count == 2 && shortSplitWhitelist.contains(part))
+        return part.count >= 3 || (part.count == 2 && shortSplitAllowlist.contains(part))
     }
 
     // MARK: - Apostrophe Prefix Correction
@@ -521,7 +680,7 @@ class TextPredictionEngine {
         "b": "n",  // b'est → n'est
         "y": "t",  // y'es → t'es (adjacent on AZERTY top row)
         "r": "t",  // r'es → t'es
-        "u": "t",  // u'es → t'es
+        "u": "t"  // u'es → t'es
     ]
 
     /// Correct a word with invalid apostrophe prefix via keyboard proximity.
@@ -559,6 +718,28 @@ class TextPredictionEngine {
         return isCapitalized ? (corrected.prefix(1).uppercased() + corrected.dropFirst()) : corrected
     }
 
+    /// The winning split plus the evidence backing it.
+    ///
+    /// WHY a struct and not a tuple: three labelled members is one past what the
+    /// project lints for, and a named type also stops the caller destructuring
+    /// three same-shaped values positionally.
+    private struct SplitEvaluation {
+        /// The winning "left right" split, or nil when nothing qualified.
+        let split: String?
+        /// The split used a spacebar-neighbor char — strong physical evidence.
+        let hasBoundarySignal: Bool
+        /// The pair (left, right) has a bigram score > 0 — linguistic evidence.
+        let hasBigramEvidence: Bool
+    }
+
+    /// A boundary-split candidate while the loop below is still looking for the
+    /// best one. Same reason as SplitEvaluation for being a struct.
+    private struct BoundaryCandidate {
+        let split: String
+        let score: UInt32
+        let hasBigram: Bool
+    }
+
     /// Wrapper around trySplit that returns the winning split plus flags
     /// describing the evidence backing it. Caller decides whether to accept.
     ///
@@ -573,22 +754,22 @@ class TextPredictionEngine {
     ///   with the single-word correction to decide.
     ///
     /// Boundary splits with bigram evidence win over those without.
-    private func trySplitWithSignal(_ word: String)
-        -> (split: String?, hasBoundarySignal: Bool, hasBigramEvidence: Bool)
-    {
+    private func trySplitWithSignal(_ word: String) -> SplitEvaluation {
         let chars = Array(word)
         // Minimum absolute part length 2; each part must also pass isValidSplitPart
-        // which requires either ≥3 chars or membership in the short-word whitelist.
+        // which requires either ≥3 chars or membership in the short-word allowlist.
         // This lets "tu peux" split from "tuboeux" while still blocking "ho ne"
-        // from "honne" (since "ho" is not whitelisted).
+        // from "honne" (since "ho" is not allowlisted).
         let minPartLength = 2
-        guard chars.count >= 4 else { return (nil, false, false) }
+        guard chars.count >= 4 else {
+            return SplitEvaluation(split: nil, hasBoundarySignal: false, hasBigramEvidence: false)
+        }
 
         let spacebarNeighbors = LayoutType.active == .azerty
             ? Self.azertySpacebarNeighbors
             : Self.qwertySpacebarNeighbors
 
-        var bestBoundary: (split: String, score: UInt32, hasBigram: Bool)?
+        var bestBoundary: BoundaryCandidate?
         var bestBigram: (split: String, score: UInt32)?
 
         /// Score a candidate pair. Returns (score, hasBigram).
@@ -605,11 +786,21 @@ class TextPredictionEngine {
             }
         }
 
+        /// True when `score` should replace the current best, including the case
+        /// where there is no current best yet.
+        /// WHY not the shorter `score > (current ?? 0)`: a first candidate scoring
+        /// zero must still beat "no candidate at all", and that shorthand would
+        /// silently drop it.
+        func improves(_ score: UInt32, over current: UInt32?) -> Bool {
+            guard let current else { return true }
+            return score > current
+        }
+
         for splitPos in minPartLength...(chars.count - minPartLength) {
             let left = String(chars[0..<splitPos])
             let right = String(chars[splitPos...])
 
-            // Both parts must meet the length/whitelist requirement.
+            // Both parts must meet the length/allowlist requirement.
             guard Self.isValidSplitPart(left) else { continue }
 
             let leftExists = aospTrieEngine.wordExists(left)
@@ -622,8 +813,10 @@ class TextPredictionEngine {
                     // Case A: both halves valid as-is
                     if leftExists && aospTrieEngine.wordExists(rightAfter) {
                         let (s, hasBi) = scorePair(left: left, right: rightAfter)
-                        if bestBoundary == nil || s > bestBoundary!.score {
-                            bestBoundary = ("\(left) \(rightAfter)", s, hasBi)
+                        if improves(s, over: bestBoundary?.score) {
+                            bestBoundary = BoundaryCandidate(
+                                split: "\(left) \(rightAfter)", score: s, hasBigram: hasBi
+                            )
                         }
                     }
                     // Case B: right half needs spell correction (min 3 chars to avoid
@@ -631,8 +824,10 @@ class TextPredictionEngine {
                     if leftExists && !aospTrieEngine.wordExists(rightAfter) && rightAfter.count >= 3,
                        let c = aospTrieEngine.spellCheck(rightAfter) {
                         let (s, hasBi) = scorePair(left: left, right: c.correction)
-                        if bestBoundary == nil || s > bestBoundary!.score {
-                            bestBoundary = ("\(left) \(c.correction)", s, hasBi)
+                        if improves(s, over: bestBoundary?.score) {
+                            bestBoundary = BoundaryCandidate(
+                                split: "\(left) \(c.correction)", score: s, hasBigram: hasBi
+                            )
                         }
                     }
                 }
@@ -642,7 +837,7 @@ class TextPredictionEngine {
             guard Self.isValidSplitPart(right) else { continue }
             if leftExists && rightExists {
                 let (s, hasBi) = scorePair(left: left, right: right)
-                if hasBi, bestBigram == nil || s > bestBigram!.score {
+                if hasBi, improves(s, over: bestBigram?.score) {
                     bestBigram = ("\(left) \(right)", s)
                 }
             }
@@ -674,7 +869,9 @@ class TextPredictionEngine {
             )
         }
         #endif
-        return (winner, hasBoundary, hasBigramEv)
+        return SplitEvaluation(
+            split: winner, hasBoundarySignal: hasBoundary, hasBigramEvidence: hasBigramEv
+        )
     }
 
 }

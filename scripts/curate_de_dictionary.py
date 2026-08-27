@@ -20,6 +20,17 @@ correction. Native words like `schon` (442 343) → `schön` (106 669) are
 preserved because the unaccented form is itself dominant — both are real
 German words in that direction.
 
+WHY the filter cannot be left to the runtime 5x rule (issue #326): the
+dictionary the keyboard reads does not store raw counts. `tools/dict_builder.py`
+writes `65535 * ln(1 + freq) / ln(1 + max_freq)` into each trie node, so the
+AccentExpander's dominance comparison happens in log space. `fuer` (712) against
+`für` (735 252) is 1033x raw but only 2.06x once stored — under the 5x bar, so
+the correction never fires on device. Passing 5x in log space needs the target
+to be roughly the input raised to the fifth power, which nothing inside a 40K
+corpus reaches. Dropping the transliteration here is therefore the only place
+the fix can live: with the ASCII form absent, the expander takes its
+`input frequency == 0` branch and the dominance comparison is never consulted.
+
 Per ADR 0001 (non-native maintainer launch), no curated additions
 (SMS abbreviations, proper nouns) are layered in for first ship —
 populated post-launch from feedback on issue #109.
@@ -40,7 +51,7 @@ OUTPUT = os.path.join(os.path.dirname(__file__), "..", "DictusKeyboard", "Resour
 UMLAUT_DEDUP_MIN_RATIO = 5
 
 # Per-letter substitutions used to enumerate accented variants of an ASCII word.
-# Length-changing collapses (`ss → ß`) handled separately because they shorten
+# Length-changing collapses live in GERMAN_COLLAPSES below because they shorten
 # the word; single-codepoint substitutions are tried position-by-position.
 GERMAN_SINGLE_ACCENTS = {
     "a": "ä",  # ä
@@ -48,13 +59,48 @@ GERMAN_SINGLE_ACCENTS = {
     "u": "ü",  # ü
 }
 
+# Two-character sequences that collapse to a single German character. Mirrors
+# `germanProfile.collapseRules` in DictusCore/Sources/DictusCore/Languages/German.swift
+# one for one — the curation and the runtime expander must agree on what counts
+# as a transliteration, or a word gets dropped here that the expander can never
+# reconstruct (or the reverse, which is issue #326).
+#
+# `ae/oe/ue` are Umlautersatz: the ASCII convention Germans use where umlauts
+# are unavailable — URLs, filenames, email addresses — and out of habit
+# elsewhere. They are deliberate fallback spellings rather than typos, but they
+# are not standard orthography, and the platform treats them as correctable:
+# Apple's own German keyboard force-corrects `fuer`/`schoen`/`koennen` to
+# `Für`/`Schön`/`Können` on space (verified on device, German and Austrian
+# layouts, #326). Correcting them matches what a German user already gets from
+# every other keyboard on the phone.
+#
+# Real words that merely contain the sequence survive on the 5x rule below,
+# without a second heuristic: their collapsed forms are not words, so no umlaut
+# variant is found and nothing is dropped. `bauer` → `baür`, `feuer` → `feür`,
+# `zueinander` → `zünander`, `poet` → `pöt`, `koexistenz` → `köxistenz` are all
+# absent from the corpus.
+GERMAN_COLLAPSES = {
+    "ae": "ä",  # ae → ä   (Mädchen, Bäume, Universität)
+    "oe": "ö",  # oe → ö   (können, schön, möchte)
+    "ue": "ü",  # ue → ü   (Tür, müssen, fünf, früh)
+    # `ss → ß` is NOT settled the way the three above are, and #326 deliberately
+    # left it alone. `ss` for `ß` is a valid replacement in German, not an error:
+    # it is mandatory in Switzerland and Liechtenstein, and native speakers use
+    # either form on purpose. What ships today (`strasse` → `straße`, device
+    # validated in #321) therefore stays exactly as it is, and widening or
+    # narrowing it needs a product decision with native-speaker input — it is
+    # not implied by the Umlautersatz reasoning above and must not be treated
+    # as settled by it.
+    "ss": "ß",  # ss → ß   (straße, weiß, groß, Spaß)
+}
+
 
 def _umlaut_variants(word: str) -> list[str]:
     """All accent variants of `word` we want to compare against.
 
-    Single-substitution at any position (a→ä, o→ö, u→ü), and the German
-    `ss → ß` collapse anywhere in the word. Empty list if the input has no
-    candidate positions, so callers can short-circuit.
+    Single-substitution at any position (a→ä, o→ö, u→ü), and each GERMAN_COLLAPSES
+    two-character sequence collapsed anywhere in the word. Empty list if the
+    input has no candidate positions, so callers can short-circuit.
     """
     variants: set[str] = set()
     chars = list(word)
@@ -63,10 +109,14 @@ def _umlaut_variants(word: str) -> list[str]:
             variant = chars[:]
             variant[i] = GERMAN_SINGLE_ACCENTS[ch]
             variants.add("".join(variant))
-    # ss → ß collapses (every adjacent ss in the word, one at a time).
+    # Collapses, one occurrence at a time. Words needing two collapses at once
+    # (`fuenfhundertdreissig`) are rare enough that the single-occurrence forms
+    # already cover what the corpus contains, and enumerating combinations would
+    # widen the drop set without a corresponding win.
     for i in range(len(word) - 1):
-        if word[i:i+2] == "ss":
-            variants.add(word[:i] + "ß" + word[i+2:])
+        replacement = GERMAN_COLLAPSES.get(word[i:i+2])
+        if replacement:
+            variants.add(word[:i] + replacement + word[i+2:])
     return sorted(variants)
 
 

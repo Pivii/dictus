@@ -9,71 +9,80 @@ import DictusCore
 /// AnimatedMicButton provides 4 visual states (idle glow, recording pulse,
 /// transcribing shimmer, success flash) that give the user clear feedback
 /// about the dictation lifecycle. The inline micIcon only had basic color changes.
+///
+/// The bar has two presentations (#241) and keeps its 52 pt in both, so opening
+/// the panel is a content swap and not a resize. In an area that has produced four
+/// layout regressions (#166 and family), that property matters more than anything
+/// else in the design:
+///
+///     closed:  [☰]  ← centre slot →  [🎤 pill]
+///     open:    [✕]                   [Dictus Pro] [⚙]
+///
+/// There is deliberately no mic while the panel is open: the panel is not a
+/// surface anyone dictates from, and the mic's absence is what makes the state
+/// unambiguous.
 struct ToolbarView: View {
     let hasFullAccess: Bool
     let dictationStatus: DictationStatus
     var onMicTap: () -> Void
 
     // Suggestion bar integration parameters (default to idle/empty)
-    var statusMessage: String? = nil
+    var statusMessage: String?
+
+    /// Identity carried purely so the status message's rendering can be attributed
+    /// to a view and a controller in the exported log (#261). Defaulted, so a call
+    /// site that does not care is unaffected; both current call sites supply them.
+    var messageProbeRootViewID: String = "unknown"
+    var messageProbeControllerID: String = "unknown"
+
+    /// Whether polish has stopped calling its engine for the rest of DictusApp's
+    /// process (#315). Declared next to `statusMessage` because it is the bar's
+    /// other way of saying something went wrong, and the opposite kind of thing:
+    /// a state, not a message. It carries no timer, is not dismissed, and goes
+    /// away only when a fresh app process clears it.
+    var showsPolishUnavailable: Bool = false
+
     var suggestions: [String] = []
     var suggestionMode: SuggestionMode = .idle
-    var onSuggestionTap: ((Int) -> Void)? = nil
+    var onSuggestionTap: ((Int) -> Void)?
 
-    /// Callback when the user cycles the language via the toolbar switcher.
-    var onLanguageChanged: ((SupportedLanguage) -> Void)? = nil
+    /// Whether the last dictation insertion can still be undone (#266).
+    /// Transient by construction: it is set for a few seconds after an insertion
+    /// and only while the inserted text is verifiably still the tail of the field.
+    var showsDictationUndo: Bool = false
+
+    /// Removes the last dictation insertion. Re-checks the field before deleting.
+    var onDictationUndoTap: (() -> Void)?
+
+    /// Whether the hamburger panel currently fills the keyboard area (#241).
+    /// Drives which of the two presentations above the bar renders.
+    var isPanelOpen: Bool = false
+
+    /// Opens the panel from the hamburger, closes it from the ✕. Same callback:
+    /// both are the same control in the same 32 pt slot, just labelled by state.
+    var onPanelToggle: (() -> Void)?
+
+    /// Gear, panel presentation only. Opens DictusApp.
+    var onSettingsTap: (() -> Void)?
+
+    /// Hides the Pro entry. Read once when the panel opens rather than observed:
+    /// a subscription cannot change while the keyboard is the frontmost surface.
+    var isProActive: Bool = false
+
+    /// Pro entry, panel presentation only. Non-subscribers only.
+    var onProTap: (() -> Void)?
 
     var body: some View {
         // WHY ZStack: ensures the banner text is centered horizontally across the
         // full toolbar width, independent of the mic pill position on the right.
         // Both layers are vertically centered by the ZStack's default alignment.
         ZStack {
-            if hasFullAccess {
-                // Normal mode: gear left (when idle), suggestion bar (when typing), mic right.
-                // WHY hide gear when suggestions showing:
-                // The suggestion bar needs horizontal space to display 3 slots legibly.
-                // The gear icon is rarely needed during active typing, and users can
-                // access settings between typing sessions when the bar reverts to idle.
-                HStack {
-                    if let message = statusMessage {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                    } else if suggestions.isEmpty {
-                        LanguageSwitcherView(onLanguageChanged: onLanguageChanged)
-
-                        Spacer()
-                    } else {
-                        SuggestionBarView(
-                            suggestions: suggestions,
-                            mode: suggestionMode,
-                            onTap: { index in onSuggestionTap?(index) }
-                        )
-                    }
-
-                    AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
-                }
+            if !hasFullAccess {
+                fullAccessBar
+            } else if isPanelOpen {
+                panelBar
             } else {
-                // No Full Access: centered banner text + disabled mic on the right
-                HStack(spacing: 6) {
-                    Image(systemName: "keyboard")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    Text("Full access required")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Spacer()
-
-                    AnimatedMicButton(status: .idle, isPill: true, onTap: {})
-                        .disabled(true)
-                        .opacity(0.4)
-                }
+                dictationBar
             }
         }
         .padding(.horizontal, 12)
@@ -84,5 +93,317 @@ struct ToolbarView: View {
         // extending to 46pt. With 4pt top padding, 52pt total provides enough
         // breathing room above and below the pill without clipping.
         .frame(height: 52)
+    }
+
+    // MARK: - Presentations
+
+    /// The dictation cockpit: hamburger left (when idle), suggestion bar (when
+    /// typing), mic right.
+    ///
+    /// WHY the hamburger yields to suggestions:
+    /// The suggestion bar needs horizontal space to display 3 slots legibly. The
+    /// hamburger inherits that arbitration from the language switcher it replaced,
+    /// at the same 32 pt cost. Accepted consequence (#241): the keyboard language
+    /// cannot be changed mid-word.
+    ///
+    /// WHY undo sits between the error message and the suggestions (#266):
+    /// an error means the dictation failed, so there is nothing to undo and the
+    /// error wins. Suggestions lose because immediately after an insertion the user
+    /// has typed nothing, so whatever the bar is showing was predicted from text
+    /// that was just dictated — worth little, and worth less than a control that
+    /// expires in seconds and is the only alternative to holding backspace.
+    ///
+    /// WHY the polish-unavailable notice sits LAST, beside the hamburger rather
+    /// than instead of anything (#315): it is the only occupant of this bar that
+    /// can last the whole app process. Above the suggestions it would suppress
+    /// completions and corrections for that entire time, which is the keyboard's
+    /// core job; in place of the hamburger it would make the panel unreachable
+    /// for the same duration. Sharing the slot costs visibility while the user is
+    /// mid-word, and that is the cheapest of the three prices.
+    private var dictationBar: some View {
+        HStack {
+            if let message = statusMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    // Instrumentation only (#261). "The message was assigned" and
+                    // "a live view put it on screen" are different facts, and only
+                    // the first was observable — iOS keeps several controllers
+                    // alive, so a message can be set and rendered into a tree the
+                    // user is not looking at. This is the second fact, reported
+                    // from the one place that can actually attest to it.
+                    .onAppear {
+                        KeyboardState.shared.noteStatusMessageDisplayed(
+                            rootView: messageProbeRootViewID,
+                            controller: messageProbeControllerID
+                        )
+                    }
+                    .onDisappear {
+                        KeyboardState.shared.noteStatusMessageHidden(
+                            rootView: messageProbeRootViewID,
+                            controller: messageProbeControllerID
+                        )
+                    }
+            } else if showsDictationUndo {
+                dictationUndoButton
+
+                Spacer()
+            } else if suggestions.isEmpty {
+                hamburgerButton
+
+                if showsPolishUnavailable {
+                    polishUnavailableNotice
+                } else {
+                    Spacer()
+                }
+            } else {
+                SuggestionBarView(
+                    suggestions: suggestions,
+                    mode: suggestionMode,
+                    onTap: { index in onSuggestionTap?(index) }
+                )
+            }
+
+            AnimatedMicButton(status: dictationStatus, isPill: true, onTap: onMicTap)
+        }
+    }
+
+    /// The panel header: close left, gear anchored right, Pro entry inserted to
+    /// the gear's left for non-subscribers.
+    ///
+    /// The gear is last in the stack in both subscription states, so it never
+    /// moves — a subscriber must not have to look for it somewhere a
+    /// non-subscriber does not.
+    private var panelBar: some View {
+        HStack(spacing: 8) {
+            closeButton
+
+            Spacer()
+
+            // Same gate as every other Pro entry point (#236): while the paywall
+            // is hidden the product must look like it has no subscription at all,
+            // and a pill leading to an unreachable paywall is exactly the kind of
+            // dead end that gate exists to prevent.
+            if PremiumFlags.paywallVisible && !isProActive {
+                proEntry
+            }
+
+            settingsButton
+        }
+    }
+
+    /// No Full Access: centered banner text + disabled mic on the right.
+    private var fullAccessBar: some View {
+        ZStack {
+            HStack(spacing: 6) {
+                Image(systemName: "keyboard")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("Full access required")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+
+                AnimatedMicButton(status: .idle, isPill: true, onTap: {})
+                    .disabled(true)
+                    .opacity(0.4)
+            }
+        }
+    }
+
+    // MARK: - Controls
+
+    /// Bare hamburger, no language code on it (#241): the keyboard already
+    /// announces its language through the spacebar label and the key positions,
+    /// and a variable-width label jitters the most contested 32 pt of the UI.
+    private var hamburgerButton: some View {
+        panelToggleButton(
+            systemName: "line.3.horizontal",
+            label: Text("Keyboard menu")
+        )
+    }
+
+    /// Removes the dictation that was just inserted (#266).
+    ///
+    /// WHY it borrows the look of the autocorrect undo chip in `SuggestionBarView`
+    /// — accent tint, uturn arrow: the two controls do the same thing to different
+    /// text, and they appear in the same strip of the same bar seconds apart. A
+    /// user who has learned that a tinted uturn arrow reverts what just happened
+    /// should not have to learn it twice.
+    ///
+    /// It does NOT pulse the way the autocorrect chip does. That pulse exists
+    /// because an autocorrection is silent; a dictation insertion is not — the
+    /// recording overlay has just closed and the text has just appeared.
+    private var dictationUndoButton: some View {
+        Button {
+            HapticFeedback.keyTapped()
+            onDictationUndoTap?()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text("Undo")
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundColor(.dictusAccent)
+            .padding(.horizontal, 14)
+            .frame(height: iconDiameter)
+            .background(
+                Capsule().fill(Color.dictusAccent.opacity(0.12))
+            )
+            // Same split as `barIcon`: the capsule is what the eye sees, the 44 pt
+            // frame is what a finger hits.
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(Text("Undo dictation insertion"))
+    }
+
+    /// Polish is not running, and will not run again until DictusApp restarts (#315).
+    ///
+    /// WHY secondary and not the red of `statusMessage`: nothing failed for the
+    /// user. The dictation still arrives, as the deterministic floor it already
+    /// takes when a guardrail rejects the model's output — what is missing is the
+    /// polish on top. Red is this bar's colour for a dictation that did not
+    /// happen, and reusing it here would say something untrue.
+    ///
+    /// The copy names the state and stops. No cause, no remedy, no "try again
+    /// later": Apple's background rate limit is only refunded by a fresh app
+    /// process, so there is no action to offer, and an offer that does not work
+    /// is worse than none.
+    private var polishUnavailableNotice: some View {
+        Text("Polish is temporarily unavailable.")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            // The sentence is fixed and must not truncate; on the narrowest
+            // supported width it gives up a little size instead. Single line
+            // either way, so the bar keeps its 52 pt (#166 and family).
+            .minimumScaleFactor(0.75)
+            .padding(.leading, 6)
+            .frame(maxWidth: .infinity)
+    }
+
+    private var closeButton: some View {
+        panelToggleButton(
+            systemName: "xmark",
+            label: Text("Close menu")
+        )
+    }
+
+    /// Both states of the left slot, at the identical 32 pt frame the language
+    /// label used, so ☰ becomes ✕ in place with no geometry change.
+    private func panelToggleButton(systemName: String, label: Text) -> some View {
+        Button {
+            HapticFeedback.keyTapped()
+            onPanelToggle?()
+        } label: {
+            barIcon(systemName: systemName, size: 17, width: Self.micPillWidth, shape: .capsule)
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(label)
+    }
+
+    private var settingsButton: some View {
+        Button {
+            HapticFeedback.keyTapped()
+            onSettingsTap?()
+        } label: {
+            barIcon(systemName: "gearshape", size: 19, width: iconDiameter, shape: .circle)
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(Text("Open Dictus"))
+    }
+
+    /// Width and height of `AnimatedMicButton`'s pill body, mirrored here so the
+    /// panel toggle is the same object as the mic rather than a smaller cousin.
+    /// Kept in sync by hand: the mic owns these numbers, this is a deliberate
+    /// visual echo of them, not a shared constant to be refactored away.
+    private static let micPillWidth: CGFloat = 56
+
+    /// Diameter of the round icon buttons, and the height of every bar control.
+    private var iconDiameter: CGFloat { 36 }
+
+    /// Shape of a bar icon's glass backing.
+    private enum BarIconShape { case circle, capsule }
+
+    /// Shared geometry for the bar's icon buttons: a 36 pt-tall glass backing
+    /// inside a touch target at least 44 pt on each axis.
+    ///
+    /// WHY the two frames differ (#241 device feedback): the visible control and
+    /// the tappable region are not the same thing. The glyph sat in a bare 32 pt
+    /// frame, under the 44 pt minimum, and closing the panel measured 10 to 22
+    /// seconds per attempt on device — taps aimed at the close control landed on
+    /// the 44 pt language rows below it instead. The outer frame is what a finger
+    /// hits; the inner one is what the eye sees.
+    ///
+    /// WHY glass rather than a bare glyph: against the mic's filled pill, an
+    /// unbacked icon read as unfinished rather than as a control.
+    ///
+    /// WHY the panel toggle is a capsule and the gear a circle: the toggle sits
+    /// opposite the mic and is the only thing balancing it, so it takes the mic's
+    /// pill footprint. The gear never faces the mic — it appears only in the panel
+    /// bar, where a second wide pill would compete with the toggle rather than
+    /// balance anything.
+    private func barIcon(
+        systemName: String,
+        size: CGFloat,
+        width: CGFloat,
+        shape: BarIconShape
+    ) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .medium))
+            .foregroundColor(.dictusPillIconSecondary)
+            .frame(width: width, height: iconDiameter)
+            .dictusGlass(in: shape == .capsule ? AnyShape(Capsule()) : AnyShape(Circle()))
+            .frame(width: max(width, 44), height: 44)
+            .contentShape(Rectangle())
+    }
+
+    /// White pill, gradient text, in both light and dark appearances (#241).
+    ///
+    /// Chosen over a gradient-filled pill and over gradient text alone: it carries
+    /// the paywall's own gradient, so the Pro signal reads identically across
+    /// surfaces, while staying legible against either keyboard background.
+    ///
+    /// Known and accepted: on the light keyboard a white rounded pill with a
+    /// shadow resembles a key. If it reads as a key on device, the recorded
+    /// fallback is a gradient-filled pill in light appearance only.
+    private var proEntry: some View {
+        Button {
+            HapticFeedback.keyTapped()
+            onProTap?()
+        } label: {
+            Text(verbatim: "Dictus Pro")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.dictusGradientStart, .dictusGradientEnd],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .padding(.horizontal, 12)
+                .frame(height: 28)
+                .background(
+                    Capsule().fill(Color.white)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 3, x: 0, y: 1)
+                // The pill stays 28 pt tall; only the touch target grows to 44.
+                // See `barIcon` for why the two are separated.
+                .frame(height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(Text(verbatim: "Dictus Pro"))
     }
 }

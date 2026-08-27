@@ -1,0 +1,111 @@
+{
+  "identifier" : "D1C7052A",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "79.99",
+      "familyShareable" : false,
+      "internalID" : "D1C7B003",
+      "localizations" : [
+        {
+          "description" : "The lifetime purchase covers every current and future Pro feature that runs on your device or on a server you provide. Any feature relying on Dictus infrastructure is a separate offering.",
+          "displayName" : "Dictus Pro Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "solutions.pivi.dictus.pro.lifetime",
+      "referenceName" : "Dictus Pro Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "fr_FR",
+    "_storefront" : "FRA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "D1C70A01",
+      "localizations" : [
+        {
+          "description" : "Unlock Smart Mode, History, and Vocabulary",
+          "displayName" : "Dictus Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Dictus Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "D1C7B001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlock Smart Mode, History, and Vocabulary",
+              "displayName" : "Dictus Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "solutions.pivi.dictus.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Dictus Pro Monthly",
+          "subscriptionGroupID" : "D1C70A01",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "D1C7B002",
+          "introductoryOffer" : {
+            "internalID" : "D1C7C001",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "Unlock Smart Mode, History, and Vocabulary",
+              "displayName" : "Dictus Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "solutions.pivi.dictus.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Dictus Pro Yearly",
+          "subscriptionGroupID" : "D1C70A01",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

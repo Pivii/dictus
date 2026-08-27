@@ -1,13 +1,16 @@
 // DictusApp/Views/ModelManagerView.swift
 // Model management UI: download, select, and delete WhisperKit models.
 // Redesigned with Downloaded/Available sections, gauge-based model cards, and engine descriptions.
-// Swipe-to-delete on downloaded non-active model cards (like iOS Mail).
+// Swipe-to-delete on downloaded non-active model cards (like iOS Mail), plus an
+// explicit overflow menu on downloaded cards for discoverability (issue #193).
 import SwiftUI
 import DictusCore
 
 /// Displays WhisperKit models organized in two sections:
 /// - "Downloaded" — models on device, including deprecated ones
-/// - "Available" — models available for download, excludes deprecated
+/// - "Available" — models offered for download; excludes deprecated ones except the
+///   device's own recommended model (issue #362). Models this device cannot run stay
+///   listed and are rendered disabled with a reason (issue #369)
 ///
 /// WHY two sections instead of a flat list:
 /// Users need to quickly see what's on their device vs. what they can download.
@@ -29,6 +32,13 @@ struct ModelManagerView: View {
     @State private var modelToDelete: ModelInfo?
     @State private var showDeleteAlert = false
 
+    /// Controls the partial-download delete confirmation alert (issue #235).
+    /// Separate from modelToDelete because the confirmed action differs:
+    /// cleanupFailedModel (wipe kept files of a failed download) instead of
+    /// deleteModel (remove a ready model, guarded by the last-model rule).
+    @State private var partialModelToDelete: ModelInfo?
+    @State private var showPartialDeleteAlert = false
+
     /// Tracks any download error to show in an alert.
     @State private var downloadError: String?
     @State private var showErrorAlert = false
@@ -39,6 +49,17 @@ struct ModelManagerView: View {
     /// rather than the computed value because we want the overlay to keep its
     /// "ready" celebration moment after the model state flips back to .ready.
     @State private var preparingModelID: String?
+
+    // MARK: - Device snapshot
+
+    /// Read once and reused by the Available section (issue #369).
+    ///
+    /// WHY stored rather than calling `DeviceCapabilities.current()` per row:
+    /// `current()` is explicitly not cached — it re-reads jetsam headroom and thermal
+    /// state each call — so per-row calls could disagree with each other inside a
+    /// single render. The fields the gating rule reads (model identifier, physical
+    /// RAM) cannot change while the view is alive.
+    private let deviceCapabilities = DeviceCapabilities.current()
 
     // MARK: - Computed model lists
 
@@ -57,14 +78,18 @@ struct ModelManagerView: View {
     }
 
     /// Available models — excludes downloaded, downloading, and prewarming models.
-    /// Users won't see Tiny/Base here since they're deprecated.
+    /// Users won't see Tiny/Base here since they're deprecated, with one exception:
+    /// `available(on:)` keeps the device's recommended model even when deprecated, so
+    /// an A12/A13 iPhone can always reinstall Base after deleting it (issue #362).
     ///
-    /// Phase 37 (issue #104): uses `ModelInfo.available(on:)` so per-device gated
-    /// models (e.g. Whisper Turbo on low-RAM devices) are completely hidden rather
-    /// than shown disabled. The "Downloaded" section above stays ungated so a user
-    /// who obtained a gated model under a permissive build can still manage/delete it.
+    /// Issue #369 REVERSES the Phase 37 (#104) decision quoted here before: per-device
+    /// gated models are no longer hidden. They stay in this list and `ModelCardView`
+    /// renders them disabled with a reason, because an absent row told the user
+    /// nothing and read as Dictus being thin rather than their phone being limited.
+    /// The "Downloaded" section above stays ungated so a user who obtained a gated
+    /// model under a permissive build can still manage/delete it.
     private var availableModels: [ModelInfo] {
-        ModelInfo.available(on: DeviceCapabilities.current()).filter { model in
+        ModelInfo.available(on: deviceCapabilities).filter { model in
             let state = modelManager.modelStates[model.identifier] ?? .notDownloaded
             switch state {
             case .downloading, .prewarming, .ready, .error:
@@ -133,6 +158,21 @@ struct ModelManagerView: View {
                             onDownloadError: { error in
                                 downloadError = error
                                 showErrorAlert = true
+                            },
+                            // Issue #193: explicit delete entry point via the
+                            // card's overflow menu. Funnels into the same
+                            // confirmation alert as swipe-to-delete.
+                            onDeleteRequest: {
+                                modelToDelete = model
+                                showDeleteAlert = true
+                            },
+                            // Issue #235: full reset for a failed download via
+                            // the overflow menu. Only wired here — error cards
+                            // always live in the Downloaded section (the
+                            // Available filter excludes the .error state).
+                            onDeletePartialRequest: {
+                                partialModelToDelete = model
+                                showPartialDeleteAlert = true
                             }
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -172,7 +212,10 @@ struct ModelManagerView: View {
                             onDownloadError: { error in
                                 downloadError = error
                                 showErrorAlert = true
-                            }
+                            },
+                            // Issue #369: nil for a model this device can run, which
+                            // leaves the card fully interactive as before.
+                            incompatibilityReason: model.incompatibilityReason(on: deviceCapabilities)
                         )
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -229,6 +272,18 @@ struct ModelManagerView: View {
         } message: { model in
             Text("Delete \(model.displayName)? The model will be removed from your device.")
         }
+        // Partial-download delete confirmation alert (issue #235).
+        // WHY no ModelManager error handling here: cleanupFailedModel cannot
+        // throw — file removals are best-effort (try?) and the state reset to
+        // .notDownloaded always happens, moving the card back to "Available".
+        .alert("Delete partial download?", isPresented: $showPartialDeleteAlert, presenting: partialModelToDelete) { model in
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                modelManager.cleanupFailedModel(model.identifier)
+            }
+        } message: { model in
+            Text("Delete the partially downloaded files for \(model.displayName)? The next download will start from the beginning.")
+        }
         // Error alert
         .alert("Error", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) { }
@@ -257,6 +312,7 @@ struct ModelManagerView: View {
             ModelLoadingOverlay(
                 modelManager: modelManager,
                 modelIdentifier: item.id,
+                context: .modelSelection,
                 isPresented: Binding(
                     get: { preparingModelID != nil },
                     set: { if !$0 { preparingModelID = nil } }

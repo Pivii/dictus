@@ -6,21 +6,21 @@ import Foundation
 
 /// German (`de`).
 ///
-/// Layout: QWERTY on launch (QWERTZ deferred to follow-up issue #151).
+/// Layout: QWERTZ (#151) — dedicated ä/ö/ü keys, ß by long-press on `s`.
 /// Overrides: empty per ADR 0001 (populated post-launch from native-speaker feedback on issue #109).
 /// Contractions: empty — German `geht's`/`gibt's` style elisions are rare and not curated.
 public let germanProfile = LanguageProfile(
     code: "de",
     displayName: "Deutsch",
     shortCode: "DE",
-    defaultLayout: .qwerty,
+    defaultLayout: .qwertz,
     spaceName: "Leertaste",
     returnName: "Eingabe",
     overrides: [:],
     accentMap: [
         "a": ["\u{00E4}"],          // ä  (a-umlaut)
         "o": ["\u{00F6}"],          // ö  (o-umlaut)
-        "u": ["\u{00FC}"],          // ü  (u-umlaut)
+        "u": ["\u{00FC}"]          // ü  (u-umlaut)
         // ß is reached via the collapseRules ss→ß below, not single-char
         // substitution — it would require deleting a position, which the
         // single-char accent substitution algorithm doesn't model. Long-press
@@ -28,12 +28,15 @@ public let germanProfile = LanguageProfile(
     ],
     contractionPrefixes: [],
     collapseRules: [
-        // German Umlautersatz: standard ASCII transliterations Germans use on
-        // keyboards without umlaut keys (URLs, filenames, emails — and our
-        // QWERTY layout). Each rule converts the 2-char ASCII sequence to its
-        // single-char umlaut counterpart. Same 5x-dominance protection as
-        // single-char accent expansion guards against false positives like
-        // `bauer` (farmer) → `baür` (not a word, no false correction).
+        // German Umlautersatz: standard ASCII transliterations Germans use where
+        // umlauts are unavailable or unwanted — URLs, filenames, email addresses —
+        // and out of habit anywhere else. They stay after #151 gave the layout real
+        // ä/ö/ü keys: the keys removed the *need* to transliterate, not the habit,
+        // and a user who still types `koennen` expects `können`. Each rule converts
+        // the 2-char ASCII sequence to its single-char umlaut counterpart. The same
+        // 5x-dominance protection as single-char accent expansion guards against
+        // false positives like `bauer` (farmer) → `baür` (not a word, no false
+        // correction).
         //
         // Without these rules, `tuer` → `tier` (animal, edit-distance 1) via
         // the trie's spell-check fallback instead of `Tür` (door).
@@ -43,6 +46,6 @@ public let germanProfile = LanguageProfile(
         // German ß: lets users get `straße`, `weiß`, `groß`, `Spaß`, `heißen`.
         // `muss` (valid post-1996-reform 1st/3rd-person form) is protected by
         // the 5x dominance rule against archaic `muß`.
-        ("ss", "\u{00DF}"),
+        ("ss", "\u{00DF}")
     ]
 )

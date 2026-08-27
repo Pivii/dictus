@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dictus — App Store gallery preview</title>
+<!--
+  Simulates how the 5 exported screenshots look on the App Store
+  product page: side by side, rounded corners, small gap, shown on
+  both light and dark App Store backgrounds.
+  Reads the PNGs from export/en/ — re-export, then just reload.
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  section { padding: 56px 48px 72px; }
+  section.light { background: #FFFFFF; }
+  section.dark  { background: #000000; }
+
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .light h2 { color: #1d1d1f; }
+  .dark  h2 { color: #f5f5f7; }
+  p.sub {
+    font-size: 14px;
+    margin-bottom: 28px;
+  }
+  .light p.sub { color: #6e6e73; }
+  .dark  p.sub { color: #86868b; }
+
+  /* App Store-like gallery: fixed-height row, rounded cards, gap */
+  .gallery {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+  }
+  .gallery img {
+    height: 640px;
+    width: auto;
+    border-radius: 22px;
+    flex: none;
+  }
+  .light .gallery img { box-shadow: 0 0 0 1px rgba(0,0,0,0.06); }
+  .dark  .gallery img { box-shadow: 0 0 0 1px rgba(255,255,255,0.10); }
+
+  /* Smaller row approximating the search-results size (first 2-3 visible) */
+  .gallery.small img { height: 380px; border-radius: 14px; }
+</style>
+</head>
+<body>
+
+<section class="light">
+  <h2>Product page — light mode</h2>
+  <p class="sub">iPhone · gap 16px · coins arrondis comme sur l’App Store</p>
+  <div class="gallery">
+    <img src="export/en/01-dictate.png" alt="">
+    <img src="export/en/02-offline.png" alt="">
+    <img src="export/en/03-private.png" alt="">
+    <img src="export/en/04-fast.png" alt="">
+    <img src="export/en/05-keyboard.png" alt="">
+  </div>
+</section>
+
+<section class="dark">
+  <h2>Product page — dark mode</h2>
+  <p class="sub">Même galerie sur fond noir</p>
+  <div class="gallery">
+    <img src="export/en/01-dictate.png" alt="">
+    <img src="export/en/02-offline.png" alt="">
+    <img src="export/en/03-private.png" alt="">
+    <img src="export/en/04-fast.png" alt="">
+    <img src="export/en/05-keyboard.png" alt="">
+  </div>
+</section>
+
+<section class="light">
+  <h2>Search results — les 3 premières visibles</h2>
+  <p class="sub">Dans les résultats de recherche, seules ~3 captures apparaissent : les premières doivent porter le message</p>
+  <div class="gallery small">
+    <img src="export/en/01-dictate.png" alt="">
+    <img src="export/en/02-offline.png" alt="">
+    <img src="export/en/03-private.png" alt="">
+  </div>
+</section>
+
+</body>
+</html>

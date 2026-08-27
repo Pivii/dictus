@@ -24,6 +24,9 @@ struct MicButtonDisabled: View {
                 Text("Enable Full Access in Settings > Keyboards > Dictus to use dictation.")
                     .font(.caption)
                     .multilineTextAlignment(.center)
+                // Force unwrap: "app-settings:" is a compile-time literal and a
+                // well-formed URL, so the failable initializer cannot return nil.
+                // swiftlint:disable:next force_unwrapping
                 Link("Open Settings", destination: URL(string: "app-settings:")!)
                     .font(.caption.bold())
             }

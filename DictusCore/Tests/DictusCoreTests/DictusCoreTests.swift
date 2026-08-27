@@ -14,6 +14,7 @@ final class DictusCoreTests: XCTestCase {
         XCTAssertEqual(DictationStatus.requested.rawValue, "requested")
         XCTAssertEqual(DictationStatus.recording.rawValue, "recording")
         XCTAssertEqual(DictationStatus.transcribing.rawValue, "transcribing")
+        XCTAssertEqual(DictationStatus.processing.rawValue, "processing")
         XCTAssertEqual(DictationStatus.ready.rawValue, "ready")
         XCTAssertEqual(DictationStatus.failed.rawValue, "failed")
     }

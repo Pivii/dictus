@@ -5,6 +5,7 @@
 import SwiftUI
 import UIKit
 import AudioToolbox
+import DictusCore
 
 // MARK: - Device Class (from old KeyButton.swift)
 
@@ -16,9 +17,7 @@ enum DeviceClass {
 
     static let current: DeviceClass = {
         let h = UIScreen.main.bounds.height
-        if h <= 667 { return .compact }
-        else if h <= 852 { return .standard }
-        else { return .large }
+        if h <= 667 { return .compact } else if h <= 852 { return .standard } else { return .large }
     }()
 }
 
@@ -77,10 +76,12 @@ enum KeyMetrics {
 
 /// 3-category system sounds for key feedback.
 /// These sound IDs are the same as giellakbd-ios Audio class and respect silent switch.
+/// The identifiers themselves live in DictusCore's `KeySoundCategory` so they have one
+/// source of truth and can be unit-tested; these are the shorthand the keyboard uses.
 enum KeySound {
-    static let letter: SystemSoundID = 1104
-    static let delete: SystemSoundID = 1155
-    static let modifier: SystemSoundID = 1156
+    static let letter: SystemSoundID = KeySoundCategory.letter.systemSoundID
+    static let delete: SystemSoundID = KeySoundCategory.delete.systemSoundID
+    static let modifier: SystemSoundID = KeySoundCategory.modifier.systemSoundID
 }
 
 // MARK: - Key Popup (from old KeyButton.swift, used by EmojiPickerView)

@@ -8,7 +8,7 @@ class KeyboardViewController: UIInputViewController {
     let controllerID = String(UUID().uuidString.prefix(8))
 
     private var hostingController: UIHostingController<KeyboardRootView>?
-    private var dictationStatusCancellable: AnyCancellable?
+    private var areaModeCancellable: AnyCancellable?
 
     /// Process-wide SuggestionState (see SuggestionState.shared). Per-controller
     /// instances leaked via SwiftUI @ObservedObject backing storage that survives
@@ -29,6 +29,19 @@ class KeyboardViewController: UIInputViewController {
     /// value now differs — so the next-keyboard globe (4.4.1) is never wrongly
     /// shown or hidden. nil = never built yet.
     private var builtNeedsGlobe: Bool?
+
+    /// The `KeyboardLayouts.drawsDigitRow` value used the last time the grid was built (#331).
+    ///
+    /// It stores the *composed* decision — the preference AND portrait — not the raw
+    /// preference, because that is what the geometry depends on: the number of rows in the
+    /// grid and the height asked for must both follow the same value.
+    ///
+    /// WHY a built-with marker rather than an observer: the setting is toggled in DictusApp's
+    /// Settings, and while Settings is on screen this keyboard is not, so there is no live
+    /// keyboard to notify. Comparing what we built with against what is true now, on the two
+    /// occasions the answer can have changed under us — the next appearance, and a rotation —
+    /// is the same shape `builtNeedsGlobe` uses for the 4.4.1 globe. nil = never built yet.
+    private var builtNumberRow: Bool?
 
     /// Delegate adapter that translates giellakbd-ios key events into Dictus actions.
     private var bridge: DictusKeyboardBridge?
@@ -60,21 +73,76 @@ class KeyboardViewController: UIInputViewController {
 
     /// Whether viewWillAppear has fired at least once. Guards the Combine handler
     /// from changing hosting height before the controller is registered with KeyboardState.
-    /// WHY: During cold start, the Combine subscription fires in viewDidLoad with .recording
-    /// status, but SwiftUI's showsOverlay is still false (activeControllerID doesn't match).
-    /// Expanding the hosting view at this point shows the toolbar in a full-height area,
-    /// displacing it to the middle of the screen.
+    /// WHY: During cold start, the Combine subscription fires in viewDidLoad with a
+    /// `.recording` mode, but SwiftUI still presents `.keys` (activeControllerID doesn't
+    /// match). Expanding the hosting view at this point shows the toolbar in a full-height
+    /// area, displacing it to the middle of the screen.
     private var hasAppeared = false
+
+    /// Whether iOS currently has us on screen: set in viewWillAppear, cleared in
+    /// viewDidDisappear. Unlike `hasAppeared`, which latches, this tracks the
+    /// present tense.
+    ///
+    /// Half of the liveness test for claiming an ownerless keyboard area (#260);
+    /// `isOnScreen` below is the other half and the one that carries the weight.
+    private var isAttached = false
+
+    /// Whether our view hierarchy is actually in a window right now.
+    ///
+    /// This is the test that decides whether we may claim an ownerless keyboard
+    /// area (#260), and it is deliberately fail-closed. Every controller that can
+    /// reach a claim has appeared, had its ownership overwritten by a later
+    /// appearance, and not been told it disappeared — which describes the live
+    /// keyboard whose ownership a dying instance took with it, and equally the
+    /// cached instances iOS never notifies (#128). `isAttached` cannot tell them
+    /// apart, because it is only written in `viewWillAppear` and
+    /// `viewDidDisappear` and a stale controller never gets the latter. Window
+    /// attachment can: detaching is what removes the view from the window.
+    ///
+    /// If this were permissive, a stale controller would *acquire* the area rather
+    /// than merely be skipped — it would expand its own hosting to full height
+    /// while the on-screen tree still rendered the keys, and lock the live
+    /// controller out, since a claim is single-shot. That is the #116 shape, and
+    /// strictly worse than the bug being fixed. If it is instead too strict — if
+    /// iOS keeps no window on the controller we think is showing — the claim never
+    /// fires and behaviour is exactly what it was before #260. `hasWindow=` is
+    /// logged on every attempt so a device log settles which it is.
+    ///
+    /// Both `view` and `inputView` are checked because this controller assigns its
+    /// own `inputView`, and either may be the one iOS parents into the keyboard
+    /// window. `viewIfLoaded` rather than `view`: asking for the view would load
+    /// it, and a controller whose view was never loaded is not on screen anyway.
+    /// The two halves are named in `KeyboardLifecycleProbe`'s
+    /// `UIInputViewController` extension so the probes that report them cannot
+    /// drift from the predicate that acts on them; this line is the only place
+    /// they are composed.
+    private var isOnScreen: Bool {
+        isViewInWindow || isInputViewInWindow
+    }
+
+    /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
+    /// census, so `deinit` decrements exactly once and only for instances that
+    /// incremented. `deinit` runs for every instance, `viewDidLoad` only for those
+    /// whose view is loaded, and an uncounted decrement would drift `live=` — the
+    /// one number the next #281 capture is meant to be readable from. No such
+    /// instance appears in any of the four device logs analysed (52 controllers,
+    /// zero deinits without a viewDidLoad), so this guards a case that is possible
+    /// rather than one that is observed.
+    private var didCountIntoLiveCensus = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         PersistentLog.source = "KBD"
         let memEntry = MemoryFootprint.residentMB()
+        // live= is the #281 headline probe: healthy cold starts peak at 2 live
+        // controllers, both #281 occurrences peak at 3. See KeyboardLifecycleProbe.
+        didCountIntoLiveCensus = true
+        let liveOnLoad = KeyboardLifecycleProbe.controllerDidLoad()
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "viewDidLoad",
-            details: "controllerClass=\(String(describing: type(of: self))) memMB=\(memEntry)"
+            details: "controllerClass=\(String(describing: type(of: self))) memMB=\(memEntry) live=\(liveOnLoad)"
         ))
 
         #if DEBUG
@@ -115,6 +183,7 @@ class KeyboardViewController: UIInputViewController {
         // is re-checked and the layout rebuilt if needed in viewWillAppear.
         let needsGlobe = needsInputModeSwitchKey
         builtNeedsGlobe = needsGlobe
+        builtNumberRow = KeyboardLayouts.drawsDigitRow
         let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
@@ -145,8 +214,8 @@ class KeyboardViewController: UIInputViewController {
             onLanguageChanged: { [weak self] newLang in
                 self?.handleLanguageChange(newLang)
             },
-            onEmojiDismiss: { [weak self] in
-                self?.toggleEmojiPicker()
+            onLayoutChanged: { [weak self] layout, language in
+                self?.handleLayoutChange(layout, for: language)
             }
         )
         let hosting = UIHostingController(rootView: rootView)
@@ -237,7 +306,7 @@ class KeyboardViewController: UIInputViewController {
             // (see hostingBottomToKeyboardTop / hostingBottomToInputBottom)
             hosting.view.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
-            hostingHeight,
+            hostingHeight
         ])
 
         // --- 6. Defer the height constraint to viewDidLayoutSubviews first run ---
@@ -270,6 +339,17 @@ class KeyboardViewController: UIInputViewController {
             guard let self = self else { return }
             let context = self.textDocumentProxy.documentContextBeforeInput
             self.suggestionState.updateAsync(context: context)
+            self.bridge?.updateCapitalization()
+        }
+
+        // --- 8. Wire post-undo cleanup (#266) ---
+        // The suggestions on screen were computed from the last word of a
+        // transcription that no longer exists, so they are emptied rather than
+        // recomputed: after an undo the caret is back where it was before the
+        // dictation, with nothing half-typed to suggest for.
+        KeyboardState.shared.onDictationUndone = { [weak self] in
+            guard let self = self else { return }
+            self.suggestionState.clear()
             self.bridge?.updateCapitalization()
         }
 
@@ -314,6 +394,7 @@ class KeyboardViewController: UIInputViewController {
         // Previously set from KeyboardRootView.onAppear, which held a strong ref → #134.
         KeyboardState.shared.controller = self
         hasAppeared = true
+        isAttached = true
 
         // 4.4.1 next-keyboard globe: the host connection now exists, so
         // needsInputModeSwitchKey is finally accurate. If viewDidLoad built the
@@ -332,14 +413,21 @@ class KeyboardViewController: UIInputViewController {
             reloadKeyboardLayout()
         }
 
-        // (Re)subscribe to dictation status here, not in viewDidLoad.
+        // Number row (#331): the user can only reach the toggle in DictusApp's Settings, and
+        // this keyboard is not on screen while they are there — so an appearance is the first
+        // moment we can find out. Same guarded shape as the globe above: the rebuild is a full
+        // ~200 ms UICollectionView teardown, so it only runs when the answer actually moved.
+        // With the setting off the value is false in both orientations and this never fires.
+        reloadIfNumberRowChanged(trigger: "viewWillAppear")
+
+        // (Re)subscribe to the keyboard area mode here, not in viewDidLoad.
         // WHY: iOS caches UIInputViewController instances across app-switches and
         // rarely deallocates them, so stale controllers would keep mutating
-        // hostingHeightConstraint on every status change (issue #128). By subscribing
+        // hostingHeightConstraint on every mode change (issue #128). By subscribing
         // in viewWillAppear and cancelling in viewDidDisappear, only the currently
         // visible controller is reactive. Assignment is idempotent — the previous
         // AnyCancellable is released on reassignment, which cancels its subscription.
-        observeRecordingState()
+        observeKeyboardAreaMode()
 
         // Force height recalculation when keyboard reappears (e.g., after app switch).
         // Without this, the inputView may retain a stale height from before the switch.
@@ -353,17 +441,30 @@ class KeyboardViewController: UIInputViewController {
             details: "old=\(oldHeight) new=\(newHeight) hSizeClass=\(traitCollection.horizontalSizeClass.rawValue) vSizeClass=\(traitCollection.verticalSizeClass.rawValue)"
         ))
 
-        // Apply current dictation state to hosting height now that we're registered.
-        // During cold start, handleDictationStatusChange was skipped (hasAppeared was false).
-        // Now that activeControllerID matches, SwiftUI's showsOverlay will be correct,
-        // so the constraint and SwiftUI content change happen together — no displaced toolbar.
+        // Apply the current keyboard area mode now that we're registered.
+        // During cold start, applyAreaMode was skipped (hasAppeared was false).
+        // Now that activeControllerID matches, KeyboardRootView.presentedMode agrees
+        // with us, so the constraint and SwiftUI content change together — no
+        // displaced toolbar. This also restores a picker the user left open when
+        // iOS hands the keyboard to a fresh controller.
         let statusBeforeHandle = KeyboardState.shared.dictationStatus.rawValue
-        handleDictationStatusChange(KeyboardState.shared.dictationStatus)
+
+        // The hamburger panel does not survive leaving the keyboard (#241 device
+        // feedback). Switching away with the globe and coming back put the user
+        // straight back into the menu instead of the keys, which is not what
+        // returning to a keyboard should mean. The emoji picker deliberately keeps
+        // the old restore behaviour: browsing emoji is a task worth resuming,
+        // choosing a language is not.
+        if KeyboardState.shared.areaMode == .panel {
+            KeyboardState.shared.presentAreaMode(.keys)
+        }
+
+        applyAreaMode(KeyboardState.shared.areaMode)
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "viewWillAppear_afterHandle",
-            details: "statusBefore=\(statusBeforeHandle) statusAfter=\(KeyboardState.shared.dictationStatus.rawValue) hostingConst=\(hostingHeightConstraint?.constant ?? -1)"
+            details: "statusBefore=\(statusBeforeHandle) statusAfter=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) hostingConst=\(hostingHeightConstraint?.constant ?? -1)"
         ))
 
         inputView?.setNeedsLayout()
@@ -388,6 +489,16 @@ class KeyboardViewController: UIInputViewController {
         // until the view is about to appear. Calling in viewDidLoad would read stale data.
         bridge?.updateCapitalization()
 
+        // Read the host field's input traits now that the connection exists (#200).
+        // Search/URL/email fields disable autocorrect and suggestions.
+        bridge?.refreshHostPolicy()
+
+        // Re-sync the learned-words dictionary from the App Group (#222).
+        // The singleton caches in memory per process; if the user reset the
+        // dictionary in the app, this cached keyboard process must drop the
+        // stale copy or learned words keep bypassing autocorrect.
+        UserDictionary.shared.reload()
+
         // Set default opening layer from user preference.
         // WHY here not viewDidLoad: viewWillAppear fires each time the keyboard appears,
         // allowing the user to change settings in the app and see the effect immediately.
@@ -395,6 +506,15 @@ class KeyboardViewController: UIInputViewController {
         if defaultLayer == .numbers {
             giellaKeyboard?.page = .symbols1
         }
+
+        // The user dictionary's one-shot prune (#287), attempted BEFORE the load
+        // below and not after it. The engine is process-wide, so at this instant
+        // the previous appearance's dictionary is still mmap'd, we are on the main
+        // thread, and no load is in flight — the one moment in the cycle with no
+        // race in it. `setLanguage` on the next line unloads that dictionary
+        // synchronously, which is exactly what kept the prune from ever running
+        // off the load completion alone. Costs one boolean read once it has run.
+        suggestionState.pruneUserDictionaryIfPossible(trigger: "keyboard-appeared")
 
         // Refresh prediction language from App Group on every keyboard appearance.
         // WHY here not viewDidLoad: The user can change language in the app between
@@ -431,6 +551,18 @@ class KeyboardViewController: UIInputViewController {
         // We log both sizes and constraint constants so we can detect priority mismatches
         // where iOS imposed a different height than we asked for.
         logLayoutSnapshot(action: "viewDidAppear_settled")
+
+        // #281: record which text field we settled into. Emitted here rather than
+        // from viewWillAppear because reading the proxy costs a synchronous round
+        // trip to the host app, and viewWillAppear is the timing-sensitive path the
+        // failure sits on. Both #281 captures show every doomed controller reaching
+        // viewDidAppear, so this loses no occurrence. One line per controller.
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "inputContext_settled",
+            details: "\(inputContextProbeDetails) live=\(KeyboardLifecycleProbe.liveCount)"
+        ))
 
         // Issue #129 investigation: viewDidAppear fires BEFORE iOS finishes the
         // keyboard entry animation, so bounds captured here may still be
@@ -502,6 +634,16 @@ class KeyboardViewController: UIInputViewController {
 
     /// Emits the same layout snapshot we log in `viewDidAppear_settled`,
     /// reusable from deferred blocks to compare mid- vs post-animation sizes.
+    ///
+    /// It also carries the #260 claim predicate. That issue turns on one boolean —
+    /// is `isOnScreen` true for the controller iOS is actually showing? — and the
+    /// only path that answers it in code, `claimedOwnerlessArea`, needs the rare
+    /// ownership race to fire before it logs anything. This line does not: it runs
+    /// four times per controller on every recording, so an ordinary dictation
+    /// settles the question with no race to reproduce. `onScreen=` is the predicate
+    /// itself, read through `isOnScreen`; `hasWindow=` / `hasInputWindow=` say which
+    /// of the two attachments iOS kept, which is what a redesign would need if the
+    /// answer turns out to be `false`.
     private func logLayoutSnapshot(action: String) {
         let inputBounds = inputView?.bounds.size ?? .zero
         let keyboardFrame = giellaKeyboard?.frame.size ?? .zero
@@ -511,12 +653,16 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: action,
-            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) memMB=\(MemoryFootprint.residentMB())"
+            details: "inputBounds=\(Int(inputBounds.width))x\(Int(inputBounds.height)) viewBounds=\(Int(viewBounds.width))x\(Int(viewBounds.height)) keyboardFrame=\(Int(keyboardFrame.width))x\(Int(keyboardFrame.height)) hostingFrame=\(Int(hostingFrame.width))x\(Int(hostingFrame.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) status=\(KeyboardState.shared.dictationStatus.rawValue) mode=\(KeyboardState.shared.areaMode.rawValue) onScreen=\(isOnScreen) \(windowAttachmentProbeDetails) memMB=\(MemoryFootprint.residentMB())"
         ))
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+
+        // We are off screen from here on, whether or not we keep ownership below
+        // (#260): a detached controller must not adopt an ownerless dictation.
+        isAttached = false
 
         // Restore system gesture recognizer delay (be a good citizen)
         restoreWindowGestureDelay()
@@ -526,36 +672,44 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "viewDidDisappear",
             details: "animated=\(animated) memMB=\(MemoryFootprint.residentMB())"
+                + " live=\(KeyboardLifecycleProbe.liveCount)"
+                + " \(dismissalProbeDetails) \(inputContextProbeDetails)"
+                // #281: whether DictusApp had already backgrounded when iOS tore
+                // this controller down. The log's one-second resolution and its
+                // interleaving of two processes make that ordering unrecoverable by
+                // comparing timestamps, and it is the one thing the surviving
+                // hypothesis — the swipe-back landing before iOS rotates in a
+                // successor — needs to be true. Read from the App Group, so no IPC
+                // round trip to the host app on a teardown path.
+                + " \(AppScenePhaseProbe.describe())"
         ))
         PersistentLog.log(.keyboardDidDisappear)
 
-        // Tear down the dictation status subscription so this (now-detached)
-        // controller no longer reacts when KeyboardState publishes. iOS caches
+        // Tear down the area mode subscription so this (now-detached) controller
+        // no longer reacts when KeyboardState publishes. iOS caches
         // UIInputViewController and rarely releases it, so without this cleanup
         // 10+ stale controllers race on hostingHeightConstraint (issue #128).
         // viewWillAppear re-subscribes on reattach.
-        dictationStatusCancellable?.cancel()
-        dictationStatusCancellable = nil
+        areaModeCancellable?.cancel()
+        areaModeCancellable = nil
 
         // Issue #142: skip registerControllerDisappearance during an active
         // dictation session. iOS calls viewDidDisappear on the keyboard right
         // before bringing DictusApp foreground for cold-start; an immediate
         // unregister would flip activeControllerID→nil and isKeyboardVisible
-        // →false, making KeyboardRootView.showsOverlay recompute to false and
+        // →false, making KeyboardRootView.presentedMode fall back to `.keys` and
         // SwiftUI swap RecordingOverlay→ToolbarView while hostingConst is still
         // 276pt. iOS's keyboard-down animation snapshot then captures that
         // inconsistent layout (toolbar centred in expanded hosting), freezing
         // it on screen for the duration of the transition.
         //
         // The successor controller's registerControllerAppearance overwrites
-        // activeControllerID, so a clean handoff happens automatically. If
-        // the keyboard is truly dismissed during recording (no successor), the
-        // synchronous deinit safety net below catches it.
+        // activeControllerID, so a clean handoff happens automatically. If the
+        // keyboard is truly dismissed during recording (no successor), the area
+        // becomes ownerless when we are deallocated — see
+        // registerControllerDeallocation (#260).
         let status = KeyboardState.shared.dictationStatus
-        let isActiveSession = status == .requested
-            || status == .recording
-            || status == .transcribing
-        if isActiveSession {
+        if status.ownsKeyboardArea {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardViewController",
                 instanceID: controllerID,
@@ -596,6 +750,23 @@ class KeyboardViewController: UIInputViewController {
             instanceID: controllerID,
             action: "traitCollectionDidChange",
             details: "prevStyle=\(previousTraitCollection?.userInterfaceStyle.rawValue ?? -1) newStyle=\(traitCollection.userInterfaceStyle.rawValue) hadColorChange=\(hadColorChange)"
+                // #281: both occurrences show the style flipping to dark (2) on a
+                // device in light mode, seconds before the teardown, and 15 clean
+                // cold starts show no flip at all. onScreen says whether the flip
+                // lands on an attached controller or a detached one.
+                //
+                // Named `onScreen=` since #260 because that is what it has always
+                // been — the composed predicate, not the `view`-only half that
+                // `hasWindow=` denotes on every other line. Captures from builds
+                // before this one spell the same value `hasWindow=` here.
+                //
+                // Deliberately reads no textDocumentProxy property here. This
+                // callback fires before viewWillAppear — see the host-connection
+                // note at the needsInputModeSwitchKey read in viewDidLoad — so there
+                // is no input session yet, and that is exactly where the
+                // documentIdentifier read crashed the extension on every launch.
+                // Bounded at 2-3 lines per controller.
+                + " onScreen=\(isOnScreen)"
         ))
         // Update keyboard theme when dark/light mode changes while keyboard is visible.
         if hadColorChange {
@@ -604,17 +775,57 @@ class KeyboardViewController: UIInputViewController {
         }
     }
 
-    deinit {
-        // Issue #142 safety net: viewDidDisappear skips unregistration during
-        // an active dictation session to avoid a SwiftUI race that produces a
-        // centred-toolbar visual artefact during cold-start handoff. If iOS
-        // deallocates us while we still own activeControllerID (no successor
-        // controller registered, e.g. a truly dismissed keyboard during
-        // recording), unregister now — synchronous deinit is past any SwiftUI
-        // race window so it's safe.
-        if KeyboardState.shared.activeControllerID == controllerID {
-            KeyboardState.shared.registerControllerDisappearance(controllerID: controllerID)
+    /// Rotation. Until #331 nothing on this controller reacted to it, because nothing about
+    /// the keyboard depended on the orientation: the height provider reads it per call, and
+    /// the layout was the same four rows either way. The number row breaks that — it is drawn
+    /// in portrait and not in landscape — so the grid has to be rebuilt across a rotation.
+    ///
+    /// WHY here and not in a layout callback: `viewDidLayoutSubviews` and friends run inside
+    /// iOS's layout pass and can be re-entered by the rebuild they trigger. That is exactly
+    /// how #202 happened (bounds change → rebuild → bounds change), and it reached App Review.
+    /// `viewWillTransition` fires once per rotation and is not a layout callback.
+    ///
+    /// WHY the completion block: `DeviceContext.isLandscape` compares `UIScreen.main.bounds`,
+    /// which has not turned yet when this method is entered. `size` here is the input view's,
+    /// not the screen's, so it cannot stand in for it either.
+    ///
+    /// With the number row off, `drawsDigitRow` is false in both orientations, the guard
+    /// inside never opens, and this override adds nothing but a `super` call.
+    ///
+    /// WHY the `isOnScreen` guard: iOS caches UIInputViewController instances and rarely
+    /// deallocates them (#128), so a rotation must not be taken as licence for a stale
+    /// controller to rebuild its grid — that is the class of bug `observeKeyboardAreaMode`
+    /// is subscribed in `viewWillAppear` to avoid. Nothing is lost by skipping: a controller
+    /// that later becomes the live keyboard runs `viewWillAppear`, which checks the same
+    /// mismatch. `onScreen=` is logged so a device capture can say which controllers got here.
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self, self.isOnScreen else { return }
+            self.reloadIfNumberRowChanged(trigger: "rotation")
         }
+    }
+
+    deinit {
+        // Issue #142 safety net, corrected by #260: viewDidDisappear skips
+        // unregistration during an active dictation session to avoid a SwiftUI
+        // race that produces a centred-toolbar artefact during cold-start
+        // handoff, so a dismissed keyboard would otherwise leave ownership
+        // pointing at a deallocated controller.
+        //
+        // This used to unregister outright whenever we still owned the area, on
+        // the assumption that "no successor has registered yet" meant "the
+        // keyboard was dismissed". That assumption is false under churn: ownership
+        // is last-writer-wins on appearance, so the instance holding it is often
+        // not the keyboard on screen, and releasing the area on its way out left
+        // the controller that *is* on screen unable to present anything — with no
+        // path back, since its viewWillAppear had already run.
+        //
+        // The area is marked reclaimable now. Every reader still sees an ownerless,
+        // invisible keyboard exactly as it did before, so nothing downstream
+        // changes; what the marker adds is that a controller still in a window may
+        // claim the area (see applyAreaMode).
+        KeyboardState.shared.registerControllerDeallocation(controllerID: controllerID)
 
         // Symmetric tear-down for the addChild()/didMove(toParent:) we did in viewDidLoad.
         // Without this, UIKit holds the hosting controller in `children` and SwiftUI may
@@ -631,11 +842,16 @@ class KeyboardViewController: UIInputViewController {
 
         bridge = nil
 
+        // live=0 on this line marks the exact moment the extension has no
+        // controller left, which is the start of the #281 window (#281).
+        let liveAfter = didCountIntoLiveCensus
+            ? KeyboardLifecycleProbe.controllerDidDeinit()
+            : KeyboardLifecycleProbe.liveCount
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "deinit",
-            details: "memMB=\(MemoryFootprint.residentMB())"
+            details: "memMB=\(MemoryFootprint.residentMB()) live=\(liveAfter)"
         ))
     }
 
@@ -645,9 +861,26 @@ class KeyboardViewController: UIInputViewController {
     /// for the key grid height, plus toolbar and padding.
     private func computeKeyboardHeight() -> CGFloat {
         let deviceContext = DeviceContext.current
+        // The number row grows the grid instead of shrinking the keys (#331): the provider
+        // divides its per-device height by a normal row count and multiplies by ours, so
+        // asking for 5 rows keeps every cell at exactly the height it has today. Shrinking
+        // the keys 20% into the existing height was measured and rejected — this codebase
+        // has already paid for dead zones three times (#56, #59, #138).
+        //
+        // WHY nil rather than 4 when the row is off: `height` early-returns the base height
+        // for a nil row count, so an install without the feature gets the same CGFloat it
+        // got before this line existed, with no divide-and-multiply in between.
+        //
+        // The provider's `rowCount > 4 && isLandscape` subtraction is unreachable from here:
+        // `drawsDigitRow` is false in landscape, by decision. Its large-iPad branch — where the
+        // normal row count is already 5, so asking for 5 rows returns the base height and the
+        // cells shrink instead of the grid growing — is unreachable for the same reason since
+        // #336: `drawsDigitRow` is false on any iPad, so this passes nil there and the provider
+        // early-returns the height it has always returned.
         let keyGridHeight = KeyboardHeightProvider.height(
             for: deviceContext,
-            traitCollection: traitCollection
+            traitCollection: traitCollection,
+            rowCount: KeyboardLayouts.drawsDigitRow ? 5 : nil
         )
         // bottomPadding was previously 8pt but had no real effect — keyboard view's
         // bottomAnchor is pinned to kbInputView.bottomAnchor, so the extra height got
@@ -660,79 +893,192 @@ class KeyboardViewController: UIInputViewController {
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "computeKbHeight",
-            details: "grid=\(keyGridHeight) total=\(total) screen=\(Int(screen.width))x\(Int(screen.height)) landscape=\(deviceContext.isLandscape)"
+            // numberRow= is the composed predicate, not the preference: it is the value the
+            // grid was built from, so a log where it disagrees with the height is the #331
+            // failure mode (five rows in a four-row box, or the reverse).
+            details: "grid=\(keyGridHeight) total=\(total) screen=\(Int(screen.width))x\(Int(screen.height)) landscape=\(deviceContext.isLandscape) numberRow=\(KeyboardLayouts.drawsDigitRow)"
         ))
         return total
     }
 
-    // MARK: - Recording State Observation
+    // MARK: - Keyboard Area Mode Observation
 
-    /// Observe KeyboardState.dictationStatus to hide/show the UIKit keyboard
-    /// when the recording overlay is active. The SwiftUI hosting view handles
-    /// showing the overlay itself -- we just need to hide the UIKit keyboard.
+    /// Observe KeyboardState.areaMode to keep the UIKit side of the keyboard area
+    /// in step with what SwiftUI renders: hosting height, hosting bottom anchor,
+    /// and whether the key grid is hidden.
     ///
-    /// WHY Combine instead of NotificationCenter: KeyboardState uses @Published
-    /// for dictationStatus. Subscribing via Combine's $dictationStatus publisher
-    /// gives us direct observation without adding manual notification posts.
-    private func observeRecordingState() {
-        dictationStatusCancellable = KeyboardState.shared.$dictationStatus
-            // No .receive(on: .main) — dictationStatus is always set on the main thread
-            // (Darwin observer dispatches to main, mic button is UI action).
-            // Removing the async dispatch ensures the constraint change happens SYNCHRONOUSLY
-            // with the @Published change, BEFORE SwiftUI re-evaluates its body.
-            // Without this, there's a 1-frame delay where the overlay renders at 52pt (toolbar
-            // height) before the hosting view expands to full height — causing the waveform
+    /// WHY areaModePublisher and not $dictationStatus: the mode is recomputed in
+    /// `dictationStatus`'s `didSet`, which runs *after* `$dictationStatus` has
+    /// already published. A sink on the status would therefore read a stale mode.
+    /// The mode's own publisher carries the value we need — and it emits from
+    /// `didSet`, so the synchronous layout below cannot make SwiftUI render an
+    /// already-superseded mode. See the note on `KeyboardState.areaMode`.
+    ///
+    /// WHY Combine instead of NotificationCenter: this needs no manual
+    /// notification posts — and it is precisely the NotificationCenter round-trip
+    /// that #271 removed.
+    private func observeKeyboardAreaMode() {
+        areaModeCancellable = KeyboardState.shared.areaModePublisher
+            // No .receive(on: .main) — areaMode is only ever set on the main thread
+            // (Darwin observer dispatches to main, key taps are UI actions).
+            // Staying synchronous ensures the constraint change lands in the same
+            // turn as the mode change, BEFORE SwiftUI draws. Without this, there's a
+            // 1-frame delay where the overlay renders at 52pt (toolbar height)
+            // before the hosting view expands to full height — causing the waveform
             // to flash at the top then drop to center.
-            .sink { [weak self] status in
-                self?.handleDictationStatusChange(status)
+            .sink { [weak self] mode in
+                self?.applyAreaMode(mode)
             }
     }
 
-    private func handleDictationStatusChange(_ status: DictationStatus) {
-        // Issue #116 diagnostic: entry log (fires even when guard trips).
+    /// React to a keyboard-area mode change: check that we are the controller
+    /// allowed to touch the layout, then apply it.
+    ///
+    /// The probe action names below are deliberately unchanged from the
+    /// status-driven handler this replaced — #260 and #261 are open and quote
+    /// `dictStatusChange_enter` / `dictStatusChange_skippedInactive` from device
+    /// logs. `mode=` is additive.
+    private func applyAreaMode(_ mode: KeyboardAreaMode) {
+        // The subscription above is deliberately synchronous — no .receive(on: .main)
+        // — and this method mutates Auto Layout constraints and view visibility, so
+        // an emission from a background thread would corrupt UIKit state silently.
+        // WHY assert and not dispatchPrecondition: the latter also traps in release,
+        // and crashing a shipped keyboard is worse than the bug it would catch.
+        assert(Thread.isMainThread, "applyAreaMode must run on the main thread — it mutates UIKit layout")
+
+        // Issue #116 diagnostic: entry log (fires even when a guard trips).
+        let status = KeyboardState.shared.dictationStatus.rawValue
         let oldHosting = hostingHeightConstraint?.constant ?? -1
         let activeID = KeyboardState.shared.activeControllerID ?? "none"
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardViewController",
             instanceID: controllerID,
             action: "dictStatusChange_enter",
-            details: "status=\(status.rawValue) hasAppeared=\(hasAppeared) oldHosting=\(oldHosting) isShowingEmoji=\(isShowingEmoji) activeID=\(activeID)"
+            details: "status=\(status) mode=\(mode.rawValue) hasAppeared=\(hasAppeared) oldHosting=\(oldHosting) activeID=\(activeID)"
         ))
 
-        // Don't change hosting height until the controller is registered with KeyboardState.
-        // During cold start, this fires in viewDidLoad before viewWillAppear — SwiftUI's
-        // showsOverlay is still false, so expanding now would show the toolbar displaced
-        // in a full-height hosting view. viewWillAppear calls this manually after registering.
+        // Don't change hosting height until the controller is registered with
+        // KeyboardState: an unregistered controller's KeyboardRootView still
+        // presents `.keys`, so expanding now would show the toolbar displaced in a
+        // full-height hosting view. viewWillAppear registers, then applies the mode
+        // explicitly. The subscription is also created there, and areaModePublisher
+        // does not replay on subscribe, so nothing should reach this before
+        // viewWillAppear — the guard stays as a cheap invariant on that ordering.
         guard hasAppeared else { return }
+
+        // #260: a dictation can be left with no owning controller at all.
+        // Ownership is last-writer-wins on appearance, so under churn an instance
+        // iOS is about to throw away can hold the area, and when it is deallocated
+        // the keyboard the user is looking at is left unable to present the
+        // overlay — ownership is what the guard below and
+        // KeyboardRootView.presentedMode both key on, and nothing re-registers us:
+        // viewWillAppear already ran.
+        //
+        // KeyboardState marks such an area reclaimable rather than released, so
+        // the controller iOS is showing can claim it here instead of waiting for
+        // iOS to build a replacement — which in the captures took 2.5 s, or four
+        // seconds and a manual trip to DictusApp.
+        //
+        // `isOnScreen` is what keeps this from being a licence for the stale
+        // controllers the guard below exists to exclude; see its declaration.
+        //
+        // Only for `.recording`, matching that guard: the pickers are opened by a
+        // key on the visible keyboard and are not gated on ownership.
+        if mode == .recording, isAttached, KeyboardState.shared.activeControllerID != controllerID {
+            let onScreen = isOnScreen
+            let claimed = KeyboardState.shared.claimOwnership(
+                controllerID: controllerID,
+                isOnScreen: onScreen
+            )
+            if claimed {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "KeyboardViewController",
+                    instanceID: controllerID,
+                    action: "claimedOwnerlessArea",
+                    details: "status=\(status) mode=\(mode.rawValue) previousActiveID=\(activeID) hasWindow=\(onScreen)"
+                ))
+            }
+        }
 
         // Defense-in-depth for #128: iOS caches UIInputViewController and does not
         // reliably fire viewDidDisappear on stale instances (observed: controllers
         // responding to Darwin status changes for minutes after losing window
         // attachment, no viewDidDisappear event logged). The subscription-cancel
         // path in viewDidDisappear covers the well-behaved case; this guard
-        // short-circuits stale controllers that iOS forgot to notify. Only the
-        // controller currently owning the keyboard window mutates layout.
-        guard KeyboardState.shared.activeControllerID == controllerID else {
+        // short-circuits stale controllers that iOS forgot to notify.
+        //
+        // It applies to `.recording` only, mirroring KeyboardRootView.presentedMode
+        // exactly — the two layers have to agree on what is presented, and that is
+        // where the reasoning lives. A picker is opened by a key on the visible
+        // keyboard, which is not the case #128 was ever about.
+        guard mode != .recording || KeyboardState.shared.activeControllerID == controllerID else {
             PersistentLog.log(.diagnosticProbe(
                 component: "KeyboardViewController",
                 instanceID: controllerID,
                 action: "dictStatusChange_skippedInactive",
-                details: "status=\(status.rawValue) activeID=\(activeID)"
+                details: "status=\(status) mode=\(mode.rawValue) activeID=\(activeID)"
             ))
             return
         }
 
-        let isRecording = status == .requested || status == .recording || status == .transcribing
+        applyLayout(for: mode)
+    }
 
-        // Dismiss emoji picker if recording starts
-        if isRecording && isShowingEmoji {
-            isShowingEmoji = false
-        }
+    /// The keyboard area's layout, one branch per mode.
+    ///
+    /// Every case sets all three things explicitly — hosting height, hosting
+    /// bottom anchor, key-grid visibility — with no fallthrough. Before #271 this
+    /// was a chain of negated guards where restoring the collapsed toolbar height
+    /// was conditional on the emoji flag being false, so a full-area state that
+    /// was not added to the chain collapsed to 52 pt while still rendering.
+    ///
+    /// None of these branches touches `heightConstraint`, the keyboard's own
+    /// declared height — that remains a no-go zone (#166).
+    private func applyLayout(for mode: KeyboardAreaMode) {
+        let oldHosting = hostingHeightConstraint?.constant ?? -1
+        let status = KeyboardState.shared.dictationStatus.rawValue
 
-        giellaKeyboard?.isHidden = isRecording || isShowingEmoji
+        switch mode {
+        case .keys:
+            giellaKeyboard?.isHidden = false
+            hostingHeightConstraint?.constant = toolbarHeight
+            setHostingExpanded(false)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_idle",
+                details: "old=\(oldHosting) new=\(toolbarHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
 
-        if isRecording {
-            // Expand hosting view to fill the full keyboard area for the recording overlay
+        case .emoji:
+            giellaKeyboard?.isHidden = true
+            let fullHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fullHeight
+            setHostingExpanded(true)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_emojiOpen",
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
+        case .panel:
+            // Same geometry as the emoji picker: the bar keeps its height and the panel
+            // fills the rest. A grid rebuild triggered from the panel (a language or
+            // layout pick) ends by re-applying this case, so the panel survives it.
+            giellaKeyboard?.isHidden = true
+            let fullHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fullHeight
+            setHostingExpanded(true)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_panelOpen",
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
+        case .recording:
+            giellaKeyboard?.isHidden = true
             let fullHeight = computeKeyboardHeight()
             hostingHeightConstraint?.constant = fullHeight
             setHostingExpanded(true)
@@ -740,17 +1086,7 @@ class KeyboardViewController: UIInputViewController {
                 component: "KeyboardViewController",
                 instanceID: controllerID,
                 action: "hostingSet_recording",
-                details: "old=\(oldHosting) new=\(fullHeight) status=\(status.rawValue)"
-            ))
-        } else if !isShowingEmoji {
-            // Restore toolbar-only height (unless emoji picker is open)
-            hostingHeightConstraint?.constant = toolbarHeight
-            setHostingExpanded(false)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_idle",
-                details: "old=\(oldHosting) new=\(toolbarHeight) status=\(status.rawValue)"
+                details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
             ))
         }
 
@@ -762,12 +1098,30 @@ class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        // Re-check the dictation undo offer against the changed document (#266).
+        // Deliberately a re-check and not a clear: the keyboard's own insertion is
+        // itself a text change, so clearing here would cancel the offer at the
+        // moment it is made.
+        KeyboardState.shared.revalidateDictationUndo()
         // Invalidate autocorrect undo on external text changes (paste, cursor tap, host autocorrect).
         bridge?.suggestionState?.pendingUndo = nil
         // When text changes externally (paste, cursor move, autocorrect by host app),
         // recheck autocapitalization. This ensures shift state stays correct even when
         // the user moves the cursor to a different position in the text.
         bridge?.updateCapitalization()
+        // The focused field may have changed (e.g. tapping another field in the
+        // same app) — re-read its input traits (#200).
+        bridge?.refreshHostPolicy()
+    }
+
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        // A caret the user moved is a caret the insertion is no longer behind (#266).
+        KeyboardState.shared.revalidateDictationUndo()
+        // Some hosts move focus between fields without emitting textDidChange.
+        // Re-read the field's input traits so the autocorrect/suggestions policy
+        // matches the newly-focused field (#200).
+        bridge?.refreshHostPolicy()
     }
 
     // MARK: - Window Gesture Delay
@@ -787,11 +1141,9 @@ class KeyboardViewController: UIInputViewController {
     private func disableWindowGestureDelay() {
         guard let window = view.window,
               let recognizers = window.gestureRecognizers else { return }
-        for recognizer in recognizers {
-            if recognizer.delaysTouchesBegan {
-                recognizer.delaysTouchesBegan = false
-                disabledGestureHashes.insert(recognizer.hash)
-            }
+        for recognizer in recognizers where recognizer.delaysTouchesBegan {
+            recognizer.delaysTouchesBegan = false
+            disabledGestureHashes.insert(recognizer.hash)
         }
     }
 
@@ -828,6 +1180,52 @@ class KeyboardViewController: UIInputViewController {
         ))
     }
 
+    /// Handles a layout pick from the keyboard panel (#272).
+    ///
+    /// Only the active language's layout is on screen. A layout chosen for one of the
+    /// other rows is already stored, and costing the user a ~200 ms grid rebuild to
+    /// redraw the same keys is worse than doing nothing.
+    private func handleLayoutChange(_ layout: LayoutType, for language: SupportedLanguage) {
+        guard language == SupportedLanguage.active else { return }
+
+        reloadKeyboardLayout()
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "layoutChanged",
+            details: "lang=\(language.rawValue) layout=\(LayoutType.active.rawValue)"
+        ))
+    }
+
+    // MARK: - Number Row (#331)
+
+    /// Rebuilds the grid when the digit row should appear or disappear, and only then.
+    ///
+    /// WHY this goes through `reloadKeyboardLayout()` and not through a height recalculation:
+    /// three constraints have to move together — the grid's row data, the key grid's own
+    /// `keyboard.heightAnchor` constraint, and the inputView's declared `heightConstraint`.
+    /// Only the reload touches all three; the key grid's constraint is created there and in
+    /// `viewDidLoad` and refreshed nowhere else. Growing the inputView alone would leave the
+    /// grid at its old height, which is a gap between the toolbar and the keys — the shape
+    /// `reloadLayout_heightRecalc` was added to catch.
+    ///
+    /// `trigger` names the caller in the log so a device capture says whether the change was
+    /// noticed on appearance or on rotation.
+    private func reloadIfNumberRowChanged(trigger: String) {
+        let drawsDigitRow = KeyboardLayouts.drawsDigitRow
+        guard builtNumberRow != drawsDigitRow else { return }
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardViewController",
+            instanceID: controllerID,
+            action: "numberRowMismatchReload",
+            details: "trigger=\(trigger) built=\(builtNumberRow.map(String.init(describing:)) ?? "nil") "
+                + "current=\(drawsDigitRow) landscape=\(DeviceContext.current.isLandscape) onScreen=\(isOnScreen)"
+        ))
+        reloadKeyboardLayout()
+    }
+
     /// Destroys the current GiellaKeyboardView and creates a new one
     /// with the current language and layout preferences from App Group.
     private func reloadKeyboardLayout() {
@@ -848,6 +1246,7 @@ class KeyboardViewController: UIInputViewController {
         // and true on iPad / older iPhones, where we must supply a next-keyboard key (4.4.1).
         let needsGlobe = needsInputModeSwitchKey
         builtNeedsGlobe = needsGlobe
+        builtNumberRow = KeyboardLayouts.drawsDigitRow
         let definition = KeyboardLayouts.current(needsGlobe: needsGlobe)
         let theme = Theme.current(for: traitCollection)
         let keyboard = GiellaKeyboardView(definition: definition, theme: theme)
@@ -878,28 +1277,24 @@ class KeyboardViewController: UIInputViewController {
                 keyboard.leadingAnchor.constraint(equalTo: kbInputView.leadingAnchor),
                 keyboard.trailingAnchor.constraint(equalTo: kbInputView.trailingAnchor),
                 keyboardHeight,
-                newHostingBottomIdle,
+                newHostingBottomIdle
             ])
             self.hostingBottomToKeyboardTop = newHostingBottomIdle
         }
-        // reloadKeyboardLayout always returns the layout to idle (the height
-        // is reset to toolbarHeight just below). Make sure the expanded bottom
-        // anchor isn't lingering active from a previous recording/emoji state.
+        // The rebuild above always produces a fresh, visible key grid pinned to the
+        // idle anchor, so make sure the expanded bottom anchor isn't lingering
+        // active from the state we're about to re-derive.
         hostingBottomToInputBottom?.isActive = false
 
         self.giellaKeyboard = keyboard
 
-        // Ensure hosting view is at toolbar-only height. If a previous recording
-        // left it at full height, the keyboard grid would be squashed below a large
-        // empty hosting area — causing the key shrinking bug on language switch.
-        let oldHostingRL = hostingHeightConstraint?.constant ?? -1
-        hostingHeightConstraint?.constant = toolbarHeight
-        PersistentLog.log(.diagnosticProbe(
-            component: "KeyboardViewController",
-            instanceID: controllerID,
-            action: "reloadLayout_hostingReset",
-            details: "old=\(oldHostingRL) new=\(toolbarHeight)"
-        ))
+        // Re-apply whatever the keyboard area presents, rather than hardcoding the
+        // toolbar height. Leaving the hosting view at full height would squash the
+        // new key grid below a large empty area (the key-shrinking bug on language
+        // switch); hardcoding 52pt instead squashed the emoji picker, which keeps
+        // the language switcher in its toolbar and can therefore trigger a reload
+        // while it owns the area. The switch is the only thing that gets both right.
+        applyLayout(for: KeyboardState.shared.areaMode)
 
         // Force height recalculation — the new GiellaKeyboardView may have different
         // intrinsic content size during initial layout. Without this, iOS keeps the
@@ -929,44 +1324,16 @@ class KeyboardViewController: UIInputViewController {
 
     // MARK: - Emoji Picker
 
-    /// Whether the emoji picker is currently visible.
-    private(set) var isShowingEmoji = false
-
-    /// Toggle emoji picker visibility. The emoji picker UI itself is wired in Plan 02.
+    /// Toggle emoji picker visibility, called by the bridge's emoji key through
+    /// the onEmojiToggle closure.
     ///
-    /// WHY toggle here (not in bridge): The bridge handles key events but doesn't
-    /// own the view hierarchy. Showing/hiding views is the controller's responsibility.
-    /// The bridge calls this via the onEmojiToggle closure.
+    /// It only moves the shared mode: the layout follows from the $areaMode
+    /// subscription and SwiftUI re-renders off the same value. Before #271 this
+    /// method mutated a controller-local Bool, drove the layout by hand, and then
+    /// posted a NotificationCenter message so KeyboardRootView's own Bool could
+    /// catch up — three ways for the two layers to disagree.
     func toggleEmojiPicker() {
-        isShowingEmoji.toggle()
-        giellaKeyboard?.isHidden = isShowingEmoji
-
-        let oldHostingEmoji = hostingHeightConstraint?.constant ?? -1
-        if isShowingEmoji {
-            // Expand hosting to cover keyboard area for emoji picker
-            let fullHeight = computeKeyboardHeight()
-            hostingHeightConstraint?.constant = fullHeight
-            setHostingExpanded(true)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_emojiOpen",
-                details: "old=\(oldHostingEmoji) new=\(fullHeight)"
-            ))
-        } else {
-            hostingHeightConstraint?.constant = toolbarHeight
-            setHostingExpanded(false)
-            PersistentLog.log(.diagnosticProbe(
-                component: "KeyboardViewController",
-                instanceID: controllerID,
-                action: "hostingSet_emojiClose",
-                details: "old=\(oldHostingEmoji) new=\(toolbarHeight)"
-            ))
-        }
-        inputView?.setNeedsLayout()
-
-        // Notify SwiftUI to show/hide emoji picker
-        NotificationCenter.default.post(name: .dictusToggleEmoji, object: nil)
+        KeyboardState.shared.toggleEmojiPresentation()
     }
 }
 
@@ -976,7 +1343,4 @@ extension Notification.Name {
     /// Posted by KeyboardViewController when text changes externally (paste, cursor move).
     /// KeyboardView listens for this to recheck autocapitalisation.
     static let dictusTextDidChange = Notification.Name("dictusTextDidChange")
-
-    /// Posted when the emoji picker should toggle visibility.
-    static let dictusToggleEmoji = Notification.Name("dictusToggleEmoji")
 }

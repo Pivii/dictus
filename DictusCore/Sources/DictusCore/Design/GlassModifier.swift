@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/GlassModifier.swift
 // Reusable glass effect modifier supporting iOS 26 Liquid Glass with graceful fallback.
 import SwiftUI
@@ -64,3 +65,4 @@ public extension View {
         modifier(GlassModifier(shape: Capsule()))
     }
 }
+#endif

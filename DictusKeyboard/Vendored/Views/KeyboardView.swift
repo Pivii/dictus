@@ -3,6 +3,7 @@
 // Stripped: No external dependencies to remove (no Sentry in this file)
 
 import UIKit
+import AudioToolbox
 import DictusCore
 
 protocol GiellaKeyboardViewDelegate: AnyObject {
@@ -62,6 +63,38 @@ final internal class GiellaKeyboardView: UIView,
             return layout.shifted
         default:
             return layout.normal
+        }
+    }
+
+    /// The row a long-press popup sizes its keys against: the first of the current page's
+    /// letter rows.
+    ///
+    /// WHY not `currentPage.first`, which is what this was (#337): with the number row on
+    /// (#331) the first row of a letter page is the ten digits, and QWERTZ is the one layout
+    /// whose letter rows do not carry ten keys — ü closes the top row, ö and ä the home row
+    /// (#151). Sizing off the first row therefore moved the divisor 11 → 10 the moment the
+    /// setting was turned on, and every QWERTZ popup key got ~10% wider. The digit row is not
+    /// representative of the keyboard the popup belongs to; the letter rows are.
+    ///
+    /// WHY not the pressed key's own row, the other candidate in #337: it would size the popup
+    /// by an accident of which row was tapped, and QWERTZ rows 1-2 and row 3 do not agree.
+    ///
+    /// WHY the row is recognised by its contents rather than by asking
+    /// `KeyboardLayouts.drawsDigitRow`: that flag is read at long-press time and the page was
+    /// built earlier, so the two can disagree while a rebuild is pending. The contents cannot.
+    ///
+    /// The symbols pages are excluded because their leading digits are their own — `symbols1`
+    /// carries `1234567890` as its real first row and never gets the injected one.
+    private var popupSizingRow: [KeyDefinition]? {
+        let rows = currentPage
+        switch page {
+        case .normal, .shifted, .capslock:
+            guard let first = rows.first, first.isDigitRow else {
+                return rows.first
+            }
+            return rows.dropFirst().first
+        case .symbols1, .symbols2:
+            return rows.first
         }
     }
 
@@ -464,7 +497,7 @@ final internal class GiellaKeyboardView: UIView,
             break
         }
 
-        let width = bounds.size.width / CGFloat(currentPage.first?.count ?? 10)
+        let width = bounds.size.width / CGFloat(popupSizingRow?.count ?? 10)
         // Reduce height to 60% so first-row popups stay within keyboard bounds (#69).
         var height = ((bounds.size.height / CGFloat(currentPage.count)) - theme.popupCornerRadius * 2) * 0.6
         height = max(24.0, height)
@@ -561,6 +594,8 @@ final internal class GiellaKeyboardView: UIView,
         // Fire haptic on touchDown for ALL keys (not just triggersOnTouchDown).
         // The delegate's didTriggerKey() may fire on touchUp for input keys,
         // but the user should FEEL the tap immediately on finger contact.
+        // The matching click is played in handleTouches below, as soon as the touch
+        // resolves to a key — it needs the key to pick a category, the haptic does not (#286).
         hapticFeedback.prepare()
         HapticFeedback.keyTapped()
 
@@ -581,11 +616,25 @@ final internal class GiellaKeyboardView: UIView,
         handleTouches(touches)
     }
 
+    /// Play `key`'s click, if it has one. Silent keys (spacer, caps) play nothing.
+    private func playSound(for key: KeyDefinition) {
+        guard let category = KeySound.category(for: key) else { return }
+        AudioServicesPlaySystemSound(category.systemSoundID)
+    }
+
     private func handleTouches(_ touches: Set<UITouch>) {
         for touch in touches {
             let touchPoint = clampedPoint(touch.location(in: collectionView))
             if let indexPath = collectionView.indexPathForItem(at: touchPoint) {
                 let key = currentPage[indexPath.section][indexPath.row]
+
+                // Click on finger contact, in step with the haptic fired above (#286).
+                // This is the only point where a touch resolves to a key, so it is also
+                // the only place the click is emitted — the bridge handlers no longer
+                // play one, which is what keeps touchDown keys from clicking twice.
+                // Placed before the double-tap branch below: that branch returns early,
+                // and a double-tapped shift must still click exactly once.
+                playSound(for: key)
 
                 if key.type.supportsDoubleTap {
                     let timeInterval = Date.timeIntervalSinceReferenceDate
@@ -801,6 +850,10 @@ final internal class GiellaKeyboardView: UIView,
 
             // Haptic feedback on each deletion
             HapticFeedback.keyTapped()
+            // ...and its click. Each repeat tick used to click from inside the bridge's
+            // delete handlers; emitting it here keeps a held backspace at exactly one
+            // click per deletion now that those handlers are silent (#286).
+            playSound(for: activeKey.key)
 
             increaseKeyRepeatRateIfNeeded()
         }
@@ -836,10 +889,14 @@ final internal class GiellaKeyboardView: UIView,
 
         // Apply case transformation for shifted/capslock pages
         // so that long-pressing "E" shows uppercase accents (E, E, E, E)
+        // KeyCaseTransform rather than uppercased(): Unicode's full case mapping turns
+        // ß into the two characters "SS", which this popup drew as one key and inserted
+        // as two letters (#322). The candidate is inserted verbatim by the bridge, so the
+        // transformation has to be one character in, one character out.
         if page == .shifted || page == .capslock {
             keys = keys.map { keyDef in
                 if case let .input(char, alt) = keyDef.type {
-                    return KeyDefinition(type: .input(key: char.uppercased(), alternate: alt))
+                    return KeyDefinition(type: .input(key: KeyCaseTransform.uppercased(char), alternate: alt))
                 }
                 return keyDef
             }
@@ -984,6 +1041,18 @@ final internal class GiellaKeyboardView: UIView,
         required init?(coder _: NSCoder) {
             fatalError("init(coder:) has not been implemented")
         }
+    }
+}
+
+private extension Array where Element == KeyDefinition {
+    /// True for the digit row the number-row setting prepends to a letter page (#331).
+    ///
+    /// Ten plain input keys, every one of them a digit. No letter page has a row of its own
+    /// that answers this, so the test cannot mistake one — see `popupSizingRow`, its only
+    /// caller. `KeyType.isDigit` is the shared atom: `KeyView` asks the same question of a
+    /// single key when it picks that key's font (#336).
+    var isDigitRow: Bool {
+        !isEmpty && allSatisfy { $0.type.isDigit }
     }
 }
 

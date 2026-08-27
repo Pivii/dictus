@@ -6,8 +6,9 @@ import DictusCore
 /// Segmented picker for selecting the default keyboard layer with a miniature preview.
 ///
 /// WHY reusable component:
-/// This picker appears in both SettingsView and onboarding (ModeSelectionPage).
-/// Extracting it into a single component ensures consistent look and behavior.
+/// This picker used to appear in both SettingsView and onboarding; the
+/// onboarding layer-choice step was removed in #213 and the picker now lives
+/// in SettingsView only, where it stays fully functional.
 ///
 /// WHY @AppStorage instead of @Binding:
 /// When used inside onboarding (which has .id(currentPage) + transitions),
@@ -99,10 +100,10 @@ struct DefaultLayerPicker: View {
 
             // AZERTY rows with actual letters
             let rows = [
-                ["A","Z","E","R","T","Y","U","I","O","P"],
-                ["Q","S","D","F","G","H","J","K","L","M"],
-                ["W","X","C","V","B","N"],
-                ["123","espace"]
+                ["A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P"],
+                ["Q", "S", "D", "F", "G", "H", "J", "K", "L", "M"],
+                ["W", "X", "C", "V", "B", "N"],
+                ["123", "espace"]
             ]
 
             ForEach(0..<rows.count, id: \.self) { rowIndex in
@@ -131,15 +132,15 @@ struct DefaultLayerPicker: View {
 
             // Number row
             HStack(spacing: 2) {
-                ForEach(["1","2","3","4","5","6","7","8","9","0"], id: \.self) { num in
+                ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], id: \.self) { num in
                     miniKey(num, isHighlighted: true)
                 }
             }
 
             // Symbol rows
             let symbolRows = [
-                ["-","/",":",";","(",")","€","&","@"],
-                [".",",","?","!","'"]
+                ["-", "/", ":", ";", "(", ")", "€", "&", "@"],
+                [".", ",", "?", "!", "'"]
             ]
 
             ForEach(0..<symbolRows.count, id: \.self) { rowIndex in

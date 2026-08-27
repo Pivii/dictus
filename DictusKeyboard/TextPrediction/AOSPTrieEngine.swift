@@ -27,6 +27,20 @@ final class AOSPTrieEngine {
     /// Set by load(language:) so overrides and apostrophe handling can be language-aware.
     private var currentLanguage: String = "fr"
 
+    /// The language whose data is mmap'd **right now**, or nil when none is.
+    ///
+    /// WHY this is not `currentLanguage`: that one is the language most recently
+    /// *requested*, assigned synchronously when `load` is called, so it names a
+    /// dictionary that will not exist for another few hundred milliseconds. Any
+    /// decision about the data itself — see `UserDictionaryPruneGate` — has to
+    /// ask what is mounted, not what was ordered.
+    ///
+    /// Written on the main thread only: cleared in `load` at the same instant the
+    /// previous mmap is torn down, set in the load's main-thread completion. So a
+    /// non-nil value implies the bridge is loaded, and the pair cannot be
+    /// observed disagreeing from the main thread.
+    private(set) var mountedLanguage: String?
+
     /// The active language's data profile, or nil if `currentLanguage` is not a
     /// registered `SupportedLanguage`. All per-language data (overrides, accentMap,
     /// contractionPrefixes) is read from here so adding a language is a matter of
@@ -40,9 +54,17 @@ final class AOSPTrieEngine {
     ///
     /// WHY async: Prevents blocking the main thread during keyboard init.
     /// The keyboard appears instantly; spell correction becomes available after mmap load.
-    func load(language: String, bundle: Bundle = .main) {
+    ///
+    /// - Parameter completion: called on the main thread once the load has
+    ///   settled, with whether a dictionary is now available. Exists so a caller
+    ///   can run work that needs to ask the dictionary questions — there is no
+    ///   other moment at which `wordExists` starts telling the truth.
+    func load(language: String, bundle: Bundle = .main, completion: ((Bool) -> Void)? = nil) {
         isLoading = true
         currentLanguage = language
+        // Cleared here, with the teardown it describes: from this line until the
+        // completion below, nothing is mounted.
+        mountedLanguage = nil
         bridge.unloadDictionary()
         wordCount = 0
 
@@ -53,19 +75,16 @@ final class AOSPTrieEngine {
                 forResource: "\(language)_spellcheck", ofType: "dict"
             ) else {
                 print("[AOSPTrieEngine] Failed to find \(language)_spellcheck.dict")
-                DispatchQueue.main.async { self.isLoading = false }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion?(false)
+                }
                 return
             }
 
             let success = self.bridge.loadDictionary(atPath: path)
 
-            // Set proximity map based on active keyboard layout.
-            // AZERTY is default because Dictus targets French-speaking users.
-            if LayoutType.active == .azerty {
-                self.bridge.setProximityMapAZERTY()
-            } else {
-                self.bridge.setProximityMapQWERTY()
-            }
+            self.installSubstitutionCosts(layout: LayoutType.active)
 
             // Load n-gram data on the same queue, right after the spell dict.
             // WHY here: n-grams are only useful after the dictionary is loaded,
@@ -77,12 +96,40 @@ final class AOSPTrieEngine {
             DispatchQueue.main.async {
                 if success {
                     self.wordCount = Int(self.bridge.wordCount())
+                    self.mountedLanguage = language
                     print("[AOSPTrieEngine] Loaded \(language)_spellcheck.dict (\(self.wordCount) words)")
                 } else {
                     print("[AOSPTrieEngine] Failed to load \(language)_spellcheck.dict")
                 }
                 self.isLoading = false
+                completion?(success)
             }
+        }
+    }
+
+    /// Installs the two substitution-cost tables the C++ scorer scores typos with: keyboard
+    /// proximity for the active layout, and the accent relation.
+    ///
+    /// WHY both tables come from DictusCore rather than being built in the C++:
+    /// they are data, evaluated once here per dictionary load and never in the scoring
+    /// loop, and DictusCore is the only target in this repo with a test bundle. Before
+    /// #321 the geometry was hardcoded as `float[26][26]` indexed by `c - 'a'`, which left
+    /// QWERTZ's ü/ö/ä keys with nowhere to sit and sent QWERTZ to the QWERTY table, where
+    /// y and z are in each other's places.
+    private func installSubstitutionCosts(layout: LayoutType) {
+        let proximity = KeyboardProximity.costTable(for: layout)
+        if !bridge.setProximityTable(characters: proximity.charactersData,
+                                     distances: proximity.distancesData) {
+            print("[AOSPTrieEngine] Rejected \(layout.displayName) proximity table "
+                  + "(\(proximity.count) keys) — typo scoring falls back to plain edit distance")
+        }
+
+        let accents = AccentRelation.costPairs
+        if !bridge.setAccentCosts(from: accents.fromData,
+                                  to: accents.toData,
+                                  costs: accents.costsData) {
+            print("[AOSPTrieEngine] Rejected accent cost table (\(accents.count) pairs) — "
+                  + "accented spellings score as unrelated characters")
         }
     }
 
@@ -134,22 +181,17 @@ final class AOSPTrieEngine {
 
         // Restore case and reassemble with prefix if present
         let isCapitalized = word.first?.isUppercase == true
-        let correction = prefix != nil ? (prefix! + result.correction) : result.correction
+        // `prefix ?? ""` reproduces the nil branch exactly: prepending the empty
+        // string is the identity, which is what the nil case returned before.
+        let correction = (prefix ?? "") + result.correction
         let fullCorrection = isCapitalized ? correction.capitalized : correction
 
         let alts = result.alternatives.prefix(2).map { alt -> String in
-            let full = prefix != nil ? (prefix! + alt) : alt
+            let full = (prefix ?? "") + alt
             return isCapitalized ? full.capitalized : full
         }
 
         return (fullCorrection, Array(alts))
-    }
-
-    /// No-op for trie engine. User words are checked separately via UserDictionary.
-    /// The mmap'd trie is read-only; user words are handled as a two-pass lookup
-    /// in TextPredictionEngine (user dict first, then trie).
-    func injectUserWord(_ word: String) {
-        // No-op: user dictionary is checked before trie in TextPredictionEngine
     }
 
     /// Whether a dictionary is loaded and ready for lookups.

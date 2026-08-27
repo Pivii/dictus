@@ -78,6 +78,8 @@ class TranscriptionService {
 
         let config = WhisperKitConfig(
             modelFolder: modelPath,
+            // Issue #370: A12/A13 need the audio encoder off the Neural Engine.
+            computeOptions: WhisperComputeOptions.current(),
             verbose: false,
             prewarm: true,
             load: true,
@@ -97,16 +99,42 @@ class TranscriptionService {
     /// WHY the fallback:
     /// During transition to multi-engine, the prepare(whisperKit:) path is still used.
     /// The fallback ensures zero regressions while new engine routing is added.
-    func transcribe(audioSamples: [Float]) async throws -> String {
+    ///
+    /// WHY `languagePolicy` is a parameter instead of reading App Group here (#226):
+    /// The STT language is decoupled from the keyboard language, and the whole
+    /// dictation pipeline (STT + polish + finalization) must run on ONE
+    /// consistent snapshot. DictationCoordinator captures the policy once at
+    /// transcription start and passes it down, so a mid-dictation keyboard
+    /// language change cannot desync transcription from polish. In particular,
+    /// the keyboard toolbar switcher only ever writes SharedKeys.language, so
+    /// an explicit or auto choice can never be overridden by it.
+    func transcribe(audioSamples: [Float],
+                    languagePolicy: TranscriptionLanguagePolicy) async throws -> String {
         let transcriptionStart = Date()
 
-        // Read user settings from App Group at transcription time
-        let defaults = UserDefaults(suiteName: AppGroup.identifier)
-        let language = defaults?.string(forKey: SharedKeys.language) ?? "fr"
+        // nil = Whisper auto-detection. Parakeet ignores the value entirely.
+        let language = languagePolicy.sttLanguageCode
 
-        // Determine active model name for logging
-        let modelName = defaults?.string(forKey: SharedKeys.activeModel) ?? "unknown"
+        // Determine active model name for logging (from the same snapshot the
+        // engine choice was derived from, so logs describe the actual model).
+        let modelName = languagePolicy.modelIdentifier.isEmpty
+            ? "unknown" : languagePolicy.modelIdentifier
         PersistentLog.log(.transcriptionStarted(modelName: modelName))
+        // Trace the resolution so device tests (#226 acceptance: Mandarin via
+        // Auto-detect, toolbar-switcher non-override) can verify it from logs.
+        //
+        // `mode` spells the mode out rather than printing its stored value
+        // (#332): a bare "fr" could not be told from a coincidence, and a
+        // reader of `mode=fr keyboard=en` had no way to see that the user had
+        // explicitly chosen French. `sttEffective` says whether the engine
+        // honours `stt=` at all — Parakeet ignores it and auto-detects from
+        // audio, which is how `stt=en` came to sit above a French transcript.
+        PersistentLog.log(.diagnosticProbe(
+            component: "TranscriptionService",
+            instanceID: "languageResolution",
+            action: "resolved",
+            details: "mode=\(languagePolicy.mode.telemetryDescription) keyboard=\(languagePolicy.keyboardLanguage.rawValue) engine=\(languagePolicy.engine.rawValue) stt=\(language ?? "auto") sttEffective=\(languagePolicy.sttLanguageIsEffective ? "yes" : "no")"
+        ))
 
         // Route to active engine if set (multi-engine path)
         if let activeEngine {
@@ -134,13 +162,17 @@ class TranscriptionService {
 
         // Variant A — `.vad` only. Mirrors the change in SpeechModelProtocol.swift
         // so the legacy fallback path stays consistent with the active engine path.
-        // See SpeechModelProtocol.swift for rationale.
+        // See SpeechModelProtocol.swift for rationale — including WHY
+        // `detectLanguage` must be explicitly enabled in auto mode (WhisperKit
+        // defaults it to `!usePrefillPrompt`, which is false here, so a nil
+        // language alone would force the `<|en|>` prefill token).
         let options = DecodingOptions(
             task: .transcribe,
             language: language,
             temperature: 0.0,
             usePrefillPrompt: true,
             usePrefillCache: true,
+            detectLanguage: language == nil,
             skipSpecialTokens: true,
             chunkingStrategy: .vad
         )
@@ -150,6 +182,11 @@ class TranscriptionService {
                 audioArray: audioSamples,
                 decodeOptions: options
             )
+
+            // Auto-detect observability (#226) — mirrors WhisperKitEngine.
+            if language == nil {
+                logAutoDetectedLanguage(results)
+            }
 
             let totalSegments = results.reduce(0) { $0 + $1.segments.count }
             let totalCharCount = results.reduce(0) { $0 + $1.text.count }
@@ -186,6 +223,19 @@ class TranscriptionService {
             PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
             throw TranscriptionError.transcriptionFailed(error.localizedDescription)
         }
+    }
+
+    /// Auto-detect observability (#226): surface what Whisper decided so
+    /// exported logs can validate auto mode (e.g. detected=zh for Mandarin).
+    /// Only called in auto mode — in follow/explicit the language is forced.
+    private func logAutoDetectedLanguage(_ results: [TranscriptionResult]) {
+        let detected = results.first?.language ?? "unknown"
+        PersistentLog.log(.diagnosticProbe(
+            component: "TranscriptionService",
+            instanceID: "languageDetection",
+            action: "detected",
+            details: "detected=\(detected)"
+        ))
     }
 
     /// Phase 37 instrumentation: emits `transcriptionPerformance` alongside the existing

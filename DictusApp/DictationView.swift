@@ -32,6 +32,7 @@ struct DictationStatusView: View {
         case .requested: return "arrow.up.forward"
         case .recording: return "mic.fill"
         case .transcribing: return "text.bubble"
+        case .processing: return "sparkles"
         case .ready: return "checkmark.circle.fill"
         case .failed: return "exclamationmark.triangle.fill"
         }
@@ -43,6 +44,7 @@ struct DictationStatusView: View {
         case .requested: return .orange
         case .recording: return .red
         case .transcribing: return .blue
+        case .processing: return Color.dictusSmartMode
         case .ready: return .green
         case .failed: return .red
         }
@@ -54,6 +56,7 @@ struct DictationStatusView: View {
         case .requested: return "Requested"
         case .recording: return "Recording..."
         case .transcribing: return "Transcribing..."
+        case .processing: return "Processing..."
         case .ready: return "Ready"
         case .failed: return "Failed"
         }
@@ -65,6 +68,7 @@ struct DictationStatusView: View {
         case .requested: return "Opening from keyboard"
         case .recording: return "Capturing audio"
         case .transcribing: return "Processing speech"
+        case .processing: return "Running the language model"
         case .ready: return "Transcription available"
         case .failed: return "Something went wrong"
         }

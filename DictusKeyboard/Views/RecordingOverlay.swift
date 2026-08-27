@@ -6,7 +6,8 @@ import DictusCore
 /// Shows different visual states based on DictationStatus:
 /// - .requested: flat waveform bars, "Démarrage..." text, cancel-only button
 /// - .recording: live waveform, elapsed timer, cancel + stop buttons
-/// - .transcribing: shimmer waveform, "Transcription..." text
+/// - .transcribing: sine-sweep waveform, "Transcription..." text
+/// - .processing: travelling-peak waveform, "Traitement..." text (#267)
 ///
 /// WHY this replaces the keyboard:
 /// Wispr Flow-inspired design -- when recording, the keyboard area transforms into
@@ -19,6 +20,14 @@ import DictusCore
 /// driver that starts and stops with the overlay lifecycle, while this view stays a thin
 /// container around rendering and controls.
 struct RecordingOverlay: View {
+    /// The stage to draw — `KeyboardState.displayedDictationStatus`, not the raw
+    /// dictation status (#309). The two differ for at most half a second, while a
+    /// transcription that returned faster than the eye can read it is held on screen.
+    ///
+    /// The probes below therefore report what was *drawn*, which is what they are for.
+    /// The pipeline's own transitions are logged unchanged by `KeyboardState`, and the
+    /// hold itself by its `transcribingHoldArmed` / `transcribingHoldReleased` probes,
+    /// so a log still says both what happened and what the user saw.
     let dictationStatus: DictationStatus
     let waveformEnergy: [Float]
     let elapsedSeconds: Double
@@ -42,9 +51,9 @@ struct RecordingOverlay: View {
         colorScheme == .dark ? .white : Color(white: 0.15)
     }
 
-    private var secondaryForeground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.5) : Color(white: 0.15).opacity(0.5)
-    }
+    /// Shared with `ToolbarView`'s pill icons so the two bars stay one system
+    /// (#241). Same values as the local definition it replaces.
+    private var secondaryForeground: Color { .dictusPillIconSecondary }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,9 +117,20 @@ struct RecordingOverlay: View {
     // MARK: - Top bar (varies by state)
 
     /// Top bar with recording control buttons.
+    ///
     /// WHY @ViewBuilder: Each state shows different buttons but reserves the same
-    /// vertical space (36pt pill + 6pt vertical padding = 48pt total), so the
-    /// BrandWaveform below never shifts vertically during state transitions.
+    /// vertical space (10pt + 36pt pill + 6pt = 52pt total), so the BrandWaveform
+    /// below never shifts vertically during state transitions.
+    ///
+    /// WHY 10pt on top and not 6 (#241 device feedback): this bar replaces
+    /// `ToolbarView`, which is 52pt tall with 4pt of top padding and centres its
+    /// pills — putting their top edge at y=10. At 6pt these pills sat 4pt higher,
+    /// so starting a recording made both of them visibly jump up a notch. The
+    /// asymmetric padding is what makes the two bars interchangeable.
+    ///
+    /// Horizontal alignment was already correct: the 17pt trailing inset offsets
+    /// the mic's 66pt ring around its 56pt pill, so the right-hand pill keeps the
+    /// same edge in both bars.
     @ViewBuilder
     private var topBar: some View {
         switch dictationStatus {
@@ -125,14 +145,18 @@ struct RecordingOverlay: View {
             }
             .padding(.leading, 12)
             .padding(.trailing, 17)
-            .padding(.vertical, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
 
-        case .transcribing:
-            // Reserve same height as button row so waveform doesn't shift
+        case .transcribing, .processing:
+            // Reserve same height as button row so waveform doesn't shift.
+            // The LLM stage is not cancellable (#267), so it shows the same empty
+            // bar as transcription rather than a button that would do nothing.
             Color.clear
                 .frame(height: 36)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
         default:
             // Cancel (left) and validate (right) -- pill-shaped Liquid Glass buttons
@@ -151,7 +175,8 @@ struct RecordingOverlay: View {
             }
             .padding(.leading, 12)
             .padding(.trailing, 17)
-            .padding(.vertical, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
         }
     }
 
@@ -182,6 +207,23 @@ struct RecordingOverlay: View {
                 .padding(.bottom, 4)
 
             Text("Transcribing...")
+                .font(.dictusCaption)
+                .foregroundColor(secondaryForeground)
+                .padding(.bottom, 8)
+
+        case .processing:
+            // Same two lines, same heights, same paddings as every other state --
+            // only the caption differs. Naming the stage is half of #267: the
+            // animation says "something else is happening", the label says what.
+            Color.clear
+                .frame(height: timerFontSize)
+                .padding(.bottom, 4)
+
+            // #79 will want the armed Smart Mode's name here instead of the generic
+            // stage name. There is no armed mode to read today -- `ProFeature`
+            // .smartMode is a paywall flag, not a selection -- so this stays one
+            // string until that state exists.
+            Text("Processing...")
                 .font(.dictusCaption)
                 .foregroundColor(secondaryForeground)
                 .padding(.bottom, 8)

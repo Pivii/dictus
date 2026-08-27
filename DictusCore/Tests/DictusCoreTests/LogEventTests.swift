@@ -67,6 +67,112 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .dictation)
     }
 
+    func testDictationStateReconciledIsWarningDictation() {
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-refresh",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .dictation)
+    }
+
+    func testDictationStateReconciledIsGreppableWithItsEvidence() {
+        // Issue #261 acceptance criterion 4: the exported log must carry an explicit
+        // event for the reconciliation, so this failure is self-diagnosing without a
+        // rebuild — the same rationale as `localModelResolved` for #249. The name and
+        // the heartbeat age are what a reader greps for, so both are pinned here.
+        let event = LogEvent.dictationStateReconciled(
+            source: "keyboard-watchdog",
+            staleStatus: "recording",
+            heartbeatAgeMs: 23_000
+        )
+        XCTAssertEqual(event.name, "dictationStateReconciled")
+        XCTAssertEqual(
+            event.message,
+            "source=keyboard-watchdog staleStatus=recording heartbeatAgeMs=23000"
+        )
+    }
+
+    func testDictationStateReconciledReportsAnAbsentHeartbeatAsMinusOne() {
+        // The app-side launch audit reaches its verdict from the fact that a fresh
+        // process owns no session, so it has no heartbeat to report.
+        let event = LogEvent.dictationStateReconciled(
+            source: "app-launch",
+            staleStatus: "transcribing",
+            heartbeatAgeMs: -1
+        )
+        XCTAssertEqual(event.message, "source=app-launch staleStatus=transcribing heartbeatAgeMs=-1")
+    }
+
+    // MARK: - Stranded cold start (#311)
+
+    func testColdStartStrandedIsAWarningWithItsResolution() {
+        // #311's regression grep pivots on this name, and on `action` telling the
+        // reader which of the three outcomes the parked start actually got. It is a
+        // warning because a parked start reaching this point is a user-visible
+        // request that nearly went nowhere.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "requested", action: "retry")
+        XCTAssertEqual(event.name, "coldStartStranded")
+        XCTAssertEqual(event.message, "keyboardStatus=requested action=retry")
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .lifecycle)
+    }
+
+    func testColdStartStrandedCarriesTheStatusTheKeyboardWasShowing() {
+        // A `dropped` line has to say what the stored status had become, because
+        // that is the whole reason nothing was done about it.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "idle", action: "dropped")
+        XCTAssertEqual(event.message, "keyboardStatus=idle action=dropped")
+    }
+
+    func testColdStartStrandedReportsAnExpiredAssertion() {
+        // `expired` is the fourth vocabulary value and the only one that is not a
+        // `ColdStartResolution`: the background assertion ran out with the request
+        // still unresolved, which is a stranded start by definition.
+        let event = LogEvent.coldStartStranded(keyboardStatus: "requested", action: "expired")
+        XCTAssertEqual(event.message, "keyboardStatus=requested action=expired")
+        XCTAssertEqual(event.level, .warning)
+    }
+
+    // MARK: - Keyboard status message trail (#261)
+
+    func testDictationMessageSetIsGreppableWithItsOwner() {
+        // The device test script tells the maintainer to grep these exact names, so
+        // the names and the field order are a contract, not an implementation detail.
+        let event = LogEvent.dictationMessageSet(reason: "reconciled-keyboard-refresh", owner: "9DF73D57", visible: true)
+        XCTAssertEqual(event.name, "dictationMessageSet")
+        XCTAssertEqual(event.message, "reason=reconciled-keyboard-refresh owner=9DF73D57 visible=true")
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
+    func testDictationMessageDisplayedCarriesBothIdentities() {
+        // `rootView` and `controller` against `owner` is what tests the hypothesis
+        // that a message renders into a tree the user is not looking at.
+        let event = LogEvent.dictationMessageDisplayed(
+            rootView: "D67967A0",
+            controller: "9DF73D57",
+            owner: "9DF73D57",
+            visible: true
+        )
+        XCTAssertEqual(event.name, "dictationMessageDisplayed")
+        XCTAssertEqual(event.message, "rootView=D67967A0 controller=9DF73D57 owner=9DF73D57 visible=true")
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
+    func testDictationMessageClearedWarnsWhenNobodyRenderedIt() {
+        // The whole point of counting: `displayedCount=0` is "the user was never
+        // told", and it is findable by level as well as by reading the number.
+        let unseen = LogEvent.dictationMessageCleared(reason: "reconciled-timeout", displayedCount: 0)
+        XCTAssertEqual(unseen.name, "dictationMessageCleared")
+        XCTAssertEqual(unseen.message, "reason=reconciled-timeout displayedCount=0")
+        XCTAssertEqual(unseen.level, .warning)
+
+        let seen = LogEvent.dictationMessageCleared(reason: "reconciled-timeout", displayedCount: 2)
+        XCTAssertEqual(seen.level, .info)
+    }
+
     // MARK: - Audio events
 
     func testAudioEngineStartedIsInfoAudio() {
@@ -91,6 +197,55 @@ final class LogEventTests: XCTestCase {
         let event = LogEvent.audioSessionFailed(error: "configError")
         XCTAssertEqual(event.level, .error)
         XCTAssertEqual(event.subsystem, .audio)
+    }
+
+    // MARK: - Haptics allowance (issue #293)
+
+    func testHapticsAllowanceIsInfoAudio() {
+        let event = LogEvent.audioHapticsAllowance(context: "startRecording", allowed: true)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(event.name, "audioHapticsAllowance")
+    }
+
+    /// The value is the whole point of the line: `allowed=false` while the
+    /// session is active is the device-wide haptics mute (#293). It must be
+    /// greppable verbatim, not encoded in the event's presence.
+    func testHapticsAllowanceCarriesTheEffectiveValue() {
+        let denied = LogEvent.audioHapticsAllowance(context: "warmUp-alreadyRunning", allowed: false)
+        XCTAssertEqual(denied.message, "context=warmUp-alreadyRunning allowed=false")
+
+        let granted = LogEvent.audioHapticsAllowance(context: "configureAudioSession", allowed: true)
+        XCTAssertEqual(granted.message, "context=configureAudioSession allowed=true")
+    }
+
+    /// Before #293 the setter was a bare `try?`, so a throw produced the same
+    /// (empty) evidence as a success. A failure now has its own level.
+    func testHapticsAllowanceFailedIsWarningAudio() {
+        let event = LogEvent.audioHapticsAllowanceFailed(context: "startEngine-warmUp", error: "boom")
+        XCTAssertEqual(event.level, .warning)
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(event.name, "audioHapticsAllowanceFailed")
+        XCTAssertEqual(event.message, "context=startEngine-warmUp error=boom")
+    }
+
+    /// The snapshot is the periodic line a reader scans; #293 added the
+    /// allowance to it so a regression is visible without correlating two events.
+    func testEngineStateSnapshotReportsHapticsAllowance() {
+        let event = LogEvent.engineStateSnapshot(
+            engineRunning: true,
+            isRecording: false,
+            hasWhisperKit: true,
+            sessionConfigured: true,
+            allowsHaptics: false,
+            context: "didBecomeActive"
+        )
+        XCTAssertEqual(event.subsystem, .audio)
+        XCTAssertEqual(
+            event.message,
+            "engineRunning=true isRecording=false hasWhisperKit=true "
+                + "sessionConfigured=true allowsHaptics=false context=didBecomeActive"
+        )
     }
 
     // MARK: - Transcription events
@@ -177,6 +332,36 @@ final class LogEventTests: XCTestCase {
         XCTAssertEqual(event.subsystem, .keyboard)
     }
 
+    // MARK: - Waveform frame cadence (#314)
+
+    /// The issue asks for frame-gap evidence at a finer grain than the 500 ms
+    /// `waveformStall` threshold: 50-100 ms is already enough to make a 60 Hz
+    /// animation feel bad, and none of it was visible in a log. The heartbeat is
+    /// where that evidence rides, because it is emitted every ~2 s and the log is
+    /// capped and deduplicated (#255) -- a per-frame event was not an option.
+    func testWaveformHeartbeatCarriesTheWorstFrameGapOfItsWindow() {
+        let event = LogEvent.waveformHeartbeat(
+            renderTick: 1200, avgLevel: 0.42, energyCount: 40, maxGapMs: 83
+        )
+        XCTAssertEqual(event.name, "waveformHeartbeat")
+        XCTAssertEqual(
+            event.message,
+            "renderTick=1200 avgLevel=0.420 energyCount=40 maxGapMs=83"
+        )
+    }
+
+    /// A window with no frame worth reporting still says so, rather than dropping the
+    /// field: a reader comparing two heartbeats needs the healthy one to be readable
+    /// as healthy, not as missing.
+    func testWaveformHeartbeatReportsASmoothWindowAsZero() {
+        let event = LogEvent.waveformHeartbeat(
+            renderTick: 60, avgLevel: 0, energyCount: 0, maxGapMs: 0
+        )
+        XCTAssertEqual(event.message, "renderTick=60 avgLevel=0.000 energyCount=0 maxGapMs=0")
+        XCTAssertEqual(event.level, .debug)
+        XCTAssertEqual(event.subsystem, .keyboard)
+    }
+
     // MARK: - Lifecycle events
 
     func testAppLaunchedIsInfoLifecycle() {
@@ -207,6 +392,81 @@ final class LogEventTests: XCTestCase {
         let event = LogEvent.appWhisperKitLoaded(modelName: "base")
         XCTAssertEqual(event.level, .info)
         XCTAssertEqual(event.subsystem, .lifecycle)
+    }
+
+    // MARK: - User dictionary events (#307)
+
+    func testUserDictionaryWordLearnedIsDebugKeyboard() {
+        let event = LogEvent.userDictionaryWordLearned(learnedCount: 42)
+        XCTAssertEqual(event.level, .debug)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "learnedCount=42")
+    }
+
+    func testUserDictionaryEvictedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryEvicted(removed: 3, learnedCount: 1000, cap: 1000)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=3 learnedCount=1000 cap=1000")
+    }
+
+    func testUserDictionaryResetIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryReset(clearedCount: 17)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "clearedCount=17")
+    }
+
+    func testUserDictionaryMigratedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "stamped=12 droppedStamps=2 learnedCount=30")
+    }
+
+    func testUserDictionaryStaleDiscardedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryStaleDiscarded(removed: 4, learnedCount: 26, days: 300)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=4 learnedCount=26 days=300")
+    }
+
+    func testUserDictionaryPrunedIsInfoKeyboard() {
+        let event = LogEvent.userDictionaryPruned(removed: 20, learnedCount: 2)
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .keyboard)
+        XCTAssertEqual(event.message, "removed=20 learnedCount=2")
+    }
+
+    /// The privacy guarantee these events rest on is that none of them can carry
+    /// a word at all: every associated value is an `Int`, so the formatted line
+    /// is digits and fixed keys and nothing else. A future parameter of type
+    /// `String` would break this test before it could reach an export.
+    func testUserDictionaryEventsCannotCarryText() {
+        let events: [LogEvent] = [
+            .userDictionaryWordLearned(learnedCount: 42),
+            .userDictionaryEvicted(removed: 3, learnedCount: 1000, cap: 1000),
+            .userDictionaryReset(clearedCount: 17),
+            .userDictionaryMigrated(stamped: 12, droppedStamps: 2, learnedCount: 30),
+            .userDictionaryStaleDiscarded(removed: 4, learnedCount: 26, days: 300),
+            .userDictionaryPruned(removed: 20, learnedCount: 2)
+        ]
+        let allowed = CharacterSet(charactersIn: "0123456789= ")
+            .union(CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        for event in events {
+            XCTAssertNil(
+                event.message.rangeOfCharacter(from: allowed.inverted),
+                "\(event.name) formats something other than plain key=integer pairs"
+            )
+            // The parameter values themselves are digits only.
+            let values = event.message.split(separator: " ").map { $0.split(separator: "=")[1] }
+            for value in values {
+                XCTAssertTrue(
+                    value.allSatisfy(\.isNumber),
+                    "\(event.name) has a non-numeric value \"\(value)\""
+                )
+            }
+        }
     }
 
     // MARK: - Formatted output

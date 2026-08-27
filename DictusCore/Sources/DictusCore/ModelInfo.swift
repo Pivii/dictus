@@ -182,7 +182,7 @@ public struct ModelInfo: Identifiable {
             speedScore: 0.2,
             description: "Most accurate but slowest",
             visibility: .available
-        ),
+        )
     ]
 
     /// Set of all supported model identifiers for quick lookup.
@@ -196,16 +196,18 @@ public struct ModelInfo: Identifiable {
         allIncludingDeprecated.first { $0.identifier == id }
     }
 
-    // MARK: - RAM-based Recommendation
+    // MARK: - Device-compatible Recommendation
 
-    /// Returns the recommended model identifier based on device RAM.
+    /// Returns the recommended model identifier based on hardware compatibility
+    /// first, then device RAM.
     ///
-    /// WHY RAM-based instead of hardcoded:
-    /// Different iPhones have different RAM tiers. Parakeet v3 (~800 MB) needs
-    /// enough headroom to compile and run without OOM. Devices with >=6 GB RAM
-    /// (iPhone 12 Pro, 13 Pro, 14+, 15+, 16+) can handle it comfortably.
-    /// Devices with <=4 GB RAM (iPhone 12, 12 mini, 13, 13 mini) should stick
-    /// with the smaller Whisper Small model.
+    /// WHY compatibility before RAM:
+    /// Argmax only supports Tiny/Base on A12/A13 iPhones, while A14 devices with the
+    /// same 4 GB RAM tier support Small — so RAM alone cannot separate them, and
+    /// recommending Small on an iPhone 11 traps onboarding in Core ML optimization
+    /// and can jetsam the app (issue #362). `DeviceCapabilities.isA12OrA13iPhone`
+    /// owns that test; `isSupported(on:)` reads the same predicate. After the
+    /// hardware exception, Parakeet v3 (~800 MB) remains the pick for >= 6 GB.
     ///
     /// WHY in ModelInfo (not ModelManager):
     /// This is catalog-level logic — which model fits this device. It doesn't
@@ -218,7 +220,14 @@ public struct ModelInfo: Identifiable {
     /// reads the current device, same behaviour as before.
     /// Turbo is intentionally never recommended by default during Phase 37.
     public static func recommendedIdentifier(for capabilities: DeviceCapabilities) -> String {
-        capabilities.physicalMemoryGB >= 6 ? "parakeet-tdt-0.6b-v3" : "openai_whisper-small"
+        if capabilities.isA12OrA13iPhone {
+            // Base, not Tiny: it is the most accurate variant Argmax lists for this
+            // tier, and `a12a13SupportedIdentifiers` keeps the two consistent.
+            return "openai_whisper-base"
+        }
+        return capabilities.physicalMemoryGB >= 6
+            ? "parakeet-tdt-0.6b-v3"
+            : "openai_whisper-small"
     }
 
     public static func recommendedIdentifier() -> String {
@@ -245,18 +254,96 @@ public struct ModelInfo: Identifiable {
     /// "Available" section. Backend paths (ModelManager download/delete, already-
     /// downloaded list) intentionally do NOT filter by this, so a user who obtained
     /// Turbo under a more permissive build can still manage it.
-    public func isSupported(on capabilities: DeviceCapabilities) -> Bool {
+    /// The only Whisper variants Argmax lists as supported on A12/A13 iPhones.
+    ///
+    /// WHY the `.en` variants are listed even though Dictus does not ship them:
+    /// this set is a transcription of Argmax's published matrix, so it stays
+    /// comparable against the source when that matrix is revisited. They simply
+    /// never match a catalog entry today.
+    ///
+    /// Source of truth: https://huggingface.co/argmaxinc/whisperkit-coreml/raw/main/config.json
+    static let a12a13SupportedIdentifiers: Set<String> = [
+        "openai_whisper-tiny",
+        "openai_whisper-tiny.en",
+        "openai_whisper-base",
+        "openai_whisper-base.en"
+    ]
+
+    /// Why a model cannot run on a given device, or `nil` when it can.
+    ///
+    /// WHY the reason is modelled here and not phrased here:
+    /// the UI has to tell the user which constraint they are looking at (issue #369),
+    /// and that sentence must be localized. DictusCore owns the policy; the app layer
+    /// maps each case to its French/English wording in `ModelInfo+Localized.swift`.
+    public enum IncompatibilityReason: Equatable, Sendable {
+        /// The chip predates the variant. Argmax's support matrix, not memory.
+        case hardwareGeneration
+        /// The device has less RAM than the variant needs.
+        case insufficientMemory(requiredGB: Int)
+    }
+
+    /// The reason this model cannot run on the given device, or `nil` if it can.
+    ///
+    /// WHY `isSupported(on:)` delegates here rather than duplicating the rules:
+    /// issue #369 renders the reason next to a disabled row, so a divergence between
+    /// "is it gated" and "why is it gated" would be visible as a greyed card with no
+    /// explanation, or an explanation on a tappable card. One function, no drift.
+    public func incompatibilityReason(on capabilities: DeviceCapabilities) -> IncompatibilityReason? {
+        // WHY this branch comes first: on A12/A13 the limit is the Core ML support
+        // matrix, not memory. Falling through to the RAM rule would leave Small,
+        // Small (Quantized) and Medium selectable in Settings on an iPhone 11, and
+        // downloading any of them reproduces the issue #362 optimization hang.
+        // Parakeet is excluded here too — it is absent from Argmax's matrix and
+        // needs ~800 MB of headroom these 3-4 GB devices do not have.
+        if capabilities.isA12OrA13iPhone {
+            return Self.a12a13SupportedIdentifiers.contains(identifier) ? nil : .hardwareGeneration
+        }
         switch identifier {
         case "openai_whisper-large-v3_turbo_954MB":
-            return capabilities.physicalMemoryGB >= 6
+            return capabilities.physicalMemoryGB >= 6 ? nil : .insufficientMemory(requiredGB: 6)
         default:
-            return true
+            return nil
         }
     }
 
-    /// The subset of `all` that is both catalog-available and gated-in for this device.
-    /// This is the list the Settings "Available" section should render.
+    public func isSupported(on capabilities: DeviceCapabilities) -> Bool {
+        incompatibilityReason(on: capabilities) == nil
+    }
+
+    /// The rows the Settings "Available" section should render for this device:
+    /// the visible catalog, plus the device's recommended model even when that model
+    /// is deprecated.
+    ///
+    /// WHY incompatible models are NOT filtered out (issue #369, reversing #104):
+    /// hiding them told the user nothing, and the absence read as a property of
+    /// Dictus rather than of their phone. On an A12/A13 iPhone the gating from
+    /// issue #362 would collapse this list to a single entry. They stay in the list
+    /// and the card renders them disabled with a reason; `incompatibilityReason(on:)`
+    /// is what the view asks. Deprecation still filters — deprecated means superseded,
+    /// not unrunnable, so those rows would have nothing to explain.
+    ///
+    /// WHY the recommendation is force-included (issue #362):
+    /// On A12/A13 iPhones the recommendation is Base, which is `.deprecated` and so
+    /// absent from `all`. Without this exception the app has a reachable dead end:
+    /// onboarding installs Base, the user downloads a second model, deleting Base
+    /// then becomes permitted, and Base cannot be reinstalled from anywhere. Base
+    /// stays deprecated globally on purpose — on A14+ Small is strictly better — so
+    /// the exception is scoped to the model this device is actually told to use.
+    ///
+    /// WHY the exception is guarded on `.deprecated` rather than matching the
+    /// identifier alone: `all` also drops Parakeet on iOS 16 through a runtime OS
+    /// check, while `recommendedIdentifier(for:)` returns Parakeet on any >= 6 GB
+    /// device regardless of OS. A bare identifier match would smuggle Parakeet back
+    /// onto iOS 16. This exception must undo deprecation and nothing else.
+    ///
+    /// Filters `allIncludingDeprecated` rather than `all` so the rendered order stays
+    /// catalog order instead of appending the recommendation at the end.
     public static func available(on capabilities: DeviceCapabilities) -> [ModelInfo] {
-        all.filter { $0.isSupported(on: capabilities) }
+        let recommended = recommendedIdentifier(for: capabilities)
+        let visibleIdentifiers = Set(all.map(\.identifier))
+        return allIncludingDeprecated.filter { model in
+            if visibleIdentifiers.contains(model.identifier) { return true }
+            return model.visibility == .deprecated && model.identifier == recommended
+        }
     }
 }

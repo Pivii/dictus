@@ -1,0 +1,44 @@
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    # The repo's default branch is main (App Store releases), but day-to-day
+    # PRs target develop (TestFlight) — review both.
+    base_branches:
+      - "main"
+      - "develop"
+  path_filters:
+    # Generated / mechanical files: no review value, lots of noise.
+    - "!Dictus.xcodeproj/**"
+    - "!**/*.xcstrings"
+  path_instructions:
+    - path: "DictusKeyboard/**"
+      instructions: |
+        This is an iOS keyboard extension with a hard ~50MB memory budget and no
+        UIApplication.shared access. Flag anything that could grow resident
+        memory (large buffers, caches, retained images) or that calls app-only
+        APIs. The live keyboard layout system is the vendored
+        KeyboardLayouts.swift; Models/KeyboardLayout.swift is legacy dead code —
+        flag any change that touches the dead file expecting a behavior change.
+    - path: "**/*.swift"
+      instructions: |
+        Project conventions: no force unwraps (!) except with a justification
+        comment; code comments in English; user-facing strings must exist in
+        BOTH French and English in the xcstrings catalogs (flag hardcoded
+        user-facing literals). Style (whitespace, line length, trailing commas)
+        is enforced by SwiftLint in CI — do not comment on pure style.
+    - path: "DictusApp/**"
+      instructions: |
+        The app performs STT inference app-side (WhisperKit + FluidAudio/Parakeet)
+        because the keyboard extension cannot. Audio session handling and
+        background recording are fragile, historically bug-prone areas: review
+        AVAudioSession, Live Activity, and Darwin-notification changes with
+        extra care for state desync between the app and the keyboard extension.
+
+chat:
+  auto_reply: true

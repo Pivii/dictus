@@ -64,6 +64,13 @@ class SuggestionState: ObservableObject {
     /// Cleared when the user starts typing a new word.
     var rejectedWords: Set<String> = []
 
+    /// Policy derived from the host field's input traits (#200).
+    /// Refreshed on the main thread by DictusKeyboardBridge/KeyboardViewController
+    /// whenever the field can have changed (appearance, text/selection change,
+    /// each keystroke). Cached here because updateAsync/updatePredictions run on
+    /// a background queue and cannot read UITextDocumentProxy themselves.
+    var hostPolicy: HostFieldPolicy = .allowed
+
     /// Shared engine — heavy resources (frequency dict, trie) are process-wide singletons
     /// to avoid the per-controller leak documented in #134.
     private let engine = TextPredictionEngine.shared
@@ -105,6 +112,13 @@ class SuggestionState: ObservableObject {
     /// center slot (bold) = what gets auto-applied on space. If the bar shows
     /// completions but space applies a different correction, that's confusing.
     func update(proxy: UITextDocumentProxy) {
+        // Host field traits gate (#200): search/URL/email fields get no suggestions.
+        hostPolicy = HostInputTraits.policy(for: proxy)
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = proxy.documentContextBeforeInput, !context.isEmpty else {
             clear()
             return
@@ -146,14 +160,22 @@ class SuggestionState: ObservableObject {
         // Check spell correction first (mirrors what handleSpace will do)
         if autocorrectEnabled,
            !rejectedWords.contains(partial.lowercased()),
-           let result = engine.spellCheck(partial, previousWord: previousWord),
+           let result = engine.spellCheck(
+               partial,
+               previousWord: previousWord,
+               isAtSentenceStart: ProperNounGuard.isAtSentenceStart(context: context, word: partial)
+           ),
            result.correction.lowercased() != partial.lowercased() {
-            // Standard mobile layout: [original | correction (bold) | alternative]
-            var correctionSuggestions = [partial, result.correction]
-            if let firstAlt = result.alternatives.first {
-                correctionSuggestions.append(firstAlt)
-            }
-            suggestions = correctionSuggestions
+            // Standard mobile layout: [original | correction (bold) | alternative],
+            // with a learned word claiming the third slot when it extends what
+            // was typed (#346). Slot 1 stays the corrector's — see the comment
+            // on `correctionsRow`.
+            suggestions = LearnedWordCompletions.correctionsRow(
+                typedWord: partial,
+                correction: result.correction,
+                alternative: result.alternatives.first,
+                learnedWords: UserDictionary.shared.learnedWordsByLastUsed
+            )
             mode = .corrections
             return
         }
@@ -179,6 +201,13 @@ class SuggestionState: ObservableObject {
     /// The synchronous update() is still used by delete/undo paths where fresh proxy
     /// context is needed immediately.
     func updateAsync(context: String?) {
+        // Host field traits gate (#200): reads the cached policy — this method
+        // dispatches to a background queue and cannot touch the proxy itself.
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = context, !context.isEmpty else {
             clear()
             return
@@ -229,13 +258,23 @@ class SuggestionState: ObservableObject {
             let spellResult: (correction: String, alternatives: [String])?
             if self.autocorrectEnabled,
                !self.rejectedWords.contains(partial.lowercased()) {
-                spellResult = self.engine.spellCheck(partial, previousWord: previousWord)
+                spellResult = self.engine.spellCheck(
+                    partial,
+                    previousWord: previousWord,
+                    isAtSentenceStart: ProperNounGuard.isAtSentenceStart(context: context, word: partial)
+                )
             } else {
                 spellResult = nil
             }
 
             // Compute completions as fallback
             let completions = self.engine.suggestions(for: partial)
+
+            // Snapshot the learned set here rather than in the main-thread block
+            // below: it is the same background queue `suggestions(for:)` already
+            // reads it on, and the corrections row must be built from the same
+            // view of the dictionary the completions were.
+            let learnedWords = UserDictionary.shared.learnedWordsByLastUsed
 
             // Publish on main thread (required for @Published)
             DispatchQueue.main.async { [weak self] in
@@ -253,12 +292,15 @@ class SuggestionState: ObservableObject {
                     self.mode = .undoAvailable
                 } else if let result = spellResult,
                    result.correction.lowercased() != partial.lowercased() {
-                    // Spell correction (standard mobile layout)
-                    var correctionSuggestions = [partial, result.correction]
-                    if let firstAlt = result.alternatives.first {
-                        correctionSuggestions.append(firstAlt)
-                    }
-                    self.suggestions = correctionSuggestions
+                    // Spell correction (standard mobile layout), third slot to a
+                    // learned word when one extends the typed prefix (#346).
+                    // Same function as the sync path so the two agree.
+                    self.suggestions = LearnedWordCompletions.correctionsRow(
+                        typedWord: partial,
+                        correction: result.correction,
+                        alternative: result.alternatives.first,
+                        learnedWords: learnedWords
+                    )
                     self.mode = .corrections
                 } else if !completions.isEmpty {
                     self.suggestions = completions
@@ -282,8 +324,14 @@ class SuggestionState: ObservableObject {
 
     /// Spell check with optional previous word context for n-gram boosting.
     /// When previousWord is provided, correction candidates are reranked by bigram frequency.
-    func performSpellCheck(_ word: String, previousWord: String?) -> (correction: String, alternatives: [String])? {
-        return engine.spellCheck(word, previousWord: previousWord)
+    /// isAtSentenceStart drives the proper-noun guard (#199); defaults to true
+    /// (conservative — corrections stay enabled for callers without position info).
+    func performSpellCheck(
+        _ word: String,
+        previousWord: String?,
+        isAtSentenceStart: Bool = true
+    ) -> (correction: String, alternatives: [String])? {
+        return engine.spellCheck(word, previousWord: previousWord, isAtSentenceStart: isAtSentenceStart)
     }
 
     /// Resets the suggestion state to idle.
@@ -298,9 +346,16 @@ class SuggestionState: ObservableObject {
         engine.setLanguage(lang)
     }
 
-    /// Learn a word and notify the prediction engine (no-op for trie engine).
-    func learnWord(_ word: String) {
-        engine.injectUserWord(word)
+    /// Whether the active language's dictionary does not know this word (#287).
+    /// The word-boundary learning site asks before recording anything.
+    func isUnknownToDictionary(_ word: String) -> Bool {
+        engine.isUnknownToDictionary(word)
+    }
+
+    /// Attempts the user dictionary's one-shot prune (#287). Call from a moment
+    /// with a dictionary already mounted and no load pending — see the engine.
+    func pruneUserDictionaryIfPossible(trigger: String) {
+        engine.pruneUserDictionaryIfPossible(trigger: trigger)
     }
 
     // MARK: - N-gram Predictions
@@ -313,6 +368,12 @@ class SuggestionState: ObservableObject {
     /// word and running spell check, we extract the last 1-2 complete words and query
     /// the n-gram engine. The result is displayed in .predictions mode, not .corrections.
     func updatePredictions(context: String?) {
+        // Host field traits gate (#200): no next-word predictions in search/URL fields.
+        guard hostPolicy.suggestionsAllowed else {
+            clear()
+            return
+        }
+
         guard let context = context, !context.isEmpty else {
             clear()
             return

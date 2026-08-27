@@ -51,6 +51,11 @@ Runs three Python scripts in order:
 2. `tools/dict_builder.py` — corpus-agnostic. Reads the frequency JSON, builds a compressed patricia trie at `<code>_spellcheck.dict` (typically 0.4–0.5 MiB).
 3. `tools/ngram_builder.py --lang <code>` — pulls OpenSubtitles top sentences, Google Books German n-grams, and 50 000 articles across `<code>wikinews/wikiquote/wikibooks/wikivoyage` CirrusSearch dumps. Outputs `<code>_ngrams.dict` (~6–7 MiB after the 50K bigram + 30K trigram cap). Wikipedia parsing dominates run time (~3–5 minutes for German).
 
+**The trie does not store raw counts.** `dict_builder.py` writes `65535 * ln(1 + freq) / ln(1 + max_freq)` into each node, and that log-normalized value is what `AOSPTrieEngine.frequency(of:)` returns. The compression is severe: German `fuer` (712) against `für` (735 252) is 1033x in the corpus and 2.06x once stored. Two consequences, both learned the hard way in issue #326:
+
+- `AccentExpander`'s 5x-dominance rule is **unreachable for every entry a curated list actually contains.** The stored value is capped at 65535, so clearing 5x needs the input to normalize below 13107 — which means a raw count under `(1 + max_freq)^0.2`. For German that threshold is **21.6**, and the top-40K list bottoms out at 88. Only corpus entries far below any sane cutoff could ever be dominated. So a misspelling that is in the trie will not be corrected by accent expansion, whatever its corpus frequency: curate it out of the frequency JSON instead. Recompute the threshold when onboarding a language, rather than assuming German's.
+- A test that drives `expandAccents` through `MockFrequencyProvider` (raw counts) will pass where the device fails. Use `LogNormalizedFrequencyProvider` when the *threshold* is what's under test.
+
 For `ngram_builder.py` to recognize the new language you must also extend two constants in that file:
 
 - `LANG_MAP[<code>] = "<orgtre name>"` — maps the BCP-47 code to the directory name used by the orgtre repos (`german`, `french`, etc.).
@@ -73,11 +78,11 @@ Four sections of the pbxproj need updates: `PBXBuildFile`, `PBXFileReference`, `
 Runs:
 
 ```
-xcodebuild test -scheme DictusCore-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
+cd DictusCore && swift test
 xcodebuild build -project Dictus.xcodeproj -scheme DictusApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -configuration Debug
 ```
 
-`swift test` doesn't work on the DictusCore package because the package targets iOS 17 (some types pull in `SwiftUI` symbols not available on macOS). Use the iOS simulator destination.
+The DictusCore suite runs on the host Mac, not on a simulator. The package builds for macOS on purpose — that is what the `#if canImport(UIKit)` guards scattered through the library are for — and no test in the suite is gated to iOS, so a simulator destination costs minutes and buys no coverage. The app build below it is the part that needs a simulator.
 
 ## Curated decisions (no automation can guess these)
 
@@ -85,7 +90,7 @@ xcodebuild build -project Dictus.xcodeproj -scheme DictusApp -destination 'platf
 - **`shortCode`** — the two-letter uppercase code shown on the keyboard toolbar switcher. Always equal to `code.uppercased()`.
 - **`defaultLayout`** — `.azerty` (French only) or `.qwerty` (everything else, including German on launch). Per-language layout selection (e.g. QWERTZ for German) is tracked in issue #52 / #151.
 - **`spaceName` / `returnName`** — local convention. `espace / retour` (fr), `space / return` (en), `espacio / intro` (es), `Leertaste / Eingabe` (de). Look up the local convention; do not translate "space" word-for-word.
-- **`accentMap`** — generative, doesn't require fluency. List each base letter and the accent variants the algorithm should try. German example: `"a": ["ä"], "o": ["ö"], "u": ["ü"], "s": ["ß"]`. Note: `AccentExpander` does single-character substitution only — German `ss → ß` (length-changing) does not work today; user reaches `ß` via long-press on `s`.
+- **`accentMap`** — generative, doesn't require fluency. List each base letter and the accent variants the algorithm should try. German example: `"a": ["ä"], "o": ["ö"], "u": ["ü"]`. `accentMap` models single-character substitution only; anything that changes the word's length (German `ss → ß`, `ue → ü`) goes in **`collapseRules`** instead, which `AccentExpander` applies in the same pass. Long-press on `s` still reaches `ß` directly.
 - **`overrides`** — **empty on first ship for non-native launches** (ADR 0001). The override map forces a correction unconditionally, so populating it from a phrasebook produces silent regressions when a "must-correct" turns out to be a valid alternative. Populate post-launch from real user feedback.
 - **`contractionPrefixes`** — language-specific. French has nine (`l'`, `d'`, `c'`, ..., `qu'`); English handles contractions via the override map; Spanish and German leave this empty.
 
@@ -107,6 +112,85 @@ Pick one of those three patterns. **Don't** layer in SMS abbreviations or proper
 - Localizing UI strings (`Localizable.xcstrings`). Tracked separately in issue #52.
 - Translating the user-facing onboarding flow (`GlobeKeyTutorialPage` etc.). Tracked separately.
 
+## Polish prompt (Apple Foundation Models)
+
+The polish layer (issue #141, ADR 0003) runs a per-language system prompt against Apple FM. **Adding a new language without a dedicated prompt is supported** — the dispatch falls back to English Natural — but ships a polish that uses English contractions and English fillers, which is clearly worse than language-specific rules even before native-speaker validation. Author a dedicated prompt as part of the launch unless the language genuinely has no business adding one (e.g., a language Apple FM does not support).
+
+### Where to add the prompt
+
+`DictusCore/Sources/DictusCore/Polish/Prompts/PolishNaturalPrompt<XX>.swift` where `<XX>` is the uppercase two-letter ISO 639-1 code (`FR`, `EN`, `ES`, `DE`, …). One file per language, one `enum` per file, single static `instructions(glossary:)` method returning the prompt string.
+
+### What to copy from
+
+`PolishNaturalPromptFR.swift` is the reference. It was authored against real dictation tests and carries the structure all per-language prompts share:
+
+1. TEXT TRANSFORMATION FUNCTION framing (anti-chat-reply guard).
+2. OUTPUT LANGUAGE lock.
+3. RESPONSE-IS-POLISHED-TEXT block.
+4. GOAL statement.
+5. RULES section (1-9) — the operations the model MUST perform.
+6. PRESERVE section — what stays untouched.
+7. FORBIDDEN section — what must never happen.
+8. Domain glossary slot (`\(glossary)`).
+9. INPUT/OUTPUT examples covering each rule.
+10. ASR-repair example (rule 8).
+11. `<<NL>>` marker examples (rule 5).
+
+### What to adapt per language
+
+| Aspect | French | English | Spanish | German |
+|---|---|---|---|---|
+| Typographic spacing | NBSP before `? ! ; :` | none | none | none |
+| Question/exclamation | `?`, `!` | `?`, `!` | inverted: `¿…?`, `¡…!` | `?`, `!` |
+| Apostrophe | typographic `’` | typographic `’` | not standard | not standard |
+| Diacritics rule | French accents | n/a | Spanish accents (`tú`/`tu`, `sí`/`si`) | umlauts + `ß` |
+| Capitalization | sentence + proper nouns | sentence + proper nouns + standalone "I" | sentence + proper nouns | sentence + ALL nouns |
+| Familiar register list | `t'es`, `dispo`, `19h`, `appart`, … | `gonna`, `wanna`, `dunno`, `cuz`, … | `pa'`, `na'`, `to'`, … | `'ne`, `'nen`, `gehste`, … |
+| Negation form | oral negation (no `ne`) | contractions (`don't` not `do not`) | n/a | n/a |
+| Filler list | `euh`, `hum`, `tu vois`, `en fait` | `uh`, `um`, `like`, `you know` | `eh`, `pues`, `o sea`, `tipo` | `äh`, `ähm`, `halt`, `naja` |
+| Transition keep-list | `voilà`, `bon`, `bref`, `donc` | `so`, `well`, `anyway` | `bueno`, `pues`, `entonces` | `also`, `naja`, `tja`, `nun` |
+| Tech anglicism list | identical across languages | identical | identical | identical |
+
+The tech anglicism list (`today`, `ship`, `commit`, `push`, `merge`, `PR`, `deploy`, `feature`, `bug`, `release`, …) is **the same in every prompt** — devs working in any of these languages still use the English terms.
+
+### How to wire it
+
+Add a `case` arm in `AppleFoundationModelsPolishEngine.instructions(for:language:)`:
+
+```swift
+case (.natural, .<yourLanguage>):
+    return PolishNaturalPrompt<XX>.instructions(glossary: glossary)
+```
+
+The compiler enforces exhaustiveness — adding a new `SupportedLanguage` case without an arm here is a build error, which is what we want.
+
+No Xcode project edits are needed: the prompts live in the `DictusCore` SwiftPM target (`path: "Sources/DictusCore"`), which auto-discovers every `.swift` file under it. Just create the file in the `Prompts/` directory and it compiles.
+
+### Repair prompts
+
+Each language also needs a `PolishRepairPrompt<XX>.swift` (Repair mode, ADR 0002). Repair fires on Parakeet when the language detected on the raw STT output differs from the target — Parakeet ignores the language picker, so a speaker who code-switches can get a transcript in the wrong language, and Repair reconstructs the intent in the target language.
+
+Without a dedicated Repair prompt, the dispatch falls back to `PolishRepairPromptEN`, which forces **English** output — the language guardrail (`PolishGuardrail.detectedLanguageMatches`) then rejects it and writes raw instead, so the user gets no polish at all. Copy `PolishRepairPromptFR.swift` (template) and wire the arm:
+
+```swift
+case (.repair, .<yourLanguage>):
+    return PolishRepairPrompt<XX>.instructions(glossary: glossary)
+```
+
+Caveat (Apple FM, 26.x): cross-lingual reconstruction is not uniformly reliable. ES Repair works; **DE Repair reproducibly leaks Polish** when reconstructing from a Romance-language input, and the prior is not promptable away. The guardrail catches it (raw fallback), but until a third-party local LLM lands, Repair quality is language-dependent and must be checked per language with `polish-harness show`.
+
+### Validation
+
+A new prompt **needs native-speaker validation before being trusted in production**. The ES/DE prompts shipped in the round-1 Natural rollout are flagged in their file doc-comment as "authored on-paper without a native-speaker test set". Validation = read a written test script in the target language, dictate it through Dictus, export the polish ring JSON, compare to what a native speaker would have typed. File quality gaps against the language's GitHub issue or the post-launch playbook (#152).
+
+### When to skip the prompt
+
+Skip the dedicated prompt **only** when:
+- Apple FM does not support the language at all (`SystemLanguageModel.default.supportedLanguages` doesn't include it). The English fallback is then a no-op since the user won't see meaningful output anyway.
+- The language ships as a keyboard-only launch with the polish toggle hidden in Settings for that locale. (This is not currently a supported launch shape — file an issue first.)
+
+In every other case, write the prompt.
+
 ## Smoke testing on the simulator
 
 After `verify` passes, install the build on the iPhone 17 Pro simulator. The runbook for German (PR2) was:
@@ -114,7 +198,7 @@ After `verify` passes, install the build on the iPhone 17 Pro simulator. The run
 1. Open Settings, change language to Deutsch.
 2. Confirm spacebar reads `Leertaste`, return key reads `Eingabe`, layout stays QWERTY.
 3. Type `uber`, `schon`, `madchen` → expect `über`, `schön`, `mädchen` (single-substitution accent expansion).
-4. Type `strasse` → expect `strasse` to stay as-is (acknowledged ss → ß limitation).
+4. Type `strasse`, `fuer`, `koennen` → expect `straße`, `für`, `können` (collapse rules).
 5. Switch to French, English, Spanish in turn — verify the six pre-existing autocorrect cases from PR1 still pass.
 
 If a smoke test surfaces a quality gap (missing override, missing seed bigram), file it on the language's GitHub issue. **Don't** add it to the launch PR — the post-launch playbook (issue #152) handles iterative improvements driven by real usage.
@@ -122,6 +206,7 @@ If a smoke test surfaces a quality gap (missing override, missing seed bigram), 
 ## Reference
 
 - ADR 0001 — empty overrides and seed bigrams for non-native language launches: `docs/adr/0001-empty-overrides-and-seeds-for-non-native-language-launches.md`
+- ADR 0003 — Natural polish contract (per-language polish prompts): `docs/adr/0003-natural-polish-contract.md`
 - Domain glossary: `CONTEXT.md` (sections "Language onboarding", "Language profile", "Override map", "Accent map", "Seed bigrams")
 - The German launch (issue #109): the worked example. PR2 commits show every file touched.
 - Follow-ups: #151 (QWERTZ layout for German), #152 (post-launch quality playbook).

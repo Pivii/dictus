@@ -44,6 +44,12 @@ public enum LogEvent: Sendable {
     case dictationCompleted(durationMs: Int)
     case dictationFailed(error: String)
     case dictationDeferred(reason: String)
+    /// Issue #261: an active dictation status was found in the App Group with no
+    /// live process behind it, and was cleared. `heartbeatAgeMs` is -1 when the
+    /// heartbeat key was absent, which is how the app-side launch audit reports it
+    /// (a fresh process owns no session by construction, so it needs no heartbeat
+    /// to reach its verdict).
+    case dictationStateReconciled(source: String, staleStatus: String, heartbeatAgeMs: Int)
 
     // MARK: Audio
     case audioEngineStarted
@@ -56,6 +62,18 @@ public enum LogEvent: Sendable {
     case audioMediaServicesReset
     case warmStateReleased(idleSeconds: Int)
     case warmStateRestored(context: String)
+    /// The value `AVAudioSession` actually reports for
+    /// `allowHapticsAndSystemSoundsDuringRecording` after a session transition
+    /// (#293). `allowed=false` while the session is active is the bug itself:
+    /// iOS then mutes system haptics device-wide, on every keyboard including
+    /// Apple's, for as long as we hold the session. Emitted on every path that
+    /// activates or tears down the session so a regression shows up in the log
+    /// instead of being inferred from timing.
+    case audioHapticsAllowance(context: String, allowed: Bool)
+    /// `setAllowHapticsAndSystemSoundsDuringRecording` threw. Before #293 this
+    /// call site was a bare `try?`, so a failure was indistinguishable from a
+    /// success.
+    case audioHapticsAllowanceFailed(context: String, error: String)
 
     // MARK: Transcription
     case transcriptionStarted(modelName: String)
@@ -87,6 +105,45 @@ public enum LogEvent: Sendable {
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
 
+    // MARK: Keyboard status message (#261)
+    /// The toolbar message was assigned. `reason` names what asked for it.
+    case dictationMessageSet(reason: String, owner: String, visible: Bool)
+    /// A live view put that message on screen. One line per view that rendered it,
+    /// which is the whole point: iOS keeps several controllers alive, and whether
+    /// the one the user is looking at was among them is exactly the open question.
+    case dictationMessageDisplayed(rootView: String, controller: String, owner: String, visible: Bool)
+    /// The message ended. `displayedCount` is how many views had reported rendering
+    /// it over its life, so a single line answers whether anybody could have read it.
+    case dictationMessageCleared(reason: String, displayedCount: Int)
+
+    // MARK: User dictionary (#307)
+    // Every payload here is an Int, and that is the point: these cases *cannot*
+    // carry a learned word. The words themselves live in AutocorrectDebugLog,
+    // which does not exist in a Release binary. See that file's header for the
+    // split.
+    /// A word entered the personal dictionary. `learnedCount` is the size of the
+    /// dictionary after the write, so a reader can watch it grow and see where it
+    /// stops.
+    case userDictionaryWordLearned(learnedCount: Int)
+    /// The cap overflowed and entries were dropped (#304). `removed` is how many
+    /// this write took out, `learnedCount` the size it settled at.
+    case userDictionaryEvicted(removed: Int, learnedCount: Int, cap: Int)
+    /// The dictionary was cleared, and how many words that cost.
+    case userDictionaryReset(clearedCount: Int)
+    /// Entries written before recency existed were stamped on load (#304).
+    /// `stamped` is the legacy cohort, `droppedStamps` the timestamps whose word
+    /// was no longer learned. This is the line that answers "did the update keep
+    /// this install's vocabulary" — the #304 criterion no log could settle.
+    case userDictionaryMigrated(stamped: Int, droppedStamps: Int, learnedCount: Int)
+    /// Entries unused for `days` were discarded on load (#287). Below the cap this
+    /// is the only thing that ever removes an entry, so it is the line that says
+    /// a dictionary is being kept honest over time.
+    case userDictionaryStaleDiscarded(removed: Int, learnedCount: Int, days: Int)
+    /// The one-shot prune of entries the base dictionary already knew (#287).
+    /// `removed` is what this install was carrying for nothing; the words
+    /// themselves are in the debug log.
+    case userDictionaryPruned(removed: Int, learnedCount: Int)
+
     // MARK: Animation
     case overlayShown(status: String)
     case overlayHidden(status: String)
@@ -100,14 +157,18 @@ public enum LogEvent: Sendable {
     case engineWarmUpAttempt(context: String)
     case engineWarmUpSuccess(context: String)
     case engineWarmUpFailed(context: String, error: String)
-    case engineStateSnapshot(engineRunning: Bool, isRecording: Bool, hasWhisperKit: Bool, sessionConfigured: Bool, context: String)
+    case engineStateSnapshot(engineRunning: Bool, isRecording: Bool, hasWhisperKit: Bool, sessionConfigured: Bool, allowsHaptics: Bool, context: String)
     case engineCollectResult(sampleCount: Int, engineRunning: Bool)
     case engineDarwinStartReceived(appState: String, engineRunning: Bool)
 
     // MARK: Waveform Diagnostics
     case waveformAppeared(refreshID: Int, isProcessing: Bool, energyCount: Int, killedState: Bool)
     case waveformDisappeared(refreshID: Int, renderTick: Int)
-    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int)
+    /// `maxGapMs` is the worst interval between two display-link callbacks since the
+    /// previous heartbeat. It is the frame-cadence evidence #314 asks for, carried by a
+    /// line that is already emitted every ~2 s: a per-frame event would be the wrong
+    /// trade against a log that is capped at 1 MB and deduplicated (#255).
+    case waveformHeartbeat(renderTick: Int, avgLevel: Float, energyCount: Int, maxGapMs: Int)
     case waveformStall(gapMs: Int, renderTick: Int, energyCount: Int)
     case waveformRefreshIDChanged(oldID: Int, newID: Int, status: String)
     case waveformEnergyTransition(fromCount: Int, toCount: Int, status: String)
@@ -136,12 +197,34 @@ public enum LogEvent: Sendable {
     case liveActivityTransition(from: String, to: String)
     case liveActivityFailed(context: String, error: String)
     case liveActivityEnded(reason: String)
+    /// A standby start/recovery attempt returned without creating a new activity.
+    /// WHY the two booleans: When the Dynamic Island silently never appears, the
+    /// exported log must show BOTH the in-app toggle and the iOS-level
+    /// ActivityAuthorizationInfo().areActivitiesEnabled value to tell the causes
+    /// apart (issue #233 — the system toggle was the only fully silent path).
+    /// WHY activityState: both booleans can read true while the activity the
+    /// manager is holding has already been ended by the system. Without the
+    /// activity's real state, that failure looks identical to a healthy skip in
+    /// an exported log, which is how #257 went unnoticed for 8 hours. nil means
+    /// the manager held no activity at all.
+    case liveActivityStandbySkipped(reason: String, isEnabled: Bool, activitiesEnabled: Bool, activityState: LiveActivityLiveness?)
 
     // MARK: Cold Start Diagnostics
     case coldStartURLReceived(isColdStart: Bool, isEngineDead: Bool, hasBeenActive: Bool)
     case coldStartFlagSet(active: Bool, context: String)
     case coldStartRetry(keyboardStatus: String)
     case coldStartDarwinFallback(elapsedMs: Int, status: String)
+    /// A cold start was still parked when the app left the foreground, so
+    /// `didBecomeActive` was never going to arrive (#311). `action` is the
+    /// `ColdStartResolution` that was applied — `dropped`, `report` or `retry` —
+    /// or `expired`, which is the background assertion running out with the
+    /// request still unresolved. This is the line that makes the failure
+    /// self-diagnosing: before it, a stranded dictation left no trace at all
+    /// beyond a `dictationDeferred` followed by silence.
+    case coldStartStranded(keyboardStatus: String, action: String)
+
+    // MARK: Subscription
+    case subscriptionError(action: String, error: String)
 
     // MARK: Log Management
     case logExportCompleted(durationMs: Int, sizeBytes: Int)
@@ -154,16 +237,41 @@ public enum LogEvent: Sendable {
     case appWhisperKitLoaded(modelName: String)
     case deviceCapabilitySnapshot(model: String, ramGB: Int, availableMemoryMB: Int, thermalState: String)
 
+    // MARK: Polish
+    /// Issue #315: the polish engine threw. `reason` is the slug the engine gave
+    /// its own failure (`PolishFailureReason`) — "rateLimited", "concurrentRequests",
+    /// or "other:<Type>" for an error no engine recognised.
+    ///
+    /// WHY it belongs in this log and not only in the polish debug export: the
+    /// export answers "how often, and which reason", but not "what else was the
+    /// app doing". A failure that arrives in 4 ms has to be readable against the
+    /// dictation timeline right next to it — status transitions, holds, the
+    /// insertion — and only this log has all of them on one page.
+    case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int)
+
+    /// Issue #315: polish stopped calling its engine for the rest of this process,
+    /// after `consecutiveRefusals` `rateLimited` results in a row.
+    ///
+    /// Emitted once, on the transition. Every dictation after it records
+    /// `outcome = engineUnavailable` in the polish debug export, so the count of
+    /// what a single outage cost is already answerable there; a line per skipped
+    /// call here would only repeat it. What this log has that the export does not
+    /// is everything else the app was doing, which is what says whether the user
+    /// was told and what the keyboard was showing at the time.
+    case polishEngineUnavailable(engine: String, reason: String, consecutiveRefusals: Int)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
     public var subsystem: Subsystem {
         switch self {
-        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred:
+        case .dictationStarted, .dictationCompleted, .dictationFailed, .dictationDeferred,
+             .dictationStateReconciled:
             return .dictation
         case .audioEngineStarted, .audioEngineStopped, .audioSessionConfigured, .audioSessionFailed,
              .audioInterruptionBegan, .audioInterruptionEnded, .audioRouteChanged,
-             .audioMediaServicesReset, .warmStateReleased, .warmStateRestored:
+             .audioMediaServicesReset, .warmStateReleased, .warmStateRestored,
+             .audioHapticsAllowance, .audioHapticsAllowanceFailed:
             return .audio
         case .transcriptionStarted, .transcriptionCompleted, .transcriptionFailed, .recordingTooShort,
              .transcriptionPerformance:
@@ -176,10 +284,13 @@ public enum LogEvent: Sendable {
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .overlayShown, .overlayHidden, .rapidTapRejected,
+             .dictationMessageSet, .dictationMessageDisplayed, .dictationMessageCleared,
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
              .waveformRefreshIDChanged, .waveformEnergyTransition, .waveformTimelineNotFiring,
              .overlayBodyEvaluated, .overlayTimerStarted, .overlayTimerStopped, .overlayRecreated,
-             .diagnosticProbe:
+             .diagnosticProbe,
+             .userDictionaryWordLearned, .userDictionaryEvicted, .userDictionaryReset,
+             .userDictionaryMigrated, .userDictionaryStaleDiscarded, .userDictionaryPruned:
             return .keyboard
         case .statusChanged, .watchdogReset, .idleInvariantViolation:
             return .dictation
@@ -192,15 +303,24 @@ public enum LogEvent: Sendable {
              .onboardingDictusKeyboardActivated, .onboardingGlobeTutorialTextDetected,
              .onboardingGlobeTutorialSkipped:
             return .lifecycle
-        case .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry, .coldStartDarwinFallback:
+        case .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry, .coldStartDarwinFallback,
+             .coldStartStranded:
             return .lifecycle
         case .logExportCompleted:
             return .lifecycle
-        case .liveActivityStarted, .liveActivityTransition, .liveActivityFailed, .liveActivityEnded:
+        case .subscriptionError:
+            return .lifecycle
+        case .liveActivityStarted, .liveActivityTransition, .liveActivityFailed, .liveActivityEnded,
+             .liveActivityStandbySkipped:
             return .lifecycle
         case .appLaunched, .appDidBecomeActive, .appWillResignActive,
              .appDidEnterBackground, .appWhisperKitLoaded, .deviceCapabilitySnapshot:
             return .lifecycle
+        // Polish is the stage after the STT result and before the App Group
+        // write, so it reads with the transcription stream rather than as a
+        // subsystem of its own (#315).
+        case .polishEngineFailed, .polishEngineUnavailable:
+            return .transcription
         }
     }
 
@@ -209,18 +329,24 @@ public enum LogEvent: Sendable {
     /// stops/internal state = debug.
     public var level: LogLevel {
         switch self {
+        // A message nobody rendered is the failure this instrumentation exists to
+        // catch (#261), so it is findable by level and not only by reading the count.
+        case .dictationMessageCleared(_, let displayedCount):
+            return displayedCount == 0 ? .warning : .info
+
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
-             .liveActivityFailed, .idleInvariantViolation:
+             .liveActivityFailed, .subscriptionError, .idleInvariantViolation:
             return .error
 
         // Warnings
-        case .dictationDeferred, .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
+        case .dictationDeferred, .dictationStateReconciled,
+             .watchdogReset, .engineWarmUpFailed, .recordingTooShort,
              .waveformStall, .waveformTimelineNotFiring,
-             .coldStartDarwinFallback, .modelPrewarmTimeout,
+             .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
-             .modelDownloadStalled:
+             .modelDownloadStalled, .audioHapticsAllowanceFailed:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -235,15 +361,19 @@ public enum LogEvent: Sendable {
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
+             .dictationMessageSet, .dictationMessageDisplayed,
              .appLaunched, .appWhisperKitLoaded, .logExportCompleted,
              .deviceCapabilitySnapshot,
              .liveActivityStarted, .liveActivityTransition, .liveActivityEnded,
+             .liveActivityStandbySkipped,
              .coldStartURLReceived, .coldStartFlagSet, .coldStartRetry,
              .overlayShown, .overlayHidden, .statusChanged,
              .waveformAppeared, .waveformDisappeared, .waveformRefreshIDChanged,
              .waveformEnergyTransition, .overlayBodyEvaluated, .overlayRecreated,
              .audioInterruptionEnded, .audioRouteChanged,
-             .warmStateReleased, .warmStateRestored:
+             .warmStateReleased, .warmStateRestored, .audioHapticsAllowance,
+             .userDictionaryEvicted, .userDictionaryReset, .userDictionaryMigrated,
+             .userDictionaryStaleDiscarded, .userDictionaryPruned:
             return .info
 
         // Debug (internal state transitions)
@@ -257,8 +387,23 @@ public enum LogEvent: Sendable {
              .engineWarmUpAttempt, .engineWarmUpSuccess,
              .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived,
              .waveformHeartbeat, .overlayTimerStarted, .overlayTimerStopped,
-             .diagnosticProbe:
+             .diagnosticProbe,
+             // Debug, not info: one line per newly learned word is the finest grain
+             // in this group. The eviction and reset lines are the ones a reader
+             // scans for.
+             .userDictionaryWordLearned:
             return .debug
+
+        // Warning, not error: the user still gets their text (the deterministic
+        // floor), only the polish is lost — but silently, which is the failure
+        // worth finding in a log (#315).
+        //
+        // The same level for the unavailable transition, and for the same reason:
+        // an enabled feature has stopped running. It is the more serious of the
+        // two — it holds for the rest of the process — but not an error either,
+        // because nothing broke and no text was lost.
+        case .polishEngineFailed, .polishEngineUnavailable:
+            return .warning
         }
     }
 
@@ -269,6 +414,7 @@ public enum LogEvent: Sendable {
         case .dictationCompleted: return "dictationCompleted"
         case .dictationFailed: return "dictationFailed"
         case .dictationDeferred: return "dictationDeferred"
+        case .dictationStateReconciled: return "dictationStateReconciled"
         case .audioEngineStarted: return "audioEngineStarted"
         case .audioEngineStopped: return "audioEngineStopped"
         case .audioSessionConfigured: return "audioSessionConfigured"
@@ -279,6 +425,8 @@ public enum LogEvent: Sendable {
         case .audioMediaServicesReset: return "audioMediaServicesReset"
         case .warmStateReleased: return "warmStateReleased"
         case .warmStateRestored: return "warmStateRestored"
+        case .audioHapticsAllowance: return "audioHapticsAllowance"
+        case .audioHapticsAllowanceFailed: return "audioHapticsAllowanceFailed"
         case .transcriptionStarted: return "transcriptionStarted"
         case .transcriptionCompleted: return "transcriptionCompleted"
         case .transcriptionFailed: return "transcriptionFailed"
@@ -296,6 +444,9 @@ public enum LogEvent: Sendable {
         case .keyboardDidAppear: return "keyboardDidAppear"
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
+        case .dictationMessageSet: return "dictationMessageSet"
+        case .dictationMessageDisplayed: return "dictationMessageDisplayed"
+        case .dictationMessageCleared: return "dictationMessageCleared"
         case .keyboardTextInserted: return "keyboardTextInserted"
         case .engineWarmUpAttempt: return "engineWarmUpAttempt"
         case .engineWarmUpSuccess: return "engineWarmUpSuccess"
@@ -316,6 +467,7 @@ public enum LogEvent: Sendable {
         case .liveActivityTransition: return "liveActivityTransition"
         case .liveActivityFailed: return "liveActivityFailed"
         case .liveActivityEnded: return "liveActivityEnded"
+        case .liveActivityStandbySkipped: return "liveActivityStandbySkipped"
         case .appLaunched: return "appLaunched"
         case .appDidBecomeActive: return "appDidBecomeActive"
         case .appWillResignActive: return "appWillResignActive"
@@ -343,6 +495,8 @@ public enum LogEvent: Sendable {
         case .coldStartFlagSet: return "coldStartFlagSet"
         case .coldStartRetry: return "coldStartRetry"
         case .coldStartDarwinFallback: return "coldStartDarwinFallback"
+        case .coldStartStranded: return "coldStartStranded"
+        case .subscriptionError: return "subscriptionError"
         case .logExportCompleted: return "logExportCompleted"
         case .transcriptionPerformance: return "transcriptionPerformance"
         case .modelPrewarmPeakMemory: return "modelPrewarmPeakMemory"
@@ -351,6 +505,14 @@ public enum LogEvent: Sendable {
         case .modelLoadStateChanged: return "modelLoadStateChanged"
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
+        case .polishEngineFailed: return "polishEngineFailed"
+        case .polishEngineUnavailable: return "polishEngineUnavailable"
+        case .userDictionaryWordLearned: return "userDictionaryWordLearned"
+        case .userDictionaryEvicted: return "userDictionaryEvicted"
+        case .userDictionaryReset: return "userDictionaryReset"
+        case .userDictionaryMigrated: return "userDictionaryMigrated"
+        case .userDictionaryStaleDiscarded: return "userDictionaryStaleDiscarded"
+        case .userDictionaryPruned: return "userDictionaryPruned"
         }
     }
 
@@ -367,6 +529,8 @@ public enum LogEvent: Sendable {
             return "error=\(error)"
         case .dictationDeferred(let reason):
             return "reason=\(reason)"
+        case .dictationStateReconciled(let source, let staleStatus, let heartbeatAgeMs):
+            return "source=\(source) staleStatus=\(staleStatus) heartbeatAgeMs=\(heartbeatAgeMs)"
 
         // Audio
         case .audioEngineStarted, .audioEngineStopped:
@@ -387,6 +551,10 @@ public enum LogEvent: Sendable {
             return "idleSeconds=\(idleSeconds)"
         case .warmStateRestored(let context):
             return "context=\(context)"
+        case .audioHapticsAllowance(let context, let allowed):
+            return "context=\(context) allowed=\(allowed)"
+        case .audioHapticsAllowanceFailed(let context, let error):
+            return "context=\(context) error=\(error)"
 
         // Transcription
         case .transcriptionStarted(let modelName):
@@ -438,8 +606,8 @@ public enum LogEvent: Sendable {
             return "context=\(context)"
         case .engineWarmUpFailed(let context, let error):
             return "context=\(context) error=\(error)"
-        case .engineStateSnapshot(let engineRunning, let isRecording, let hasWhisperKit, let sessionConfigured, let context):
-            return "engineRunning=\(engineRunning) isRecording=\(isRecording) hasWhisperKit=\(hasWhisperKit) sessionConfigured=\(sessionConfigured) context=\(context)"
+        case .engineStateSnapshot(let engineRunning, let isRecording, let hasWhisperKit, let sessionConfigured, let allowsHaptics, let context):
+            return "engineRunning=\(engineRunning) isRecording=\(isRecording) hasWhisperKit=\(hasWhisperKit) sessionConfigured=\(sessionConfigured) allowsHaptics=\(allowsHaptics) context=\(context)"
         case .engineCollectResult(let sampleCount, let engineRunning):
             return "sampleCount=\(sampleCount) engineRunning=\(engineRunning)"
         case .engineDarwinStartReceived(let appState, let engineRunning):
@@ -471,6 +639,8 @@ public enum LogEvent: Sendable {
             return "context=\(context) error=\(error)"
         case .liveActivityEnded(let reason):
             return "reason=\(reason)"
+        case .liveActivityStandbySkipped(let reason, let isEnabled, let activitiesEnabled, let activityState):
+            return "reason=\(reason) isEnabled=\(isEnabled) areActivitiesEnabled=\(activitiesEnabled) activityState=\(activityState?.rawValue ?? "none")"
 
         // Lifecycle
         case .appLaunched(let version):
@@ -481,6 +651,13 @@ public enum LogEvent: Sendable {
             return "model=\(modelName)"
 
         // Animation
+        case .dictationMessageSet(let reason, let owner, let visible):
+            return "reason=\(reason) owner=\(owner) visible=\(visible)"
+        case .dictationMessageDisplayed(let rootView, let controller, let owner, let visible):
+            return "rootView=\(rootView) controller=\(controller) owner=\(owner) visible=\(visible)"
+        case .dictationMessageCleared(let reason, let displayedCount):
+            return "reason=\(reason) displayedCount=\(displayedCount)"
+
         case .overlayShown(let status):
             return "status=\(status)"
         case .overlayHidden(let status):
@@ -499,8 +676,8 @@ public enum LogEvent: Sendable {
             return "refreshID=\(refreshID) isProcessing=\(isProcessing) energyCount=\(energyCount) killed=\(killedState)"
         case .waveformDisappeared(let refreshID, let renderTick):
             return "refreshID=\(refreshID) renderTick=\(renderTick)"
-        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount):
-            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount)"
+        case .waveformHeartbeat(let renderTick, let avgLevel, let energyCount, let maxGapMs):
+            return "renderTick=\(renderTick) avgLevel=\(String(format: "%.3f", avgLevel)) energyCount=\(energyCount) maxGapMs=\(maxGapMs)"
         case .waveformStall(let gapMs, let renderTick, let energyCount):
             return "gapMs=\(gapMs) renderTick=\(renderTick) energyCount=\(energyCount)"
         case .waveformRefreshIDChanged(let oldID, let newID, let status):
@@ -529,6 +706,12 @@ public enum LogEvent: Sendable {
             return "keyboardStatus=\(keyboardStatus)"
         case .coldStartDarwinFallback(let elapsedMs, let status):
             return "elapsedMs=\(elapsedMs) status=\(status)"
+        case .coldStartStranded(let keyboardStatus, let action):
+            return "keyboardStatus=\(keyboardStatus) action=\(action)"
+
+        // Subscription
+        case .subscriptionError(let action, let error):
+            return "action=\(action) error=\(error)"
 
         // Log Management
         case .logExportCompleted(let durationMs, let sizeBytes):
@@ -543,6 +726,26 @@ public enum LogEvent: Sendable {
             return "name=\(name) timeout=\(timeoutSeconds)s"
         case .deviceCapabilitySnapshot(let model, let ramGB, let availableMemoryMB, let thermalState):
             return "model=\(model) ramGB=\(ramGB) availableMB=\(availableMemoryMB) thermal=\(thermalState)"
+
+        // User dictionary (#307)
+        case .userDictionaryWordLearned(let learnedCount):
+            return "learnedCount=\(learnedCount)"
+        case .userDictionaryEvicted(let removed, let learnedCount, let cap):
+            return "removed=\(removed) learnedCount=\(learnedCount) cap=\(cap)"
+        case .userDictionaryReset(let clearedCount):
+            return "clearedCount=\(clearedCount)"
+        case .userDictionaryMigrated(let stamped, let droppedStamps, let learnedCount):
+            return "stamped=\(stamped) droppedStamps=\(droppedStamps) learnedCount=\(learnedCount)"
+        case .userDictionaryStaleDiscarded(let removed, let learnedCount, let days):
+            return "removed=\(removed) learnedCount=\(learnedCount) days=\(days)"
+        case .userDictionaryPruned(let removed, let learnedCount):
+            return "removed=\(removed) learnedCount=\(learnedCount)"
+
+        // Polish (#315)
+        case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
+            return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
+        case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
+            return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }
     }
 
@@ -560,12 +763,28 @@ public enum LogEvent: Sendable {
     /// Produces the full formatted log line.
     /// Format: `[ISO8601timestamp] LEVEL  [subsystem] eventName param=value ...`
     public func formatted() -> String {
-        let timestamp = Self.isoFormatter.string(from: Date())
+        "[\(Self.timestamp())] " + payload()
+    }
+
+    /// The formatted line without its leading timestamp.
+    ///
+    /// WHY this is split out of `formatted()` (#255): PersistentLog collapses runs
+    /// of identical consecutive lines, and two occurrences of the same event a
+    /// second apart differ only by their timestamp. The timestamp-free part is
+    /// therefore the comparison key, and it has to be produced by the same code
+    /// path that produces the written line so the two can never drift.
+    func payload() -> String {
         let src = PersistentLog.source
         let params = message
         if params.isEmpty {
-            return "[\(timestamp)] \(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name)"
+            return "\(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name)"
         }
-        return "[\(timestamp)] \(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name) \(params)"
+        return "\(level.paddedName) [\(subsystem.rawValue)] <\(src)> \(name) \(params)"
+    }
+
+    /// ISO8601 timestamp for a log line, taken at the moment of the `log()` call
+    /// rather than at the moment of the write — the write is queued.
+    static func timestamp(for date: Date = Date()) -> String {
+        isoFormatter.string(from: date)
     }
 }

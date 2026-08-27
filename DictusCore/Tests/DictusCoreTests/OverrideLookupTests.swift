@@ -37,6 +37,27 @@ final class OverrideLookupTests: XCTestCase {
         XCTAssertNil(applyOverride(profile: frenchProfile, word: "bonjour"))
     }
 
+    // MARK: - Missed-apostrophe contractions colliding with rare dictionary words (#222)
+
+    func test_french_laiCorrectsToLApostropheAi() {
+        // "lai" (medieval poem, freq 77) is a real dictionary word, so the
+        // valid-word guard would protect it and "je lai vu" would never
+        // correct. The override wins over the rare word.
+        XCTAssertEqual(applyOverride(profile: frenchProfile, word: "lai"), "l'ai")
+        XCTAssertEqual(applyOverride(profile: frenchProfile, word: "Lai"), "L'ai")
+    }
+
+    func test_french_lestCorrectsToLApostropheEst() {
+        XCTAssertEqual(applyOverride(profile: frenchProfile, word: "lest"), "l'est")
+    }
+
+    func test_french_louvreIsNotOverridden() {
+        // "louvre" must NOT be overridden: the lookup re-capitalizes, so an
+        // override would corrupt "Louvre" (the museum) into "L'ouvre".
+        XCTAssertNil(applyOverride(profile: frenchProfile, word: "louvre"))
+        XCTAssertNil(applyOverride(profile: frenchProfile, word: "Louvre"))
+    }
+
     func test_french_excludedAmbiguousWordsReturnNil() {
         // These words are valid in French — they must NOT be overridden.
         XCTAssertNil(applyOverride(profile: frenchProfile, word: "a"))

@@ -90,6 +90,10 @@ final class LanguageProfileTests: XCTestCase {
         "etait": "\u{00E9}tait",
         "etaient": "\u{00E9}taient",
         "evenement": "\u{00E9}v\u{00E9}nement",
+        // Added for #222: missed-apostrophe contractions colliding with
+        // rare-but-real dictionary words ("lai" poem, "lest" ballast).
+        "lai": "l'ai",
+        "lest": "l'est",
     ]
 
     private static let legacyEnglishOverrides: [String: String] = [

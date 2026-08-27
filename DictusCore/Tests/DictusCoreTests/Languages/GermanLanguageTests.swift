@@ -13,8 +13,8 @@ final class GermanLanguageTests: XCTestCase {
         XCTAssertEqual(p.code, "de")
         XCTAssertEqual(p.displayName, "Deutsch")
         XCTAssertEqual(p.shortCode, "DE")
-        XCTAssertEqual(p.defaultLayout, .qwerty,
-                       "QWERTY on launch — QWERTZ deferred to issue #151.")
+        XCTAssertEqual(p.defaultLayout, .qwertz,
+                       "German selects QWERTZ — the layout iOS ships as its default German keyboard.")
         XCTAssertEqual(p.spaceName, "Leertaste")
         XCTAssertEqual(p.returnName, "Eingabe")
     }
@@ -214,6 +214,123 @@ final class GermanLanguageTests: XCTestCase {
     func test_german_expandAccents_returnsNilWhenNoMatch() {
         let provider = MockFrequencyProvider(frequencies: [:])
         XCTAssertNil(expandAccents(profile: germanProfile, word: "uber", provider: provider))
+    }
+
+    // MARK: - Umlautersatz on the trie's real frequency scale (issue #326)
+
+    /// Raw corpus counts taken verbatim from `DictusKeyboard/Resources/de_frequency.json`
+    /// as it shipped before #326, plus the corpus maximum that anchors the
+    /// normalization. The exact numbers matter: the whole point of these tests
+    /// is that the dominance rule behaves differently on raw counts than on the
+    /// values the trie stores, and inventing round numbers hides that.
+    private static let germanCorpusMaxFrequency = 5_890_279  // "ich"
+    private static let germanUmlautersatzCorpusCounts: [String: Int] = [
+        "fuer": 712, "f\u{00FC}r": 735_252,          // für
+        "schoen": 90, "sch\u{00F6}n": 106_669,       // schön
+        "koennen": 180, "k\u{00F6}nnen": 240_905,    // können
+    ]
+
+    func test_logNormalizedProvider_reproducesTheFrequencyTheDeviceLogged() {
+        // #321's device log printed `TRIE-CANDIDATES word="feur" winner="für"(freq=56787)`.
+        // Recomputing 56787 from the raw corpus count of `für` is what identifies
+        // the scale the 5x dominance rule is actually comparing on: the trie
+        // stores `65535 * ln(1+freq) / ln(1+max)`, not the corpus count.
+        let provider = LogNormalizedFrequencyProvider(
+            rawFrequencies: Self.germanUmlautersatzCorpusCounts,
+            maxFrequency: Self.germanCorpusMaxFrequency
+        )
+        XCTAssertEqual(provider.frequency(of: "f\u{00FC}r"), 56_787)
+        XCTAssertEqual(provider.frequency(of: "fuer"), 27_617)
+    }
+
+    func test_german_expandAccents_umlautersatzFails_whenTheAsciiFormIsInTheDictionary() {
+        // The pre-#326 device behaviour, reproduced. In raw corpus counts these
+        // pairs clear the 5x bar by three orders of magnitude (1033x, 1185x,
+        // 1338x). Stored, they are 2.06x, 2.57x and 2.38x — all under 5x, so
+        // `expandAccents` returns nil and the engine falls through to the
+        // valid-word guard, which logs `AUTOCORRECT-SKIP reason=already-valid`.
+        //
+        // This is why the fix is to curate these forms out of the dictionary
+        // rather than to reorder the guard: with the ASCII form present, no
+        // ordering change reaches a correction. Clearing 5x in stored space needs
+        // the target to be roughly the input raised to the fifth power, which
+        // nothing inside a 40K corpus reaches.
+        let provider = LogNormalizedFrequencyProvider(
+            rawFrequencies: Self.germanUmlautersatzCorpusCounts,
+            maxFrequency: Self.germanCorpusMaxFrequency
+        )
+        XCTAssertNil(expandAccents(profile: germanProfile, word: "fuer", provider: provider))
+        XCTAssertNil(expandAccents(profile: germanProfile, word: "schoen", provider: provider))
+        XCTAssertNil(expandAccents(profile: germanProfile, word: "koennen", provider: provider))
+    }
+
+    func test_german_expandAccents_umlautersatzCorrects_whenTheAsciiFormIsCuratedOut() {
+        // The post-#326 dictionary: `scripts/curate_de_dictionary.py` drops the
+        // transliterations, so `expandAccents` takes its `input frequency == 0`
+        // branch and returns the umlaut form without consulting the dominance
+        // rule at all. Same provider, same scale, same corpus counts for the
+        // umlaut words — only the ASCII entries are gone.
+        var counts = Self.germanUmlautersatzCorpusCounts
+        for ascii in ["fuer", "schoen", "koennen"] {
+            counts.removeValue(forKey: ascii)
+        }
+        let provider = LogNormalizedFrequencyProvider(
+            rawFrequencies: counts,
+            maxFrequency: Self.germanCorpusMaxFrequency
+        )
+        XCTAssertEqual(expandAccents(profile: germanProfile, word: "fuer", provider: provider), "f\u{00FC}r")
+        XCTAssertEqual(expandAccents(profile: germanProfile, word: "schoen", provider: provider), "sch\u{00F6}n")
+        XCTAssertEqual(expandAccents(profile: germanProfile, word: "koennen", provider: provider), "k\u{00F6}nnen")
+    }
+
+    // MARK: - The shipped German dictionary (issue #326)
+
+    /// Reads `DictusKeyboard/Resources/de_frequency.json` out of the source tree.
+    ///
+    /// WHY not `Bundle.module` the way `FrequencyDictionaryTests` does: those two
+    /// tests exercise the loader against a hand-written fixture, whereas these
+    /// guard the artifact the keyboard actually ships. A 600 KiB copy under
+    /// `Fixtures/` would be a second file free to drift from the real one, which
+    /// is the exact failure mode being guarded. `swift test` runs from this
+    /// source tree, so `#filePath` reaches the real resource.
+    private func shippedGermanFrequencies() throws -> [String: Int] {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // Languages/
+            .deletingLastPathComponent()   // DictusCoreTests/
+            .deletingLastPathComponent()   // Tests/
+            .deletingLastPathComponent()   // DictusCore/
+            .deletingLastPathComponent()   // repo root
+        let url = repoRoot.appendingPathComponent("DictusKeyboard/Resources/de_frequency.json")
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode([String: Int].self, from: data)
+    }
+
+    func test_shippedGermanDictionary_containsNoUmlautersatzForms() throws {
+        // Every entry here is a transliteration, not a German word in any context,
+        // and each one blocked its own correction until #326. Regenerating the
+        // dictionary must keep dropping them — if the corpus or the curation rule
+        // changes and one comes back, autocorrect silently stops firing for it.
+        let frequencies = try shippedGermanFrequencies()
+        for word in ["fuer", "koennen", "ueber", "muessen", "wuerde", "moechte",
+                     "waere", "zurueck", "natuerlich", "haette", "gehoert", "schoen",
+                     "tuer", "maedchen"] {
+            XCTAssertNil(frequencies[word],
+                         "\(word) is German Umlautersatz, not a word — curation must drop it (issue #326).")
+        }
+    }
+
+    func test_shippedGermanDictionary_keepsRealWordsContainingAeOeUe() throws {
+        // The counterpart guard. These are real German words that happen to
+        // contain `ae`, `oe` or `ue` as a genuine letter sequence. They survive
+        // curation on the 5x rule alone, without a second heuristic: their
+        // collapsed forms (`baür`, `feür`, `zünander`, `pöt`, `stür`) are not
+        // words and are absent from the corpus, so no umlaut variant is found.
+        let frequencies = try shippedGermanFrequencies()
+        for word in ["bauer", "bauern", "feuer", "zueinander", "poet", "steuer",
+                     "abenteuer", "treue", "frauen", "michael", "israel"] {
+            XCTAssertNotNil(frequencies[word],
+                            "\(word) is a real German word — curation must not drop it (issue #326).")
+        }
     }
 
     // MARK: - Contractions (empty)

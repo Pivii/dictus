@@ -1,9 +1,11 @@
 // DictusApp/Onboarding/OnboardingView.swift
-// Container for the 6-step onboarding flow with programmatic-only step advancement.
+// Container for the onboarding flow with programmatic-only step advancement.
 import SwiftUI
 import DictusCore
 
-/// 6-step onboarding flow presented as a fullScreenCover on first launch.
+/// Onboarding flow presented as a fullScreenCover on first launch.
+/// Steps: Welcome, Mic, Keyboard setup, Transcription polish opt-in (when the
+/// device supports Apple Foundation Models), Model download, Globe tutorial.
 ///
 /// WHY switch/case instead of TabView:
 /// TabView(.page) allows the user to swipe between pages, which means they could
@@ -33,8 +35,18 @@ struct OnboardingView: View {
     /// Track which steps have been completed to show in the step indicator.
     @State private var completedSteps: Set<Int> = []
 
-    /// Total number of onboarding steps (Welcome, Mic, Keyboard, Mode, Model, Test).
-    private let totalSteps = 6
+    /// Whether the transcription polish opt-in page is part of the flow (#213).
+    ///
+    /// WHY computed once at init: PolishAvailability queries the Foundation
+    /// Models SDK; the answer can't meaningfully change mid-onboarding, and a
+    /// stable value keeps the page indices coherent for the whole flow.
+    /// When false (device can never run Apple FM), the page is skipped entirely
+    /// so we never show a toggle that does nothing.
+    private let showsPolishPage = PolishAvailability.isToggleVisible
+
+    /// Total number of onboarding steps shown in the indicator
+    /// (Welcome, Mic, Keyboard, [Polish], Model, Test).
+    private var totalSteps: Int { showsPolishPage ? 6 : 5 }
 
     var body: some View {
         ZStack {
@@ -53,9 +65,16 @@ struct OnboardingView: View {
                     case 1:
                         MicPermissionPage(onNext: { advanceToPage(2) })
                     case 2:
-                        KeyboardSetupPage(onNext: { advanceToPage(3) })
+                        // Skip the polish page index when the device can't run
+                        // Apple Foundation Models at all.
+                        KeyboardSetupPage(onNext: { advanceToPage(showsPolishPage ? 3 : 4) })
+                    case 3 where showsPolishPage:
+                        PolishTogglePage(onNext: { advanceToPage(4) })
                     case 3:
-                        ModeSelectionPage(onNext: { advanceToPage(4) })
+                        // Stale persisted index: a user mid-onboarding on the old
+                        // flow (layer choice lived at index 3) relaunching on a
+                        // device without polish support resumes at model download.
+                        ModelDownloadPage(onNext: { advanceToPage(5) })
                     case 4:
                         ModelDownloadPage(onNext: { advanceToPage(5) })
                     case 5:
@@ -108,11 +127,21 @@ struct OnboardingView: View {
         .padding(.top, 16)
     }
 
+    /// Map a page index to its dot position in the step indicator.
+    ///
+    /// WHY: when the polish page is hidden the flow skips index 3, so the pages
+    /// after it map to one dot earlier (page 4 → dot 3, page 5 → dot 4). With
+    /// the polish page visible this is the identity mapping.
+    private func displayStep(for page: Int) -> Int {
+        guard !showsPolishPage && page > 3 else { return page }
+        return page - 1
+    }
+
     /// Determine dot color based on step state.
     private func dotColor(for step: Int) -> Color {
-        if step == currentPage {
+        if step == displayStep(for: currentPage) {
             return .dictusAccent
-        } else if completedSteps.contains(step) {
+        } else if completedSteps.contains(where: { displayStep(for: $0) == step }) {
             return .dictusAccent.opacity(0.5)
         } else {
             return .gray.opacity(0.3)

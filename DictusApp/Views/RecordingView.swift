@@ -42,6 +42,21 @@ struct RecordingView: View {
     /// Two-step dismissal: animate out first, then reset coordinator status.
     @State private var isDismissing = false
 
+    /// The stage this screen draws, which trails `coordinator.status` by up to
+    /// `TranscribingStageHold.minimumDisplayDuration` (#309).
+    ///
+    /// WHY this screen and not only the keyboard overlay: the two share one visual
+    /// vocabulary, and someone dictating inside DictusApp waits on this screen. Fixing
+    /// the flash on one surface and not the other would make them disagree about what
+    /// the phone is doing within the same second.
+    @State private var displayedStatus: DictationStatus = .idle
+
+    /// The rule. Pure and tested in DictusCore; the timer below is this surface's.
+    @State private var hold = TranscribingStageHold()
+
+    /// Fires when a held stage becomes drawable. At most one is ever in flight.
+    @State private var holdTask: Task<Void, Never>?
+
     init(mode: RecordingMode, onComplete: (() -> Void)? = nil) {
         self.mode = mode
         self.onComplete = onComplete
@@ -169,7 +184,41 @@ struct RecordingView: View {
         .animation(.easeOut(duration: 0.3), value: showResult)
         .animation(.easeOut(duration: 0.3), value: showCopiedFeedback)
         .onChange(of: coordinator.status) { newStatus in
+            // `handleStatusChange` is deliberately still driven by the real status: it
+            // does not draw a stage, it reveals the result text and the error, and a
+            // terminal status preempts the hold anyway (#309).
             handleStatusChange(newStatus)
+            advanceDisplayedStatus(to: newStatus)
+        }
+        // A screen that appears mid-dictation adopts the stage in flight at once,
+        // rather than starting from `.idle` and pretending to enter it.
+        .onAppear {
+            // A failure this screen was never mounted for gets read here (#320). A cold
+            // start that dies puts `.failed` in place while `SwipeBackOverlayView` owns
+            // the window; MainTabView inserts this view only once the overlay is gone, by
+            // which time the status has stopped changing and `onChange` will never fire.
+            // Only `.failed` is adopted on appear: `.ready` would replay the result card
+            // and, in onboarding, its auto-advance.
+            if coordinator.status == .failed {
+                handleStatusChange(.failed)
+            }
+            advanceDisplayedStatus(to: coordinator.status)
+        }
+        .onDisappear {
+            holdTask?.cancel()
+            holdTask = nil
+            // Reset, not merely cancel: `.onAppear` re-adopts the stage in flight, and
+            // a decision left pending here would be re-affirmed as "already decided"
+            // with no timer left to draw it. A fresh hold draws whatever it is handed.
+            //
+            // The drawn stage is reset with it, and the two must move together. A fresh
+            // hold believes `.idle` is on screen; if the coordinator has also returned
+            // to `.idle` by the time the screen comes back, `apply` answers `.unchanged`
+            // and nothing reassigns `displayedStatus` -- leaving the travelling peak and
+            // "Traitement..." drawn over an idle screen. Resetting only one of the two
+            // is what makes them disagree.
+            hold = TranscribingStageHold()
+            displayedStatus = .idle
         }
         .navigationBarHidden(true)
     }
@@ -182,27 +231,66 @@ struct RecordingView: View {
     /// continues its run loop in background (UIBackgroundModes:audio).
     private var waveformSection: some View {
         BrandWaveform(
-            energyLevels: coordinator.status == .recording
+            energyLevels: displayedStatus == .recording
                 ? coordinator.bufferEnergy
                 : Array(repeating: Float(0), count: 30),
             maxHeight: 120,
-            isProcessing: coordinator.status == .transcribing,
-            isActive: coordinator.status == .recording || coordinator.status == .transcribing
+            animation: waveformAnimation,
+            isActive: displayedStatus == .recording || isPostRecordingStage
         )
-        .opacity(coordinator.status == .recording ? 0.5 :
-                 coordinator.status == .transcribing ? 0.3 : 0.15)
+        .opacity(displayedStatus == .recording ? 0.5 :
+                 isPostRecordingStage ? 0.3 : 0.15)
+    }
+
+    /// The animation for the current stage.
+    ///
+    /// This screen draws the same three animations as the keyboard overlay, from
+    /// the same `ProcessingWaveform` maths (#267). An earlier round shared one
+    /// animation across both post-recording stages, on the argument that the
+    /// distinction belongs where the user waits during a keyboard dictation. Device
+    /// testing settled it the other way: someone dictating inside DictusApp is
+    /// waiting on this screen, and it owes them the same answer.
+    ///
+    /// Driven by `displayedStatus` rather than the coordinator's, so the animation and
+    /// the label below change together (#309).
+    private var waveformAnimation: WaveformAnimation {
+        switch displayedStatus {
+        case .recording:
+            return .micLevels
+        case .transcribing:
+            return .sweep
+        case .processing:
+            return .travellingPeak
+        case .idle, .requested, .ready, .failed:
+            return .still
+        }
+    }
+
+    /// Whether the pipeline is past the microphone and working on the audio or the
+    /// transcript. Drives opacity and the disabled mic button, both of which are
+    /// the same for either stage.
+    private var isPostRecordingStage: Bool {
+        displayedStatus == .transcribing || displayedStatus == .processing
     }
 
     // MARK: - Status Text
 
     @ViewBuilder
     private var statusText: some View {
-        if coordinator.status == .recording {
+        if displayedStatus == .recording {
             Text(formattedTime)
                 .font(.system(size: 20, weight: .light, design: .monospaced))
                 .foregroundStyle(.secondary)
-        } else if coordinator.status == .transcribing {
+        } else if displayedStatus == .transcribing {
             Text("Transcribing...")
+                .font(.dictusCaption)
+                .foregroundStyle(.secondary)
+        } else if displayedStatus == .processing {
+            // The waveform is shared between the two stages here, but the label is
+            // not: naming the wrong stage is the complaint #267 exists to fix, and
+            // it costs a user dictating inside DictusApp the same six seconds of
+            // wondering whether the app has hung.
+            Text("Processing...")
                 .font(.dictusCaption)
                 .foregroundStyle(.secondary)
         } else if showCopiedFeedback {
@@ -227,7 +315,7 @@ struct RecordingView: View {
     /// of the screen — it transforms in place (mic → stop → shimmer → mic).
     @ViewBuilder
     private var micOrStopButton: some View {
-        if coordinator.status == .recording {
+        if displayedStatus == .recording {
             // Red stop button with glass ring
             Button(action: stopRecording) {
                 ZStack {
@@ -246,9 +334,11 @@ struct RecordingView: View {
             }
             .buttonStyle(GlassPressStyle(pressedScale: 0.88))
             .accessibilityLabel("Stop recording")
-        } else if coordinator.status == .transcribing {
-            // Shimmer mic during processing (disabled)
-            AnimatedMicButton(status: .transcribing) {}
+        } else if isPostRecordingStage {
+            // Shimmer mic during processing (disabled). The status is passed
+            // through rather than pinned to `.transcribing` so the button reflects
+            // the stage it is actually in (#267); the shimmer is the same for both.
+            AnimatedMicButton(status: displayedStatus) {}
                 .disabled(true)
         } else {
             // Idle / result state: mic button ready for (new) recording
@@ -275,6 +365,34 @@ struct RecordingView: View {
     private func stopRecording() {
         HapticFeedback.recordingStopped()
         coordinator.stopDictation()
+    }
+
+    // MARK: - Stage display (#309)
+
+    /// Move `displayedStatus` toward `status`, honouring the transcription floor.
+    ///
+    /// The decision is `TranscribingStageHold`'s, in DictusCore, where it is tested.
+    /// What lives here is only this screen's timer — a `Task` rather than a `Timer`,
+    /// because it has to be cancelled from the view and cancellation is what keeps a
+    /// terminal status from ever waiting behind a stage that no longer matters.
+    private func advanceDisplayedStatus(to status: DictationStatus) {
+        switch hold.apply(status, now: Date()) {
+        case .unchanged:
+            break
+        case .draw(let drawn):
+            holdTask?.cancel()
+            holdTask = nil
+            displayedStatus = drawn
+        case .hold(_, let interval):
+            holdTask?.cancel()
+            holdTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { return }
+                if case .draw(let drawn) = hold.release(now: Date()) {
+                    displayedStatus = drawn
+                }
+            }
+        }
     }
 
     // MARK: - Status Handling
@@ -305,7 +423,17 @@ struct RecordingView: View {
             }
         case .failed:
             showError = true
-            errorMessage = coordinator.lastResult ?? String(localized: "Transcription failed. Check that the model is downloaded.")
+            // The reason the app itself recorded, not the transcription property (#320).
+            // `lastResult` only ever holds transcribed text and `startDictation` nils it
+            // on every entry path, so reading it here was reading nil one hundred percent
+            // of the time and printing the fallback -- which named the model download,
+            // whatever had actually failed.
+            //
+            // The fallback now names nothing. A failure with no recorded reason is a
+            // failure we cannot explain, and the honest sentence for that is the one that
+            // explains nothing. Every cause we *can* name already writes its own message
+            // at its own call site.
+            errorMessage = DictationErrorChannel.current ?? String(localized: "The dictation failed.")
         default:
             break
         }

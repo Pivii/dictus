@@ -1,3 +1,4 @@
+#if os(iOS)
 // DictusCore/Sources/DictusCore/Design/ProcessingAnimation.swift
 // Branded processing/transcribing animation using logo-inspired pulsing bars.
 import SwiftUI
@@ -53,3 +54,4 @@ public struct ProcessingAnimation: View {
         return 0.4 + 0.6 * abs(sin(adjustedPhase * .pi))
     }
 }
+#endif
