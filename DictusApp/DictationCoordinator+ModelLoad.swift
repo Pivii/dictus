@@ -179,9 +179,14 @@ extension DictationCoordinator {
     /// running, the Neural Engine cannot compile two models at once, and a model picked
     /// straight afterwards would have started a second compile on top of it — the "E5
     /// bundle" failure `ModelManager` serialises its own prewarms to avoid (finding 2).
-    /// So the next load queues behind the abandoned one instead. The user gets their
-    /// app back immediately, which is what this is for; they get their next model when
-    /// the hardware is free, which is the most anyone can offer.
+    /// So the next load queues behind the abandoned one instead.
+    ///
+    /// WHAT THIS PROMISES, stated plainly because an earlier version of the spec
+    /// promised more: **the escape frees the app immediately; it does not free the
+    /// Neural Engine.** Everything the user can reach — Settings, the model list, the
+    /// keyboard — comes back the moment they tap it. The model they pick next starts
+    /// loading when the abandoned compile lets go of the hardware, and not before.
+    /// See `awaitInFlightEngineInit` for why that trade is the right way round.
     func abandonInFlightModelLoad(reason: String) {
         let modelName = defaults.string(forKey: SharedKeys.activeModel) ?? "unknown"
         modelLoadEpoch += 1
@@ -206,6 +211,13 @@ extension DictationCoordinator {
     /// is queue behind it. An earlier version of the escape cleared the lock instead,
     /// which meant "choose another model after escaping" started a second compile on
     /// top of the first: a lockout traded for a hardware-level failure.
+    ///
+    /// DO NOT "IMPROVE" THIS BY CLEARING THE LOCK AGAIN. The trade was made deliberately
+    /// and it is not close. Waiting costs a bounded, measured delay: a cold Turbo compile
+    /// completed in 202s on the affected device, so the worst case is a couple of minutes
+    /// before the next model starts loading. Clearing the lock costs an E5-class failure
+    /// that nobody in this repo has ever reproduced on purpose — which also means nobody
+    /// could debug it if a user hit it. A bounded wait beats an unbounded unknown.
     ///
     /// WHY A LOOP: `await` is a suspension point, and another caller may have installed
     /// a lock of its own while this one was parked. Going straight to the compile after
