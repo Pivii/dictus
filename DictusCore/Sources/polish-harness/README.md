@@ -37,11 +37,20 @@ swift run polish-harness show fixtures/seed.json --instructions /tmp/candidate.t
 # A/B two prompt files side by side
 swift run polish-harness ab fixtures/seed.json --a /tmp/baseline.txt --b /tmp/candidate.txt
 
+# Reroute a whole fixture file (#439). Which prompt a dictation reaches is a
+# device SETTING, not a property of the text: an `autoDetect` device sends French
+# to PolishAutoPrompt, a French-pinned one to PolishNaturalPromptFR. Both have to
+# hold, so one fixture file measures both.
+swift run polish-harness show Sources/polish-harness/fixtures/longform-fr.json --lang auto
+
 # Print the exact bytes the engine sends for a fixture: the resolved system
 # instructions and the Input/"Polished output:" user turn over pre-passed text.
 # Runs no model, so it needs no Apple Intelligence. --out writes them as files.
 swift run polish-harness prompt Sources/polish-harness/fixtures/seed.json --id 3-long
 ```
+
+`prompt` covers the per-language path only — a fixture that routes through auto
+mode has no per-language prompt to resolve, and it says so and exits.
 
 ## Smart Modes (#79, #393)
 
@@ -105,6 +114,14 @@ cases). Each case:
 Expectations are **tolerant property checks** (the contract), not exact-string
 matches — LLM output is non-deterministic, so we assert "preserves `commit`",
 "no stray `\n\n\n`", "length within ±X%", never a fixed string.
+
+`lang` decides the path, and `--lang <code>` overrides it for the whole file.
+
+Long-form set: `fixtures/longform-fr.json` — the six French dictations measured
+on device on 2026-08-27 (#437), `raw` verbatim from the debug-ring export. They
+are the fixture set for both #437 (structure) and #439 (fidelity); the
+expectations currently in the file are #439's bars, declared in
+`docs/research/439-natural-contract/bars.md` before the first model call.
 
 ## Caveats
 

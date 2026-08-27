@@ -21,6 +21,19 @@ struct Fixture: Codable {
     /// `nil` routes the fixture through the Auto-detect path.
     var language: SupportedLanguage? { SupportedLanguage(rawValue: lang) }
     var speechEngine: SpeechEngine { sttEngine == "WK" ? .whisperKit : .parakeet }
+
+    /// The same case routed through another path (`--lang`, #439).
+    ///
+    /// A dictation reaches polish through the per-language prompt or through the
+    /// Auto one depending on a SETTING, not on the text: the six #439 fixtures were
+    /// captured under `autoDetect` and so took `PolishAutoPrompt`, while their `lang:
+    /// "fr"` runs them under `PolishNaturalPromptFR`. Both prompts have to hold, so
+    /// both get measured — and the alternative to this two-line override is a second
+    /// fixture file holding a second copy of the same six transcripts, which is a
+    /// copy that can drift from the device export it is supposed to be.
+    func routed(through lang: String) -> Fixture {
+        Fixture(id: id, raw: raw, lang: lang, sttEngine: sttEngine, expect: expect)
+    }
 }
 
 /// A single tolerant assertion on the polished output. LLM output is
