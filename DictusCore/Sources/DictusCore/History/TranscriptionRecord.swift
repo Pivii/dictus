@@ -13,7 +13,7 @@ import Foundation
 /// not a trade worth making for type safety on a badge label. The enums are still
 /// reachable through `supportedLanguage` and `engine`, which return nil rather
 /// than throwing.
-public struct TranscriptionRecord: Identifiable, Codable, Equatable, Sendable {
+public struct TranscriptionRecord: Identifiable, Codable, Hashable, Sendable {
 
     public let id: UUID
 

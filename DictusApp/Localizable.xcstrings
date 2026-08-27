@@ -448,6 +448,28 @@
         }
       }
     },
+    "Clear history" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer l’historique"
+          }
+        }
+      }
+    },
+    "Clear history?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer l’historique ?"
+          }
+        }
+      }
+    },
     "Close" : {
       "localizations" : {
         "fr" : {
@@ -561,6 +583,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Supprimer le modèle"
+          }
+        }
+      }
+    },
+    "Delete all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout supprimer"
           }
         }
       }
@@ -849,6 +882,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Erreur"
+          }
+        }
+      }
+    },
+    "Every transcription saved on this device will be deleted. This cannot be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toutes les transcriptions enregistrées sur cet appareil seront supprimées. Cette action est irréversible."
           }
         }
       }
@@ -1429,6 +1473,17 @@
       }
     },
     "No polish events yet. Toggle on, dictate something, then come back." : {},
+    "No transcriptions yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune transcription pour l’instant"
+          }
+        }
+      }
+    },
     "No words detected" : {
       "comment" : "Shown when a dictation produced no text: nothing was captured, or nothing was understood. Not an error, the app is working, there was simply nothing to transcribe (issue #313).",
       "localizations" : {
@@ -2061,6 +2116,28 @@
         }
       }
     },
+    "Share" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager"
+          }
+        }
+      }
+    },
+    "Shows your saved transcriptions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche vos transcriptions enregistrées"
+          }
+        }
+      }
+    },
     "Siri & Search" : {
       "localizations" : {
         "fr" : {
@@ -2223,6 +2300,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Langues prises en charge"
+          }
+        }
+      }
+    },
+    "Swipe for history" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balayez pour l’historique"
           }
         }
       }
@@ -2740,6 +2828,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "C'est prêt !"
+          }
+        }
+      }
+    },
+    "Your dictations are saved here automatically. The last 200 are kept, on this device only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos dictées sont enregistrées ici automatiquement. Les 200 dernières sont conservées, sur cet appareil uniquement."
           }
         }
       }
