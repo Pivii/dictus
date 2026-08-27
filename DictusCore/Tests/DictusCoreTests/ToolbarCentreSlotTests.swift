@@ -35,7 +35,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
             resolve(
                 isChoosingMode: true, errorMessage: "boom", offersDictationUndo: true,
                 hasSuggestions: true, polishUnavailable: true,
-                armedModeName: "Notes", offersDiscoveryHint: true
+                armedModeName: "List", offersDiscoveryHint: true
             ),
             .choosingMode
         )
@@ -45,7 +45,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 errorMessage: "boom", offersDictationUndo: true, hasSuggestions: true,
-                polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true
+                polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true
             ),
             .error("boom")
         )
@@ -55,7 +55,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 offersDictationUndo: true, hasSuggestions: true,
-                polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true
+                polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true
             ),
             .dictationUndo
         )
@@ -65,7 +65,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
         XCTAssertEqual(
             resolve(
                 hasSuggestions: true, polishUnavailable: true,
-                armedModeName: "Notes", offersDiscoveryHint: true
+                armedModeName: "List", offersDiscoveryHint: true
             ),
             .suggestions
         )
@@ -76,7 +76,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
     /// already stopped doing.
     func testThePolishNoticeOutranksTheArmedMode() {
         XCTAssertEqual(
-            resolve(polishUnavailable: true, armedModeName: "Notes", offersDiscoveryHint: true),
+            resolve(polishUnavailable: true, armedModeName: "List", offersDiscoveryHint: true),
             .polishUnavailable
         )
     }
@@ -108,7 +108,7 @@ final class ToolbarCentreSlotTests: XCTestCase {
 
         XCTAssertFalse(ToolbarCentreSlot.choosingMode.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.polishUnavailable.evictsHamburger)
-        XCTAssertFalse(ToolbarCentreSlot.armedMode("Notes").evictsHamburger)
+        XCTAssertFalse(ToolbarCentreSlot.armedMode("List").evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.discoveryHint.evictsHamburger)
         XCTAssertFalse(ToolbarCentreSlot.empty.evictsHamburger)
     }

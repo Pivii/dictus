@@ -71,7 +71,9 @@ extension DictationCoordinator {
         // block C), not with the keyboard block that created the state.
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
-            let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
+            let name = outcome.smartModeFailure.map {
+                SmartMode.localizedDisplayName(identifier: $0.modeIdentifier, fallback: $0.modeDisplayName)
+            } ?? "Smart Mode"
             // Localised, which was NOT what the neighbours did when this was written:
             // of the twelve other `handleError` call sites, one localised, two
             // forwarded `error.localizedDescription`, and the rest were hardcoded
@@ -83,8 +85,10 @@ extension DictationCoordinator {
             // the app failing to do what the user armed, not a dictation with no words
             // in it.
             //
-            // The mode name interpolated in front stays unlocalised on purpose: it
-            // is the catalogue's own label, so it reads as the thing the user armed.
+            // The mode name interpolated in front is the catalogue's own label, so it
+            // reads as the thing the user armed. It goes through
+            // `SmartMode.localizedDisplayName` since the 2026-08-27 rename, because
+            // one mode's label is now a word rather than a symbol.
             //
             // The rough edge this comment used to flag for block B is fixed: the name
             // is a colon-label, not the sentence's subject, because translate modes
