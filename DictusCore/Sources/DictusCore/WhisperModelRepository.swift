@@ -120,23 +120,35 @@ public enum WhisperModelRepository {
     /// `metadata.json` and `analytics/coremldata.bin`, plus `model.mlmodel` on the
     /// five non-turbo variants only.
     ///
-    /// WHY the check has to descend this far (issue #433): `ModelRepoDownloader`
-    /// creates each file's parent directory before it starts downloading the file,
-    /// so `AudioEncoder.mlmodelc/` exists on disk from the moment the first byte of
-    /// its first file is requested. A download interrupted inside `weights/weight.bin`
-    /// — which is 92% of the payload and therefore where an interruption almost
-    /// always lands — leaves all three bundle directories present and every one of
-    /// them unusable. Presence of the directory says nothing; presence of its
-    /// contents says everything.
+    /// WHY naming a bundle is not enough (issue #433): `ModelRepoDownloader` creates
+    /// each file's parent directory before it starts downloading the file, so
+    /// `AudioEncoder.mlmodelc/` exists on disk from the moment the first byte of its
+    /// first file is requested. A download interrupted inside `weights/weight.bin` —
+    /// which is 92% of the payload and therefore where an interruption almost always
+    /// lands — leaves all three bundle directories present and every one of them
+    /// unusable. Presence of the directory says nothing; presence of its contents
+    /// says everything.
+    ///
+    /// This applies to the download's own final tripwire exactly as it applies to
+    /// `hasCompleteDownload`, which is why both read the leaf paths below rather than
+    /// the bundle directories. The tripwire checks with `FileManager.fileExists`,
+    /// which answers true for a directory, so a bundle-level list let it pass on the
+    /// very shape it exists to catch (CodeRabbit, PR #435).
     private static let requiredBundleEntries = ["coremldata.bin", "model.mil", "weights/weight.bin"]
 
-    /// Repo-relative paths a completed download of `variant` must have produced.
+    /// Repo-relative paths a completed download of `variant` must have produced: the
+    /// leaf files inside each compiled bundle, plus the root `config.json`.
+    ///
     /// Single source of truth for the downloader's own final-verification tripwire
-    /// and for `hasCompleteDownload` below, so the two can never drift apart: the
-    /// reconciliation is only allowed to trust files the download promised to place.
+    /// and for `hasCompleteDownload` below, so the two cannot drift apart: the
+    /// reconciliation is only allowed to trust files the download promised to place,
+    /// and that promise is worth exactly as much as what the tripwire checks.
     public static func requiredDownloadPaths(forVariant variant: String) -> [String] {
-        requiredCompiledBundleNames.map { "\(variant)/\($0).\(compiledModelExtension)" }
-            + ["\(variant)/\(configurationFileName)"]
+        requiredCompiledBundleNames.flatMap { bundle in
+            requiredBundleEntries.map { entry in
+                "\(variant)/\(bundle).\(compiledModelExtension)/\(entry)"
+            }
+        } + ["\(variant)/\(configurationFileName)"]
     }
 
     /// Whether every file a finished download of this variant leaves behind is on disk.
@@ -162,23 +174,12 @@ public enum WhisperModelRepository {
         documentsDirectory: URL? = nil,
         fileManager: FileManager = .default
     ) -> Bool {
-        guard let folder = modelFolderURL(for: identifier, documentsDirectory: documentsDirectory) else {
+        guard let repository = repositoryURL(documentsDirectory: documentsDirectory) else {
             return false
         }
-        guard isRegularFile(folder.appendingPathComponent(configurationFileName), fileManager: fileManager) else {
-            return false
+        return requiredDownloadPaths(forVariant: identifier).allSatisfy { path in
+            isRegularFile(repository.appendingPathComponent(path), fileManager: fileManager)
         }
-        for bundle in requiredCompiledBundleNames {
-            let bundleURL = folder.appendingPathComponent(
-                "\(bundle).\(compiledModelExtension)",
-                isDirectory: true
-            )
-            for entry in requiredBundleEntries
-            where !isRegularFile(bundleURL.appendingPathComponent(entry), fileManager: fileManager) {
-                return false
-            }
-        }
-        return true
     }
 
     /// Variants whose files are completely on disk while the caller's bookkeeping

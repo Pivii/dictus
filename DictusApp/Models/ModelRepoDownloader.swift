@@ -98,6 +98,13 @@ final class ModelRepoDownloader {
         /// files of an interrupted preparation amount to a finished download. That
         /// decision is only defensible if it names the very paths this tripwire
         /// guarantees, so the two cannot be allowed to drift apart.
+        ///
+        /// It now names the leaf files inside each bundle rather than the bundle
+        /// directories. Phase 4 below checks with `FileManager.fileExists`, which
+        /// answers true for a directory, and this downloader creates a file's parent
+        /// directory before fetching the file — so the bundle-level list passed on an
+        /// `AudioEncoder.mlmodelc/` that existed and was empty, which is precisely
+        /// the interrupted download this tripwire is here to refuse.
         static func whisperKit(variant: String) -> Configuration {
             Configuration(
                 repoPath: WhisperModelRepository.repositoryID,

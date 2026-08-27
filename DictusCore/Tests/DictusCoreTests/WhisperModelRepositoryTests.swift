@@ -247,18 +247,43 @@ final class WhisperModelRepositoryTests: XCTestCase {
         )
     }
 
-    func testRequiredDownloadPathsMatchTheBundlesTheCheckLooksFor() {
+    func testRequiredDownloadPathsNameTheLeafFilesInsideEachBundle() {
         // The downloader's final tripwire and this check read the same list, which is
-        // the only reason the reconciliation may trust files the download placed.
+        // the only reason the reconciliation may trust files the download placed. The
+        // list has to name leaves: the tripwire checks with `FileManager.fileExists`,
+        // which answers true for a directory, so a bundle-level list would let an
+        // interrupted download through the very check meant to catch it.
         XCTAssertEqual(
             WhisperModelRepository.requiredDownloadPaths(forVariant: "openai_whisper-small"),
             [
-                "openai_whisper-small/MelSpectrogram.mlmodelc",
-                "openai_whisper-small/AudioEncoder.mlmodelc",
-                "openai_whisper-small/TextDecoder.mlmodelc",
+                "openai_whisper-small/MelSpectrogram.mlmodelc/coremldata.bin",
+                "openai_whisper-small/MelSpectrogram.mlmodelc/model.mil",
+                "openai_whisper-small/MelSpectrogram.mlmodelc/weights/weight.bin",
+                "openai_whisper-small/AudioEncoder.mlmodelc/coremldata.bin",
+                "openai_whisper-small/AudioEncoder.mlmodelc/model.mil",
+                "openai_whisper-small/AudioEncoder.mlmodelc/weights/weight.bin",
+                "openai_whisper-small/TextDecoder.mlmodelc/coremldata.bin",
+                "openai_whisper-small/TextDecoder.mlmodelc/model.mil",
+                "openai_whisper-small/TextDecoder.mlmodelc/weights/weight.bin",
                 "openai_whisper-small/config.json"
             ]
         )
+    }
+
+    func testEveryRequiredPathIsPresentAfterACompleteDownload() throws {
+        // Ties the two together from the other side: the exact shape the test helper
+        // builds — which mirrors what a finished download leaves — satisfies every
+        // path the tripwire would check, so making the tripwire stricter cannot fail
+        // a healthy download.
+        let folder = try makeCompleteDownload("openai_whisper-medium")
+        let repository = folder.deletingLastPathComponent()
+
+        for path in WhisperModelRepository.requiredDownloadPaths(forVariant: "openai_whisper-medium") {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: repository.appendingPathComponent(path).path),
+                "missing \(path)"
+            )
+        }
     }
 
     // MARK: - Reconciliation (issue #433)
