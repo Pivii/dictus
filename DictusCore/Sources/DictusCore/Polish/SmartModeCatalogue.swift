@@ -6,11 +6,11 @@ import Foundation
 ///
 /// ### v1 ships two families, and Email is not one of them
 ///
-/// **Notes** moves the text along the structure axis, **Translate → X** along the
+/// **List** moves the text along the structure axis, **Translate → X** along the
 /// language axis. SMS and Summary were cut in the design session: the free polish
 /// already produces natural conversational text — that is literally the ADR 0003
 /// `natural` contract — so an SMS mode would be the one paid mode whose output is
-/// indistinguishable from the free one, and Notes already synthesises.
+/// indistinguishable from the free one, and List already synthesises.
 ///
 /// **Email is conditional and absent from this build.** Two independent
 /// implementations fail the same way — they invent greetings and sign-offs the user
@@ -29,8 +29,10 @@ public enum SmartModeCatalogue {
 
     // MARK: - Identifiers
 
-    /// Identifier of the Notes mode. Stable — it is the session-cache key component
-    /// and what a metrics event records.
+    /// Identifier of the bullet mode, displayed as "List" / "Liste" since
+    /// 2026-08-27. Stable — it is the session-cache key component and what a metrics
+    /// event records, so the rename deliberately did **not** touch it: no persisted
+    /// armed mode is invalidated and no pinned order is lost.
     public static let notesIdentifier = "notes"
 
     /// Identifier of the Translate mode targeting `language`.
@@ -40,16 +42,29 @@ public enum SmartModeCatalogue {
 
     // MARK: - The rows
 
-    /// Notes: bullets, synthesised, filler removed, in the speaker's own language.
+    /// List: bullets, synthesised, filler removed, in the speaker's own language.
+    ///
+    /// **Named `Notes` until 2026-08-27**, when the maintainer renamed the label —
+    /// and only the label. `Notes` names an intention and reads equally well as
+    /// "well formatted long dictation", which is the behaviour #437 is investigating
+    /// for *Normal* polish and which this mode deliberately is not. `List` names the
+    /// output shape: a user reading it in the fan knows what will land in their
+    /// document. It also under-promises rather than over-promises, which matters in
+    /// the space where #414 lives.
+    ///
+    /// English here because DictusCore ships no string catalog — the same rule
+    /// `SmartModeUnavailableReason.englishDescription` states. The surfaces localise
+    /// it, keyed on the identifier; see `SmartModeDisplayName.swift` in each UI
+    /// target.
     ///
     /// The `0.1` floor is what makes this mode possible at all: the ADR 0003 band
     /// starts at `0.5`, and a good three-bullet synthesis of a two-minute dictation
     /// is nowhere near half the input's length. It is a judgement call sized against
     /// what the transformation does, not a measurement — the first thing to revisit
-    /// if the harness shows Notes rejecting its own good output.
+    /// if the harness shows the mode rejecting its own good output.
     public static let notes = SmartMode(
         id: notesIdentifier,
-        displayName: "Notes",
+        displayName: "List",
         icon: "list.bullet",
         prompt: SmartModePrompt(
             instructions: SmartModeNotesPrompt.instructions(glossary: PolishGlossary.promptBlock),
@@ -175,7 +190,7 @@ public enum SmartModeCatalogue {
     /// What a fresh install has pinned before the user has ever opened the mode list.
     ///
     /// A seed, not a rule: the moment the user pins anything, `SmartModeStore` holds
-    /// their list and this stops being consulted. Notes and "→ EN" because they are
+    /// their list and this stops being consulted. List and "→ EN" because they are
     /// the two entries that demonstrate the two axes the catalogue moves text along.
     public static let defaultPinnedIdentifiers = [
         notesIdentifier,

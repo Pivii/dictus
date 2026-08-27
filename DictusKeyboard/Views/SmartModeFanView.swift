@@ -150,7 +150,7 @@ struct SmartModeFanView: View {
     /// catalog, and every other mode's label is the catalogue's own — deliberately
     /// language-neutral, so "→ EN" reads the same in every UI locale.
     private func name(_ entry: SmartModeFanEntry) -> String {
-        entry.smartMode?.displayName
+        entry.smartMode?.localizedDisplayName
             ?? String(
                 localized: "Normal",
                 comment: "The Smart Mode fan row that clears the armed mode and returns to the free polish."

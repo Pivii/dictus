@@ -199,7 +199,7 @@ struct ToolbarView: View {
             offersDictationUndo: showsDictationUndo,
             hasSuggestions: !suggestions.isEmpty,
             polishUnavailable: showsPolishUnavailable,
-            armedModeName: armedSmartMode?.displayName,
+            armedModeName: armedSmartMode?.localizedDisplayName,
             offersDiscoveryHint: offersSmartModeHint
         )
     }

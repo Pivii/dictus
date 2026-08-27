@@ -312,9 +312,10 @@ final class KeyboardPolishCoordinator {
     ///   otherwise; it matches the in-app wording (`DictationHandoff`) word for word,
     ///   so the same failure reads the same on both surfaces.
     ///
-    /// The mode name is interpolated unlocalised on purpose: it is the catalogue's
-    /// own label — "Notes", "→ EN" — and naming it in one language everywhere is what
-    /// makes it recognisable as the thing the user armed.
+    /// The mode name is the catalogue's own label — "→ EN" — so it reads as the
+    /// thing the user armed. It goes through `SmartMode.localizedDisplayName` since
+    /// the 2026-08-27 rename, because one mode's label is now a word rather than a
+    /// symbol and a word has to be said in the user's language.
     ///
     /// WHY the name is a colon-label rather than the sentence's subject: the
     /// translation modes are called "→ EN", so "→ EN could not transform this text"
@@ -324,7 +325,9 @@ final class KeyboardPolishCoordinator {
     /// alternative and was rejected — `SmartModeCatalogue` picked a language-neutral
     /// label on purpose, and the fan is where that label mostly lives.
     private func announce(_ failure: SmartModeFailure, degraded: Bool) {
-        let name = failure.modeDisplayName
+        let name = SmartMode.localizedDisplayName(
+            identifier: failure.modeIdentifier, fallback: failure.modeDisplayName
+        )
         let overflowed = failure.outcome == PolishMetrics.Outcome.exceededContextBudget.rawValue
         let message: String
         switch (overflowed, degraded) {
