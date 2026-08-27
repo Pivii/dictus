@@ -76,6 +76,12 @@ struct HistoryView: View {
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
+                    // Explicit, because the destructive role is not enough here:
+                    // MainTabView tints the whole tab hierarchy `.dictusAccent`,
+                    // the sheet inherits that environment, and it wins over the
+                    // role. Measured on the simulator — the delete action drew
+                    // brand blue, which reads as an ordinary action.
+                    .tint(.red)
                 }
                 .contextMenu {
                     // The long-press half of the issue's "long-press or swipe to
