@@ -6,14 +6,28 @@ import UIKit
 import AudioToolbox
 import DictusCore
 
+/// What one tick of the backspace auto-repeat achieved, which is what decides whether
+/// the tick gives feedback and whether the repeat carries on.
+enum KeyRepeatOutcome {
+    /// A deletion was issued into a live document.
+    case deleted
+    /// The document is provably empty and nothing is selected, so the hold has nothing
+    /// left to do. Apple's keyboard stops repeating here rather than ticking on in
+    /// silence, measured in docs/research/419-backspace-cadence/ (#419).
+    case nothingToDelete
+    /// There is no document to delete into -- the controller went away mid-hold. Stay
+    /// silent; the teardown paths that own this case are what stop the timer (#390).
+    case unavailable
+}
+
 protocol GiellaKeyboardViewDelegate: AnyObject {
     func didSwipeKey(_ key: KeyDefinition)
     func didTriggerKey(_ key: KeyDefinition)
     func didTriggerDoubleTap(forKey key: KeyDefinition)
     func didTriggerHoldKey(_ key: KeyDefinition)
-    /// Perform `key`'s auto-repeat action and report whether a deletion was actually
-    /// issued. The repeat tick fires its haptic and its click on that answer (#390).
-    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> Bool
+    /// Perform `key`'s auto-repeat action and report what it achieved. The repeat tick
+    /// fires its haptic and its click on that answer (#390), and stops on it (#419).
+    func didTriggerRepeat(_ key: KeyDefinition, wordMode: Bool) -> KeyRepeatOutcome
     func didMoveCursor(_ movement: Int)
 }
 
@@ -39,8 +53,16 @@ final internal class GiellaKeyboardView: UIView,
     LongPressOverlayDelegate,
     LongPressCursorMovementDelegate
 {
+    // The three cadences below are Apple's own, measured rather than guessed --
+    // Apple documents none of this. See docs/research/419-backspace-cadence/ for the
+    // timeline and the raw samples (#419).
     private static let pauseBeforeRepeatTimeInterval: TimeInterval = 0.5
     private static let keyRepeatTimeInterval: TimeInterval = 0.1
+    /// Word mode is slower than character mode, not faster: Apple's word deletions
+    /// arrive as spaced waves 345.7-358.6 ms apart (mean 350.0 over 20 intervals),
+    /// where ours used to arrive at the character cadence -- ten words a second, with
+    /// no gap between them, which is how a held backspace ate whole paragraphs (#419).
+    private static let wordModeRepeatTimeInterval: TimeInterval = 0.35
     private var theme: Theme
 
     private let definition: KeyboardDefinition
@@ -533,8 +555,14 @@ final internal class GiellaKeyboardView: UIView,
     /// Used to switch from character-level to word-level deletion after threshold.
     private var deleteRepeatCount: Int = 0
 
-    /// After this many character deletions, switch to word-level deletion.
-    private static let wordModeThreshold = 10
+    /// After this many character repeats, switch to word-level deletion.
+    ///
+    /// Apple switches on the 21st repeat tick, so 20 here (#419). At the 0.1 s
+    /// character cadence that puts the switch 2.5 s after touch-down instead of the
+    /// 1.5 s it used to take -- the "arrives too early" half of the complaint. The
+    /// measurement cannot say whether Apple counts ticks or elapsed time, because its
+    /// character cadence is fixed: 20 ticks and 2.0 s are the same moment.
+    private static let wordModeThreshold = 20
 
     struct ActiveKey: Hashable {
         static func == (lhs: GiellaKeyboardView.ActiveKey, rhs: GiellaKeyboardView.ActiveKey) -> Bool {
@@ -900,18 +928,32 @@ final internal class GiellaKeyboardView: UIView,
 
         // Word-level deletion after threshold, character-level before it.
         let wordMode = deleteRepeatCount > Self.wordModeThreshold
-        let deleted = delegate?.didTriggerRepeat(activeKey.key, wordMode: wordMode) ?? false
+        let outcome = delegate?.didTriggerRepeat(activeKey.key, wordMode: wordMode) ?? .unavailable
 
-        // The feedback follows the deletion, not the tick (#390). Both used to fire
-        // unconditionally, which is what produced "haptics in a chain while nothing is
-        // deleted": with no delegate left there is nothing to delete into and the repeat
-        // has to be silent. Still exactly one haptic and one click per deletion, as #286
-        // left it -- each repeat tick used to click from inside the bridge's delete
-        // handlers, and emitting it here is what keeps that count right now they are
-        // silent.
-        if deleted {
+        switch outcome {
+        case .deleted:
+            // The feedback follows the deletion, not the tick (#390). Both used to fire
+            // unconditionally, which is what produced "haptics in a chain while nothing
+            // is deleted". Still exactly one haptic and one click per deletion, as #286
+            // left it -- each repeat tick used to click from inside the bridge's delete
+            // handlers, and emitting it here is what keeps that count right now they are
+            // silent.
             HapticFeedback.keyTapped()
             playSound(for: activeKey.key)
+
+        case .nothingToDelete:
+            // A hold that has eaten the whole field used to keep ticking for as long as
+            // the finger stayed down -- measured at 73 further ticks over 7.4 s, each
+            // one a haptic and a click for a deletion that deleted nothing (#419).
+            // Apple stops instead, so this stops. The finger is still down, so
+            // `activeKey` stays as it is and the touch that ends the hold clears it.
+            stopKeyRepeat(reason: "documentEmpty")
+            return
+
+        case .unavailable:
+            // No document to delete into. Silent, and left running: the teardown paths
+            // added in #390 are what stop this one, and they carry their own log reason.
+            break
         }
 
         increaseKeyRepeatRateIfNeeded()
@@ -925,10 +967,15 @@ final internal class GiellaKeyboardView: UIView,
             keyRepeatTimer?.invalidate()
             keyRepeatTimer = makeKeyRepeatTimer(timeInterval: GiellaKeyboardView.keyRepeatTimeInterval)
         }
-        // Stage 2 -> Stage 3: After word mode threshold, speed up to 0.05s for faster word deletion
+        // Stage 2 -> Stage 3: word mode has just started, so slow down to its cadence.
+        // This branch used to rebuild the timer at the interval it already had, making
+        // it a no-op that left word deletion running at ten a second (#419). Apple's
+        // first word deletion also lands on the normal character tick and only the
+        // ones after it are spaced, which is why the change happens here, after the
+        // tick, rather than on the threshold itself.
         else if deleteRepeatCount == Self.wordModeThreshold + 1 && timer.timeInterval == GiellaKeyboardView.keyRepeatTimeInterval {
             keyRepeatTimer?.invalidate()
-            keyRepeatTimer = makeKeyRepeatTimer(timeInterval: 0.1)
+            keyRepeatTimer = makeKeyRepeatTimer(timeInterval: GiellaKeyboardView.wordModeRepeatTimeInterval)
         }
     }
 
