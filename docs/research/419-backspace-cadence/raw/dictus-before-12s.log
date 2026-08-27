@@ -1,0 +1,421 @@
+1486636782.7	launch
+1486636897.7	seeded	len=254	text="alpha bravo charlie. delta  echo foxtrot-golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve ZZZZZZZZZZZZZZZZZZZZZZZZZ"
+1486637086.1	firstResponder	field=text	value=true
+1486663114.6	shouldChange	loc=253	len=1	repl=""
+1486663140.5	deleteBackward.in	len=254
+1486663144.2	didChange	len=253	tail="lve ZZZZZZZZZZZZZZZZZZZZZZZZ"
+1486663144.9	deleteBackward.out	len=253	deleted=1
+1486663614.2	shouldChange	loc=252	len=1	repl=""
+1486663614.7	deleteBackward.in	len=253
+1486663615.8	didChange	len=252	tail="elve ZZZZZZZZZZZZZZZZZZZZZZZ"
+1486663616.1	deleteBackward.out	len=252	deleted=1
+1486663715.8	shouldChange	loc=251	len=1	repl=""
+1486663716.3	deleteBackward.in	len=252
+1486663717.5	didChange	len=251	tail="welve ZZZZZZZZZZZZZZZZZZZZZZ"
+1486663718.0	deleteBackward.out	len=251	deleted=1
+1486663815.6	shouldChange	loc=250	len=1	repl=""
+1486663816.1	deleteBackward.in	len=251
+1486663817.3	didChange	len=250	tail="twelve ZZZZZZZZZZZZZZZZZZZZZ"
+1486663817.7	deleteBackward.out	len=250	deleted=1
+1486663915.5	shouldChange	loc=249	len=1	repl=""
+1486663917.2	deleteBackward.in	len=250
+1486663920.3	didChange	len=249	tail=" twelve ZZZZZZZZZZZZZZZZZZZZ"
+1486663921.3	deleteBackward.out	len=249	deleted=1
+1486664018.9	shouldChange	loc=248	len=1	repl=""
+1486664020.0	deleteBackward.in	len=249
+1486664022.2	didChange	len=248	tail="n twelve ZZZZZZZZZZZZZZZZZZZ"
+1486664022.6	deleteBackward.out	len=248	deleted=1
+1486664115.3	shouldChange	loc=247	len=1	repl=""
+1486664117.3	deleteBackward.in	len=248
+1486664120.7	didChange	len=247	tail="en twelve ZZZZZZZZZZZZZZZZZZ"
+1486664122.2	deleteBackward.out	len=247	deleted=1
+1486664218.4	shouldChange	loc=246	len=1	repl=""
+1486664219.6	deleteBackward.in	len=247
+1486664222.9	didChange	len=246	tail="ven twelve ZZZZZZZZZZZZZZZZZ"
+1486664223.3	deleteBackward.out	len=246	deleted=1
+1486664318.5	shouldChange	loc=245	len=1	repl=""
+1486664319.5	deleteBackward.in	len=246
+1486664323.0	didChange	len=245	tail="even twelve ZZZZZZZZZZZZZZZZ"
+1486664323.7	deleteBackward.out	len=245	deleted=1
+1486664419.7	shouldChange	loc=244	len=1	repl=""
+1486664421.8	deleteBackward.in	len=245
+1486664424.3	didChange	len=244	tail="leven twelve ZZZZZZZZZZZZZZZ"
+1486664425.0	deleteBackward.out	len=244	deleted=1
+1486664519.5	shouldChange	loc=243	len=1	repl=""
+1486664521.0	deleteBackward.in	len=244
+1486664523.1	didChange	len=243	tail="eleven twelve ZZZZZZZZZZZZZZ"
+1486664523.8	deleteBackward.out	len=243	deleted=1
+1486664616.9	shouldChange	loc=229	len=14	repl=""
+1486664627.1	deleteBackward.in	len=230
+1486664628.6	didChange	len=229	tail="ight nine ten eleven twelve "
+1486664629.0	deleteBackward.out	len=229	deleted=1
+1486664721.8	shouldChange	loc=222	len=7	repl=""
+1486664726.5	deleteBackward.in	len=223
+1486664728.4	didChange	len=222	tail="seven eight nine ten eleven "
+1486664729.3	deleteBackward.out	len=222	deleted=1
+1486664824.9	shouldChange	loc=215	len=7	repl=""
+1486664829.4	deleteBackward.in	len=216
+1486664830.5	didChange	len=215	tail="ve six seven eight nine ten "
+1486664830.9	deleteBackward.out	len=215	deleted=1
+1486664925.0	shouldChange	loc=211	len=4	repl=""
+1486664929.2	deleteBackward.in	len=212
+1486664930.4	didChange	len=211	tail="r five six seven eight nine "
+1486664930.7	deleteBackward.out	len=211	deleted=1
+1486665025.2	shouldChange	loc=206	len=5	repl=""
+1486665028.2	deleteBackward.in	len=207
+1486665029.5	didChange	len=206	tail="e four five six seven eight "
+1486665029.9	deleteBackward.out	len=206	deleted=1
+1486665125.2	shouldChange	loc=200	len=6	repl=""
+1486665129.2	deleteBackward.in	len=201
+1486665131.4	didChange	len=200	tail="o three four five six seven "
+1486665131.6	deleteBackward.out	len=200	deleted=1
+1486665224.9	shouldChange	loc=194	len=6	repl=""
+1486665228.9	deleteBackward.in	len=195
+1486665230.4	didChange	len=194	tail="one two three four five six "
+1486665230.7	deleteBackward.out	len=194	deleted=1
+1486665325.1	shouldChange	loc=190	len=4	repl=""
+1486665328.4	deleteBackward.in	len=191
+1486665329.9	didChange	len=190	tail="ulu one two three four five "
+1486665330.5	deleteBackward.out	len=190	deleted=1
+1486665421.4	shouldChange	loc=185	len=5	repl=""
+1486665424.8	deleteBackward.in	len=186
+1486665426.0	didChange	len=185	tail="kee zulu one two three four "
+1486665426.4	deleteBackward.out	len=185	deleted=1
+1486665523.9	shouldChange	loc=180	len=5	repl=""
+1486665526.8	deleteBackward.in	len=181
+1486665527.9	didChange	len=180	tail="y yankee zulu one two three "
+1486665528.2	deleteBackward.out	len=180	deleted=1
+1486665624.0	shouldChange	loc=174	len=6	repl=""
+1486665627.7	deleteBackward.in	len=175
+1486665629.2	didChange	len=174	tail="ey xray yankee zulu one two "
+1486665629.5	deleteBackward.out	len=174	deleted=1
+1486665722.2	shouldChange	loc=170	len=4	repl=""
+1486665726.8	deleteBackward.in	len=171
+1486665727.9	didChange	len=170	tail="hiskey xray yankee zulu one "
+1486665728.2	deleteBackward.out	len=170	deleted=1
+1486665822.7	shouldChange	loc=166	len=4	repl=""
+1486665826.0	deleteBackward.in	len=167
+1486665827.8	didChange	len=166	tail="or whiskey xray yankee zulu "
+1486665828.5	deleteBackward.out	len=166	deleted=1
+1486665922.2	shouldChange	loc=161	len=5	repl=""
+1486665926.7	deleteBackward.in	len=162
+1486665928.7	didChange	len=161	tail=" victor whiskey xray yankee "
+1486665929.0	deleteBackward.out	len=161	deleted=1
+1486666024.4	shouldChange	loc=154	len=7	repl=""
+1486666028.0	deleteBackward.in	len=155
+1486666029.0	didChange	len=154	tail="uniform victor whiskey xray "
+1486666029.2	deleteBackward.out	len=154	deleted=1
+1486666124.6	shouldChange	loc=149	len=5	repl=""
+1486666128.2	deleteBackward.in	len=150
+1486666129.8	didChange	len=149	tail="ango uniform victor whiskey "
+1486666130.1	deleteBackward.out	len=149	deleted=1
+1486666224.1	shouldChange	loc=141	len=8	repl=""
+1486666228.6	deleteBackward.in	len=142
+1486666229.9	didChange	len=141	tail="sierra tango uniform victor "
+1486666230.2	deleteBackward.out	len=141	deleted=1
+1486666323.3	shouldChange	loc=134	len=7	repl=""
+1486666327.4	deleteBackward.in	len=135
+1486666328.7	didChange	len=134	tail=" romeo sierra tango uniform "
+1486666329.0	deleteBackward.out	len=134	deleted=1
+1486666422.1	shouldChange	loc=126	len=8	repl=""
+1486666427.2	deleteBackward.in	len=127
+1486666428.3	didChange	len=126	tail="a quebec romeo sierra tango "
+1486666429.9	deleteBackward.out	len=126	deleted=1
+1486666522.8	shouldChange	loc=120	len=6	repl=""
+1486666527.4	deleteBackward.in	len=121
+1486666529.2	didChange	len=120	tail="ar papa quebec romeo sierra "
+1486666529.7	deleteBackward.out	len=120	deleted=1
+1486666624.5	shouldChange	loc=113	len=7	repl=""
+1486666628.0	deleteBackward.in	len=114
+1486666629.4	didChange	len=113	tail="ber oscar papa quebec romeo "
+1486666629.8	deleteBackward.out	len=113	deleted=1
+1486666724.3	shouldChange	loc=107	len=6	repl=""
+1486666728.0	deleteBackward.in	len=108
+1486666729.1	didChange	len=107	tail=" november oscar papa quebec "
+1486666729.3	deleteBackward.out	len=107	deleted=1
+1486666823.2	shouldChange	loc=100	len=7	repl=""
+1486666828.2	deleteBackward.in	len=101
+1486666830.6	didChange	len=100	tail="ma mike november oscar papa "
+1486666831.2	deleteBackward.out	len=100	deleted=1
+1486666917.4	shouldChange	loc=95	len=5	repl=""
+1486666927.0	deleteBackward.in	len=96
+1486666928.8	didChange	len=95	tail="lo lima mike november oscar "
+1486666929.0	deleteBackward.out	len=95	deleted=1
+1486667017.2	shouldChange	loc=89	len=6	repl=""
+1486667029.2	deleteBackward.in	len=90
+1486667031.0	didChange	len=89	tail="iet kilo lima mike november "
+1486667031.3	deleteBackward.out	len=89	deleted=1
+1486667122.8	shouldChange	loc=80	len=9	repl=""
+1486667134.5	deleteBackward.in	len=81
+1486667136.2	didChange	len=80	tail="india juliet kilo lima mike "
+1486667136.6	deleteBackward.out	len=80	deleted=1
+1486667217.0	shouldChange	loc=75	len=5	repl=""
+1486667225.2	deleteBackward.in	len=76
+1486667227.7	didChange	len=75	tail="otel india juliet kilo lima "
+1486667228.2	deleteBackward.out	len=75	deleted=1
+1486667322.6	shouldChange	loc=70	len=5	repl=""
+1486667329.4	deleteBackward.in	len=71
+1486667331.2	didChange	len=70	tail="olf hotel india juliet kilo "
+1486667331.4	deleteBackward.out	len=70	deleted=1
+1486667420.9	shouldChange	loc=65	len=5	repl=""
+1486667428.9	deleteBackward.in	len=66
+1486667430.8	didChange	len=65	tail="rot-golf hotel india juliet "
+1486667431.0	deleteBackward.out	len=65	deleted=1
+1486667518.6	shouldChange	loc=58	len=7	repl=""
+1486667525.7	deleteBackward.in	len=59
+1486667527.4	didChange	len=58	tail="ho foxtrot-golf hotel india "
+1486667527.6	deleteBackward.out	len=58	deleted=1
+1486667619.4	shouldChange	loc=52	len=6	repl=""
+1486667624.6	deleteBackward.in	len=53
+1486667626.3	didChange	len=52	tail="ta  echo foxtrot-golf hotel "
+1486667626.5	deleteBackward.out	len=52	deleted=1
+1486667719.3	shouldChange	loc=46	len=6	repl=""
+1486667724.2	deleteBackward.in	len=47
+1486667725.6	didChange	len=46	tail="e. delta  echo foxtrot-golf "
+1486667725.8	deleteBackward.out	len=46	deleted=1
+1486667819.5	shouldChange	loc=33	len=13	repl=""
+1486667829.0	deleteBackward.in	len=34
+1486667830.3	didChange	len=33	tail=" bravo charlie. delta  echo "
+1486667830.5	deleteBackward.out	len=33	deleted=1
+1486667919.4	shouldChange	loc=28	len=5	repl=""
+1486667922.8	deleteBackward.in	len=29
+1486667924.0	didChange	len=28	tail="alpha bravo charlie. delta  "
+1486667924.1	deleteBackward.out	len=28	deleted=1
+1486668019.5	shouldChange	loc=21	len=7	repl=""
+1486668023.8	deleteBackward.in	len=22
+1486668024.9	didChange	len=21	tail="alpha bravo charlie. "
+1486668025.1	deleteBackward.out	len=21	deleted=1
+1486668118.9	shouldChange	loc=12	len=9	repl=""
+1486668123.7	deleteBackward.in	len=13
+1486668124.7	didChange	len=12	tail="alpha bravo "
+1486668124.8	deleteBackward.out	len=12	deleted=1
+1486668219.4	shouldChange	loc=6	len=6	repl=""
+1486668222.2	deleteBackward.in	len=7
+1486668223.1	didChange	len=6	tail="alpha "
+1486668223.2	deleteBackward.out	len=6	deleted=1
+1486668319.6	shouldChange	loc=0	len=6	repl=""
+1486668322.6	deleteBackward.in	len=1
+1486668323.4	didChange	len=0	tail=""
+1486668323.5	deleteBackward.out	len=0	deleted=1
+1486668418.8	shouldChange	loc=0	len=0	repl=""
+1486668419.1	deleteBackward.in	len=0
+1486668419.2	deleteBackward.out	len=0	deleted=0
+1486668519.3	shouldChange	loc=0	len=0	repl=""
+1486668519.6	deleteBackward.in	len=0
+1486668519.7	deleteBackward.out	len=0	deleted=0
+1486668619.2	shouldChange	loc=0	len=0	repl=""
+1486668619.6	deleteBackward.in	len=0
+1486668619.6	deleteBackward.out	len=0	deleted=0
+1486668719.3	shouldChange	loc=0	len=0	repl=""
+1486668719.6	deleteBackward.in	len=0
+1486668719.7	deleteBackward.out	len=0	deleted=0
+1486668819.3	shouldChange	loc=0	len=0	repl=""
+1486668819.7	deleteBackward.in	len=0
+1486668819.8	deleteBackward.out	len=0	deleted=0
+1486668919.5	shouldChange	loc=0	len=0	repl=""
+1486668919.9	deleteBackward.in	len=0
+1486668920.0	deleteBackward.out	len=0	deleted=0
+1486669019.9	shouldChange	loc=0	len=0	repl=""
+1486669020.6	deleteBackward.in	len=0
+1486669020.7	deleteBackward.out	len=0	deleted=0
+1486669124.7	shouldChange	loc=0	len=0	repl=""
+1486669126.2	deleteBackward.in	len=0
+1486669126.5	deleteBackward.out	len=0	deleted=0
+1486669224.3	shouldChange	loc=0	len=0	repl=""
+1486669225.6	deleteBackward.in	len=0
+1486669225.9	deleteBackward.out	len=0	deleted=0
+1486669321.9	shouldChange	loc=0	len=0	repl=""
+1486669322.8	deleteBackward.in	len=0
+1486669323.0	deleteBackward.out	len=0	deleted=0
+1486669423.6	shouldChange	loc=0	len=0	repl=""
+1486669424.8	deleteBackward.in	len=0
+1486669424.9	deleteBackward.out	len=0	deleted=0
+1486669522.3	shouldChange	loc=0	len=0	repl=""
+1486669523.2	deleteBackward.in	len=0
+1486669523.4	deleteBackward.out	len=0	deleted=0
+1486669617.2	shouldChange	loc=0	len=0	repl=""
+1486669618.8	deleteBackward.in	len=0
+1486669618.9	deleteBackward.out	len=0	deleted=0
+1486669719.4	shouldChange	loc=0	len=0	repl=""
+1486669719.9	deleteBackward.in	len=0
+1486669719.9	deleteBackward.out	len=0	deleted=0
+1486669823.6	shouldChange	loc=0	len=0	repl=""
+1486669825.0	deleteBackward.in	len=0
+1486669825.3	deleteBackward.out	len=0	deleted=0
+1486669921.7	shouldChange	loc=0	len=0	repl=""
+1486669922.6	deleteBackward.in	len=0
+1486669922.8	deleteBackward.out	len=0	deleted=0
+1486670023.1	shouldChange	loc=0	len=0	repl=""
+1486670024.1	deleteBackward.in	len=0
+1486670024.3	deleteBackward.out	len=0	deleted=0
+1486670121.6	shouldChange	loc=0	len=0	repl=""
+1486670122.5	deleteBackward.in	len=0
+1486670122.8	deleteBackward.out	len=0	deleted=0
+1486670223.7	shouldChange	loc=0	len=0	repl=""
+1486670224.8	deleteBackward.in	len=0
+1486670225.1	deleteBackward.out	len=0	deleted=0
+1486670321.3	shouldChange	loc=0	len=0	repl=""
+1486670321.8	deleteBackward.in	len=0
+1486670321.8	deleteBackward.out	len=0	deleted=0
+1486670421.9	shouldChange	loc=0	len=0	repl=""
+1486670422.8	deleteBackward.in	len=0
+1486670423.0	deleteBackward.out	len=0	deleted=0
+1486670521.9	shouldChange	loc=0	len=0	repl=""
+1486670522.8	deleteBackward.in	len=0
+1486670523.0	deleteBackward.out	len=0	deleted=0
+1486670621.8	shouldChange	loc=0	len=0	repl=""
+1486670622.7	deleteBackward.in	len=0
+1486670622.9	deleteBackward.out	len=0	deleted=0
+1486670721.4	shouldChange	loc=0	len=0	repl=""
+1486670723.0	deleteBackward.in	len=0
+1486670723.3	deleteBackward.out	len=0	deleted=0
+1486670825.5	shouldChange	loc=0	len=0	repl=""
+1486670827.4	deleteBackward.in	len=0
+1486670827.6	deleteBackward.out	len=0	deleted=0
+1486670923.9	shouldChange	loc=0	len=0	repl=""
+1486670925.7	deleteBackward.in	len=0
+1486670926.1	deleteBackward.out	len=0	deleted=0
+1486671020.4	shouldChange	loc=0	len=0	repl=""
+1486671021.8	deleteBackward.in	len=0
+1486671022.1	deleteBackward.out	len=0	deleted=0
+1486671122.5	shouldChange	loc=0	len=0	repl=""
+1486671123.4	deleteBackward.in	len=0
+1486671123.6	deleteBackward.out	len=0	deleted=0
+1486671217.2	shouldChange	loc=0	len=0	repl=""
+1486671218.2	deleteBackward.in	len=0
+1486671218.5	deleteBackward.out	len=0	deleted=0
+1486671323.0	shouldChange	loc=0	len=0	repl=""
+1486671324.4	deleteBackward.in	len=0
+1486671324.6	deleteBackward.out	len=0	deleted=0
+1486671421.5	shouldChange	loc=0	len=0	repl=""
+1486671422.4	deleteBackward.in	len=0
+1486671422.6	deleteBackward.out	len=0	deleted=0
+1486671522.3	shouldChange	loc=0	len=0	repl=""
+1486671523.2	deleteBackward.in	len=0
+1486671523.4	deleteBackward.out	len=0	deleted=0
+1486671624.4	shouldChange	loc=0	len=0	repl=""
+1486671625.6	deleteBackward.in	len=0
+1486671625.8	deleteBackward.out	len=0	deleted=0
+1486671719.4	shouldChange	loc=0	len=0	repl=""
+1486671719.8	deleteBackward.in	len=0
+1486671719.8	deleteBackward.out	len=0	deleted=0
+1486671817.0	shouldChange	loc=0	len=0	repl=""
+1486671817.5	deleteBackward.in	len=0
+1486671817.5	deleteBackward.out	len=0	deleted=0
+1486671919.3	shouldChange	loc=0	len=0	repl=""
+1486671919.6	deleteBackward.in	len=0
+1486671919.7	deleteBackward.out	len=0	deleted=0
+1486672018.6	shouldChange	loc=0	len=0	repl=""
+1486672019.0	deleteBackward.in	len=0
+1486672019.0	deleteBackward.out	len=0	deleted=0
+1486672119.2	shouldChange	loc=0	len=0	repl=""
+1486672119.6	deleteBackward.in	len=0
+1486672119.6	deleteBackward.out	len=0	deleted=0
+1486672219.6	shouldChange	loc=0	len=0	repl=""
+1486672220.0	deleteBackward.in	len=0
+1486672220.1	deleteBackward.out	len=0	deleted=0
+1486672318.7	shouldChange	loc=0	len=0	repl=""
+1486672319.4	deleteBackward.in	len=0
+1486672319.4	deleteBackward.out	len=0	deleted=0
+1486672423.1	shouldChange	loc=0	len=0	repl=""
+1486672424.3	deleteBackward.in	len=0
+1486672424.5	deleteBackward.out	len=0	deleted=0
+1486672525.3	shouldChange	loc=0	len=0	repl=""
+1486672526.7	deleteBackward.in	len=0
+1486672527.1	deleteBackward.out	len=0	deleted=0
+1486672623.9	shouldChange	loc=0	len=0	repl=""
+1486672625.0	deleteBackward.in	len=0
+1486672625.3	deleteBackward.out	len=0	deleted=0
+1486672722.9	shouldChange	loc=0	len=0	repl=""
+1486672724.4	deleteBackward.in	len=0
+1486672724.8	deleteBackward.out	len=0	deleted=0
+1486672823.0	shouldChange	loc=0	len=0	repl=""
+1486672824.3	deleteBackward.in	len=0
+1486672824.6	deleteBackward.out	len=0	deleted=0
+1486672924.2	shouldChange	loc=0	len=0	repl=""
+1486672925.8	deleteBackward.in	len=0
+1486672926.1	deleteBackward.out	len=0	deleted=0
+1486673024.3	shouldChange	loc=0	len=0	repl=""
+1486673025.6	deleteBackward.in	len=0
+1486673025.9	deleteBackward.out	len=0	deleted=0
+1486673123.6	shouldChange	loc=0	len=0	repl=""
+1486673125.5	deleteBackward.in	len=0
+1486673125.7	deleteBackward.out	len=0	deleted=0
+1486673223.3	shouldChange	loc=0	len=0	repl=""
+1486673224.3	deleteBackward.in	len=0
+1486673224.5	deleteBackward.out	len=0	deleted=0
+1486673318.8	shouldChange	loc=0	len=0	repl=""
+1486673319.2	deleteBackward.in	len=0
+1486673319.3	deleteBackward.out	len=0	deleted=0
+1486673419.4	shouldChange	loc=0	len=0	repl=""
+1486673419.8	deleteBackward.in	len=0
+1486673419.9	deleteBackward.out	len=0	deleted=0
+1486673519.6	shouldChange	loc=0	len=0	repl=""
+1486673520.1	deleteBackward.in	len=0
+1486673520.1	deleteBackward.out	len=0	deleted=0
+1486673617.0	shouldChange	loc=0	len=0	repl=""
+1486673617.5	deleteBackward.in	len=0
+1486673617.6	deleteBackward.out	len=0	deleted=0
+1486673719.3	shouldChange	loc=0	len=0	repl=""
+1486673719.7	deleteBackward.in	len=0
+1486673719.7	deleteBackward.out	len=0	deleted=0
+1486673819.4	shouldChange	loc=0	len=0	repl=""
+1486673819.8	deleteBackward.in	len=0
+1486673819.9	deleteBackward.out	len=0	deleted=0
+1486673919.7	shouldChange	loc=0	len=0	repl=""
+1486673920.2	deleteBackward.in	len=0
+1486673920.3	deleteBackward.out	len=0	deleted=0
+1486674017.2	shouldChange	loc=0	len=0	repl=""
+1486674017.9	deleteBackward.in	len=0
+1486674018.0	deleteBackward.out	len=0	deleted=0
+1486674125.2	shouldChange	loc=0	len=0	repl=""
+1486674126.9	deleteBackward.in	len=0
+1486674127.3	deleteBackward.out	len=0	deleted=0
+1486674222.6	shouldChange	loc=0	len=0	repl=""
+1486674223.5	deleteBackward.in	len=0
+1486674223.8	deleteBackward.out	len=0	deleted=0
+1486674321.2	shouldChange	loc=0	len=0	repl=""
+1486674322.1	deleteBackward.in	len=0
+1486674322.3	deleteBackward.out	len=0	deleted=0
+1486674422.7	shouldChange	loc=0	len=0	repl=""
+1486674424.2	deleteBackward.in	len=0
+1486674424.4	deleteBackward.out	len=0	deleted=0
+1486674525.2	shouldChange	loc=0	len=0	repl=""
+1486674526.9	deleteBackward.in	len=0
+1486674527.2	deleteBackward.out	len=0	deleted=0
+1486674623.8	shouldChange	loc=0	len=0	repl=""
+1486674625.4	deleteBackward.in	len=0
+1486674625.6	deleteBackward.out	len=0	deleted=0
+1486674725.7	shouldChange	loc=0	len=0	repl=""
+1486674727.4	deleteBackward.in	len=0
+1486674727.8	deleteBackward.out	len=0	deleted=0
+1486674825.2	shouldChange	loc=0	len=0	repl=""
+1486674826.7	deleteBackward.in	len=0
+1486674827.0	deleteBackward.out	len=0	deleted=0
+1486674923.2	shouldChange	loc=0	len=0	repl=""
+1486674924.2	deleteBackward.in	len=0
+1486674924.5	deleteBackward.out	len=0	deleted=0
+1486675024.0	shouldChange	loc=0	len=0	repl=""
+1486675025.1	deleteBackward.in	len=0
+1486675025.3	deleteBackward.out	len=0	deleted=0
+1486675121.3	shouldChange	loc=0	len=0	repl=""
+1486675122.2	deleteBackward.in	len=0
+1486675122.4	deleteBackward.out	len=0	deleted=0
+1486675224.1	shouldChange	loc=0	len=0	repl=""
+1486675225.4	deleteBackward.in	len=0
+1486675225.6	deleteBackward.out	len=0	deleted=0
+1486675322.5	shouldChange	loc=0	len=0	repl=""
+1486675323.4	deleteBackward.in	len=0
+1486675323.7	deleteBackward.out	len=0	deleted=0
+1486675423.4	shouldChange	loc=0	len=0	repl=""
+1486675424.5	deleteBackward.in	len=0
+1486675424.8	deleteBackward.out	len=0	deleted=0
+1486675524.2	shouldChange	loc=0	len=0	repl=""
+1486675525.4	deleteBackward.in	len=0
+1486675525.6	deleteBackward.out	len=0	deleted=0
+1486675622.4	shouldChange	loc=0	len=0	repl=""
+1486675623.5	deleteBackward.in	len=0
+1486675623.7	deleteBackward.out	len=0	deleted=0
+1486675718.8	shouldChange	loc=0	len=0	repl=""
+1486675719.2	deleteBackward.in	len=0
+1486675719.2	deleteBackward.out	len=0	deleted=0
