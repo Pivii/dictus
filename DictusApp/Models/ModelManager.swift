@@ -304,17 +304,22 @@ class ModelManager: ObservableObject {
             // Take the Neural Engine. This waits out any compile already running,
             // including one started by `ensureEngineReady` on the dictation path, which
             // the old instance-owned flag could not see (issue #428, second review).
+            // Captured BEFORE the wait for the Neural Engine, not after it (fourth
+            // review, finding 1). The wait is unbounded — it can last as long as another
+            // compile runs — and everything this guard exists to notice happens during
+            // it. Capturing on the far side made the guard blind to exactly the window
+            // it was written for.
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
+
             let engineHolder = "prewarm:\(identifier)"
             try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
             defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
-            // Captured before the compile, checked after it (third review, finding B).
             // This prewarm compiles its own throwaway WhisperKit outside the coordinator's
             // init lock, so abandoning a load does not stop it — and #174 has it adopt the
-            // model as active when it finishes. A user who escapes this preparation and
-            // picks a lighter model would have had their choice silently reverted, and
-            // the model they walked away from loaded into RAM instead.
-            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
+            // model as active when it finishes. Without the guard below, a user who moved
+            // to a different model mid-prewarm had their choice silently reverted, and the
+            // model they moved off loaded into RAM instead.
 
             PersistentLog.log(.modelCompilationStarted(name: identifier))
 
@@ -507,23 +512,25 @@ class ModelManager: ObservableObject {
                 }
             }
 
-            // Step 2: take the Neural Engine, waiting out any compile already on it —
-            // this path's or the dictation path's (issue #428, second review).
-            let engineHolder = "prewarm:\(identifier)"
-            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
-            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
-
-            // Same guard as the WhisperKit path (finding B): captured before the compile,
-            // checked after it, so a preparation the user walked away from cannot make
-            // itself the active model behind their back.
+            // Same guard as the WhisperKit path, captured before the wait (finding 1).
             let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
 
-            // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
+            // Step 2: Switch to prewarming state BEFORE queueing for the Neural Engine,
+            // which is the order the WhisperKit path uses (fourth review, finding 3).
+            // Taking the lock first left the card saying "Downloading" at 100% with no
+            // progress for as long as another compile held the hardware — the download
+            // has finished, and the screen should say what is actually happening.
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
+
+            // Step 3: take the Neural Engine, waiting out any compile already on it —
+            // this path's or the dictation path's (issue #428, second review).
+            let engineHolder = "prewarm:\(identifier)"
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
             // Step 4: Load and compile CoreML models.
             // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles

@@ -117,14 +117,29 @@ extension DictationCoordinator {
             )
             PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
             deadlineArm.cancel()
-            // A newer load owns the shared state now; this one publishes nothing.
-            guard !loadWasAbandoned(since: epoch) else {
+
+            // The epoch moved, but that does not by itself mean somebody else owns the
+            // state (fourth review, finding 5). It moves when a load is ABANDONED, and
+            // an abandoned load whose model is still the active one publishes its engine
+            // anyway — `shouldPublishLoad` decided that, and it is the fix that stopped
+            // the deadline throwing away working dictations. So this branch was logging
+            // `supersededByNewerLoad` when nothing had superseded anything, and leaving
+            // `modelLoadState` at `.idle` with a live engine behind it until some later
+            // foreground warm-up happened to heal it. The log's reader is an agent, and
+            // that line was simply false.
+            //
+            // What the engine actually did is the thing to report, and if it published,
+            // the state must say so.
+            if loadWasAbandoned(since: epoch) {
+                let enginePublished = loadedName == modelName
                 PersistentLog.log(.diagnosticProbe(
                     component: "ModelPreload",
                     instanceID: modelName,
-                    action: "supersededByNewerLoad",
-                    details: "loadedModel=\(loadedName)"
+                    action: enginePublished ? "publishedAfterAbandon" : "discardedAfterAbandon",
+                    details: "loadedModel=\(loadedName) activeModel=\(defaults.string(forKey: SharedKeys.activeModel) ?? "nil")"
                 ))
+                guard enginePublished else { return }
+                setModelLoadState(.ready, reason: "init-preload-late-success")
                 return
             }
             guard outcome.settle() else {
@@ -443,6 +458,33 @@ extension DictationCoordinator {
             details: "epoch=\(epoch) current=\(modelLoadEpoch) activeModel=\(defaults.string(forKey: SharedKeys.activeModel) ?? "nil")"
         ))
         return false
+    }
+
+    /// Run `work` with the "parked on hardware" flag raised, lowered whatever happens.
+    ///
+    /// The flag has to come down on the throwing path too, which is the whole reason
+    /// this is a wrapper rather than two assignments around a call (finding 2).
+    func waitingForNeuralEngine<T>(_ work: () async throws -> T) async rethrows -> T {
+        isWaitingForNeuralEngine = true
+        defer { isWaitingForNeuralEngine = false }
+        return try await work()
+    }
+
+    /// Whether a fired stage watchdog should be deferred rather than acted on.
+    ///
+    /// A stage queued behind a Core ML compile is not a stalled stage. The recording is
+    /// captured and safe, the wait ends when the hardware frees, and cancelling here
+    /// threw away a dictation the user had already finished speaking (finding 2). The
+    /// watchdog is for a stage that will never hand over; this one will.
+    func shouldDeferStageWatchdog(for status: DictationStatus) -> Bool {
+        guard isWaitingForNeuralEngine else { return false }
+        PersistentLog.log(.diagnosticProbe(
+            component: "NeuralEngine",
+            instanceID: status.rawValue,
+            action: "stageWatchdogDeferred",
+            details: "waitingForCompile=true recordingPreserved=true"
+        ))
+        return true
     }
 
     /// Forget that a model was abandoned, once a load of it has actually succeeded.

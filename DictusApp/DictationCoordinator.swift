@@ -168,6 +168,21 @@ class DictationCoordinator: ObservableObject {
     /// Internal for the same reason as `initTask`, and written only beside it.
     var initTaskEpoch = 0
 
+    /// Set while a dictation is parked waiting for the Neural Engine rather than doing
+    /// any work of its own (fourth review, finding 2).
+    ///
+    /// `stopDictation` enters `.transcribing`, which arms a 30s stage watchdog, and then
+    /// calls `ensureEngineReady()` — which since the lock can queue behind a compile for
+    /// as long as that compile runs. The watchdog fired at 30s and cancelled a dictation
+    /// whose audio was already captured and perfectly good: the user lost their words to
+    /// a wait, not to a failure. `develop` never had this, because `ensureEngineReady`
+    /// did not consult the prewarm lock at all; the lock created it.
+    ///
+    /// The watchdog exists to catch a stage that will never hand over. A stage waiting
+    /// for hardware WILL hand over, so this tells the two apart rather than shortening
+    /// the wait or removing the guard.
+    var isWaitingForNeuralEngine = false
+
     /// Who holds the Neural Engine for a Core ML compile right now, or nil if it is free.
     ///
     /// THE ANE IS ONE PIECE OF HARDWARE AND IT NEEDS ONE LOCK. It had two, neither aware
@@ -219,9 +234,7 @@ class DictationCoordinator: ObservableObject {
     /// Configure the audio session, from the orchestration file. A tiny seam rather
     /// than exposing `audioEngine`, which nothing outside this file has any business
     /// holding (issue #428).
-    func configureAudioSessionForWarmUp() throws {
-        try audioEngine.configureAudioSession()
-    }
+    func configureAudioSessionForWarmUp() throws { try audioEngine.configureAudioSession() }
 
     /// Whether the audio engine is already running, for the foreground warm-up policy.
     var isAudioEngineRunning: Bool { audioEngine.isEngineRunning }
@@ -244,10 +257,7 @@ class DictationCoordinator: ObservableObject {
     /// before the model load, because that line is the ONLY marker a hang on that path
     /// leaves behind — and a hang there is the thing this whole branch is about (second
     /// review, finding 6).
-    func loadActiveModelIntoMemory(
-        context: String,
-        attemptLog: WarmUpAttemptPosition
-    ) async throws -> String {
+    func loadActiveModelIntoMemory(context: String, attemptLog: WarmUpAttemptPosition) async throws -> String {
         if attemptLog == .beforeModelLoad { PersistentLog.log(.engineWarmUpAttempt(context: context)) }
         try await ensureEngineReady()
         if attemptLog == .beforeAudioWarmUp { PersistentLog.log(.engineWarmUpAttempt(context: context)) }
@@ -796,7 +806,9 @@ class DictationCoordinator: ObservableObject {
                 LiveActivityManager.shared.startRecordingWatchdog()
                 SoundFeedbackService.playRecordStop()
 
-                try await ensureEngineReady()
+                // Wrapped, not just called: this is the one place in a dictation that
+                // can queue on hardware someone else holds (finding 2).
+                try await waitingForNeuralEngine { try await self.ensureEngineReady() }
 
                 // One language-policy snapshot per dictation (#226): mode,
                 // keyboard language, engine, and model are captured HERE and
@@ -1218,6 +1230,10 @@ class DictationCoordinator: ObservableObject {
             guard let self = self else { return }
             DispatchQueue.main.async {
                 guard self.status == status else { return }
+                if self.shouldDeferStageWatchdog(for: status) {
+                    self.startStageWatchdog(for: status)
+                    return
+                }
                 PersistentLog.log(.watchdogReset(
                     source: self.stageWatchdogSource(for: status),
                     staleState: status.rawValue
