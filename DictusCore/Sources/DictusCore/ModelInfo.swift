@@ -333,6 +333,30 @@ public struct ModelInfo: Identifiable {
             speedScore: 0.85,
             description: "Fast and accurate (NVIDIA)",
             visibility: .available
+            // No `prewarmTimeoutSeconds` here, and that is a decision rather than an
+            // omission (issue #422). This entry takes the 120s default, which is
+            // INHERITED, not chosen: it is the Phase 37 global from issue #104, and that
+            // global was itself calibrated on this very model — a ~17s Parakeet Encoder
+            // compile on one iPhone 15 Pro Max. So the number sits at roughly seven
+            // times the only reading anybody has ever taken of the work it bounds.
+            //
+            // It was left alone on purpose when #422 finally made this path read the
+            // field. Until then the budget was purely declarative here and nothing
+            // enforced it, so tightening it in the same change would have introduced a
+            // failure mode into the model a new user compiles during onboarding, on the
+            // strength of a reading from one device in one thermal state. #422's own
+            // acceptance forbids exactly that: onboarding must not start failing where
+            // it used to succeed. No hang has ever been observed on this path either,
+            // which is the second reason to stay generous — the guard is closing the
+            // absence of a guard, not a reported symptom.
+            //
+            // A FRESH DEVICE FIGURE IS OWED. A Core ML compile cannot be measured off
+            // device, so nobody could take one while writing #422. The next Parakeet
+            // download on a physical iPhone logs `modelCompilationCompleted` with a
+            // `durationMs`; that reading belongs on #422, and after it lands this
+            // number can be chosen instead of inherited. `firstPreparationSeconds`
+            // stays nil until then, for the same reason it is nil everywhere else
+            // nobody watched a compile finish.
         ),
         // Phase 37 (issue #104): Whisper Turbo re-introduced using an Argmax
         // iPhone-supported QUANTIZED variant.

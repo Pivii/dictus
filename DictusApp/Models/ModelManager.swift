@@ -590,12 +590,39 @@ class ModelManager: ObservableObject {
             // this path's or the dictation path's (issue #428, second review).
             let engineHolder = "prewarm:\(identifier)"
             try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
-            defer { DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder) }
 
-            // Step 4: Load and compile CoreML models.
+            // Released by whoever is still compiling on the engine — see the WhisperKit
+            // path, which explains the flag at length. The two paths have to agree here:
+            // an abandoned Parakeet compile holds the same hardware a Whisper compile
+            // would.
+            var engineIsOursToRelease = true
+            defer {
+                if engineIsOursToRelease {
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                }
+            }
+
+            // Step 4: Load and compile CoreML models, under the catalogue's budget.
             // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
             // them; it never downloads anything itself (issue #252). This method is the
             // only place a Parakeet download starts.
+            //
+            // WHY THIS IS GUARDED AT ALL, AND ONLY NOW (issue #422): it never was. The
+            // deadline was written for WhisperKit in Phase 37 and `prewarmTimeoutSeconds`
+            // sat on this entry declaring a budget nothing read, which is worse than no
+            // field — the next reader believes the protection exists. And the asymmetry
+            // pointed the wrong way: Parakeet v3 is the recommended model and the one a
+            // new user compiles during onboarding, so the unguarded path was the default
+            // path. A FluidAudio compile that never returned had no way out but killing
+            // the app. It was not fixed alongside #406 on purpose, because adding a new
+            // failure mode to the default onboarding model as a side effect of a Turbo
+            // fix is not a trade anyone chose; it waited for #427 to decide what a
+            // deadline expiring should mean, and now means what it means everywhere
+            // else: the app stops waiting, the compile carries on, the files stay.
+            //
+            // No hang has ever been observed here. This is the absence of a guard being
+            // closed, not a reported symptom being fixed, which is the whole argument
+            // for leaving the budget generous — see the catalogue entry.
             //
             // Phase 37 instrumentation mirrors the WhisperKit path: measure prewarm
             // duration + jetsam-headroom delta so both engines produce comparable
@@ -603,8 +630,33 @@ class ModelManager: ObservableObject {
             let prewarmStart = Date()
             let availableBeforeMB = DeviceCapabilities.current().availableMemoryMB
 
-            let parakeetEngine = ParakeetEngine()
-            try await parakeetEngine.prepare(modelIdentifier: identifier)
+            let prewarmTimeoutSeconds = ModelInfo.forIdentifier(identifier)?.prewarmTimeoutSeconds
+                ?? ModelInfo.defaultPrewarmTimeoutSeconds
+            do {
+                try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
+                    // Built inside the operation, not captured: the engine is this
+                    // compile's alone, and after a deadline expiry nothing out here is
+                    // entitled to touch it any more.
+                    let parakeetEngine = ParakeetEngine()
+                    try await parakeetEngine.prepare(modelIdentifier: identifier)
+                } whenLateCompilationLands: { result in
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                    let landedAfterMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
+                    PersistentLog.log(.diagnosticProbe(
+                        component: "ModelPrewarm",
+                        instanceID: identifier,
+                        action: "abandonedCompileLanded",
+                        details: "afterMs=\(landedAfterMs) budget=\(prewarmTimeoutSeconds)s "
+                            + "outcome=\(ModelManager.landingOutcome(of: result))"
+                    ))
+                }
+            } catch let err as ModelManagerError {
+                if case .prewarmTimeout(let s) = err {
+                    engineIsOursToRelease = false
+                    PersistentLog.log(.modelPrewarmTimeout(name: identifier, timeoutSeconds: s))
+                }
+                throw err
+            }
 
             let prewarmDurationMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
             let availableAfterMB = DeviceCapabilities.current().availableMemoryMB
@@ -651,13 +703,19 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Deliberately NO cleanupModelFiles here after a download failure:
+            // Deliberately NO cleanupModelFiles here, for any failure:
             // the downloader moves each file into place atomically, so anything on
             // disk is a complete file — leaving the cache intact lets a retry skip
             // already-downloaded files and resume where it left off. Since issue
             // #235, tapping the card's "Retry" affordance retries in place; the
             // full reset lives in the overflow menu's "Delete partial download"
             // entry (cleanupFailedModel).
+            //
+            // This is also what the prewarm deadline #422 added needs, and it needs
+            // nothing else: keeping the payload after a timeout is the policy the
+            // WhisperKit path had to be taught in #405, and this path has had it since
+            // #210. There is no `ModelCleanupPolicy` call to make here because there is
+            // no branch — nothing on this path deletes anything, ever.
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }

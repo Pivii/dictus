@@ -571,6 +571,27 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(ModelInfo.forIdentifier("openai_whisper-base")?.prewarmTimeoutSeconds, 120)
     }
 
+    /// Issue #422: this field was purely declarative on Parakeet until the Parakeet
+    /// prewarm was made to read it, and a catalogue that declares a budget nothing
+    /// enforces is a trap for the next reader. The number is deliberately inherited
+    /// rather than chosen — see the entry — so what this pins is the provenance: it
+    /// must stay the Phase 37 default, and it must stay far above the ~17s Parakeet
+    /// Encoder reading that default was calibrated on, because onboarding's default
+    /// model is not where a tight budget gets tried out.
+    func testParakeetKeepsTheInheritedBudgetItsPathNowEnforces() {
+        guard let parakeet = ModelInfo.forIdentifier("parakeet-tdt-0.6b-v3") else {
+            XCTFail("parakeet-tdt-0.6b-v3 is missing from the catalogue")
+            return
+        }
+        XCTAssertEqual(parakeet.prewarmTimeoutSeconds, ModelInfo.defaultPrewarmTimeoutSeconds)
+        let phase37EncoderSeconds = 17
+        XCTAssertGreaterThan(parakeet.prewarmTimeoutSeconds, phase37EncoderSeconds * 4)
+        // And the reading that would let the number be chosen instead of inherited
+        // still does not exist. When somebody measures one on device, this is the
+        // assertion that has to be updated rather than quietly outgrown.
+        XCTAssertNil(parakeet.firstPreparationSeconds)
+    }
+
     /// Why a five-minute budget is safe to declare at all: no #362-class device can
     /// ever be handed it. Both Turbo variants are gated out on A12/A13 by the Argmax
     /// support matrix and on sub-6 GB devices by RAM, so a prewarm carrying 300s can
