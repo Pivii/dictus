@@ -28,6 +28,13 @@ import Foundation
 ///   not enforced in auto mode (Apple FM cannot emit NBSP reliably).
 /// - The anti-translation contract is stated harder than anywhere else — the
 ///   whole point of this prompt is output language == input language.
+/// - ASR repair (ADR 0003 rule 8) carries a guard the per-language prompts do
+///   not need: **incoherence is the trigger, never foreignness**. Here
+///   "reconstruct an off-language fragment" sits one clause away from
+///   "translate the input", so the rule names the carve-out — a foreign word
+///   that MEANS something is word choice — and the prompt carries a
+///   counter-example for it. The rule was absent entirely until #439 measured
+///   six unrepaired ASR errors on six dictations that all came through here.
 enum PolishAutoPrompt {
     static func instructions(glossary: String) -> String {
         """
@@ -58,17 +65,20 @@ enum PolishAutoPrompt {
         5. Remove same-word back-to-back duplicates that are clearly involuntary stutters (`I I think` → `I think`). Only immediate same-word repetition.
         6. Remove pure hesitation fillers (`uh`, `um`, `euh`, `ähm`, `este`, `eeh`) when they carry no meaning. KEEP transition words that carry intent.
         7. `<<NL>>` markers represent hard line breaks. Keep them character-for-character at the same position. Capitalize the first letter of the sentence that follows each marker where the language uses capitalization. Do NOT alter, paraphrase, surround with spaces, or add new markers.
-        8. Fix obvious one-letter typos.
+        8. ASR error repair: when a segment is clearly INCOHERENT in its context, reconstruct what the speaker meant from the surrounding words, IN THE INPUT'S OWN LANGUAGE. This covers pseudo-words, real words that mean nothing where they stand (a homophone the engine split or joined wrongly), a determiner or verb form that contradicts its own sentence, and a fragment in another language that carries no meaning where it sits. Three constraints. **Incoherence is the trigger, never foreignness**: a foreign word that MAKES SENSE — a technical term, a brand, a name, deliberate code-switching — is word choice and stays; "repairing" it would be translating. **Repair IN PLACE**: the reconstruction takes the broken segment's position and nothing else moves. **Repair IN THE SPEAKER'S REGISTER**: do not upgrade a spoken form to its written equivalent (in French `ça` stays `ça`, never `cela`). When in doubt, leave the segment alone — an unrepaired mishearing is a visible error, a wrong repair is an invisible one.
+        9. Fix obvious one-letter typos.
 
         PRESERVE — DO NOT change these:
 
         - The input language and script. Mixed-language input keeps every part in its original language — polish each part in place.
-        - Word choice: do NOT substitute synonyms. Slang, casual abbreviations, and contractions stay exactly as spoken.
+        - Word choice: do NOT substitute synonyms. Slang, casual abbreviations, and contractions stay exactly as spoken. Placeholder words (French `machin`, `truc`; English `thingy`) are word choice, not typos for a similar-looking word.
+        - Number and time formats as written: `19h`, `25€`, `9am` stay, and digits stay digits.
         - Tone and register: familiar stays familiar, formal stays formal. Do NOT shift up or down.
 
         FORBIDDEN:
         - Do NOT translate. Not even partially. If you cannot identify the language, return the input with only punctuation fixed.
         - Do NOT add words or content that weren't in the input. No inventing endings, no inserting context, no completing cut-off sentences.
+        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement in the input appears in the output. Rules 5 and 6 (stutters, fillers) are the only licence to remove a word, rule 8 the only licence to change one.
         - Do NOT reorder words.
         - Do NOT add `<<NL>>` markers where none existed. Do NOT split or alter existing markers.
 
@@ -93,6 +103,17 @@ enum PolishAutoPrompt {
 
         INPUT: perfecto nos vemos mañana signo de exclamación
         OUTPUT: ¡Perfecto, nos vemos mañana!
+
+        ASR-repair example. Real words that mean nothing where they stand, rebuilt in place, in the input's own language:
+
+        INPUT: on se retrouve devant la garde du nord à 9h
+        OUTPUT: On se retrouve devant la gare du Nord à 9h.
+
+        COUNTER-EXAMPLE to rule 8. These foreign words MEAN something — they are the speaker's vocabulary, not a mishearing — so nothing is repaired and nothing is translated:
+
+        INPUT: faut que je push le commit avant la deadline de today
+        WRONG: Il faut que je pousse la validation avant l'échéance d'aujourd'hui.
+        RIGHT: Faut que je push le commit avant la deadline de today.
 
         Line-break marker example. `<<NL>>` represents a hard line break. Keep it at the same position:
 

@@ -75,3 +75,38 @@ The length-ratio guardrail from ADR 0002 is unchanged at `[0.5, 2.0]` for Natura
 - ES + DE prompts are unvalidated. Track in `docs/agents/language-onboarding.md` checklist. Re-author after a native speaker can sit a test session per language.
 - The "preserve tech anglicisms" list is curated and could miss terms used in production. Logs surface this — terms found unexpectedly translated can be added in PR.
 - The "ASR repair" capability is implicit in Apple FM's behaviour but the prompt rule now codifies it. A future Apple FM update could stop honouring rule 8 even with an explicit instruction; round 5 testing should re-verify rule 8 holds. If it stops working we have no code-level fallback for ASR repair — it's a polish-layer-only capability for now.
+
+---
+
+## Amendment — 2026-08-27 (#439)
+
+Six French dictations measured end to end on device broke this contract in three
+directions at once (#439, raw pairs in #437). The contract is unchanged in substance;
+three things it left implicit are now written down, because the prompts could honour
+every sentence above and still produce what was measured.
+
+**1. A rule-8 repair is substitutional, not subtractive.** The reconstructed words take
+the broken segment's position and nothing else moves. Deleting an incoherent segment is
+a repair only when nothing in it is recoverable. As written, rule 8 said "reconstruct the
+speaker's intent" and the FR prompt's only demonstration of it *deleted* a fragment; the
+measured run deleted `en calcul` from `le même prix en calcul` and called it polish.
+
+**2. A rule-8 repair happens in the speaker's register.** The Preserve list already says
+*Familiar register* and *Tone and register*, but it read as a rule about text the model
+leaves alone. It also governs text the model writes: the one repair that did fire returned
+`et je pense que cela débordera` for `et je pense que ça va déborder`. A repair that
+arrives in written French has changed the message as surely as a wrong word would.
+
+**3. The Forbidden list bans deletion explicitly.** It banned adding, reordering and
+translating; "removing dictated content" was only implied by the Preserve list. It is now
+stated: rules 6 and 7 (stutters, fillers) are the only licences to remove a word, and
+rule 8 the only licence to change one.
+
+**And one gap that was in the dispatch rather than in the contract.** All six measured
+runs went through `PolishAutoPrompt` (#239), because the device was in Auto-detect —
+and that prompt carried **no rule 8 at all**. "Rule 8 is never applied" was a prompt that
+never carried it. It does now, with an extra guard the per-language prompts do not need:
+incoherence is the trigger, never foreignness, or the rule becomes a licence to translate.
+
+Applied to `(.natural, .french)` and to `.auto`. EN/ES/DE follow the same edit once FR
+is confirmed on device, per #439's Scope.

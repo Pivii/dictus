@@ -37,6 +37,31 @@ final class PolishAutoPromptTests: XCTestCase {
         XCTAssertFalse(prompt.contains("`Punkt`"), "bare German 'Punkt' must stay excluded (#185)")
     }
 
+    /// #439. The prompt that took all six measured runs carried no ASR-repair rule
+    /// at all, so "rule 8 is never applied" was a prompt that never carried it.
+    /// The rule is now here — and so is the guard that keeps it from becoming a
+    /// licence to translate, which is this prompt's one unforgivable failure.
+    func testAutoPromptCarriesASRRepairWithoutWeakeningTheAntiTranslationContract() {
+        let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
+        XCTAssertTrue(prompt.contains("ASR error repair"))
+        XCTAssertTrue(prompt.contains("IN THE INPUT'S OWN LANGUAGE"))
+        XCTAssertTrue(prompt.contains("Incoherence is the trigger, never foreignness"))
+        XCTAssertTrue(prompt.contains("Repair IN PLACE"))
+        XCTAssertTrue(prompt.contains("Repair IN THE SPEAKER'S REGISTER"))
+        // The contract the rule sits next to, restated here so a future widening of
+        // rule 8 cannot quietly cost the clauses that make this prompt what it is.
+        XCTAssertTrue(prompt.contains("NEVER translate"))
+        XCTAssertTrue(prompt.contains("Do NOT translate"))
+    }
+
+    /// #439 C, and the scope fence it shares with #437: content may not be dropped,
+    /// and this round must not have handed the model line breaks.
+    func testAutoPromptBansDeletionAndStillBansNewMarkers() {
+        let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
+        XCTAssertTrue(prompt.contains("Do NOT delete words that carry meaning"))
+        XCTAssertTrue(prompt.contains("Do NOT add `\(PolishPostpass.newlineMarker)` markers where none existed"))
+    }
+
     func testAutoPromptEmbedsGlossary() {
         let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
         for term in PolishGlossary.terms {
