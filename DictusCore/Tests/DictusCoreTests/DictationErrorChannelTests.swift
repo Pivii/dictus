@@ -11,6 +11,13 @@ import XCTest
 
 final class DictationErrorChannelTests: XCTestCase {
 
+    /// A real message, used as a payload. The channel does not care what a message says —
+    /// it carries a resolved `String`, and #313 is what decides what that string is — but
+    /// naming a sentence the product actually produces is what caught the previous
+    /// fixture: a hardcoded French literal that no call site writes any more.
+    private let aFailure = "Le micro ne répond plus. Fermez Dictus puis rouvrez-le."
+
+
     private var defaults: UserDefaults? {
         UserDefaults(suiteName: AppGroup.identifier)
     }
@@ -32,22 +39,21 @@ final class DictationErrorChannelTests: XCTestCase {
     }
 
     func testARecordedReasonReadsBack() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
-        XCTAssertEqual(DictationErrorChannel.current, "Micro indisponible. Relancez l'application.")
+        XCTAssertEqual(DictationErrorChannel.current, aFailure)
     }
 
     /// The app writes through the channel; anything reading the shared key directly —
     /// a diagnostic dump, a future surface — has to see the same value.
     func testTheReasonLandsOnTheSharedKey() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
-        XCTAssertEqual(defaults?.string(forKey: SharedKeys.lastError),
-                       "Micro indisponible. Relancez l'application.")
+        XCTAssertEqual(defaults?.string(forKey: SharedKeys.lastError), aFailure)
     }
 
     func testOneReasonAtATime() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
         DictationErrorChannel.record("Dictation could not start. Tap the microphone again.")
 
         XCTAssertEqual(DictationErrorChannel.current,
@@ -61,18 +67,18 @@ final class DictationErrorChannelTests: XCTestCase {
     /// breath, so the app's failure screen had nothing left to show and asserted a cause it
     /// had not established.
     func testReadingTwiceReturnsTheSameReason() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
         let firstSurface = DictationErrorChannel.current
         let secondSurface = DictationErrorChannel.current
 
-        XCTAssertEqual(firstSurface, "Micro indisponible. Relancez l'application.")
+        XCTAssertEqual(firstSurface, aFailure)
         XCTAssertEqual(secondSurface, firstSurface,
                        "Neither surface may consume the reason on behalf of the other")
     }
 
     func testReadingLeavesTheSharedKeyInPlace() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
         _ = DictationErrorChannel.current
 
@@ -83,7 +89,7 @@ final class DictationErrorChannelTests: XCTestCase {
     // MARK: - Invalidation
 
     func testClearingRemovesTheReason() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
         DictationErrorChannel.clear()
 
@@ -101,7 +107,7 @@ final class DictationErrorChannelTests: XCTestCase {
     /// What a new dictation does, in order: clear, then fail again. The second failure's
     /// reason is the one that survives, and a failure that records nothing leaves nothing.
     func testANewAttemptDoesNotResurfaceThePreviousReason() {
-        DictationErrorChannel.record("Micro indisponible. Relancez l'application.")
+        DictationErrorChannel.record(aFailure)
 
         DictationErrorChannel.clear()
 

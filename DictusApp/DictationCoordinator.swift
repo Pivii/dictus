@@ -243,7 +243,7 @@ class DictationCoordinator: ObservableObject {
                 PersistentLog.log(.appWhisperKitLoaded(modelName: self.currentModelName ?? "unknown"))
                 self.setModelLoadState(.ready, reason: "init-preload-success")
             } catch {
-                PersistentLog.log(.engineWarmUpFailed(context: "init-preload", error: error.localizedDescription))
+                PersistentLog.log(.engineWarmUpFailed(context: "init-preload", error: DictationFailureMessage.diagnostic(for: error)))
                 self.setModelLoadState(.idle, reason: "init-preload-failed")
             }
         }
@@ -367,7 +367,7 @@ class DictationCoordinator: ObservableObject {
                     PersistentLog.log(.engineWarmUpSuccess(context: "didBecomeActive"))
                     self.setModelLoadState(.ready, reason: "didBecomeActive-success")
                 } catch {
-                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: error.localizedDescription))
+                    PersistentLog.log(.engineWarmUpFailed(context: "didBecomeActive", error: DictationFailureMessage.diagnostic(for: error)))
                     self.setModelLoadState(.idle, reason: "didBecomeActive-failed")
                 }
             }
@@ -535,7 +535,7 @@ class DictationCoordinator: ObservableObject {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
                         guard mayReport(session, "permission denial") else { return }
-                        handleError("Microphone permission denied")
+                        handleError(DictationFailureMessage.microphonePermissionDenied)
                         return
                     }
                     // Before `startRecording`, not merely before the status write:
@@ -550,9 +550,10 @@ class DictationCoordinator: ObservableObject {
                     schedulePolishPrewarm()
                     await verifyAudioFlow()
                 } catch {
-                    PersistentLog.log(.dictationFailed(error: "Warm start: \(error.localizedDescription)"))
+                    PersistentLog.log(.dictationFailed(
+                        error: "Warm start: \(DictationFailureMessage.diagnostic(for: error))"))
                     guard mayReport(session, "warm start failure") else { return }
-                    handleError(error.localizedDescription)
+                    handleError(DictationFailureMessage.userFacing(for: error))
                 }
             }
         } else {
@@ -585,7 +586,7 @@ class DictationCoordinator: ObservableObject {
                     let hasPermission = try await audioEngine.ensureMicrophonePermission()
                     guard hasPermission else {
                         guard mayReport(session, "permission denial") else { return }
-                        handleError("Microphone permission denied")
+                        handleError(DictationFailureMessage.microphonePermissionDenied)
                         return
                     }
                     guard mayReport(session, "cold start") else { return }
@@ -608,15 +609,16 @@ class DictationCoordinator: ObservableObject {
                     PersistentLog.log(.appWhisperKitLoaded(modelName: loadedName))
                     self.setModelLoadState(.ready, reason: "cold-start-success")
                 } catch {
-                    PersistentLog.log(.dictationFailed(error: "Cold start engine load: \(error.localizedDescription)"))
+                    PersistentLog.log(.dictationFailed(
+                        error: "Cold start engine load: \(DictationFailureMessage.diagnostic(for: error))"))
                     // A last-chance start (#311) fails for a reason the user can do
-                    // nothing about and cannot read: the #73 AUIOClient_StartIO failure
-                    // reaches `localizedDescription` as a bare CoreAudio error number.
-                    // The raw text stays in the log line above, where it belongs; the
-                    // keyboard banner gets the one action that works.
+                    // nothing about and cannot read. It keeps its own sentence; every
+                    // other cold-start failure now goes through the funnel, which is
+                    // what #311 had to special-case here before one existed (#313).
+                    // The raw text stays in the log line above, where it belongs.
                     let message = allowInactiveStart
                         ? self.strandedColdStartMessage
-                        : error.localizedDescription
+                        : DictationFailureMessage.userFacing(for: error)
                     // The model load runs inside this task and takes seconds on a
                     // cold start, so this is the widest window in the app for a
                     // cancel to arrive mid-flight. `setModelLoadState` stays ungated
@@ -697,8 +699,14 @@ class DictationCoordinator: ObservableObject {
                 let samples = audioEngine.collectSamples()
 
                 guard !samples.isEmpty else {
+                    // Logged before the session gate, like `recordingTooShort` below:
+                    // a run abandoned between stop and this check still failed, and a
+                    // failure with no line in the log cannot be diagnosed afterwards.
+                    PersistentLog.log(.dictationFailed(error: "no samples collected"))
                     guard mayReport(session, "empty recording") else { return }
-                    handleError("No audio recorded")
+                    // A notice, not a fault (#313): nothing was captured, and the user
+                    // reads the same sentence here as for every other way that happens.
+                    handleError(DictationFailureMessage.noWordsDetected)
                     return
                 }
 
@@ -707,7 +715,10 @@ class DictationCoordinator: ObservableObject {
                 guard audioDuration >= minimumRecordingDuration else {
                     PersistentLog.log(.recordingTooShort(durationMs: Int(audioDuration * 1000)))
                     guard mayReport(session, "short recording") else { return }
-                    handleError("Recording too short")
+                    // The maintainer hit this regularly and read it as an app bug every
+                    // time (#313). It is not one: the mic was stopped a beat early. Same
+                    // event as an empty recording, same sentence.
+                    handleError(DictationFailureMessage.noWordsDetected)
                     return
                 }
 
@@ -790,14 +801,15 @@ class DictationCoordinator: ObservableObject {
                 cleanupRecordingKeys()
             } catch {
                 if #available(iOS 14.0, *) {
-                    DictusLogger.app.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+                    DictusLogger.app.error(
+                        "Transcription failed: \(DictationFailureMessage.diagnostic(for: error), privacy: .public)")
                 }
                 // A cancelled task lands here, and so does one that failed for its
                 // own reasons after the session ended. Either way the failure
                 // belongs to a dictation that is over: writing `.failed` re-presents
                 // the recording screen the user just dismissed (#267).
                 guard mayReport(session, "transcription failure") else { return }
-                handleError(error.localizedDescription)
+                handleError(DictationFailureMessage.userFacing(for: error))
             }
         }
     }
@@ -1220,7 +1232,7 @@ class DictationCoordinator: ObservableObject {
         do {
             try audioEngine.startRecording()
         } catch {
-            handleError("Micro indisponible. Relancez l'application.")
+            handleError(DictationFailureMessage.microphoneStoppedResponding)
             return
         }
 
@@ -1232,7 +1244,7 @@ class DictationCoordinator: ObservableObject {
         guard status == .recording else { return }
 
         if audioEngine.currentSampleCount == 0 {
-            handleError("Micro indisponible. Relancez l'application.")
+            handleError(DictationFailureMessage.microphoneStoppedResponding)
         } else {
             PersistentLog.log(.engineWarmUpSuccess(context: "zombie-recovery"))
         }
@@ -1301,7 +1313,7 @@ class DictationCoordinator: ObservableObject {
             } catch {
                 PersistentLog.log(.engineWarmUpFailed(
                     context: "selectModel-proactive",
-                    error: error.localizedDescription
+                    error: DictationFailureMessage.diagnostic(for: error)
                 ))
                 self.setModelLoadState(.idle, reason: "selectModel-proactive-failed")
             }
