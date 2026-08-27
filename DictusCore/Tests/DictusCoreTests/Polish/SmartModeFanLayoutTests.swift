@@ -45,6 +45,56 @@ final class SmartModeFanLayoutTests: XCTestCase {
         XCTAssertLessThan(height, SmartModeFanLayout.minimumRowHeight)
     }
 
+    // MARK: - The non-subscriber's fan (#404)
+
+    /// One row, and it replaces the list rather than joining it. Three unusable rows
+    /// and a reason line is a worse advertisement than one control that leads
+    /// somewhere — #392's decision, in Pierre's words.
+    func testAnUpgradeOfferReplacesTheWholeFanWithOneRow() {
+        let entries = SmartModeFanLayout.entries(
+            pinned: [SmartModeCatalogue.notes, SmartModeCatalogue.translate(to: .english)],
+            armed: nil,
+            offersProUpgrade: true
+        )
+        XCTAssertEqual(entries, [.pro])
+    }
+
+    /// Including the Normal row, whose absence is what made this need a decision.
+    /// Safe because a user without entitlement is already getting Normal —
+    /// `resolveArmedMode()` refuses to honour the mode — so there is nothing to
+    /// escape from and #402's stranding cannot happen.
+    func testTheUpgradeFanCarriesNoNormalRowAndOpensAnyway() {
+        let entries = SmartModeFanLayout.entries(pinned: [], armed: nil, offersProUpgrade: true)
+        XCTAssertEqual(entries, [.pro])
+        XCTAssertFalse(entries.contains(.normal))
+    }
+
+    /// And it opens for a user who armed a mode before they lapsed, where the
+    /// ordinary rules would have produced Normal alone (#403).
+    func testTheUpgradeFanWinsOverTheArmedModeAloneFan() {
+        let entries = SmartModeFanLayout.entries(
+            pinned: [], armed: SmartModeCatalogue.translate(to: .german), offersProUpgrade: true
+        )
+        XCTAssertEqual(entries, [.pro])
+    }
+
+    /// The Pro row is not a mode, and nothing may read it as one: `smartMode` is nil
+    /// for it exactly as it is for Normal, so a caller that decides on that property
+    /// alone would disarm the user's mode on the way to the paywall.
+    func testTheProRowCarriesNoSmartMode() {
+        XCTAssertNil(SmartModeFanEntry.pro.smartMode)
+        XCTAssertEqual(SmartModeFanEntry.pro.id, "pro")
+        XCTAssertFalse(SmartModeFanEntry.pro.icon.isEmpty)
+    }
+
+    /// With no offer on, nothing changes.
+    func testWithoutAnOfferTheFanIsUnchanged() {
+        let entries = SmartModeFanLayout.entries(
+            pinned: [SmartModeCatalogue.notes], armed: nil, offersProUpgrade: false
+        )
+        XCTAssertEqual(entries, [.normal, .mode(SmartModeCatalogue.notes)])
+    }
+
     // MARK: - Rows
 
     func testRowsDivideTheAreaCompletely() {
