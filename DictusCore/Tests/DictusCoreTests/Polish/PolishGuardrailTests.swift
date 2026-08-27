@@ -233,4 +233,131 @@ final class PolishGuardrailTests: XCTestCase {
         XCTAssertEqual(PolishTask.repair.contract.lengthBand, 0.3...3.0)
         XCTAssertEqual(PolishTask.auto.contract.lengthBand, 0.5...2.0)
     }
+
+    // MARK: - The bilingual output the dominant-language check could not see (#413)
+
+    /// MEASURED, `round1-notes-show-5runs.txt`, N3 run 3, recorded as a
+    /// **success** — this text would have been inserted. Five English bullets and
+    /// one French one, on a French dictation.
+    private let bilingualDrift = """
+    - Design: maquettes validées vendredi
+    - Development: two-week delay due to API issues
+    - Delivery: potential delay to March 15
+    - Budget: 8000 euros remaining, 3000 euros from February licenses
+    - Thomas: three-week vacation starting March 20
+    - Payment: need to be completed before March 20
+    """
+
+    /// MEASURED, same fixture, run 2. One bullet fewer, and it was correctly
+    /// rejected. The two landed on opposite sides of the check on a one-bullet
+    /// difference, which is the whole of #413.
+    private let englishDrift = """
+    - Design: maquettes validées vendredi
+    - Development: two weeks delay due to API issues
+    - Delivery: potential delay to March 15
+    - Budget: 8000 euros remaining, 3000 euros due to licenses in February
+    - Thomas: three weeks of vacation starting March 20
+    """
+
+    /// MEASURED, same fixture, run 4. A sound French synthesis of the same input.
+    private let goodFrenchList = """
+    - Côté design, les maquettes ont été validées vendredi
+    - Le dev a pris deux semaines de retard à cause de l'API du prestataire
+    - On envisage de décaler la livraison au 15 mars
+    - Le budget est à peu près dans les clous, il reste 8000 euros
+    - Il faut compter les licences de février, ce qui ajoute 3000 euros
+    - Thomas part en congé trois semaines à partir du 20
+    - La partie paiement doit être bouclée avant le 20 pour respecter la date
+    """
+
+    /// The regression test #413 asks for by name.
+    func testTheFiveEnglishBulletsPlusOneFrenchOutputIsNowRejected() {
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(
+            polished: bilingualDrift, inputLanguageCode: "fr"
+        ))
+    }
+
+    /// Pins WHY it used to pass, so a future reader can see the regression test is
+    /// testing the thing it claims to. Read as one blob this text is French: the
+    /// single French bullet, the proper nouns and "euros" carry the aggregate.
+    func testTheSameOutputStillReadsAsFrenchWhenTakenAsOneBlob() {
+        let asOneParagraph = bilingualDrift.replacingOccurrences(of: "\n", with: " ")
+        XCTAssertEqual(PolishPipeline.detectLanguageCode(in: asOneParagraph), "fr")
+    }
+
+    /// The output that was already rejected must stay rejected.
+    func testTheWhollyEnglishDriftIsStillRejected() {
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(
+            polished: englishDrift, inputLanguageCode: "fr"
+        ))
+    }
+
+    /// The counter-test that matters just as much.
+    func testASoundFrenchListIsStillAccepted() {
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(
+            polished: goodFrenchList, inputLanguageCode: "fr"
+        ))
+    }
+
+    /// #413's second acceptance criterion. Every bullet is French; several would
+    /// read as English to a per-word heuristic, and one of them —
+    /// `Checker le build sur GitHub Actions` — is the worst legitimate misreading
+    /// in the whole measured corpus, at **en 0.504**. The 0.85 floor is sized so
+    /// this passes with room.
+    func testAFrenchListQuotingEnglishTechnicalTermsIsAccepted() {
+        let output = """
+        - Merger la PR avant le standup
+        - Checker le build sur GitHub Actions
+        - Le deploy d'hier a fail
+        - Rollback de la feature flag sur staging
+        """
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: output, inputLanguageCode: "fr"))
+    }
+
+    /// An English list carrying French proper nouns is the mirror case: the names
+    /// must not read as a language switch.
+    func testAnEnglishListCarryingFrenchProperNounsIsAccepted() {
+        let output = """
+        - Send the deck to Bouygues before Friday
+        - Follow up with Aurélie about the Créteil site
+        - Book the flight
+        """
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: output, inputLanguageCode: "en"))
+    }
+
+    /// Below the minimum a segment is not evidence of anything, so it passes
+    /// untested. `Thomas` alone reads as English at 0.164 on a French list.
+    func testSegmentsTooShortToReadPassUntested() {
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(
+            polished: "- Marion\n- Thomas\n- Sophie\n- Léa\n- Karim", inputLanguageCode: "fr"
+        ))
+    }
+
+    /// #413's fourth acceptance criterion: free polish returns one continuous
+    /// passage, which has a single segment, so the per-segment pass cannot fire on
+    /// it in either direction.
+    func testFreePolishSinglePassageBehaviourIsUnchanged() {
+        let french = "Salut, je voulais te dire que le rendez-vous de mardi est décalé à jeudi, "
+            + "même heure, même endroit. Tu me confirmes ?"
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(polished: french, target: .french))
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(polished: french, target: .english))
+        // The Apple FM chat reply this guardrail was written for, which has no
+        // segment structure at all: the whole-output pass is what still catches it.
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(
+            polished: "Sure, I'll polish that text for you right away.", target: .french
+        ))
+    }
+
+    /// The floor exists to stop the check acting on noise, and #413 records that a
+    /// floor alone was never the fix: 0.789 was a CONFIDENT wrong answer on the
+    /// whole blob. Raising it far enough to catch that would reject good output.
+    func testRaisingTheFloorToOneDisablesTheSegmentPassWithoutTouchingTheBlobPass() {
+        let never = PolishLanguageSegmentThresholds(minimumSegmentCharacters: 12, confidenceFloor: 1.1)
+        XCTAssertTrue(PolishGuardrail.detectedLanguageMatches(
+            polished: bilingualDrift, inputLanguageCode: "fr", thresholds: never
+        ))
+        XCTAssertFalse(PolishGuardrail.detectedLanguageMatches(
+            polished: englishDrift, inputLanguageCode: "fr", thresholds: never
+        ))
+    }
 }
