@@ -102,6 +102,14 @@ class TranscriptionService {
     /// WHY a separate prepare method for model paths:
     /// When the user switches models, we need to reinitialize WhisperKit with
     /// the new model. This method handles that switch transparently.
+    ///
+    /// NOTHING CALLS THIS TODAY — a model switch goes through
+    /// `DictationCoordinator.ensureWhisperKitEngineReady`, which builds the instance
+    /// and injects it through `prepare(whisperKit:)` and `prepare(engine:)`. Whoever
+    /// revives this method has to run a warm inference on the loaded kit before handing
+    /// it out, as that path does, or they re-create issue #426: `prewarm: true,
+    /// load: true` compiles and loads weights and runs no inference, so the Neural
+    /// Engine's per-shape specialization lands in the user's first dictation.
     func prepare(modelPath: String) async throws {
         // Skip reinitialization if same model is already loaded
         if loadedModelFolder == modelPath, whisperKit != nil {

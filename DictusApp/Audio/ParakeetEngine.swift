@@ -100,6 +100,33 @@ class ParakeetEngine: SpeechModelProtocol {
         }
     }
 
+    /// One discarded inference on generated silence, so the first real one does not pay
+    /// the Neural Engine's per-shape specialization (issue #426).
+    ///
+    /// UNMEASURED ON PARAKEET, and deliberately done anyway. #426 measured the gap on
+    /// WhisperKit and flagged Parakeet as the same structural question without a number
+    /// behind it. What is known: FluidAudio's own `prewarm` only pre-allocates
+    /// `MLMultiArray`s in a cache and runs no inference, so nothing in the load path
+    /// specializes anything. What is not known is how much that costs here. The
+    /// `WarmInference` log line carries the duration so a device session answers it.
+    ///
+    /// Safe to run ahead of a real transcription because `AsrManager.transcribe` resets
+    /// its decoder state after every call — its own documented "stateless architecture"
+    /// — so a throwaway pass cannot leak into the dictation that follows.
+    ///
+    /// It goes through `transcribe` rather than the manager directly: warming the exact
+    /// path production uses is the whole point.
+    func runWarmInference() async throws {
+        do {
+            _ = try await transcribe(audioSamples: WarmInferenceAudio.silence(), language: nil)
+        } catch TranscriptionError.noSpeechDetected {
+            // The expected outcome, and a success for this purpose: the model ran on
+            // two seconds of silence and heard no words. `transcribe` refuses an empty
+            // result because a user is normally waiting for text; here nobody is. Left
+            // to propagate it would log every Parakeet warm inference as a failure.
+        }
+    }
+
     /// Shortest clip FluidAudio accepts: one second at the 16 kHz the pipeline
     /// already resamples to. Its own error message states the requirement.
     private static let minimumSampleCount = 16_000
