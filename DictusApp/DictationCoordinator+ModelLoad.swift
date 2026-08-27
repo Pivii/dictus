@@ -99,7 +99,7 @@ extension DictationCoordinator {
             // Remember what we gave up on, so returning to the foreground does not
             // quietly start the same compile again (finding 3).
             self.abandonedModel = modelName
-            self.setModelLoadState(.idle, reason: ModelPreparationEscape.deadlineExpiredReason)
+            self.setModelLoadState(.idle, reason: ModelPreparationOutcome.deadlineExpiredReason)
             PersistentLog.log(.diagnosticProbe(
                 component: "ModelPreload",
                 instanceID: modelName,
@@ -233,55 +233,6 @@ extension DictationCoordinator {
             guard !loadWasAbandoned(since: epoch) else { return }
             setModelLoadState(.idle, reason: "didBecomeActive-failed")
         }
-    }
-
-    /// Stop waiting for the model load in flight, at the user's request (issue #428).
-    ///
-    /// Called when the user takes the escape the preparation screen offers after
-    /// `ModelPreparationEscape.revealDelaySeconds`.
-    ///
-    /// THIS DOES NOT STOP THE COMPILE, and nothing can: a Core ML compile checks no
-    /// cancellation flag and offers no suspension point at which it could. The Core ML
-    /// work keeps running and keeps burning CPU until it finishes on its own. What this
-    /// does is unpick every way that work was holding the app hostage:
-    ///   - bumping the epoch makes the abandoned load discard its result instead of
-    ///     swapping the engine under whatever model the user picks next, and makes it
-    ///     fail its awaiters rather than hand them an engine that was thrown away;
-    ///   - `.idle` lets the keyboard accept a mic tap again, and stops the views that
-    ///     auto-present the screen from re-covering the one the user just left;
-    ///   - remembering the model stops `didBecomeActive` restarting the same compile
-    ///     the moment the user backgrounds the app and comes back (finding 3).
-    ///
-    /// `modelIdentifier` is what the SCREEN was preparing, not whatever `activeModel`
-    /// happens to be (second review, finding 4). A freshly downloaded model is prepared
-    /// before it becomes active, so reading the active model here recorded the wrong one
-    /// and then suppressed every foreground warm-up for the rest of the process on
-    /// behalf of a model nobody had abandoned.
-    ///
-    /// WHAT IT DELIBERATELY DOES NOT DO is take the init lock away. An earlier version
-    /// did, and that was worse than the bug it fixed: the abandoned compile keeps
-    /// running, the Neural Engine cannot compile two models at once, and a model picked
-    /// straight afterwards would have started a second compile on top of it — the "E5
-    /// bundle" failure `ModelManager` serialises its own prewarms to avoid (finding 2).
-    /// So the next load queues behind the abandoned one instead.
-    ///
-    /// WHAT THIS PROMISES, stated plainly because an earlier version of the spec
-    /// promised more: **the escape frees the app immediately; it does not free the
-    /// Neural Engine.** Everything the user can reach — Settings, the model list, the
-    /// keyboard — comes back the moment they tap it. The model they pick next starts
-    /// loading when the abandoned compile lets go of the hardware, and not before.
-    /// See `awaitInFlightEngineInit` for why that trade is the right way round.
-    func abandonInFlightModelLoad(reason: String, modelIdentifier: String) {
-        let modelName = modelIdentifier
-        modelLoadEpoch += 1
-        abandonedModel = modelName
-        setModelLoadState(.idle, reason: reason)
-        PersistentLog.log(.diagnosticProbe(
-            component: "ModelPreload",
-            instanceID: modelName,
-            action: "abandonedByUser",
-            details: "reason=\(reason) compileStillRunning=true nextLoadQueuesBehindIt=true"
-        ))
     }
 
     /// Wait for the Neural Engine to be free of any Core ML compile, then take it.

@@ -33,19 +33,8 @@ struct ModelLoadingOverlay: View {
     /// The user-facing flow that caused preparation to be shown.
     let context: ModelPreparationContext
 
-    /// Extra work the presenter wants done when the user takes the escape hatch —
-    /// in practice, navigation. Dismissal and abandoning the load are handled here
-    /// and do not need to be repeated by the caller. `nil` means "nothing to do
-    /// beyond dismissing"; it does NOT disable the escape, `context.allowsEscape`
-    /// decides that (issue #428).
-    let onEscape: (() -> Void)?
-
     @State private var showCompletion = false
     @State private var activeContext: ModelPreparationContext
-
-    /// Flips true once the screen has been up for
-    /// `ModelPreparationEscape.revealDelaySeconds` without finishing (issue #428).
-    @State private var showEscape = false
 
     /// Set when the load ended because the app STOPPED WAITING for it, rather than
     /// because it finished (third review, finding D).
@@ -75,15 +64,13 @@ struct ModelLoadingOverlay: View {
         modelManager: ModelManager,
         modelIdentifier: String,
         context: ModelPreparationContext = .modelSelection,
-        isPresented: Binding<Bool>,
-        onEscape: (() -> Void)? = nil
+        isPresented: Binding<Bool>
     ) {
         self.modelManager = modelManager
         self.modelIdentifier = modelIdentifier
         self.context = context
         self._isPresented = isPresented
         self._activeContext = State(initialValue: context)
-        self.onEscape = onEscape
     }
 
     var body: some View {
@@ -128,49 +115,14 @@ struct ModelLoadingOverlay: View {
 
                 Spacer()
 
-                VStack(spacing: 20) {
-                    stayOnPageNotice
-
-                    if showEscape && escapeIsAvailable && !showCompletion {
-                        escapeOffer
-                            .transition(.opacity)
-                    }
-                }
-                .padding(.bottom, 40)
+                stayOnPageNotice
+                    .padding(.bottom, 40)
             }
         }
         .interactiveDismissDisabled(true)
-        // Reveal the escape late, not at once. The screen exists to stop the user
-        // tapping the mic mid-load (issue #144) and that reason holds for every healthy
-        // load; a button at second zero would break what the screen is for.
-        //
-        // The delay is measured from when the WAIT began, not from when this screen
-        // appeared, and the start time lives on the shared `ModelManager` (issue #428
-        // review, findings 3 and 7). A screen dismissed and re-presented — a keyboard
-        // prepare URL arriving, a context change mid-wait — used to hand the user a
-        // fresh 45 seconds, which from where they sit is the offer being taken away.
-        //
-        // Keyed on availability, so the clock starts when a download finishes and the
-        // compile begins, and not before.
-        .task(id: escapeIsAvailable) {
-            guard escapeIsAvailable else { return }
-            if modelManager.preparationWaitStartedAt == nil {
-                modelManager.preparationWaitStartedAt = Date()
-            }
-            let waitStart = modelManager.preparationWaitStartedAt ?? Date()
-            let remaining = Double(ModelPreparationEscape.revealDelaySeconds)
-                - Date().timeIntervalSince(waitStart)
-            if remaining > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-            }
-            withAnimation(.easeInOut(duration: 0.3)) {
-                showEscape = true
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { note in
             if let reason = note.userInfo?["reason"] as? String,
-               ModelPreparationEscape.reasonMeansGaveUp(reason) {
+               ModelPreparationOutcome.reasonMeansGaveUp(reason) {
                 loadGaveUp = true
             }
             checkForCompletion()
@@ -281,40 +233,6 @@ struct ModelLoadingOverlay: View {
         }
     }
 
-    /// The way out, offered once the wait stops looking routine (issue #428).
-    ///
-    /// Deliberately worded as an offer. The first compile of a variant on a device runs
-    /// into the minutes (see `ModelPreparationEscape.revealDelaySeconds`), so this
-    /// appears during perfectly healthy first-time preparations, and the copy has to
-    /// leave the user free to simply keep waiting. It also has to be honest that leaving
-    /// does not stop the work: the compile cannot be interrupted, it carries on whatever
-    /// the user chooses here.
-    private var escapeOffer: some View {
-        VStack(spacing: 10) {
-            Text("This is taking longer than usual. The preparation continues on its own. You can keep waiting, or choose a lighter model.")
-                .font(.dictusCaption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-
-            Button {
-                escape()
-            } label: {
-                Text("Choose another model")
-                    .font(.dictusCaption.weight(.semibold))
-                    .foregroundStyle(Color.dictusAccent)
-                    // A caption-sized label draws a hit target ~14pt tall (measured on
-                    // the simulator's accessibility tree). Padded to Apple's 44pt
-                    // minimum, because this is the one control on a screen the user is
-                    // already stuck on and it must not need aiming at.
-                    .frame(minHeight: 44)
-                    .padding(.horizontal, 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private var explanationText: LocalizedStringKey {
         switch activeContext {
         case .onboarding:
@@ -330,24 +248,6 @@ struct ModelLoadingOverlay: View {
 
     private var currentModelState: ModelState {
         modelManager.modelStates[modelIdentifier] ?? .notDownloaded
-    }
-
-    /// Whether this screen can offer a way out at all (issue #428 review, finding 4).
-    ///
-    /// Not during a download. The escape exists for work that cannot be interrupted and
-    /// gives no sign of progress — a Core ML compile. A download is the opposite: it has
-    /// a progress bar and a byte counter, it is not holding the Neural Engine, and
-    /// abandoning "the load" mid-download would bump the epoch and disown a compile that
-    /// has not started, while the download carried on regardless and the copy said
-    /// nothing about it.
-    ///
-    /// Read from `currentModelState` rather than `currentPhase`, deliberately: the phase
-    /// reports `.downloading` for a model that is merely sitting in the pre-work limbo
-    /// (see `currentPhase`), which is exactly the stuck case the escape is for.
-    private var escapeIsAvailable: Bool {
-        guard activeContext.allowsEscape else { return false }
-        if case .downloading = currentModelState { return false }
-        return true
     }
 
     private var currentPhase: Phase {
@@ -433,32 +333,12 @@ struct ModelLoadingOverlay: View {
         }
     }
 
-    /// Leave the preparation screen without waiting for the load to resolve.
-    ///
-    /// Order matters: abandon first, dismiss second. Abandoning flips the shared load
-    /// state to idle, so by the time the presenter's auto-presentation logic re-runs
-    /// there is no live preparation left for it to re-cover the screen with.
-    private func escape() {
-        modelManager.preparationWaitStartedAt = nil
-        // The model this SCREEN was preparing, which is not always the active one
-        // (second review, finding 4).
-        modelManager.abandonPreparation(modelIdentifier: modelIdentifier)
-        isPresented = false
-        onEscape?()
-    }
-
     private func checkForCompletion() {
         // A failed download must dismiss the cover immediately — without this,
         // `.error` falls into rawPhase's `.ready` mapping below and flashes the
         // "Model ready" celebration on a failure (issue #207). The parent view
         // surfaces the error message once the cover is gone.
         if case .error = currentModelState {
-            // Clear the clock on the way out, or the next attempt inherits it: the
-            // stamp was taken during the failed prewarm, so a Retry would compute a
-            // negative remaining time and reveal the escape in the first frames of a
-            // healthy compile — the one thing `revealDelaySeconds` forbids (second
-            // review, finding 3).
-            modelManager.preparationWaitStartedAt = nil
             isPresented = false
             return
         }
@@ -480,9 +360,6 @@ struct ModelLoadingOverlay: View {
             return
         }
         guard !showCompletion else { return }
-
-        // The wait is over, so the next one starts its own clock.
-        modelManager.preparationWaitStartedAt = nil
 
         // Nothing to celebrate: the app gave up on this load, the compile is still
         // running, and no engine arrived. Leave without the checkmark (finding D).

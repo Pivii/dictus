@@ -69,52 +69,6 @@ class ModelManager: ObservableObject {
     /// so SwiftUI can drive the loading overlay reactively.
     @Published var modelLoadState: ModelLoadState = .idle
 
-    /// Set when the user dismisses the preparation screen by hand (issue #428).
-    ///
-    /// THE INVARIANT, and it is the second of the two this feature turns on. The first
-    /// says WHICH model a preparation screen is about (`liveActivePrepModel`). This one
-    /// says WHEN that screen may appear at all:
-    ///
-    ///     A screen the user has dismissed may only come back on work the user asked
-    ///     for AFTER dismissing it, and never on work that was already running when
-    ///     they dismissed it.
-    ///
-    /// Both halves earned their place. Without a memory of the dismissal at all, the
-    /// escape lands on the Models tab and `ModelManagerView` re-presents the same screen
-    /// on the next frame, so the way out is no way out. And with the memory cleared by
-    /// `selectModel`, the user takes the escape, taps a lighter model — the one obvious
-    /// next action — and the cover returns for as long as that load takes, which behind
-    /// an abandoned compile is minutes. Either way they end up back where they escaped
-    /// from; the second way just takes one more tap to get there.
-    ///
-    /// WHAT IS IMPLEMENTED IS STRICTLY STRONGER THAN THE INVARIANT, deliberately. Once
-    /// dismissed, model SELECTION never re-presents the screen again this session, even
-    /// after the abandoned compile finishes and the chosen model genuinely starts
-    /// compiling — which the invariant would permit. The finer rule is not implementable
-    /// here: at the moment the screen decides whether to present, `modelLoadState` is
-    /// `.loading` for both "queued behind an abandoned compile" and "actually
-    /// compiling", and telling those apart needs exactly the information the open
-    /// follow-up about the model card is asking for. Until that exists, the stronger
-    /// rule is the one that cannot re-create the lockout.
-    ///
-    /// `downloadModel` still clears it: starting a download is a new, explicit,
-    /// long-running request rather than a choice among things already on disk, and it is
-    /// unambiguously work asked for after the dismissal.
-    @Published var preparationDismissedByUser = false
-
-    /// When the current compile-or-load wait began (issue #428 review, findings 3 and 7).
-    ///
-    /// The escape is offered relative to THIS, not to when a given screen appeared. Two
-    /// things used to restart the user's 45 seconds from zero: the screen being
-    /// dismissed and re-presented (a keyboard prepare URL arriving, a tab change), and
-    /// the preparation context changing mid-wait. Both are invisible to the user, who
-    /// only knows they have been waiting a long time and are being asked to wait 45
-    /// seconds more.
-    ///
-    /// Deliberately not set while a download is running: a download is not what the
-    /// escape is for (finding 4), so the clock starts when the compile does.
-    @Published var preparationWaitStartedAt: Date?
-
     // MARK: - Private
 
     private let defaults = AppGroup.defaults
@@ -224,8 +178,6 @@ class ModelManager: ObservableObject {
     /// restoration, app lifecycle handling). For v1, foreground download with visible
     /// progress is simpler and sufficient. Users will have the app open during download.
     func downloadModel(_ identifier: String) async throws {
-        // A fresh request: the preparation screen is welcome again (issue #428).
-        preparationDismissedByUser = false
         // Check if this is a Parakeet model and route accordingly
         let modelInfo = ModelInfo.forIdentifier(identifier)
         if modelInfo?.engine == .parakeet {
@@ -637,40 +589,11 @@ class ModelManager: ObservableObject {
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
 
-        // DELIBERATELY DOES NOT clear `preparationDismissedByUser` (third review,
-        // finding C). Clearing it here contradicted the whole point of the escape: the
-        // user takes it, lands on this list, taps a lighter model — the one obvious
-        // thing to do — and the full-screen cover came straight back for as long as that
-        // load took, which behind an abandoned compile is minutes. They ended up exactly
-        // where they escaped from, with a second 45s wait for a second escape.
-        //
-        // Once someone has told us they want the app rather than the waiting screen,
-        // that answer holds for the session. The model card still shows its own state,
-        // so the load is not invisible — it just no longer takes the app hostage.
-        // `downloadModel` still clears it: starting a download is a new, explicit,
-        // long-running request rather than a choice among things already on disk.
         activeModel = identifier
         persistState()
         PersistentLog.log(.modelSelected(name: identifier))
         // Trigger an eager load so the model is in RAM before the next mic tap.
         DictationCoordinator.shared.preloadActiveModel()
-    }
-
-    /// The user took the escape offered on the preparation screen (issue #428).
-    ///
-    /// Two things have to happen together, which is why they live behind one call:
-    /// the coordinator has to stop waiting for the load (and let the next one start),
-    /// and this manager has to remember the decision so the views that auto-present
-    /// the screen do not immediately undo it.
-    ///
-    /// What does NOT happen is the compile stopping. It cannot be stopped; see
-    /// `DictationCoordinator.abandonInFlightModelLoad`.
-    func abandonPreparation(modelIdentifier: String) {
-        preparationDismissedByUser = true
-        DictationCoordinator.shared.abandonInFlightModelLoad(
-            reason: ModelPreparationEscape.userLeftScreenReason,
-            modelIdentifier: modelIdentifier
-        )
     }
 
     /// Deletes a model from disk and updates state.
