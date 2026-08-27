@@ -92,17 +92,18 @@ final class ModelRepoDownloader {
         /// required. Re-verified against the repo tree for
         /// `openai_whisper-large-v3-v20240930_turbo_632MB` when issue #408 swapped it
         /// in: same four `.mlmodelc` folders, same two root `.json` files.
+        ///
+        /// The list itself moved to `WhisperModelRepository` for issue #433, which
+        /// added a second reader: the launch reconciliation that decides whether the
+        /// files of an interrupted preparation amount to a finished download. That
+        /// decision is only defensible if it names the very paths this tripwire
+        /// guarantees, so the two cannot be allowed to drift apart.
         static func whisperKit(variant: String) -> Configuration {
             Configuration(
-                repoPath: "argmaxinc/whisperkit-coreml",
+                repoPath: WhisperModelRepository.repositoryID,
                 directoryPatterns: ["\(variant)/"],
                 includesRootMetadata: false,
-                requiredPaths: [
-                    "\(variant)/MelSpectrogram.mlmodelc",
-                    "\(variant)/AudioEncoder.mlmodelc",
-                    "\(variant)/TextDecoder.mlmodelc",
-                    "\(variant)/config.json"
-                ]
+                requiredPaths: WhisperModelRepository.requiredDownloadPaths(forVariant: variant)
             )
         }
     }

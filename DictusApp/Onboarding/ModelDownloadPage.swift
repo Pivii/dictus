@@ -149,8 +149,18 @@ struct ModelDownloadPage: View {
             }
         }
         .onAppear {
-            // Check if model is already downloaded (user may have downloaded before)
-            if modelManager.downloadedModels.contains(recommendedModel) {
+            // Check if model is already downloaded (user may have downloaded before).
+            //
+            // Issue #433: `downloadedModels.contains` on its own stopped meaning
+            // "onboarding got this far". The launch reconciliation now lists a model
+            // whose files are complete even when its compile was interrupted, and that
+            // model has never been selected — `activeModel` is still nil, and nothing
+            // has an engine to load. Letting onboarding move on would hand the user a
+            // keyboard whose mic answers "No model downloaded". `isModelReady` adds the
+            // missing half of the question: some model finished preparing. Tapping
+            // "Install model" instead resumes at the interrupted compile, because the
+            // downloader skips every file already on disk.
+            if modelManager.downloadedModels.contains(recommendedModel), modelManager.isModelReady {
                 downloadComplete = true
             }
             // If the user backgrounded the app mid-prep, surface the overlay again.
