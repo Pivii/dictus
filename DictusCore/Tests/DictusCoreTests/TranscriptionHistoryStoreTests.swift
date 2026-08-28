@@ -22,8 +22,10 @@ final class TranscriptionHistoryStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private func makeStore() -> TranscriptionHistoryStore {
-        TranscriptionHistoryStore(fileURL: url)
+    /// Entitled by default: these tests are about the store's behaviour, and the
+    /// gate has its own section at the bottom.
+    private func makeStore(entitled: Bool = true) -> TranscriptionHistoryStore {
+        TranscriptionHistoryStore(fileURL: url, isEntitled: { entitled })
     }
 
     private func record(_ text: String,
@@ -201,6 +203,75 @@ final class TranscriptionHistoryStoreTests: XCTestCase {
 
     func testAMissingFileReadsAsNoHistory() {
         XCTAssertTrue(makeStore().records.isEmpty)
+    }
+
+    // MARK: - The Pro gate (#70, corrected 2026-08-28)
+
+    func testNothingIsStoredWithoutTheEntitlement() {
+        let store = makeStore(entitled: false)
+
+        XCTAssertNil(store.append(record("un")))
+
+        XCTAssertTrue(store.records.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "Not stored and hidden — not stored at all. The file is never written.")
+    }
+
+    func testAnEntitlementThatLapsesStopsTheHistoryGrowing() {
+        var entitled = true
+        let store = TranscriptionHistoryStore(fileURL: url, isEntitled: { entitled })
+        store.append(record("avant"))
+
+        entitled = false
+        store.append(record("après"))
+
+        XCTAssertEqual(store.records.map(\.text), ["avant"],
+                       "The gate is read per call, not captured once at init.")
+    }
+
+    func testDeletingStillWorksWithoutTheEntitlement() {
+        var entitled = true
+        let store = TranscriptionHistoryStore(fileURL: url, isEntitled: { entitled })
+        guard let first = store.append(record("un")) else {
+            return XCTFail("The record was refused")
+        }
+        store.append(record("deux"))
+        entitled = false
+
+        store.delete(id: first.id)
+
+        XCTAssertEqual(store.records.map(\.text), ["deux"],
+                       "A lapsed subscription must not imprison the data.")
+        XCTAssertEqual(TranscriptionHistoryStore.read(from: url).map(\.text), ["deux"])
+    }
+
+    func testClearingStillWorksWithoutTheEntitlement() {
+        var entitled = true
+        let store = TranscriptionHistoryStore(fileURL: url, isEntitled: { entitled })
+        store.append(record("un"))
+        store.append(record("deux"))
+        entitled = false
+
+        store.clear()
+
+        XCTAssertTrue(store.records.isEmpty)
+        XCTAssertTrue(TranscriptionHistoryStore.read(from: url).isEmpty,
+                      "The Settings row has to reach the file, not just the memory copy.")
+    }
+
+    func testUpdatingTextStillWorksWithoutTheEntitlement() {
+        var entitled = true
+        let store = TranscriptionHistoryStore(fileURL: url, isEntitled: { entitled })
+        guard let saved = store.append(record("raw")) else {
+            return XCTFail("The record was refused")
+        }
+        // The subscription lapses between the hand-off and the keyboard reporting
+        // back. Refusing here would leave the raw where the polished text belongs.
+        entitled = false
+
+        store.updateText(id: saved.id, to: "polished")
+
+        XCTAssertEqual(store.records.first?.text, "polished")
     }
 
     // MARK: - The record itself

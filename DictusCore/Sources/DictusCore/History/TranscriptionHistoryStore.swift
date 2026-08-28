@@ -42,6 +42,24 @@ import SwiftUI
 /// leaves the device — no cloud, no sync, no export in this issue — and Settings
 /// carries a destructive row that empties it (brief decision 3). Audio is never
 /// stored, and there is no path to it from here.
+///
+/// ### The entitlement gates growth, never removal
+///
+/// The history is a Pro feature (`HistoryAvailability`), so `append` refuses
+/// without the entitlement and **nothing is stored for a non-subscriber** — not
+/// stored and hidden, not stored at all.
+///
+/// `delete`, `delete(atOffsets:)`, `clear` and `updateText` are deliberately NOT
+/// gated. A lapsed subscription must not imprison the data: whatever is already on
+/// disk stays deletable by its owner for as long as it exists. Expressing that as
+/// "the gate is on the one method that grows the file" makes it a property of the
+/// type rather than a rule four call sites have to remember.
+///
+/// WHY the gate is here and not in `DictationHandoff`: `append` is the single point
+/// every dictation of either origin passes, which is what
+/// `SmartModeStore.resolveArmedMode()` is for #395's entitlement. A gate at the
+/// call sites would be two copies today and would miss the third caller written
+/// next year.
 @MainActor
 public final class TranscriptionHistoryStore: ObservableObject {
 
@@ -76,11 +94,22 @@ public final class TranscriptionHistoryStore: ObservableObject {
 
     private let fileURL: URL?
 
-    /// - Parameter fileURL: the backing file. Defaults to the App Group container;
-    ///   the tests pass a temporary path so they exercise the real read/write path
-    ///   without a shared container.
-    init(fileURL: URL? = TranscriptionHistoryStore.defaultFileURL) {
+    /// Whether the user may store new dictations, read when `append` is called
+    /// rather than captured once: an entitlement can lapse while the process lives.
+    private let isEntitled: () -> Bool
+
+    /// - Parameters:
+    ///   - fileURL: the backing file. Defaults to the App Group container; the tests
+    ///     pass a temporary path so they exercise the real read/write path without a
+    ///     shared container.
+    ///   - isEntitled: the Pro gate. Injected so the tests can drive both directions
+    ///     — nobody can be a subscriber on a device until #215 opens the paywall, so
+    ///     a gate only reachable through `FeatureGate` would be a gate only one half
+    ///     of which anyone could ever exercise.
+    init(fileURL: URL? = TranscriptionHistoryStore.defaultFileURL,
+         isEntitled: @escaping () -> Bool = { HistoryAvailability.isEntitled }) {
         self.fileURL = fileURL
+        self.isEntitled = isEntitled
         self.records = Self.read(from: fileURL)
     }
 
@@ -93,13 +122,16 @@ public final class TranscriptionHistoryStore: ObservableObject {
 
     // MARK: - Writing
 
-    /// Save a dictation. Returns the record so the caller can update its text later.
+    /// Save a dictation, or refuse. Returns the record so the caller can update its
+    /// text later, and nil when nothing was stored.
     ///
-    /// Empty text is refused: a dictation that produced nothing is a failure the user
-    /// already saw a sentence about (#313), and a blank card in the history would be
-    /// the second, quieter report of it.
+    /// Refused without the Pro entitlement, which is the whole gate for this
+    /// feature — see the type's documentation. Refused for empty text too: a
+    /// dictation that produced nothing is a failure the user already saw a sentence
+    /// about (#313), and a blank card would be the second, quieter report of it.
     @discardableResult
     public func append(_ record: TranscriptionRecord) -> TranscriptionRecord? {
+        guard isEntitled() else { return nil }
         guard !record.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -120,6 +152,10 @@ public final class TranscriptionHistoryStore: ObservableObject {
     /// twice; leaving the raw would show them text they never sent. A record whose
     /// id is gone — evicted by the cap, or deleted by the user in between — is left
     /// alone, which is why this returns nothing and never re-inserts.
+    /// Ungated, unlike `append`: this can only ever touch a record that is already
+    /// on disk, so it does not grow the history. Refusing it after a lapse between
+    /// the hand-off and the keyboard reporting back would leave the raw text
+    /// standing where the polished text belongs, which serves nobody.
     public func updateText(id: UUID, to newText: String) {
         guard !newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
