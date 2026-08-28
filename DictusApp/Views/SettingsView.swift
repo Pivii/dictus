@@ -69,6 +69,11 @@ struct SettingsView: View {
     /// either this @AppStorage or the AutocorrectDebugLog code that reads it.
     @AppStorage(SharedKeys.autocorrectDebugLogging, store: UserDefaults(suiteName: AppGroup.identifier))
     private var autocorrectDebugLogging = false
+
+    /// Debug-only: forces the Pro entitlement on, so the Smart Mode surfaces can be
+    /// exercised before #215 makes a real subscription purchasable.
+    @AppStorage(SharedKeys.debugForceProActive, store: UserDefaults(suiteName: AppGroup.identifier))
+    private var debugForceProActive = false
     #endif
 
     /// The keyboard language the pickers below operate on.
@@ -380,6 +385,12 @@ struct SettingsView: View {
             // Impossible to accidentally ship a toggle that logs user text.
             Section {
                 Toggle("Autocorrect debug logs", isOn: $autocorrectDebugLogging)
+                Toggle("Force Dictus Pro", isOn: $debugForceProActive)
+                    .onChange(of: debugForceProActive) { _, forced in
+                        // Apply immediately rather than at the next launch: the whole
+                        // point is to flip entitlement while the keyboard is open.
+                        proStatus.setProActive(forced)
+                    }
             } header: {
                 Text("Developer")
             } footer: {

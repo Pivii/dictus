@@ -74,6 +74,19 @@ public final class ProStatusManager: ObservableObject {
     /// App Group write makes it visible to keyboard extension on next read.
     /// @Published update triggers immediate SwiftUI refresh in the main app.
     public func setProActive(_ active: Bool) {
+        var active = active
+        #if DEBUG
+        // Debug-only entitlement override. `updateProStatus()` runs on every launch and
+        // writes `false` whenever StoreKit reports no entitlement, so a value poked into
+        // the App Group cannot survive one. Forcing it here — at the single writer —
+        // covers both processes at once, because the keyboard reads the same key through
+        // `isProActiveStatic`.
+        //
+        // Compile-time excluded from Release, so it cannot reach TestFlight or the App
+        // Store. It exists because #423 and #404 are about what a Pro user sees, and a
+        // real entitlement needs #215.
+        if AppGroup.defaults.bool(forKey: SharedKeys.debugForceProActive) { active = true }
+        #endif
         AppGroup.defaults.set(active, forKey: SharedKeys.proActive)
         AppGroup.defaults.synchronize()
         isProActive = active
