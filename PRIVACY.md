@@ -26,7 +26,7 @@ Les seules données enregistrées sur votre appareil sont :
 - **Préférences utilisateur** — langue, modèle sélectionné, réglages (via App Group UserDefaults)
 - **Fichiers de modèles** — modèles de reconnaissance vocale téléchargés (WhisperKit CoreML)
 - **Journaux de débogage** — logs techniques pour diagnostiquer les problèmes (aucun contenu de transcription)
-- **Historique de dictée** — vos 200 dernières transcriptions, texte uniquement, jamais l'audio. Vous pouvez l'effacer à tout moment depuis Réglages > Transcription > Effacer l'historique
+- **Historique de dictée** (Dictus Pro) — vos 200 dernières transcriptions, texte uniquement, jamais l'audio. Rien n'est enregistré sans un abonnement actif, et vous pouvez l'effacer à tout moment depuis Réglages > Transcription > Effacer l'historique, même après la fin de l'abonnement
 
 Ces données ne quittent jamais votre appareil sauf si vous choisissez explicitement d'exporter les logs de débogage.
 
@@ -80,7 +80,7 @@ The only data saved on your device:
 - **User preferences** — language, selected model, settings (via App Group UserDefaults)
 - **Model files** — downloaded speech recognition models (WhisperKit CoreML)
 - **Debug logs** — technical logs for diagnosing issues (no transcription content)
-- **Dictation history** — your last 200 transcriptions, text only, never the audio. You can erase it at any time from Settings > Transcription > Clear history
+- **Dictation history** (Dictus Pro) — your last 200 transcriptions, text only, never the audio. Nothing is stored without an active subscription, and you can erase it at any time from Settings > Transcription > Clear history, including after the subscription ends
 
 This data never leaves your device unless you explicitly choose to export debug logs.
 

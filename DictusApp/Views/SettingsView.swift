@@ -184,7 +184,14 @@ struct SettingsView: View {
                     polishStateFooter
                 }
 
-                clearHistoryRow
+                // Visible for a subscriber, and for anyone who still has saved
+                // transcriptions after an entitlement went away (#70). See
+                // `HistoryAvailability.clearRowIsVisible`.
+                if HistoryAvailability.clearRowIsVisible(
+                    isEntitled: historyIsEntitled, hasSavedRecords: !history.isEmpty
+                ) {
+                    clearHistoryRow
+                }
             } header: {
                 Text("Transcription")
             } footer: {
@@ -482,6 +489,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// Whether the user is entitled to the history right now.
+    ///
+    /// Reads `proStatus.isProActive` so the row reacts: `FeatureGate` goes to the
+    /// App Group, which publishes nothing on its own.
+    private var historyIsEntitled: Bool {
+        _ = proStatus.isProActive
+        return HistoryAvailability.isEntitled
+    }
 
     /// Empties the transcription history (#70, brief decision 3).
     ///

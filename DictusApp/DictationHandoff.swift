@@ -108,6 +108,11 @@ extension DictationCoordinator {
         // on this side of the `mayReport` gate: a dictation they cancelled must not
         // turn up in a list of what they dictated. In-app dictations are finished
         // here, so unlike the keyboard path below this is the one and only write.
+        //
+        // The history is a Pro feature, and the entitlement is checked inside
+        // `append` rather than here — see `TranscriptionHistoryStore`. Without it
+        // this call stores nothing and returns nil; there is no path on which a
+        // non-subscriber's dictation reaches the file.
         TranscriptionHistoryStore.shared.append(TranscriptionRecord(
             text: finalText, policy: languagePolicy, duration: audioDuration
         ))
@@ -170,6 +175,10 @@ extension DictationCoordinator {
         // may stop at any moment, and a dictation that never comes back should be in
         // the history as the raw rather than missing from it. `polishHandoffFinished`
         // replaces the text in place when the keyboard reports what it typed.
+        //
+        // Nil for a non-subscriber, because `append` refuses without the Pro
+        // entitlement (#70). `polishHandoffFinished` then has no record to update,
+        // which is the correct outcome rather than a missing branch.
         polishHandoffHistoryID = TranscriptionHistoryStore.shared.append(TranscriptionRecord(
             text: rawText, policy: languagePolicy, duration: audioDuration
         ))?.id

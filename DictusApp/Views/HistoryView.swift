@@ -18,6 +18,7 @@ import DictusCore
 struct HistoryView: View {
 
     @EnvironmentObject var history: TranscriptionHistoryStore
+    @EnvironmentObject var proStatus: ProStatusManager
     @Environment(\.dismiss) private var dismiss
 
     /// The record whose full text is on screen, driving the push. Not a
@@ -28,7 +29,9 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if history.records.isEmpty {
+                if !isEntitled {
+                    lockedState
+                } else if history.records.isEmpty {
                     emptyState
                 } else {
                     recordList
@@ -54,6 +57,43 @@ struct HistoryView: View {
         // The grabber says the sheet is draggable, which is the same statement the
         // hint on the home screen makes about the swipe that opened it.
         .presentationDragIndicator(.visible)
+    }
+
+    /// Whether the user may read the history right now.
+    ///
+    /// Touching the observed Pro status is what makes this react: `FeatureGate` reads
+    /// the App Group, which publishes nothing. Same device as `HomeView.entryPoint`.
+    private var isEntitled: Bool {
+        _ = proStatus.isProActive
+        return HistoryAvailability.isEntitled
+    }
+
+    // MARK: - Locked
+
+    /// What a lapsed subscriber sees if this screen is open when the entitlement
+    /// goes away, or if it is ever reached without one.
+    ///
+    /// **It names the way out.** Locking the reading of the history is the point of
+    /// the gate; locking someone out of deleting a plaintext record of everything
+    /// they have dictated is not, and a locked screen that said only "subscribe"
+    /// would be exactly that. Settings keeps the destructive row for as long as
+    /// there is anything to delete (`HistoryAvailability.clearRowIsVisible`), and
+    /// this sentence is how the user learns it is there.
+    private var lockedState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.dictusAccent.opacity(0.7))
+            Text("History is part of Dictus Pro")
+                .font(.dictusSubheading)
+                .multilineTextAlignment(.center)
+            Text("Your saved transcriptions stay on this device and are never sent anywhere. You can delete them at any time from Settings.")
+                .font(.dictusCaption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - List
@@ -185,4 +225,5 @@ private struct HistoryCard: View {
 #Preview {
     HistoryView()
         .environmentObject(TranscriptionHistoryStore.shared)
+        .environmentObject(ProStatusManager())
 }
