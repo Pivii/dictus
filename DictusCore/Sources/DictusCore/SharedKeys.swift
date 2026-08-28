@@ -251,6 +251,12 @@ public enum SharedKeys {
     /// Bool: true when the user has an active Pro subscription.
     /// Written by SubscriptionManager (DictusApp), read by the keyboard extension.
     public static let proActive = "dictus.proActive"
+
+    /// DEBUG-only override that forces `proActive` true. Written by the Developer
+    /// section in Settings, read by `ProStatusManager.setProActive(_:)`, which is the
+    /// single writer of `proActive`. Its only reason to exist is that #423 and #404
+    /// cannot be tested without an entitlement, and a real one needs #215.
+    public static let debugForceProActive = "dictus.debug.forceProActive"
     /// Bool: per-feature toggle for Smart Mode. Seeded to true, once, by
     /// `ProStatusManager.seedFeatureTogglesIfNeeded()`; written afterwards only by the
     /// Settings toggle. Stored, never merely registered -- the keyboard extension reads
