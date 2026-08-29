@@ -11,6 +11,11 @@
 //   swift run polish-harness eval  <fixtures.json> [--instructions <prompt.txt>]
 //   swift run polish-harness ab    <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>]
 //
+// `--lang <code>` (#439) reroutes every fixture in the file: "auto" sends a
+// per-language set through the Auto-detect path, "fr" pins an auto set to French.
+// Which path a dictation takes is a SETTING on the device, not a property of the
+// text, so a fixture set that measures a prompt has to be runnable through both.
+//
 // `--instructions <file>` overrides the system prompt (A/B a candidate without
 // recompiling). `ab` runs two sides side by side.
 //
@@ -59,6 +64,10 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>] [--mode <id>]
       guardrail <corpus.json> [<corpus.json> …] [--segments] [--sweep] [--anchors]
 
+    --lang (#439) reroutes every fixture in the file — `--lang auto` runs a
+    per-language set through the Auto-detect prompt, `--lang fr` pins an auto set
+    to the French one. The path is a device SETTING, not a property of the text.
+
     --mode (#393) arms a Smart Mode by catalogue identifier, so its prompt, its
     user-turn framing and its OWN acceptance contract are what run. On `ab`,
     --mode-a / --mode-b arm one side each; a side with no mode is the free polish,
@@ -101,6 +110,8 @@ let framingFile = optionValue("--framing", in: args)
 // one per side and falls back to `--mode` for both, so a single flag A/Bs two prompt
 // candidates on one mode while `--mode-b` alone A/Bs a mode against the free polish.
 let modeIdentifier = optionValue("--mode", in: args)
+// #439. Overrides every fixture's `lang`. See `Fixture.routed(through:)`.
+let langOverride = optionValue("--lang", in: args)
 let modeAIdentifier = optionValue("--mode-a", in: args) ?? modeIdentifier
 let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 
@@ -108,12 +119,14 @@ let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 
 let fixtures: [Fixture]
 // `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS, not fixtures of
-// raw inputs, so it is the one command with nothing to load here.
+// raw inputs, so it is the one command with nothing to load here. `--lang` (#439)
+// reroutes what IS loaded, so it stays inside the loading branch.
 if command == "guardrail" {
     fixtures = []
 } else {
     do {
-        fixtures = try FixtureLoader.load(fixturesPath)
+        let loaded = try FixtureLoader.load(fixturesPath)
+        fixtures = langOverride.map { lang in loaded.map { $0.routed(through: lang) } } ?? loaded
     } catch {
         print("error: cannot load fixtures at \(fixturesPath): \(error)")
         exit(1)
@@ -435,9 +448,18 @@ func promptResolution(_ fx: Fixture, mode: SmartMode?) -> PromptResolution {
             detected: detectedCode
         )
     }
+    // The auto route has no per-language prompt, but it does have a prompt: the
+    // language-agnostic one `runOnceAuto` sends. `--lang auto` is documented as
+    // rerouting every fixture through it, so refusing here made the flag work on
+    // `show`/`eval` and not on `prompt`. `.english` is the placeholder the engine
+    // API requires and `PolishAutoPrompt` ignores, exactly as in `runOnceAuto`.
     guard let target = fx.language else {
-        print("error: [\(fx.id)] routes through auto mode, which has no per-language prompt")
-        exit(1)
+        return PromptResolution(
+            task: .auto,
+            preprocessed: PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode),
+            language: .english,
+            detected: detectedCode
+        )
     }
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
     guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
@@ -527,7 +549,8 @@ func runHarness() async {
         var passed = 0, total = 0
         for fx in fixtures {
             let o = await runOnce(fx, engine: engine, mode: mode)
-            let checks = fx.expect ?? []
+            let route = Expectation.routeName(perLanguage: fx.language != nil)
+            let checks = (fx.expect ?? []).filter { $0.applies(to: route) }
             // A mode that failed closed has no output to check, and that is a
             // failure of the fixture rather than a reason to skip it: the mode's own
             // contract refused what the engine produced, which is precisely what
