@@ -188,6 +188,30 @@ final class PendingDictationTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: legacy)
         let decoded = try JSONDecoder().decode(PendingDictation.self, from: data)
         XCTAssertNil(decoded.smartMode)
+        // Same argument for the skip notice added in #423: the worst case is a lost
+        // transient sentence, never a lost dictation.
+        XCTAssertNil(decoded.skippedSmartMode)
         XCTAssertEqual(decoded.raw, "bonjour tout le monde")
+    }
+
+    // MARK: - The skipped mode (#423)
+
+    /// It has to survive the round trip, because the record is what carries the fact
+    /// from the claim to the moment after the insertion, when the sentence is shown.
+    func testASkippedModeSurvivesTheRecordsCoding() throws {
+        let record = PendingDictation(
+            raw: "bonjour",
+            policy: policy,
+            skippedSmartMode: SmartModeSkipNotice(
+                modeIdentifier: "translate.en", modeDisplayName: "\u{2192} EN", reason: .switchedOff
+            ),
+            recordingDuration: 1,
+            documentIdentifier: fieldA
+        )
+        let decoded = try JSONDecoder().decode(
+            PendingDictation.self, from: JSONEncoder().encode(record)
+        )
+        XCTAssertEqual(decoded, record)
+        XCTAssertEqual(decoded.skippedSmartMode?.modeIdentifier, "translate.en")
     }
 }

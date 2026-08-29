@@ -52,6 +52,8 @@
 		AA361004 /* KeyboardPolishCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA361003 /* KeyboardPolishCoordinator.swift */; };
 		AA361008 /* KeyboardPolishStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA361007 /* KeyboardPolishStage.swift */; };
 		AA361010 /* KeyboardSmartModeFan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA361009 /* KeyboardSmartModeFan.swift */; };
+		AA423004 /* SmartModeDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA423003 /* SmartModeDisplayName.swift */; };
+		AA423002 /* SmartModeDisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA423001 /* SmartModeDisplayName.swift */; };
 		AA000050 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100050 /* ModelManager.swift */; };
 		AA000052 /* ModelRepoDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100052 /* ModelRepoDownloader.swift */; };
 		AA000051 /* ModelManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100051 /* ModelManagerView.swift */; };
@@ -221,6 +223,8 @@
 		AA361003 /* KeyboardPolishCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardPolishCoordinator.swift; sourceTree = "<group>"; };
 		AA361007 /* KeyboardPolishStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardPolishStage.swift; sourceTree = "<group>"; };
 		AA361009 /* KeyboardSmartModeFan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSmartModeFan.swift; sourceTree = "<group>"; };
+		AA423003 /* SmartModeDisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartModeDisplayName.swift; sourceTree = "<group>"; };
+		AA423001 /* SmartModeDisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartModeDisplayName.swift; sourceTree = "<group>"; };
 		AA100201 /* ObjCExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ObjCExceptionCatcher.h; sourceTree = "<group>"; };
 		AA100202 /* DictusApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "DictusApp-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA100050 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
@@ -393,6 +397,7 @@
 				AA100264 /* ColdStartLaunch.swift */,
 				AA100311 /* ColdStartResolution.swift */,
 				AA100361 /* DictationHandoff.swift */,
+				AA423003 /* SmartModeDisplayName.swift */,
 				AA100428 /* DictationCoordinator+ModelLoad.swift */,
 				AA10000A /* DictationView.swift */,
 				AA1000F5 /* LiveActivityManager.swift */,
@@ -426,6 +431,7 @@
 				AA361003 /* KeyboardPolishCoordinator.swift */,
 				AA361007 /* KeyboardPolishStage.swift */,
 				AA361009 /* KeyboardSmartModeFan.swift */,
+				AA423001 /* SmartModeDisplayName.swift */,
 				AA361005 /* TextProxyIdentity.h */,
 				AA361001 /* TextProxyIdentity.m */,
 				AA100030 /* InputView.swift */,
@@ -983,6 +989,7 @@
 				AA000264 /* ColdStartLaunch.swift in Sources */,
 				AA000311 /* ColdStartResolution.swift in Sources */,
 				AA000361 /* DictationHandoff.swift in Sources */,
+				AA423004 /* SmartModeDisplayName.swift in Sources */,
 				AA000428 /* DictationCoordinator+ModelLoad.swift in Sources */,
 				AA000006 /* DictationView.swift in Sources */,
 				AA0000F5 /* LiveActivityManager.swift in Sources */,
@@ -1050,6 +1057,7 @@
 				AA361004 /* KeyboardPolishCoordinator.swift in Sources */,
 				AA361008 /* KeyboardPolishStage.swift in Sources */,
 				AA361010 /* KeyboardSmartModeFan.swift in Sources */,
+				AA423002 /* SmartModeDisplayName.swift in Sources */,
 				AA361002 /* TextProxyIdentity.m in Sources */,
 				AA000008 /* MicButtonDisabled.swift in Sources */,
 				AA000030 /* InputView.swift in Sources */,

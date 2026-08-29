@@ -1,0 +1,228 @@
+[
+  {
+    "id": "1-free-form",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 1 of #437's paired set, read aloud and captured from the device debug ring on 2026-08-27 (iPhone16,2, iOS 26.6, build 1.8.0 (27), parakeet-tdt-0.6b-v3, Apple FM, mode auto / detected fr). One single idea, no section boundary and no ASR defect: the control. Everything asserted here is a preserve check.",
+    "raw": "Bon alors je pensais à un truc ce matin en marchant, c'est que finalement quand on lance un produit tout seul, le plus dur ce n'est pas de le coder, c'est de décider quoi ne pas faire en fait. Parce qu'il y a toujours une idée qui a l'air meilleure que celle sur laquelle on est en train de bosser. Et du coup on saute dessus et au bout de 6 mois en fait on a 15 trucs commencés et rien de fini.",
+    "expect": [
+      {
+        "contains": "bosser"
+      },
+      {
+        "contains": "trucs"
+      },
+      {
+        "contains": "6 mois"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  },
+  {
+    "id": "2-project-update",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 2. Two proper nouns, five figures, three dates, all of which must survive verbatim. Carries repair target 6: Parakeet wrote `Apple Store` where the speaker said `App Store`, in a paragraph containing `StoreKit` and `on soumet` — and `App Store` is in PolishGlossary.",
+    "raw": "Alors point rapide sur le projet, on a basculé la partie abonnement lundi dernier, Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là dessus on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.",
+    "expect": [
+      {
+        "contains": "App Store"
+      },
+      {
+        "notContains": "Apple Store"
+      },
+      {
+        "contains": "StoreKit"
+      },
+      {
+        "contains": "Thomas"
+      },
+      {
+        "contains": "Sarah"
+      },
+      {
+        "contains": "412"
+      },
+      {
+        "contains": "1000"
+      },
+      {
+        "contains": "14h"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  },
+  {
+    "id": "3-message-draft",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 3. Message draft with no greeting and no sign-off in the source, so any salutation is invention. Carries repair target 1, `la salle à tante` for `la salle d'attente` — a pseudo-phrase two clauses after `dentiste`, the clearest rule-8 case in the set — and the one off-language fragment (`and I think that it will déborder`) the shipping prompts already repair, which is where the register violation was measured.",
+    "raw": "Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h and I think that it will déborder. Du coup, si tu peux décaler le point d'équipe à l'après-midi, ça m'arrangerait. Sinon je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera moyen. Dis-moi ce qui t'arrange.",
+    "expect": [
+      {
+        "contains": "salle d'attente"
+      },
+      {
+        "notContains": "salle à tante"
+      },
+      {
+        "notContains": "I think",
+        "onlyOnRoute": "perLanguage"
+      },
+      {
+        "contains": "11h"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  },
+  {
+    "id": "4-explanation",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 4. Three speaker-announced sections. Carries repair target 5 (`Il prend ses morceaux` for `ces morceaux`) and the silent-deletion probe: the speaker said `le même prix en calcul` and the measured output dropped `en calcul`.",
+    "raw": "Alors je t'explique comment fonctionne la reconnaissance vocale sur le téléphone. En gros il y a trois étapes. La première c'est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape c'est le modèle. Il prend ses morceaux et il essaye de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation les majuscules éventuellement on découpe en paragraphes le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul le deuxième c'est 90% du temps.",
+    "expect": [
+      {
+        "contains": "ces morceaux"
+      },
+      {
+        "notContains": "ses morceaux"
+      },
+      {
+        "contains": "en calcul"
+      },
+      {
+        "contains": "trois étapes"
+      },
+      {
+        "contains": "90"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  },
+  {
+    "id": "5-rambling",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 5. The hardest input in the set: 1,283 characters, four unannounced topic changes, a self-correction, and a trailing sentence that goes nowhere (#385's probe). Carries repair targets 2, 3 and 4 (`je répète le comptable`, `si je les zappais`, `le cas honnête`) and the word-substitution probe (`l'abonnement machin` came back as `machine`).",
+    "raw": "Bon alors je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable le comptable je l'ai eu vendredi c'est l'assurance qu'il faut que je rappelle pour le truc de la voiture bon ensuite alors ça c'est important il faut absolument que je réponde à julien parce que ça fait je ne sais pas ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas honnête. Quoi d'autre? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça c'est vraiment le sujet en fait. Enfin bref. Ah, j'ai aussi... Il faut que je pense à annuler l'abonnement machin. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis la dernière chose, et là je note vraiment parce que sinon je vais oublier c'est de préparer les questions pour l'entretien de mardi voilà je crois que c'est tout ah non il y avait un dernier truc ça m'échappe mais ça me reviendra",
+    "expect": [
+      {
+        "notContains": "répète le comptable"
+      },
+      {
+        "contains": "zappé"
+      },
+      {
+        "notContains": "les zappais"
+      },
+      {
+        "contains": "honnêtement"
+      },
+      {
+        "notContains": "machine"
+      },
+      {
+        "contains": "ça me reviendra"
+      },
+      {
+        "contains": "19 euros"
+      },
+      {
+        "contains": "Julien"
+      },
+      {
+        "contains": "mardi"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  },
+  {
+    "id": "6-unscripted",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SCRIPT 6. Unscripted, the maintainer's own words, and the only sample that is not a read performance. Preserve material throughout: oral negation `c'est pas` four times over, and the app names the STT mangled.",
+    "raw": "Alors je vais quand même faire un sixième test parce que les autres c'est pas vraiment ma voix, c'est pas naturel. L'idée c'est vraiment de voir encore une fois comment se comporte type less vs mon application dictus l'idée ça va être vraiment de repérer déjà la qualité de la transcription éventuellement et aussi de voir comment Type Laiss arrive à découper les différents paragraphes, les organiser, s'il met éventuellement des listes, s'il met des espaces entre les lignes. Et voilà, tout simplement l,'idée ça va être de voir tout ça. Et ensuite, on va analyser tout ça. Comme ça, ça va nous permettre d'essayer de créer par la suite soit un mode différent, soit améliorer notre polish et je pense que ça ça peut être vraiment très intéressant parce que ça va vraiment améliorer l'expérience des utilisateurs et même les utilisateurs qui sont gratuits parce que c'est vrai que là pour l'instant quand tu lances un grand un grand audio comme je peux le faire là tout de suite ça fait un gros pavé sur dictus alors quand je fais du développement c'est pas dérangeant mais c'est vrai que si tu veux l'utiliser pour discuter avec quelqu'un c'est un peu moyen",
+    "expect": [
+      {
+        "contains": "c'est pas"
+      },
+      {
+        "notContains": "ce n'est pas vraiment ma voix"
+      },
+      {
+        "contains": "Dictus"
+      },
+      {
+        "contains": "gros pavé"
+      },
+      {
+        "notContains": "cela"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.92
+      },
+      {
+        "lengthRatioMax": 1.15
+      }
+    ]
+  }
+]

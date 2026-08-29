@@ -19,17 +19,72 @@ struct SmartModeFanState: Equatable {
     /// or down in the reason strip. Nil is the abort.
     var highlightedIndex: Int?
 
-    /// Why no mode may be armed, or nil when they all may. When set, every mode row
-    /// draws disabled and this sentence sits under them; Normal stays live.
+    /// The sentence under the rows, or nil when there is none.
+    ///
+    /// Nil in the non-subscriber's fan even though modes are refused there: the
+    /// `Dictus Pro` row *is* the message, and a strip repeating it would say the same
+    /// thing twice and take height from four rows that need it (#404). It is what
+    /// decides the geometry — `SmartModeFanLayout.rowHeight(showsReason:)` — so it
+    /// must not be repurposed as "are the modes disabled". That is `modesAreArmable`.
     let unavailableReason: String?
 
-    /// Whether a release on the highlighted row would arm anything.
+    /// What the toolbar says when a release lands on a mode row that cannot be armed.
+    ///
+    /// Separate from `unavailableReason` for one case: in the non-subscriber's fan
+    /// there is no strip, and a release on a greyed `Liste` still has to be answered
+    /// with something. Everywhere else the two are the same string.
+    let refusalMessage: String?
+
+    /// Whether a mode row may be armed at all.
+    ///
+    /// Was inferred from `unavailableReason != nil` until #404, which is where the two
+    /// stopped meaning the same thing: the Pro fan refuses every mode and shows no
+    /// sentence. Leaving it inferred would have made those rows armable.
+    let modesAreArmable: Bool
+
+    /// The row the stored armed mode corresponds to, or nil for Normal.
+    ///
+    /// Drawn as a marker, so the user can see their choice survived (#423). Separate
+    /// from `effectiveEntryID` below because the two disagree exactly when this issue
+    /// bites: the mode is armed, and Normal is what will run.
+    let armedEntryID: String?
+
+    /// The row a dictation started right now would actually run.
+    ///
+    /// `"normal"` whenever the armed mode will not be honoured, because that is the
+    /// truth — greying the mode row says "you cannot pick this", not "the thing you
+    /// already picked will not happen", and only the second is the case.
+    let effectiveEntryID: String
+
+    /// Whether the fan is the non-subscriber's, i.e. whether its mode rows are behind
+    /// Dictus Pro.
+    ///
+    /// Derived from the rows rather than stored beside them, so the tag and the row it
+    /// sits on cannot disagree.
+    var offersProUpgrade: Bool { entries.contains(.pro) }
+
+    /// What `entry` carries beside its name, if anything.
+    func tag(for entry: SmartModeFanEntry) -> SmartModeFanRowTag? {
+        SmartModeFanLayout.tag(
+            for: entry,
+            armedIdentifier: armedEntryID,
+            effectiveIdentifier: effectiveEntryID,
+            modesRequirePro: offersProUpgrade
+        )
+    }
+
+    /// Whether a release on the highlighted row would do anything.
     var canCommitHighlighted: Bool {
         guard let highlightedIndex, entries.indices.contains(highlightedIndex) else { return false }
-        // Normal is always selectable: it is the free polish, and it is how a sticky
-        // mode is cleared on a device that has since lost Apple Intelligence.
-        guard entries[highlightedIndex].smartMode != nil else { return true }
-        return unavailableReason == nil
+        switch entries[highlightedIndex] {
+        // Normal is always selectable: it is the free polish, it is how a sticky mode
+        // is cleared on a device that has since lost Apple Intelligence, and in the
+        // non-subscriber's fan it is the only row that records at all (#404).
+        case .normal: return true
+        // The Pro row leads to the paywall. Nothing about it is conditional.
+        case .pro: return true
+        case .mode: return modesAreArmable
+        }
     }
 }
 
@@ -68,6 +123,24 @@ final class KeyboardSmartModeState: ObservableObject {
     /// icon, then badge), and three parallel published properties written in one
     /// statement is a struct with extra steps.
     @Published private(set) var armedMode: SmartMode?
+
+    /// The armed mode **when a dictation starting now would actually run it**, and
+    /// nil otherwise (#423).
+    ///
+    /// The surfaces that claim a mode is in force read this one, not `armedMode`
+    /// above: the mic pill's corner badge and the recording overlay's capsule. Both
+    /// are assertions about what the next dictation does, and drawing them from the
+    /// stored value made them lie whenever the dictation had already decided to skip
+    /// it — a badge saying EN over a dictation that returns French.
+    ///
+    /// `armedMode` stays beside it and is still drawn, greyed, by the toolbar's
+    /// centre slot: the user's choice survived and hiding it would be a different
+    /// lie. Armed and effective are two facts, so they are two properties.
+    ///
+    /// Resolved through `SmartModeAvailability.forDictation`, which is the same
+    /// expression `SmartModeStore.resolveArmedMode()` consults. That is the point:
+    /// the two cannot disagree.
+    @Published private(set) var effectiveMode: SmartMode?
 
     /// Whether the toolbar's centre slot still teaches the long-press gesture.
     ///
@@ -122,7 +195,12 @@ final class KeyboardSmartModeState: ObservableObject {
     /// came down — a release then would arm a mode chosen before the dictation the
     /// user has since finished.
     func refresh(status: DictationStatus) {
-        armedMode = SmartModeStore.armedMode
+        let armed = SmartModeStore.armedMode
+        armedMode = armed
+        // One availability read per refresh, beside the one `offersHint` already
+        // pays for, and for the same reason it is cached there: nine live root views
+        // would otherwise hit `SystemLanguageModel.availability` on every layout pass.
+        effectiveMode = SmartModeAvailability.forDictation.isArmable ? armed : nil
         offersHint = SmartModeDiscovery.offersHint
         // Through `close()` rather than by clearing the value, so the backstop timer
         // goes with it. `presentAreaMode` refuses while a dictation owns the area,
@@ -161,12 +239,19 @@ final class KeyboardSmartModeState: ObservableObject {
             keyboard.logProbe("smartModeFanRefused", details: "reason=dictation-in-flight")
             return false
         }
+        // Read once, at open. The armability of a mode cannot change between the
+        // long-press and the release a second later, and re-reading it per drag
+        // update would put a `SystemLanguageModel` availability check on the main
+        // thread inside a gesture.
+        let armability = SmartModeAvailability.current
         // The store rather than the published `armedMode` beside it: that copy is a
         // cache for view bodies and can be one `refreshFromDefaults` behind the app,
         // and the app unpinning everything is exactly the moment it would be. One
         // read per long-press is not the cost that cache exists to avoid.
+        let armed = SmartModeStore.armedMode
+        let offersPro = Self.offersProUpgrade(armability)
         let entries = SmartModeFanLayout.entries(
-            pinned: SmartModeCatalogue.pinnedModes, armed: SmartModeStore.armedMode
+            pinned: SmartModeCatalogue.pinnedModes, armed: armed, offersProUpgrade: offersPro
         )
         guard !entries.isEmpty else {
             keyboard.logProbe("smartModeFanRefused", details: "reason=nothing-pinned")
@@ -180,15 +265,23 @@ final class KeyboardSmartModeState: ObservableObject {
             )
             return false
         }
-        // Read once, at open. The armability of a mode cannot change between the
-        // long-press and the release a second later, and re-reading it per drag
-        // update would put a `SystemLanguageModel` availability check on the main
-        // thread inside a gesture.
-        let armability = SmartModeAvailability.current
+        let reason = armability.reason.map(Self.localizedReason)
         fan = SmartModeFanState(
             entries: entries,
             highlightedIndex: nil,
-            unavailableReason: armability.reason.map(Self.localizedReason)
+            // The Dictus Pro row carries the message in the non-subscriber's fan, so
+            // the strip would say the same thing twice and take height from four rows
+            // that need it (#404).
+            unavailableReason: offersPro ? nil : reason,
+            refusalMessage: reason,
+            modesAreArmable: armability.isArmable,
+            armedEntryID: armed?.id,
+            // What will run, not what is set. With no entitlement that is Normal
+            // whatever is armed, which is the fact #423 says nothing was telling
+            // the user.
+            effectiveEntryID: SmartModeAvailability.forDictation.isArmable
+                ? (armed?.id ?? SmartModeFanEntry.normal.id)
+                : SmartModeFanEntry.normal.id
         )
         keyboard.presentAreaMode(.smartModeFan)
         armIdleTimer()
@@ -198,6 +291,22 @@ final class KeyboardSmartModeState: ObservableObject {
             details: "entries=\(fan?.entries.count ?? 0) reason=\(armability.reason?.slug ?? "-")"
         )
         return true
+    }
+
+    /// Whether this fan carries the Dictus Pro row and greys its modes behind it
+    /// (#404).
+    ///
+    /// Two conditions, and the second is not optional. `.notSubscribed` alone —
+    /// which is what `isEntitled` used to collapse to — would show a paying
+    /// subscriber who switched Smart Modes off an advertisement for what they
+    /// already pay for; `SmartModeEntitlement` is what keeps those two people apart
+    /// (#423). And `PremiumFlags.paywallVisible` is the #236 gate every other Pro
+    /// entry point applies: while the paywall is hidden the product must look like
+    /// it has no subscription at all, and a row leading to an unreachable paywall is
+    /// exactly the dead end that gate exists to prevent. With the flag down the fan
+    /// keeps the greyed rows and the reason line it has today.
+    private static func offersProUpgrade(_ armability: SmartModeArmability) -> Bool {
+        PremiumFlags.paywallVisible && armability.reason == .notSubscribed
     }
 
     // MARK: - Dragging
@@ -271,7 +380,7 @@ final class KeyboardSmartModeState: ObservableObject {
             // haptic and the reason: the user did point at something, and was told
             // no. The reason is already on screen under the rows, but the fan is
             // about to close, so it moves to the toolbar.
-            if let reason = current.unavailableReason, current.highlightedIndex != nil {
+            if let reason = current.refusalMessage, current.highlightedIndex != nil {
                 HapticFeedback.actionRefused()
                 keyboard.presentStatusMessage(
                     reason,
@@ -287,10 +396,34 @@ final class KeyboardSmartModeState: ObservableObject {
         }
 
         let entry = current.entries[index]
-        if let mode = entry.smartMode {
-            SmartModeStore.arm(mode)
-        } else {
+        // Switched over the case rather than over `entry.smartMode`, which is nil for
+        // two rows that mean opposite things: reading nil as "disarm" would have the
+        // Pro row silently clear the user's mode on its way to the paywall.
+        switch entry {
+        case .pro:
+            // The release leaves the keyboard **for the paywall** instead of arming
+            // anything (#404). It landed on the app's home screen until 2026-08-29,
+            // which emptied the row of its purpose — the one row in the fan that leads
+            // anywhere led somewhere the user then had to search.
+            //
+            // No `noteGestureUsed`: nothing was armed, and retiring the discovery hint
+            // for a user who has still never chosen a mode would take away the only
+            // thing pointing them back here. Whether the hint should point a
+            // non-subscriber at this gesture at all is #404's own open question,
+            // deliberately untouched.
+            keyboard.logProbe("smartModeFanProSelected")
+            // Put the keys back *before* leaving, which is what `leavePanel` in
+            // `KeyboardRootView` does and for the same reason: coming back to a
+            // keyboard still showing the menu you left is disorienting, and the task
+            // that opened it is over. `close()` is idempotent, so the `defer` above
+            // finds nothing to do.
+            close()
+            keyboard.openDictusApp(intent: .pro)
+            return
+        case .normal:
             SmartModeStore.disarm()
+        case .mode(let mode):
+            SmartModeStore.arm(mode)
         }
         SmartModeDiscovery.noteGestureUsed()
         refresh(status: keyboard.dictationStatus)
@@ -367,10 +500,69 @@ final class KeyboardSmartModeState: ObservableObject {
                 localized: "Smart Modes are part of Dictus Pro.",
                 comment: "Shown in the Smart Mode fan when the device can run Smart Modes but the user has no Pro subscription."
             )
+        case .switchedOff:
+            // The user did this on purpose, so the sentence names the switch rather
+            // than the feature: nothing is broken and nothing is for sale here
+            // (#423). Split out of `.notSubscribed`, which used to answer for both
+            // and told a paying subscriber their own setting was a paywall.
+            return String(
+                localized: "Smart Modes are off. Turn them back on in Dictus.",
+                comment: "Shown in the Smart Mode fan when a subscriber has switched Smart Modes off in Settings."
+            )
         case .other:
             return String(
                 localized: "Smart Modes are unavailable right now.",
                 comment: "Shown in the Smart Mode fan for an unavailability reason this build does not recognise."
+            )
+        }
+    }
+
+    /// The sentence shown after a dictation whose armed mode did not run (#423).
+    ///
+    /// One per reason the user can be in, because "it went in as Normal" without the
+    /// why is only half of what they need — and the wrong why is worse than none:
+    /// telling someone who switched the feature off that it "is part of Dictus Pro"
+    /// is the exact defect `SmartModeUnavailableReason.switchedOff` was split out to
+    /// fix.
+    ///
+    /// **None of them reads as a failure.** No "failed", no "error", no "try again":
+    /// nothing failed, the text is in the field, and the only thing missing is a
+    /// transformation the user's own state ruled out. The mode name is the
+    /// catalogue's label rather than a description, so it reads as the thing they
+    /// armed.
+    ///
+    /// The definitive reasons are absent on purpose. `resolveArmedMode()` disarms on
+    /// those, so the mode is gone and there is no standing setting to explain —
+    /// they fall through to the last sentence, which claims nothing about the future.
+    static func localizedSkipNotice(_ notice: SmartModeSkipNotice) -> String {
+        let name = SmartMode.localizedDisplayName(
+            identifier: notice.modeIdentifier, fallback: notice.modeDisplayName
+        )
+        switch notice.reason {
+        case .switchedOff:
+            return String(
+                localized: "Smart Modes are off. \(name) was dictated as Normal.",
+                comment: "Shown after a dictation whose armed Smart Mode did not run because the user switched Smart Modes off. The placeholder is the mode's name."
+            )
+        case .notSubscribed:
+            return String(
+                localized: "\(name) needs Dictus Pro. Dictated as Normal.",
+                comment: "Shown after a dictation whose armed Smart Mode did not run for lack of a Pro subscription. The placeholder is the mode's name."
+            )
+        case .appleIntelligenceNotEnabled:
+            return String(
+                localized: "Apple Intelligence is off. \(name) was dictated as Normal.",
+                comment: "Shown after a dictation whose armed Smart Mode did not run because Apple Intelligence is switched off. The placeholder is the mode's name."
+            )
+        case .modelNotReady:
+            return String(
+                localized: "Apple Intelligence is still downloading. \(name) was dictated as Normal.",
+                comment: "Shown after a dictation whose armed Smart Mode did not run because the on-device model is still downloading. The placeholder is the mode's name."
+            )
+        case .engineRefusing, .other, .deviceNotEligible, .osTooOld, .sdkMissing:
+            return String(
+                localized: "\(name) is unavailable. Dictated as Normal.",
+                comment: "Shown after a dictation whose armed Smart Mode did not run for a reason the user cannot act on. The placeholder is the mode's name."
             )
         }
     }

@@ -1284,6 +1284,17 @@
         }
       }
     },
+    "List" : {
+      "comment" : "Name of the Smart Mode that turns spoken ideas into concise bullet points. Renamed from Notes on 2026-08-27.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liste"
+          }
+        }
+      }
+    },
     "Listening..." : {
       "localizations" : {
         "fr" : {

@@ -1,6 +1,39 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is unavailable. Dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run for a reason the user cannot act on. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est indisponible. Dicté en Normal."
+          }
+        }
+      }
+    },
+    "%@ needs Dictus Pro. Dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run for lack of a Pro subscription. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ demande Dictus Pro. Dicté en Normal."
+          }
+        }
+      }
+    },
+    "%@ · off" : {
+      "comment" : "Toolbar label for an armed Smart Mode that will not run, so the dictation goes in as Normal. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · inactif"
+          }
+        }
+      }
+    },
     "%@: could not be applied. Try again." : {
       "comment" : "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name.",
       "localizations" : {
@@ -49,6 +82,28 @@
         }
       }
     },
+    "Apple Intelligence is off. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because Apple Intelligence is switched off. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence est désactivé. %@ a été dicté en Normal."
+          }
+        }
+      }
+    },
+    "Apple Intelligence is still downloading. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because the on-device model is still downloading. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence télécharge encore. %@ a été dicté en Normal."
+          }
+        }
+      }
+    },
     "Apple Intelligence is still downloading. Smart Modes will work once it finishes." : {
       "comment" : "Shown in the Smart Mode fan while the on-device model is downloading.",
       "localizations" : {
@@ -77,6 +132,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fermer le menu"
+          }
+        }
+      }
+    },
+    "Dictus Pro" : {
+      "comment" : "The Smart Mode fan row that leaves the keyboard for the paywall. A product name, so identical in French today, and in the catalog so a future locale can change it.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictus Pro"
           }
         }
       }
@@ -143,6 +209,17 @@
         }
       }
     },
+    "List" : {
+      "comment" : "Name of the Smart Mode that turns spoken ideas into concise bullet points. Renamed from Notes on 2026-08-27.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liste"
+          }
+        }
+      }
+    },
     "Listening..." : {
       "localizations" : {
         "fr" : {
@@ -174,6 +251,17 @@
         }
       }
     },
+    "Off" : {
+      "comment" : "Marker on the Smart Mode fan row the user armed, when that mode will not run and the dictation goes in as Normal.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inactif"
+          }
+        }
+      }
+    },
     "Open Dictus" : {
       "localizations" : {
         "fr" : {
@@ -190,6 +278,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir Réglages"
+          }
+        }
+      }
+    },
+    "PRO" : {
+      "comment" : "Tag on a Smart Mode fan row that is behind the Dictus Pro subscription. Identical in French today, and in the catalog so a future locale can change it.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PRO"
           }
         }
       }
@@ -255,6 +354,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les modes ne sont pas disponibles dans cette version."
+          }
+        }
+      }
+    },
+    "Smart Modes are off. %@ was dictated as Normal." : {
+      "comment" : "Shown after a dictation whose armed Smart Mode did not run because the user switched Smart Modes off. The placeholder is the mode's name.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes sont désactivés. %@ a été dicté en Normal."
+          }
+        }
+      }
+    },
+    "Smart Modes are off. Turn them back on in Dictus." : {
+      "comment" : "Shown in the Smart Mode fan when a subscriber has switched Smart Modes off in Settings.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modes sont désactivés. Réactive-les dans Dictus."
           }
         }
       }
@@ -364,9 +485,7 @@
       "comment" : "Accessibility label for a keyboard key that toggles between showing more letters and numbers on a numeric keypad.",
       "isCommentAutoGenerated" : true
     },
-    "accessibility.moreNumbers" : {
-
-    },
+    "accessibility.moreNumbers" : {},
     "accessibility.moreSymbols" : {
       "comment" : "Accessibility label for a keyboard key that switches to a numeric or symbol page.",
       "isCommentAutoGenerated" : true

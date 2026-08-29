@@ -1,0 +1,33 @@
+    /Users/pierreviviere/dev/dictus-wt/439/DictusCore/Sources/polish-harness/README.md
+Building for debugging...
+Build of product 'polish-harness' complete! (0.17s)
+
+━━ [P1-salle] lang=fr
+  raw: Sinon je me débrouillerai pour suivre une visio depuis la salle à tante mais ce sera moyen
+  A [polish] (2797ms): Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante, mais ce sera moyen.
+  B [polish] (653ms): Sinon je me débrouillerai pour suivre une visio depuis la salle à tante, mais ce sera moyen
+
+━━ [P2-morceaux] lang=fr
+  raw: Le système le découpe en petits morceaux. Le modèle prend ses morceaux et il essaye de deviner quels sons ont été prononcés
+  A [polish] (2443ms): Le système le découpe en petits morceaux. Le modèle prend ses morceaux et il essaie de deviner quels sons ont été prononcés.
+  B [polish] (1185ms): Le système le découpe en petits morceaux. Le modèle prend ses morceaux et il essaie de deviner quels sons ont été prononcés.
+
+━━ [P3-comptable] lang=fr
+  raw: Il faut que je répète le comptable, le comptable je l'ai eu vendredi, c'est l'assurance qu'il faut que je rappelle
+  A [polish] (2175ms): Il faut que je répète le comptable. Le comptable, je l'ai eu vendredi. C'est l'assurance qu'il faut que je rappelle.
+  B [polish] (802ms): Il faut que je répète le comptable, le comptable, je l'ai eu vendredi, c'est l'assurance qu'il faut que je rappelle.
+
+━━ [P4-appstore] lang=fr
+  raw: Thomas a fini l'intégration StoreKit et ça passe en sandbox, je vois Sarah jeudi pour caler la partie Apple Store et si tout se passe bien on soumet la semaine du 12
+  A [polish] (2249ms): Thomas a fini l'intégration StoreKit et ça passe en sandbox. Je vois Sarah jeudi pour caler la partie Apple Store et si tout se passe bien, on soumet la semaine du 12.
+  B [polish] (881ms): Thomas a terminé l'intégration StoreKit et ça passe en sandbox. Je vois Sarah jeudi pour caler la partie Apple Store et si tout se passe bien, on soumet la semaine du 12.
+
+━━ [P5-zappe] lang=fr
+  raw: Ça fait une semaine et demie qu'il attend, je crois qu'il commence à se demander si je les zappais
+  A [polish] (2026ms): Ça fait une semaine et demie qu'il attend, je crois qu'il commence à se demander si je les zappais
+  B [polish] (691ms): Ça fait une semaine et demie qu'il attend, je crois qu'il commence à se demander si je les zappais
+
+━━ [P6-calcul] lang=fr
+  raw: Le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul, la deuxième c'est 90% du temps
+  A [polish] (2198ms): Le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul, la deuxième c'est 90% du temps.
+  B [polish] (850ms): Le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul, la deuxième c'est 90 % du temps.
