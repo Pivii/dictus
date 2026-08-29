@@ -99,7 +99,7 @@ public enum PolishGrounding {
     public static func ungroundedAnchors(in output: String,
                                          input: String,
                                          languageCode: String? = nil) -> [PolishAnchor] {
-        let inputWords = normalisedWords(in: input)
+        let inputWords = normalisedWordList(in: input)
         guard !inputWords.isEmpty else { return [] }
         return anchors(in: output, languageCode: languageCode).filter { anchor in
             !isGrounded(anchor.text, in: inputWords)
@@ -152,31 +152,83 @@ public enum PolishGrounding {
 
     // MARK: - Matching
 
-    /// Whether every word of `anchor` is supported by some word of the input.
+    /// Whether the input contains this anchor as a **contiguous, ordered** run of
+    /// words.
     ///
-    /// Word-by-word rather than whole-anchor because `.joinNames` returns the
-    /// nominative form of a multi-word name — `Herr Müller` — which a declined
-    /// input (`Herrn Müller`) does not contain verbatim. Requiring every word to be
-    /// supported keeps the check meaningful while surviving inflection.
-    private static func isGrounded(_ anchor: String, in inputWords: Set<String>) -> Bool {
-        let words = normalisedWords(in: anchor)
-        guard !words.isEmpty else { return true }
-        return words.allSatisfy { word in
-            // Prefix in either direction, so `herr` is supported by `herrn` and
-            // `marion` by `marion`. NOT plain substring: `lea` is a substring of
-            // `release`, and accepting that would ground a fabricated `Léa` on any
-            // input mentioning a release.
-            inputWords.contains { $0.hasPrefix(word) || word.hasPrefix($0) }
-        }
+    /// ### Why a sequence and not a bag of words
+    ///
+    /// The first version asked only that every word of the anchor appear somewhere
+    /// in the input, which let two fabrications through and was caught in review:
+    ///
+    /// - `Alice Smith` was grounded by an input mentioning an unrelated `Alice` and
+    ///   an unrelated `Smith` in different sentences. The model can compose a person
+    ///   who was never named out of two who were.
+    /// - `Paul` was grounded by an input containing only `Pauline`, because the
+    ///   match allowed a prefix in either direction. A fabricated name that happens
+    ///   to be a prefix of a real one is exactly the shape this check exists to
+    ///   catch.
+    ///
+    /// Requiring the words in order and adjacent closes both: a name is grounded
+    /// only when the input actually names that person.
+    ///
+    /// ### The one inflection allowance, and its bounds
+    ///
+    /// A non-final anchor word may match an input word carrying **one** extra
+    /// trailing letter, and only in a multi-word anchor. That is there for German
+    /// declension — an output writing `Herr Müller` where the input said
+    /// `Herrn Müller` — and it is deliberately too narrow to reopen the hole above:
+    /// `Paul` is a single-word anchor, so it gets no allowance at all, and the
+    /// anchor's last word (the surname, the part that identifies) must always match
+    /// exactly.
+    ///
+    /// What it still admits: a two-word anchor whose *first* word is a one-letter
+    /// variant of the input's, e.g. `Martin Dupont` against `Martine Dupont`. That
+    /// is an alteration of a named person rather than an invention of one, it needs
+    /// the surname to match exactly and adjacently, and no German-free alternative
+    /// covers the declension case. Stated rather than hidden.
+    /// Testing seam for the matching rule alone.
+    ///
+    /// It exists because `NLTagger`'s recall is a *separate* limitation, documented
+    /// on this type and pinned by its own tests: the French tagger does not fire on
+    /// `Paul` or `Paul Durand` in an ordinary bullet, so a test of the matching that
+    /// went through extraction would pass while asserting nothing. This lets the
+    /// prefix and split-name rules be tested on their own terms.
+    static func isGrounded(_ anchor: String, in input: String) -> Bool {
+        isGrounded(anchor, in: normalisedWordList(in: input))
     }
 
-    /// Lowercased, diacritic-folded words. Both sides go through this, so `Müller`
-    /// in the output is supported by `muller` in the input and `Léa` by `lea`.
-    private static func normalisedWords(in text: String) -> Set<String> {
-        Set(normalise(text)
+    private static func isGrounded(_ anchor: String, in inputWords: [String]) -> Bool {
+        let words = normalisedWordList(in: anchor)
+        guard !words.isEmpty else { return true }
+        guard words.count <= inputWords.count else { return false }
+        for start in 0...(inputWords.count - words.count) {
+            let matches = words.indices.allSatisfy { offset in
+                token(words[offset],
+                      matches: inputWords[start + offset],
+                      allowInflection: words.count > 1 && offset < words.count - 1)
+            }
+            if matches { return true }
+        }
+        return false
+    }
+
+    /// One anchor word against one input word.
+    private static func token(_ anchorWord: String,
+                              matches inputWord: String,
+                              allowInflection: Bool) -> Bool {
+        if anchorWord == inputWord { return true }
+        guard allowInflection, inputWord.count == anchorWord.count + 1 else { return false }
+        return inputWord.hasPrefix(anchorWord)
+    }
+
+    /// Lowercased, diacritic-folded words, **in order**. Both sides go through this,
+    /// so `Müller` in the output is supported by `muller` in the input and `Léa` by
+    /// `lea`. Order is kept because the match is a sequence, not a set.
+    private static func normalisedWordList(in text: String) -> [String] {
+        normalise(text)
             .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
             .map(String.init)
-            .filter { !$0.isEmpty })
+            .filter { !$0.isEmpty }
     }
 
     private static func normalise(_ text: String) -> String {

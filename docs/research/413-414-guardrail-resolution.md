@@ -86,10 +86,18 @@ not relaxed.
 
 Every output committed by the #393 campaign, extracted from
 `docs/research/79-smart-modes/raw/` and committed here as `413-414-guardrail/corpus.json`:
-111 outputs — 28 Notes (round 1) + 25 Notes v2 (round 7) + 36 Translate → EN (round 2) + 12 free
-polish and 10 rejected engine outputs (rounds 3, 4 and the `engineOut` lines). Each is
-hand-labelled `sameLanguage` / `bilingual` / `wrongLanguage` and `grounded` / `fabricated`, by
-reading, with the label written into the committed file so anyone can disagree with it in the open.
+**110 outputs** — 30 from round 1 (Notes), 30 from round 2 (Translate → EN), 29 from round 7
+(Notes v2), 10 from round 3 and 11 from round 4 (the free-polish/mode A/B passes). Accepted and
+rejected engine outputs alike, since a check has to keep the rejections rejected.
+
+Round 4 contributes 11 of its 12 recoverable outputs: the free-polish side of `T3` is excluded
+because Italian on the French per-language path is skipped by the gibberish gate, so **the
+guardrail never ran on it** and scoring it would score a code path that does not exist.
+
+Each output is hand-labelled `sameLanguage` / `bilingual` / `wrongLanguage` and `grounded` /
+`fabricated`, by reading, with the label written into the committed file so anyone can disagree
+with it in the open. (The count in the first draft of this paragraph was 111 with a per-round
+breakdown that was written before the corpus existed and never corrected; found in review.)
 
 Plus an adversarial set written by hand for the cases the campaign does not contain — a French
 list quoting English product names, a German list (where every noun is capitalised), a one-bullet
@@ -171,7 +179,7 @@ Written before the measurement; §6 reports whether they held.
 
 ## 6. Results
 
-**160 Apple Foundation Models calls** on this Mac (macOS 26.5.1), plus **125 hand-labelled
+**160 Apple Foundation Models calls** on this Mac (macOS 26.5.1), plus **128 hand-labelled
 outputs replayed offline** through the two checks. Every raw output is committed under
 `413-414-guardrail/raw/`. The offline replay is the load-bearing measurement and it drives no
 model, so anyone can re-run it:
@@ -188,11 +196,11 @@ swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.jso
 |---|---|---|---|
 | **G1** the 5-English-plus-1-French output is rejected | absolute | rejected | ✓ |
 | **G2** outputs already rejected stay rejected | absolute | 10/10 | ✓ |
-| **G3** every `sameLanguage` output accepted | 0 false rejections | **0 / 114** | ✓ |
+| **G3** every `sameLanguage` output accepted | 0 false rejections | **0 / 117** | ✓ |
 | **G4** the French-list-quoting-English set accepted | 0 false rejections | **0 / 9** | ✓ |
 | **G5** free polish single passage unchanged | pinned by a test | pinned | ✓ |
 
-**The two thresholds sit in an empty band 0.42 wide.** Over 253 segments:
+**The two thresholds sit in an empty band 0.42 wide.** Over 273 segments:
 
 | | worst case |
 |---|---|
@@ -218,11 +226,12 @@ and spends the confidence floor on segments too short to read.
 | Bar | Threshold | Measured | |
 |---|---|---|---|
 | **F1** the `Sophie` / `décembre` output is rejected | absolute | rejected | ✓ |
-| **F2** every `grounded` output accepted | 0 false rejections | **0 / 82** | ✓ |
+| **F2** every `grounded` output accepted | 0 false rejections | **0 / 83** | ✓ |
 | **F3** the check is off where it is unsound, and the code says why | by reading | Translate and Repair, with the reason on each | ✓ |
-| **F4** recall, reported not gated | reported | **5 / 7** | — |
+| **F4** recall, reported not gated | reported | **7 / 9** | — |
 
-The two misses are the whole story of this issue, and one of them was not predicted.
+Two of the nine were added in review and are described in §6.5. The two **misses** are the whole
+story of this issue, and one of them was not predicted.
 
 **Miss 1, declared in advance.** #349's refusal — *"Je suis désolé, mais je ne peux pas fournir une
 sortie polie…"* — carries no person, place or organisation, so a check built on grounded anchors
@@ -259,7 +268,7 @@ rejects a correct transformation. Same for a translation: `alle undici` becomes 
 the half of the maintainer's hypothesis that does not survive contact with the corpus.
 
 **A capitalised-token rule WAS measured as an addition, and does not ship.** It closes the live
-miss — 6/7 instead of 5/7 — at the cost of **2 false rejections in 82**, both flagging
+miss — one more catch — at the cost of **2 false rejections in 82**, both flagging
 `February` / `March` on French dictations. Two things are true about them and neither rescues the
 rule: those two outputs are rejected by the language check anyway, so no user would see the
 refusal; and the same rule flagged `Finir` in a perfectly good French bullet under the other
@@ -267,6 +276,29 @@ colon-handling variant, which is a mechanism, not an accident. **F2 was pre-regi
 absolute, and §4 says a mechanism that cannot clear a bar is reported as failing rather than
 relaxed.** The numbers are here so the maintainer can overrule that, which is their call and not
 this PR's.
+
+### 6.5 Two holes in the matching, found in review
+
+CodeRabbit's review of PR #442 found the anchor matching too loose in two ways, and both were real:
+
+- **`Alice Smith` was grounded by an input naming an unrelated `Alice` and an unrelated `Smith`**
+  in different clauses. The first version asked only that every word of an anchor appear
+  *somewhere*, so the model could compose a person nobody named out of two who were.
+- **`Paul` was grounded by an input containing only `Pauline`**, because the match allowed a prefix
+  in either direction. A fabricated name that happens to be a prefix of a real one is precisely the
+  shape this check exists to catch.
+
+Matching is now an **ordered, contiguous** sequence over the input's words, with one bounded
+allowance: a non-final word of a multi-word anchor may carry one extra trailing letter, which is
+there for German declension (`Herr Müller` against `Herrn Müller`) and cannot reach a single-word
+anchor. Three cases were added to the corpus — the two failures and the counter-test that the same
+full name, adjacent and in order, is still accepted — so they are scored rather than argued.
+
+**`NLTagger`'s recall gap turned up again while writing those tests**, and is worth recording: the
+French tagger does not fire on `Paul`, `Paul Durand` or `Marion` in an ordinary bullet, while it
+fires on `Alice Smith`. A test of the matching routed through extraction would have passed while
+asserting nothing, so the matching rule is tested through an explicit seam and the extraction
+recall is pinned separately.
 
 ### 6.3 Both — the live suites
 
@@ -311,14 +343,14 @@ keyboard extension since #361, so the order of magnitude is what matters and it 
 sit in an empty band rather than on a boundary.
 
 **#414 ships a real improvement and does not close.** It rejects the fabrication that was measured
-and four of four hand-built ones, with zero false rejections in 82 outputs and 160 live calls. It
+and six of six hand-built ones, with zero false rejections in 83 outputs and 160 live calls. It
 misses the same fabrication when the model rewords one clause. That is `NLTagger`'s recall, not a
 tuning parameter, and no framing of the input recovers it.
 
 Two things follow, and both are the maintainer's to decide:
 
 1. **The capitalised-token rule is the cheapest next step** and its cost is measured above: 6/7
-   instead of 5/7, 2 false rejections in 82, both on outputs the language check already refuses.
+   one more catch, 2 false rejections in 82, both on outputs the language check already refuses.
 2. **#414's own second proposal — neutralising the prompt's worked examples — is deliberately not
    done here.** `SmartModeNotesPrompt` carries the example that was copied, and replacing its
    named person and concrete facts would attack the measured failure at its source. It is not done

@@ -84,9 +84,11 @@ final class PolishGroundingTests: XCTestCase {
         )
     }
 
-    /// `.joinNames` returns the nominative form of a multi-word name, which a
-    /// declined input does not contain verbatim. Every word being supported is what
-    /// keeps the check meaningful while surviving inflection.
+    /// The one inflection allowance: a NON-FINAL word of a MULTI-word anchor may
+    /// carry one extra trailing letter in the input. German declension is what it is
+    /// for — an output writing `Herr Müller` where the input said `Herrn Müller`.
+    /// Deliberately too narrow to reopen the prefix hole below: a single-word anchor
+    /// gets no allowance, and the surname must always match exactly.
     func testAnInflectedInputStillSupportsTheJoinedName() {
         XCTAssertEqual(
             PolishGrounding.ungroundedAnchors(
@@ -96,9 +98,65 @@ final class PolishGroundingTests: XCTestCase {
         )
     }
 
-    /// Prefix matching in either direction, NOT plain substring: `lea` is a
-    /// substring of `release`, and accepting that would ground a fabricated Léa on
-    /// any input mentioning a release.
+    /// Found in review. A fabricated name that happens to be a PREFIX of a real one
+    /// is exactly the shape this check exists to catch, and the first version of the
+    /// matching accepted it.
+    /// Tested on the matching seam rather than end to end, because `NLTagger` does
+    /// not fire on `Paul` in an ordinary French bullet — see `isGrounded(_:in:)`.
+    /// A test routed through extraction would pass while asserting nothing.
+    func testAPrefixOfARealNameIsNotGrounded() {
+        XCTAssertFalse(PolishGrounding.isGrounded("Paul", in: "il faut rappeler Pauline avant jeudi"))
+        XCTAssertTrue(PolishGrounding.isGrounded("Pauline", in: "il faut rappeler Pauline avant jeudi"))
+        // And the other direction: a longer fabrication over a shorter real name.
+        XCTAssertFalse(PolishGrounding.isGrounded("Pauline", in: "il faut rappeler Paul avant jeudi"))
+    }
+
+    /// The inflection allowance must not reach a single-word anchor, which is what
+    /// made `Paul` / `Pauline` pass before.
+    func testTheInflectionAllowanceDoesNotApplyToASingleWordName() {
+        XCTAssertFalse(PolishGrounding.isGrounded("Marc", in: "il faut appeler Marco demain"))
+        XCTAssertTrue(PolishGrounding.isGrounded("Herr Müller", in: "ich muss Herrn Müller anrufen"))
+        // The surname is the part that identifies, so it never gets the allowance.
+        XCTAssertFalse(PolishGrounding.isGrounded("Herr Mülle", in: "ich muss Herrn Müller anrufen"))
+    }
+
+    /// Found in review. The model can compose a person nobody named out of two who
+    /// were, and matching each word independently accepted that. The words have to
+    /// be contiguous and in order.
+    func testANameAssembledFromTwoUnrelatedInputWordsIsNotGrounded() {
+        let ungrounded = PolishGrounding.ungroundedAnchors(
+            in: "- Envoyer le dossier à Alice Smith",
+            input: "Alice s'occupe du dossier et le rapport de Smith arrive lundi",
+            languageCode: "fr"
+        )
+        XCTAssertEqual(ungrounded.map(\.text), ["Alice Smith"])
+    }
+
+    /// The counter-test: the same two words, adjacent and in order, ARE the person
+    /// the speaker named.
+    func testTheSameNameIsGroundedWhenTheInputActuallyNamesThatPerson() {
+        XCTAssertEqual(
+            PolishGrounding.ungroundedAnchors(
+                in: "- Envoyer le dossier à Alice Smith",
+                input: "il faut envoyer le dossier à Alice Smith avant lundi", languageCode: "fr"
+            ).map(\.text),
+            []
+        )
+    }
+
+    /// Order matters, not just adjacency.
+    func testTheWordsOfANameMustAppearInOrder() {
+        XCTAssertEqual(
+            PolishGrounding.ungroundedAnchors(
+                in: "- Appeler Alice Smith", input: "Smith Alice a rappelé hier", languageCode: "fr"
+            ).map(\.text),
+            ["Alice Smith"]
+        )
+    }
+
+    /// Exact match, NOT a substring: `lea` is a substring of `release`, and
+    /// accepting that would ground a fabricated Léa on any input mentioning a
+    /// release.
     func testASubstringCoincidenceDoesNotGroundAName() {
         let ungrounded = PolishGrounding.ungroundedAnchors(
             in: "- Demander à Léa de valider", input: "il faut valider la release avant jeudi", languageCode: "fr"

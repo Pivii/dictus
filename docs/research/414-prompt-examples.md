@@ -85,7 +85,7 @@ Reproduce the table with `python3 docs/research/414-prompt-examples/score.py --s
 | | N2 stress | 4/30 | 4 | 30/30 |
 | **C** worked examples deleted | six fixtures | 4/30 | 3 | 23/23 |
 | | N2 stress | **9/30** | **9** | 30/30 |
-| **D** worked example **and** counter-example neutralised | six fixtures | 5/30 | **0** | 18/18 |
+| **D** worked example **and** counter-example neutralised | six fixtures | 5/30 | **0** | 20/20 |
 | | N2 stress | **1/29** | **1** | 29/29 |
 
 Accepted copies over both sets: **A 2, B 4, C 12, D 1.**
@@ -142,10 +142,10 @@ It does not close the recall gap. The one that got through in PR #442's verifica
 |---|---|---|---|---|
 | **P1** person name copied | **1** | 0 | 0 | **0** |
 | **P2** other example content copied, accepted | 2 | 4 | 12 | **1** ✓ ≤ A |
-| **P3** shape: accepted outputs entirely bullets | 51/51 | 54/54 | 53/53 | **47/47** ✓ |
+| **P3** shape: accepted outputs entirely bullets | 51/51 | 54/54 | 53/53 | **49/49** ✓ |
 | **P4** N4 answered with exactly one bullet | 5/5 | 5/5 | 5/5 | **5/5** ✓ |
 | **P5** title line / bracketed placeholder | 0 / 0 | 0 / 0 | 0 / 0 | **0 / 0** ✓ |
-| guardrail success *(reported, not gated)* | 51/60 | 54/60 | 53/60 | 47/59 |
+| guardrail success *(reported, not gated)* | 51/60 | 54/60 | 53/60 | 49/60 |
 
 **D is the only candidate that clears every pre-registered bar.** B and C both fail P2 — they are
 copied from more often than the prompt they replace.
@@ -166,11 +166,15 @@ diff /tmp/verify/N4-une-idee/system.txt docs/research/414-prompt-examples/prompt
 
 ### What I am not comfortable with
 
-- **D's guardrail success rate is 18/30 on the six-fixture set against A's 22/30.** It is the one
-  number that moved against D. It measures the language drift #393 put at 7/30, which is a
-  different defect with its own home (#437), and success was pre-registered as reported rather
-  than gated — but 18 against 22 at n=30 is about 1.6σ and **it is not established as noise, only
-  consistent with it.** If a future run reproduces it, D is the first thing to re-examine.
+- **The `18/30` this document first reported for D was wrong, and the concern built on it does not
+  survive.** `score.py` treated a blank line as an entry terminator, and the model sometimes emits
+  a trailing empty line — which dropped the route line carrying the outcome, and with it two
+  successes. Caught in CodeRabbit's review of PR #442. The parser is fixed, and every capture is
+  now cross-checked against the tally the harness prints for itself: **all eight agree**. The
+  corrected figure is **D 20/30 against A 22/30** on the six-fixture set, and **49/60 against
+  51/60** over both sets — about 0.5σ, which is noise. **D is not worse than the shipping prompt on
+  its guardrail rate.** Only D's six-fixture row was affected; every other candidate's numbers were
+  already right.
 - **The events are rare and the samples are small.** 1 against 2 accepted copies is not a
   significant difference. What the run establishes solidly is the *ordering* of C against
   everything else (9 against 1, on the same fixture and n), and that neutralisation moves severity

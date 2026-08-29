@@ -9,7 +9,9 @@ example and in an output for no reason other than that both are French.
     python3 docs/research/414-prompt-examples/score.py raw/A-shipping-5runs.txt \
                                                        prompts/A-shipping.txt
 """
-import json, re, sys, unicodedata
+import re
+import sys
+import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -17,12 +19,13 @@ REPO = HERE.parents[2]
 MARKERS = "-–—*•·"
 # Person names appearing in any candidate prompt's examples. P1 counts only these.
 PERSON_NAMES = {"sophie"}
-STOP = set("""le la les un une des de du au aux et ou a à il elle je tu on nous vous ils elles
+STOP_WORDS = """le la les un une des de du au aux et ou a à il elle je tu on nous vous ils elles
 ce cet cette ces qui que quoi dont où pas ne plus moins pour par sur dans avec sans sous entre
 est sont être avoir faire fait suis es sommes êtes ai as avons avez ont mon ma mes ton ta tes son
 sa ses notre nos votre vos leur leurs y en si comme mais donc or ni car quand alors puis très
 the a an of to in on for and or is are be it this that with from at as i we you they will
-""".split())
+"""
+STOP = set(STOP_WORDS.split())
 
 
 def fold(s):
@@ -31,7 +34,7 @@ def fold(s):
 
 
 def words(s):
-    return set(w for w in re.split(r"[^0-9a-zà-öø-ÿ]+", fold(s)) if len(w) > 2 and w not in STOP)
+    return {w for w in re.split(r"[^0-9a-zà-öø-ÿ]+", fold(s)) if len(w) > 2 and w not in STOP}
 
 
 def grounded(word, inputs):
@@ -56,21 +59,41 @@ def parse(path):
     def flush():
         nonlocal cur
         if cur:
-            out.append(dict(fixture=fx, run=cur[0], output="\n".join(cur[1]).strip(),
-                            outcome=cur[2], raw=raw))
+            out.append({"fixture": fx, "run": cur[0],
+                        "output": "\n".join(cur[1]).strip(),
+                        "outcome": cur[2], "raw": raw})
             cur = None
     for line in Path(path).read_text(encoding="utf-8").split("\n"):
         m = re.match(r"^━━ \[(.+?)\]", line)
-        if m: flush(); fx = m.group(1); continue
+        if m:
+            flush()
+            fx = m.group(1)
+            continue
         m = re.match(r"^  raw:\s+(.*)$", line)
-        if m: flush(); raw = m.group(1); continue
+        if m:
+            flush()
+            raw = m.group(1)
+            continue
         m = re.match(r"^  (polished|engineOut) ?#?(\d*): (.*)$", line)
-        if m: flush(); cur = (int(m.group(2) or 1), [m.group(3)], None); continue
+        if m:
+            flush()
+            cur = (int(m.group(2) or 1), [m.group(3)], None)
+            continue
         m = re.match(r"^ {12}\((\w+),", line)
-        if m and cur: cur = (cur[0], cur[1], m.group(1)); flush(); continue
-        if line.startswith(("── outcomes", "Building", "Build of", "[")): flush(); continue
-        if cur and line.strip(): cur[1].append(line)
-        elif cur: flush()
+        if m and cur:
+            cur = (cur[0], cur[1], m.group(1))
+            flush()
+            continue
+        if line.startswith(("── outcomes", "Building", "Build of", "[")):
+            flush()
+            continue
+        # A blank line does NOT close an entry. The model sometimes emits a
+        # trailing empty line, and treating that as a terminator dropped the
+        # route line that follows — which is where the outcome is. It cost two
+        # successes on the D six-fixture capture and was caught in review.
+        # An entry closes on its route line, or on the next header.
+        if cur and line.strip():
+            cur[1].append(line)
     flush()
     return [c for c in out if c["output"] and not c["output"].startswith("<refused")]
 
@@ -104,7 +127,9 @@ def main(capture, prompt):
     p1_hits, p2_hits = [], []
     for c in calls:
         inp = words(c["raw"])
-        for w in words(c["output"]) & ex:
+        # Sorted so a committed capture of this report is stable across runs:
+        # set iteration order is not a property anyone should have to diff around.
+        for w in sorted(words(c["output"]) & ex):
             if grounded(w, inp):
                 continue
             tag = f"{c['fixture']}#{c['run']} [{c['outcome']}] {w!r}"
@@ -155,7 +180,7 @@ def summary(pairs):
                      if c["output"].splitlines()
                      and all(is_bullet(l) for l in c["output"].splitlines() if l.strip()))
         name = Path(capture).stem
-        cand, _, which = name.partition("-5runs") if "-5runs" in name else name.partition("-n2stress")
+        cand = name.partition("-5runs" if "-5runs" in name else "-n2stress")[0]
         print(f"{cand:26s} {('n2 stress' if 'n2stress' in name else 'six fixtures'):17s} "
               f"{len(affected):4d}/{len(calls):<4d} {len(affected_ok):4d}/{len(accepted):<4d}  "
               f"{shaped:3d}/{len(accepted):<3d}")

@@ -9,7 +9,7 @@ import NaturalLanguage
 /// long enough for a confidence to be worth reading at all. Raising one without the
 /// other either fires on noise or stops firing entirely.
 ///
-/// Both were measured, not chosen. Scored over 253 segments of 124 hand-labelled
+/// Both were measured, not chosen. Scored over 273 segments of 128 hand-labelled
 /// outputs — every output the #393 campaign committed, plus an adversarial set for
 /// the cases it does not contain. Reproduce with
 /// `swift run polish-harness guardrail docs/research/413-414-guardrail/*.json --sweep`,

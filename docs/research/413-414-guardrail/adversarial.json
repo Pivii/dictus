@@ -223,5 +223,50 @@
   "note": "MEASURED LIVE on 2026-08-27, in the 30-call Notes run made to verify this very change (raw/r1-notes-5runs-after.txt, N2 run 5). The Sophie fabrication reproduced, with one clause reworded, and the shipped grounding check ACCEPTED it: NLTagger tags Sophie in 'Appeler Sophie avant : elle a…' and does not tag it in 'Appeler Sophie avant parce qu'elle a…'. Same name, same position, same language — a different continuation. This is the case that keeps #414's first acceptance criterion open, and it is in the corpus so the next attempt is scored against it from the start.",
   "raw": "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine",
   "output": "- Récupérer les chiffres de janvier auprès de Marion\n- Faire le tableau comparatif avec ceux de l'année dernière\n- Appeler le prestataire pour validé le devis\n- Réserver la salle du deuxième étage\n- Appeler Sophie avant parce qu'elle a les données de décembre"
+ },
+ {
+  "source": "review-2026-08-29",
+  "fixture": "W1-nom-assemble",
+  "run": 1,
+  "kind": "polished",
+  "task": "smart.notes",
+  "inputLang": "fr",
+  "expectedLang": "fr",
+  "language": "sameLanguage",
+  "grounding": "fabricated",
+  "wasAccepted": true,
+  "note": "Found in CodeRabbit's review of PR #442. The model can compose a person nobody named out of two who were: the input mentions an unrelated Alice and an unrelated Smith, in different clauses, and the output names 'Alice Smith'. The first version of the matching asked only that every word of an anchor appear SOMEWHERE in the input, so it accepted this. Ordered, adjacent matching rejects it.",
+  "raw": "alors Alice s'occupe du dossier client cette semaine et le rapport de Smith arrive lundi il faut aussi que je réserve la salle",
+  "output": "- Récupérer les chiffres auprès de Marion\n- Envoyer le dossier à Alice Smith\n- Réserver la salle"
+ },
+ {
+  "source": "review-2026-08-29",
+  "fixture": "W2-nom-prefixe",
+  "run": 1,
+  "kind": "polished",
+  "task": "smart.notes",
+  "inputLang": "fr",
+  "expectedLang": "fr",
+  "language": "sameLanguage",
+  "grounding": "fabricated",
+  "wasAccepted": true,
+  "note": "Found in CodeRabbit's review of PR #442. A fabricated name that is a PREFIX of a real one — the input names Sophia, the output names Sophie — which is exactly the shape this check exists to catch. The first version matched a prefix in either direction and accepted it. Exact per-token matching rejects it.",
+  "raw": "il faut que je récupère les chiffres auprès de Sophia avant la réunion et que je réserve la salle du deuxième étage",
+  "output": "- Récupérer les chiffres auprès de Marion\n- Appeler Sophie avant : elle a les données\n- Réserver la salle"
+ },
+ {
+  "source": "review-2026-08-29",
+  "fixture": "W3-nom-complet-reel",
+  "run": 1,
+  "kind": "polished",
+  "task": "smart.notes",
+  "inputLang": "fr",
+  "expectedLang": "fr",
+  "language": "sameLanguage",
+  "grounding": "grounded",
+  "wasAccepted": true,
+  "note": "The counter-test for W1, and the one that matters: the same two-word name, adjacent and in order in the input, IS the person the speaker named and must still be accepted. Without this, ordered matching could be tightened until it refuses every real full name.",
+  "raw": "il faut envoyer le dossier à Alice Smith avant lundi et réserver la salle",
+  "output": "- Envoyer le dossier à Alice Smith avant lundi\n- Réserver la salle"
  }
 ]

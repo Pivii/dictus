@@ -462,7 +462,17 @@ func promptResolution(_ fx: Fixture, mode: SmartMode?) -> PromptResolution {
 /// behind two shipped thresholds, and because folding it into `runHarness` pushed
 /// that function past the cyclomatic-complexity limit.
 func runGuardrail() {
-    let cases = GuardrailCorpus.load(args.dropFirst().filter { !$0.hasPrefix("--") })
+    // A flag-only invocation — `guardrail --segments` — used to pass the top-level
+    // argument check, load nothing, and report a clean `0/0`. A measurement tool
+    // that answers "no failures" to a malformed question is worse than one that
+    // errors, because the zero reads like a result.
+    let corpusPaths = args.dropFirst().filter { !$0.hasPrefix("--") }
+    guard !corpusPaths.isEmpty else {
+        print("error: guardrail needs at least one corpus file, e.g.\n"
+              + "  swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json")
+        exit(2)
+    }
+    let cases = GuardrailCorpus.load(corpusPaths)
     print("corpus: \(cases.count) outputs from \(Set(cases.map(\.source)).count) sources")
     if args.contains("--segments") { GuardrailCorpus.segmentTable(cases) }
     if args.contains("--sweep") { GuardrailCorpus.sweep(cases) }
