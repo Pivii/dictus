@@ -1,0 +1,103 @@
+───── seed pass 1
+    /Users/pierreviviere/dev/dictus-wt/439/DictusCore/Sources/polish-harness/README.md
+Build of product 'polish-harness' complete! (0.18s)
+✓ [1-normal]  (success, 3241ms)
+✓ [2-bilingue]  (success, 2018ms)
+✓ [3-long]  (success, 3662ms)
+✓ [4-tricky-ponctuation]  (success, 2149ms)
+✓ [5-erreur-parakeet]  (success, 2457ms)
+✓ [6-repair-es]  (success, 1657ms)
+✓ [7-repair-de]  (rejectedGuardrail, 2295ms)
+✓ [8-verbal-clean]  (success, 1524ms)
+✓ [9-verbal-questions]  (success, 1516ms)
+✓ [10-verbal-list-parakeet-error]  (success, 1531ms)
+✓ [11-verbal-newlines]  (success, 1647ms)
+✓ [12-point-noun-preserved]  (success, 1472ms)
+✓ [13-verbal-mixed]  (success, 1561ms)
+✓ [14-verbal-long-mixed]  (success, 1964ms)
+
+Summary: 14/14 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── auto pass 1
+Build of product 'polish-harness' complete! (0.17s)
+✓ [auto-fr]  (success, 1551ms)
+✓ [auto-en]  (success, 1471ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1510ms)
+✓ [auto-zh]  (success, 1594ms)
+✓ [auto-it]  (success, 1697ms)
+✓ [auto-newline-marker]  (success, 1625ms)
+✓ [auto-verbal-fr]  (success, 1679ms)
+✓ [auto-verbal-en]  (success, 1522ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1498ms)
+✓ [auto-verbal-es-prompt-layer]  (success, 1408ms)
+
+Summary: 10/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── seed pass 2
+Build of product 'polish-harness' complete! (0.15s)
+✓ [1-normal]  (success, 2141ms)
+✓ [2-bilingue]  (success, 2017ms)
+✓ [3-long]  (success, 3714ms)
+✓ [4-tricky-ponctuation]  (success, 2155ms)
+✓ [5-erreur-parakeet]  (success, 2464ms)
+✓ [6-repair-es]  (rejectedGuardrail, 1537ms)
+✓ [7-repair-de]  (rejectedGuardrail, 2364ms)
+✓ [8-verbal-clean]  (success, 1491ms)
+✓ [9-verbal-questions]  (success, 1480ms)
+✓ [10-verbal-list-parakeet-error]  (success, 1538ms)
+✓ [11-verbal-newlines]  (success, 1609ms)
+✓ [12-point-noun-preserved]  (success, 1449ms)
+✓ [13-verbal-mixed]  (success, 1532ms)
+✓ [14-verbal-long-mixed]  (success, 1848ms)
+
+Summary: 14/14 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── auto pass 2
+Build of product 'polish-harness' complete! (0.13s)
+✓ [auto-fr]  (success, 1485ms)
+✓ [auto-en]  (success, 1473ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1502ms)
+✓ [auto-zh]  (success, 1536ms)
+✓ [auto-it]  (success, 1582ms)
+✓ [auto-newline-marker]  (success, 1636ms)
+✗ [auto-verbal-fr]  (success, 1482ms)
+    – missing "!"
+    – missing "
+"
+    → Je suis désolé, mais je ne peux pas polir ce texte.
+✓ [auto-verbal-en]  (success, 1498ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1509ms)
+✓ [auto-verbal-es-prompt-layer]  (success, 1744ms)
+
+Summary: 9/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── seed pass 3
+Build of product 'polish-harness' complete! (0.24s)
+✓ [1-normal]  (success, 2245ms)
+✓ [2-bilingue]  (success, 2609ms)
+✓ [3-long]  (success, 3650ms)
+✓ [4-tricky-ponctuation]  (success, 2352ms)
+✓ [5-erreur-parakeet]  (success, 2476ms)
+✓ [6-repair-es]  (rejectedGuardrail, 1230ms)
+✓ [7-repair-de]  (rejectedGuardrail, 2391ms)
+✓ [8-verbal-clean]  (success, 1515ms)
+✓ [9-verbal-questions]  (success, 1544ms)
+✓ [10-verbal-list-parakeet-error]  (success, 1555ms)
+✓ [11-verbal-newlines]  (success, 1634ms)
+✓ [12-point-noun-preserved]  (success, 1465ms)
+✓ [13-verbal-mixed]  (success, 1566ms)
+✓ [14-verbal-long-mixed]  (success, 2049ms)
+
+Summary: 14/14 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── auto pass 3
+Build of product 'polish-harness' complete! (0.13s)
+✓ [auto-fr]  (success, 1549ms)
+✓ [auto-en]  (success, 1453ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1466ms)
+✓ [auto-zh]  (success, 1518ms)
+✓ [auto-it]  (success, 1628ms)
+✓ [auto-newline-marker]  (success, 1614ms)
+✓ [auto-verbal-fr]  (success, 1605ms)
+✓ [auto-verbal-en]  (success, 1496ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1504ms)
+✗ [auto-verbal-es-prompt-layer]  (success, 1390ms)
+    – missing "!"
+    → Perfecto, nos vemos mañana a las nueve.
+
+Summary: 9/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)

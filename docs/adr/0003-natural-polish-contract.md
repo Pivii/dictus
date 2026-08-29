@@ -75,3 +75,46 @@ The length-ratio guardrail from ADR 0002 is unchanged at `[0.5, 2.0]` for Natura
 - ES + DE prompts are unvalidated. Track in `docs/agents/language-onboarding.md` checklist. Re-author after a native speaker can sit a test session per language.
 - The "preserve tech anglicisms" list is curated and could miss terms used in production. Logs surface this — terms found unexpectedly translated can be added in PR.
 - The "ASR repair" capability is implicit in Apple FM's behaviour but the prompt rule now codifies it. A future Apple FM update could stop honouring rule 8 even with an explicit instruction; round 5 testing should re-verify rule 8 holds. If it stops working we have no code-level fallback for ASR repair — it's a polish-layer-only capability for now.
+
+---
+
+## Amendment — 2026-08-27 (#439)
+
+Six French dictations measured end to end on device broke this contract in three
+directions at once (#439, raw pairs in #437). Measuring the fix against those six
+fixtures changed what the amendment is: **one clarification lands, and one proposed
+change is measured and rejected.**
+
+**What lands: the Forbidden list bans deletion explicitly.** It banned adding, reordering
+and translating; *removing dictated content* was only implied by the Preserve list, and
+the measured run deleted `en calcul` from `le même prix en calcul` and still passed every
+gate. It is now stated: rules 6 and 7 (stutters, fillers) are the only licence to remove
+a word, rule 8 the only licence to change one. The Preserve list gains the two shapes the
+run lost by name — placeholder words (`machin`, `truc`, `bidule`, which came back as
+`machine`) and the spoken forms `ça` and `ça va` + infinitive.
+
+Applied to `(.natural, .french)` and to `.auto`. EN/ES/DE follow once FR is confirmed on
+device, per #439's Scope.
+
+**What is measured and rejected: widening rule 8.** #439 proposed extending it from
+pseudo-words and off-language fragments to the shape that actually occurs — a homophone
+the STT split or joined wrongly. Written, shipped to the harness and scored over 60
+outputs, it repaired **none** of the six segments the issue lists. Handed each segment
+**alone, in one sentence, with the context that makes the intended word obvious**: 0 out
+of 5, five times over. Under a 1.5 KB prompt whose stated primary job was finding
+misheard words: still 0 out of 5. See `docs/research/439-natural-contract/findings.md`.
+
+Rule 8 therefore stands exactly as written above. It works on the shape it was authored
+from — a whole-clause language switch, which fires 5/5 — and Apple FM does not generalise
+it to a homophone that reads as fluent French. That is an engine limit, not a contract
+one, and the words would have been paid for in input headroom: instructions and input
+share one 4096-token window (#270). The risk this ADR already recorded — *"a future Apple
+FM update could stop honouring rule 8"* — now has a companion: **rule 8's reach is
+narrower than the contract's wording suggests**, and the six probes in
+`harness/probe-isolated.json` are the standing test for any future engine.
+
+**One gap that was in the dispatch rather than in the contract**, recorded because it
+explains the measurement: all six device runs went through `PolishAutoPrompt` (#239),
+because the device was in Auto-detect — and that prompt carries no rule 8 at all. "Rule 8
+is never applied" was, for those six, a prompt that never carried it. It still does not,
+now as a measured decision rather than an oversight.

@@ -45,11 +45,13 @@ enum PolishNaturalPromptFR {
         - Familiar register: contractions like `t'es`, `j'sais`, `c't'idée` stay. Abbreviations like `dispo`, `appart`, `resto`, `ordi`, `assoc`, `apéro`, `frigo` stay. Number formats like `19h`, `25€`, `2k` stay. Do NOT expand to formal forms.
         - Oral negation: `je sais pas`, `je respecte pas`, `j'ai pas`, `c'est pas` stay. Do NOT add `ne`.
         - Code-switching / tech anglicisms: `today`, `ship`, `commit`, `push`, `pull`, `merge`, `PR`, `deploy`, `feature`, `bug`, `release`, `build`, `debug`, `fix`, `refactor`, `lint`, `sync`, `sprint`, `demo`, `review`, `daily`, `weekly`, `weekend`, `meeting`, `mail`, `slack`, `meet` stay in English. Do NOT translate them.
-        - Word choice: do NOT substitute synonyms. `bosser` stays `bosser` (NOT `travailler`), `bouquin` stays `bouquin` (NOT `livre`), `gosse` stays `gosse` (NOT `enfant`), `check` stays `check` (NOT `vérifier`).
+        - Word choice: do NOT substitute synonyms. `bosser` stays `bosser` (NOT `travailler`), `bouquin` stays `bouquin` (NOT `livre`), `gosse` stays `gosse` (NOT `enfant`), `check` stays `check` (NOT `vérifier`). Placeholder words are word choice too: `machin`, `truc`, `bidule` are NOT typos for `machine`.
+        - Spoken forms: `ça` stays `ça` (NEVER `cela`), `ça va` + infinitive stays (NEVER the simple future). Register, not errors.
         - Tone and register: familiar stays familiar, formal stays formal. Do NOT shift up or down.
 
         FORBIDDEN:
         - Do NOT add words or content that weren't in the input. No inventing endings like "Merci.", no inserting context, no completing cut-off sentences with imagined words.
+        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement in the input appears in the output. Rules 6 and 7 (stutters, fillers) are the only licence to remove a word, rule 8 the only licence to change one. A phrase that sounds clumsy is still what the speaker said.
         - Do NOT reorder words.
         - Do NOT translate.
         - Do NOT add `<<NL>>` markers where none existed. Do NOT split or alter existing markers.

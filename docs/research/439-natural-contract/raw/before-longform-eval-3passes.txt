@@ -1,0 +1,159 @@
+───── eval longform-fr.json (natural/fr) pass 1
+Build of product 'polish-harness' complete! (0.14s)
+✓ [1-free-form]  (success, 3211ms)
+✗ [2-project-update]  (success, 3720ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors, point rapide sur le projet: on a basculé la partie abonnement lundi dernier. Thomas a fini l'intégration StoreKit, et ça passe en sandbox. Il reste deux trucs: le premier, c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième, c'est le vocabulaire personnalisé. Et là-dessus, on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2757ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    – contains forbidden "cela"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h et je pense que cela débordera. Du coup, si tu peux décaler le point d'équipe à l'après-midi, cela me ferait plaisir. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais cela sera moyen. Dis-moi ce qui t'arrange.
+✗ [4-explanation]  (success, 4105ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    – contains forbidden "cela"
+    → Alors, je vais t'expliquer comment fonctionne la reconnaissance vocale sur le téléphone. En gros, il y a trois étapes. La première est la capture. Le micro enregistre le son, et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape est le modèle. Il prend ses morceaux et essaie de deviner quels sons ont été prononcés et quels mots ces sons forment. Pour cela, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape est la mise en forme. Là, on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, et on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième, c'est 90 % du temps.
+✗ [5-rambling]  (success, 7106ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon alors, je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable, le comptable, je l'ai eu vendredi. C'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon, ensuite, ça est important. Il faut absolument que je réponde à Julien parce que ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changerais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc, changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça, c'est vraiment le sujet en fait. Enfin, bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis, la dernière chose, et là, je note vraiment parce que sinon, je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voilà, je crois que c'est tout. Ah, non, il y avait un dernier truc, ça m'échappe, mais ça me reviendra.
+✓ [6-unscripted]  (success, 5102ms)
+
+Summary: 2/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval longform-fr.json (auto) pass 1
+Build of product 'polish-harness' complete! (0.13s)
+✓ [1-free-form]  (success, 2587ms)
+✗ [2-project-update]  (success, 3595ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors, point rapide sur le projet. On a basculé la partie abonnement lundi dernier. Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là-dessus, on a une spec, mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2603ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    – contains forbidden "cela"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h et je pense que cela déborderait. Du coup, si tu peux décaler le point d'équipe à l'après-midi, ça me ferait plaisir. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera difficile. Dis-moi ce qui te convient.
+✗ [4-explanation]  (success, 4528ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    → Alors, je t'explique comment fonctionne la reconnaissance vocale sur le téléphone. En gros, il y a trois étapes. La première est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape est le modèle. Il prend ses morceaux et essaie de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là, on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, et on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième est 90 % du temps.
+✗ [5-rambling]  (success, 6544ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon alors, je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable le comptable, je l'ai eu vendredi. C'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon, ensuite, ça est important. Il faut absolument que je réponde à Julien parce que ça fait, je ne sais pas, ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc, changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça, c'est vraiment le sujet en fait. Enfin, bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis la dernière chose, et là je note vraiment parce que sinon je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voilà, je crois que c'est tout. Ah, non, il y avait un dernier truc, ça m'échappe, mais ça me reviendra.
+✓ [6-unscripted]  (success, 5062ms)
+
+Summary: 2/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval longform-fr.json (natural/fr) pass 2
+Build of product 'polish-harness' complete! (0.13s)
+✓ [1-free-form]  (success, 2787ms)
+✗ [2-project-update]  (success, 3778ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors, point rapide sur le projet. On a basculé la partie abonnement lundi dernier, Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là dessus on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2754ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h et je pense que ça débordera. Du coup, si tu peux décaler le point d'équipe à l'après-midi, ça m'arrangerait. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera moyen. Dis-moi ce qui t'arrange.
+✗ [4-explanation]  (success, 4036ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    → Alors, je vais t'expliquer comment fonctionne la reconnaissance vocale sur ton téléphone. En gros, il y a trois étapes. La première est la capture. Le micro enregistre le son, et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape est le modèle. Il prend ses morceaux et essaie de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là, on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, et on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième, c'est 90% du temps.
+✗ [5-rambling]  (success, 6781ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon alors, je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable le comptable, je l'ai eu vendredi. C'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon, ensuite, ça c'est important, il faut absolument que je réponde à Julien parce que ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc, changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça c'est vraiment le sujet en fait. Enfin, bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis la dernière chose, et là je note vraiment parce que sinon je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voilà, je crois que c'est tout. Ah non, il y avait un dernier truc, ça me reviendra.
+✗ [6-unscripted]  (success, 5356ms)
+    – contains forbidden "ce n'est pas vraiment ma voix"
+    → Alors je vais quand même faire un sixième test parce que les autres ce n'est pas vraiment ma voix, c'est pas naturel. L'idée, c'est vraiment de voir encore une fois comment se comporte le moins vs mon application Dictus. L'idée, ça va être vraiment de repérer déjà la qualité de la transcription éventuellement et aussi de voir comment Type Laiss arrive à découper les différents paragraphes, les organiser, s'il met éventuellement des listes, s'il met des espaces entre les lignes. Et voilà, tout simplement, l'idée, ça va être de voir tout ça. Et ensuite, on va analyser tout ça. Comme ça, ça va nous permettre d'essayer de créer par la suite soit un mode différent, soit améliorer notre polish, et je pense que ça peut être vraiment très intéressant parce que ça va vraiment améliorer l'expérience des utilisateurs et même les utilisateurs qui sont gratuits, parce que c'est vrai que là, pour l'instant, quand tu lances un grand, un grand audio comme je peux le faire là tout de suite, ça fait un gros pavé sur Dictus. Alors, quand je fais du développement, c'est pas dérangeant, mais c'est vrai que si tu veux l'utiliser pour discuter avec quelqu'un, c'est un peu moyen.
+
+Summary: 1/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval longform-fr.json (auto) pass 2
+Build of product 'polish-harness' complete! (0.13s)
+✓ [1-free-form]  (success, 2646ms)
+✗ [2-project-update]  (success, 3472ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors point rapide sur le projet, on a basculé la partie abonnement lundi dernier, Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là dessus on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2496ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    – contains forbidden "cela"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h et je pense que cela débordera. Du coup, si tu peux décaler le point d'équipe à l'après-midi, ça me faciliterait. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera moyen. Dis-moi ce qui te convient.
+✗ [4-explanation]  (success, 3852ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    → Alors je t'explique comment fonctionne la reconnaissance vocale sur le téléphone. En gros, il y a trois étapes. La première est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape est le modèle. Il prend ses morceaux et essaie de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là, on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, et on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième est 90 % du temps.
+✗ [5-rambling]  (success, 6488ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon alors je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable le comptable, je l'ai eu vendredi, c'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon ensuite, ça c'est important, il faut absolument que je réponde à Julien parce que ça fait, je ne sais pas, ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre ? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça c'est vraiment le sujet en fait. Enfin bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis la dernière chose, et là je note vraiment parce que sinon je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voilà, je crois que c'est tout. Ah non, il y avait un dernier truc, ça me reviendra.
+✓ [6-unscripted]  (success, 4868ms)
+
+Summary: 2/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval longform-fr.json (natural/fr) pass 3
+Build of product 'polish-harness' complete! (0.13s)
+✓ [1-free-form]  (success, 2747ms)
+✗ [2-project-update]  (success, 3596ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors point rapide sur le projet. On a basculé la partie abonnement lundi dernier. Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là dessus on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2651ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    – missing "11h"
+    – contains forbidden "cela"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11 h, et je pense que cela déborderait. Du coup, si tu peux décaler le point d'équipe à l'après-midi, cela m'arrangerait. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera moyen. Dis-moi ce qui t'arrange.
+✗ [4-explanation]  (success, 3972ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    → Alors, je vais t'expliquer comment fonctionne la reconnaissance vocale sur le téléphone. En gros, il y a trois étapes. La première est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape est le modèle. Il prend ses morceaux et essaie de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là, on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, et on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième c'est 90 % du temps.
+✗ [5-rambling]  (success, 7210ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon, alors je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable. Je l'ai eu vendredi. C'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon, ensuite, ça c'est important. Il faut absolument que je réponde à Julien parce que ça fait je ne sais pas, ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre? Ah oui, le site. Le site, il faut le refaire. Enfin, pas le refaire. Je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça, c'est vraiment le sujet en fait. Enfin, bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super, quoi. Et puis la dernière chose, et là je note vraiment parce que sinon je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voilà, je crois que c'est tout. Ah, non, il y avait un dernier truc. Ça m'échappe, mais ça me reviendra.
+✓ [6-unscripted]  (success, 5370ms)
+
+Summary: 2/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval longform-fr.json (auto) pass 3
+Build of product 'polish-harness' complete! (0.19s)
+✓ [1-free-form]  (success, 2592ms)
+✗ [2-project-update]  (success, 3578ms)
+    – missing "App Store"
+    – contains forbidden "Apple Store"
+    → Alors, point rapide sur le projet. On a basculé la partie abonnement lundi dernier. Thomas a fini l'intégration StoreKit et ça passe en sandbox. Il reste deux trucs. Le premier c'est l'historique des transcriptions qui n'est pas commencé du tout. Et le deuxième c'est le vocabulaire personnalisé. Et là-dessus, on a une spec mais pas de code. Côté chiffres, on est à 412 téléchargements depuis le lancement, avec un taux de rétention à 7 jours de 19%, ce qui est faible, mais pas catastrophique pour une première version. L'objectif, c'est de passer la barre des 1000 avant fin octobre. Je vois Sarah jeudi à 14h pour caler la partie Apple Store. Et si tout se passe bien, on soumet la semaine du 12.
+✗ [3-message-draft]  (success, 2483ms)
+    – missing "salle d'attente"
+    – contains forbidden "salle à tante"
+    – contains forbidden "cela"
+    → Je voulais juste te dire pour demain que je ne pourrais pas venir au bureau. J'ai un rendez-vous chez le dentiste à 11h et je pense que cela débordera. Du coup, si tu peux décaler le point d'équipe à l'après-midi, ça m'arrangerait. Sinon, je me débrouillerai pour suivre une visio depuis la salle à tante. Mais ce sera moyen. Dis-moi ce qui t'arrange.
+✗ [4-explanation]  (success, 3848ms)
+    – missing "ces morceaux"
+    – contains forbidden "ses morceaux"
+    – missing "en calcul"
+    → Alors je t'explique comment fonctionne la reconnaissance vocale sur le téléphone. En gros, il y a trois étapes. La première c'est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape c'est le modèle. Il prend ses morceaux et il essaie de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules éventuellement, on découpe en paragraphes le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix. Le deuxième c'est 90% du temps.
+✗ [5-rambling]  (success, 6816ms)
+    – contains forbidden "répète le comptable"
+    – missing "zappé"
+    – contains forbidden "les zappais"
+    – contains forbidden "machine"
+    → Bon alors, je me lance. Je voulais faire le point sur plein de choses en fait. Déjà, il faut que je répète le comptable, le comptable, je l'ai eu vendredi, c'est l'assurance qu'il faut que je rappelle pour le truc de la voiture. Bon ensuite, alors ça, c'est important. Il faut absolument que je réponde à Julien parce que ça fait, je ne sais pas, ça fait peut-être une semaine et demie qu'il attend. Je crois qu'il commence un peu à se demander si je les zappais. Ce qui est un peu le cas, honnêtement. Quoi d'autre? Ah oui, le site, le site, il faut le refaire. Enfin, pas le refaire, je changeais la page d'accueil parce que là, elle ne dit pas du tout ce qu'on fait. Les gens arrivent, ils lisent trois lignes, ils partent. Donc changer la page d'accueil, mais avant ça, il faut que je sache ce qu'on fait, ce qui est bon. Ça, c'est vraiment le sujet en fait. Enfin, bref. Ah, j'ai aussi. Il faut que je pense à annuler l'abonnement machine. Celui à 19 euros par mois qu'on n'utilise plus depuis février. Ça fait donc 6 mois qu'on paye pour rien. Super quoi. Et puis, la dernière chose, et là, je note vraiment parce que sinon, je vais oublier, c'est de préparer les questions pour l'entretien de mardi. Voici, je crois que c'est tout. Ah, non, il y avait un dernier truc, ça m'échappe, mais ça me reviendra.
+✓ [6-unscripted]  (success, 4598ms)
+
+Summary: 2/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)

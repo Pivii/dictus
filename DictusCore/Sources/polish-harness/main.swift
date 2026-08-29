@@ -11,6 +11,11 @@
 //   swift run polish-harness eval  <fixtures.json> [--instructions <prompt.txt>]
 //   swift run polish-harness ab    <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>]
 //
+// `--lang <code>` (#439) reroutes every fixture in the file: "auto" sends a
+// per-language set through the Auto-detect path, "fr" pins an auto set to French.
+// Which path a dictation takes is a SETTING on the device, not a property of the
+// text, so a fixture set that measures a prompt has to be runnable through both.
+//
 // `--instructions <file>` overrides the system prompt (A/B a candidate without
 // recompiling). `ab` runs two sides side by side.
 //
@@ -58,6 +63,10 @@ guard let command = args.first, ["show", "eval", "ab", "prompt"].contains(comman
       ab     <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>] [--mode <id>] [--mode-a <id>] [--mode-b <id>]
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>] [--mode <id>]
 
+    --lang (#439) reroutes every fixture in the file — `--lang auto` runs a
+    per-language set through the Auto-detect prompt, `--lang fr` pins an auto set
+    to the French one. The path is a device SETTING, not a property of the text.
+
     --mode (#393) arms a Smart Mode by catalogue identifier, so its prompt, its
     user-turn framing and its OWN acceptance contract are what run. On `ab`,
     --mode-a / --mode-b arm one side each; a side with no mode is the free polish,
@@ -95,6 +104,8 @@ let framingFile = optionValue("--framing", in: args)
 // one per side and falls back to `--mode` for both, so a single flag A/Bs two prompt
 // candidates on one mode while `--mode-b` alone A/Bs a mode against the free polish.
 let modeIdentifier = optionValue("--mode", in: args)
+// #439. Overrides every fixture's `lang`. See `Fixture.routed(through:)`.
+let langOverride = optionValue("--lang", in: args)
 let modeAIdentifier = optionValue("--mode-a", in: args) ?? modeIdentifier
 let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 
@@ -102,7 +113,8 @@ let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 
 let fixtures: [Fixture]
 do {
-    fixtures = try FixtureLoader.load(fixturesPath)
+    let loaded = try FixtureLoader.load(fixturesPath)
+    fixtures = langOverride.map { lang in loaded.map { $0.routed(through: lang) } } ?? loaded
 } catch {
     print("error: cannot load fixtures at \(fixturesPath): \(error)")
     exit(1)
