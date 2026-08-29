@@ -73,7 +73,10 @@ extension DictationCoordinator {
             guard mayReport(session, "smart mode failure") else { return }
             let name = outcome.smartModeFailure.map {
                 SmartMode.localizedDisplayName(identifier: $0.modeIdentifier, fallback: $0.modeDisplayName)
-            } ?? "Smart Mode"
+            } ?? String(
+                localized: "Smart Mode",
+                comment: "Fallback name in a Smart Mode failure message, for the unreachable case where the outcome carries no mode record."
+            )
             // Localised, which was NOT what the neighbours did when this was written:
             // of the twelve other `handleError` call sites, one localised, two
             // forwarded `error.localizedDescription`, and the rest were hardcoded

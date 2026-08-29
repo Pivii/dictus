@@ -149,7 +149,10 @@ struct SmartModeFanView: View {
                 comment: "Marker on the Smart Mode fan row the user armed, when that mode will not run and the dictation goes in as Normal."
             ))
         case .pro:
-            tagCapsule(Text(verbatim: "PRO"))
+            tagCapsule(Text(
+                "PRO",
+                comment: "Tag on a Smart Mode fan row that is behind the Dictus Pro subscription. Identical in French today, and in the catalog so a future locale can change it."
+            ))
         case nil:
             EmptyView()
         }
@@ -221,9 +224,12 @@ struct SmartModeFanView: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 17, weight: .medium))
 
-            Text(verbatim: "Dictus Pro")
-                .font(.system(size: 17, weight: isHighlighted ? .bold : .semibold))
-                .lineLimit(1)
+            Text(
+                "Dictus Pro",
+                comment: "The Smart Mode fan row that leaves the keyboard for the paywall. A product name, so identical in French today, and in the catalog so a future locale can change it."
+            )
+            .font(.system(size: 17, weight: isHighlighted ? .bold : .semibold))
+            .lineLimit(1)
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))

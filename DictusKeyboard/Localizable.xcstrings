@@ -136,6 +136,17 @@
         }
       }
     },
+    "Dictus Pro" : {
+      "comment" : "The Smart Mode fan row that leaves the keyboard for the paywall. A product name, so identical in French today, and in the catalog so a future locale can change it.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictus Pro"
+          }
+        }
+      }
+    },
     "Enable Full Access in Settings > Keyboards > Dictus to use dictation." : {
       "localizations" : {
         "fr" : {
@@ -267,6 +278,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvrir Réglages"
+          }
+        }
+      }
+    },
+    "PRO" : {
+      "comment" : "Tag on a Smart Mode fan row that is behind the Dictus Pro subscription. Identical in French today, and in the catalog so a future locale can change it.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PRO"
           }
         }
       }
