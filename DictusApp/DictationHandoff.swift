@@ -71,7 +71,12 @@ extension DictationCoordinator {
         // block C), not with the keyboard block that created the state.
         guard let text = outcome.text else {
             guard mayReport(session, "smart mode failure") else { return }
-            let name = outcome.smartModeFailure?.modeDisplayName ?? "Smart Mode"
+            let name = outcome.smartModeFailure.map {
+                SmartMode.localizedDisplayName(identifier: $0.modeIdentifier, fallback: $0.modeDisplayName)
+            } ?? String(
+                localized: "Smart Mode",
+                comment: "Fallback name in a Smart Mode failure message, for the unreachable case where the outcome carries no mode record."
+            )
             // Localised, which was NOT what the neighbours did when this was written:
             // of the twelve other `handleError` call sites, one localised, two
             // forwarded `error.localizedDescription`, and the rest were hardcoded
@@ -83,8 +88,10 @@ extension DictationCoordinator {
             // the app failing to do what the user armed, not a dictation with no words
             // in it.
             //
-            // The mode name interpolated in front stays unlocalised on purpose: it
-            // is the catalogue's own label, so it reads as the thing the user armed.
+            // The mode name interpolated in front is the catalogue's own label, so it
+            // reads as the thing the user armed. It goes through
+            // `SmartMode.localizedDisplayName` since the 2026-08-27 rename, because
+            // one mode's label is now a word rather than a symbol.
             //
             // The rough edge this comment used to flag for block B is fixed: the name
             // is a colon-label, not the sentence's subject, because translate modes
@@ -124,6 +131,10 @@ extension DictationCoordinator {
         // claimed it — and a keyboard that typed this app-origin text under it would
         // transform a dictation that has already been transformed (#79).
         defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
+        // Same argument one key down (#423): a stale notice would have a keyboard
+        // that happens to be on screen explain this finished, app-origin text with
+        // the previous hand-off's skipped mode.
+        defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartModeSkipped)
         defaults.synchronize()
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
@@ -148,9 +159,14 @@ extension DictationCoordinator {
     /// transcription would transcribe in one language and polish in another (#226).
     /// The duration travels for a smaller reason with no workaround: the keyboard never
     /// saw the audio, and the polish duration gate is decided on it.
+    ///
+    /// The Smart Mode arrives as the whole `SmartModeResolution` rather than as a mode
+    /// (#423): a dictation either runs the armed mode or owes the user a sentence about
+    /// why it did not, the two are mutually exclusive, and passing them separately
+    /// would let a caller write one without the other.
     func handOffToKeyboard(rawText: String,
                            languagePolicy: TranscriptionLanguagePolicy,
-                           smartMode: SmartMode?,
+                           smartMode: SmartModeResolution,
                            audioDuration: TimeInterval,
                            session: Int) {
         // The last transcription the user sees in the app, until the keyboard reports
@@ -177,16 +193,29 @@ extension DictationCoordinator {
         // transcription used, never re-read on the far side — the keyboard toolbar
         // is where the mode is armed, so re-reading it there is the mid-dictation
         // change #226's snapshot exists to prevent, in its sharpest form.
-        if let smartMode, let modeData = try? JSONEncoder().encode(smartMode) {
+        if let mode = smartMode.mode, let modeData = try? JSONEncoder().encode(mode) {
             defaults.set(modeData, forKey: SharedKeys.lastTranscriptionSmartMode)
         } else {
             // Either no mode was armed, or — unreachable — the record did not
             // encode. Both degrade to Normal, which is the free polish: the honest
             // fallback, and the one the keyboard already knows how to run.
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartMode)
-            if smartMode != nil {
+            if smartMode.mode != nil {
                 PersistentLog.log(.dictationFailed(error: "smart mode did not encode for hand-off"))
             }
+        }
+        // And the mirror image: a mode that stayed armed and did not run (#423). The
+        // keyboard owns the toolbar, so the fact has to travel or the fallback stays
+        // silent — text inserted, an ordinary success, and nothing the user can see
+        // until they read the output and notice it was not translated.
+        //
+        // Cleared rather than merely not written, for the same reason the key above
+        // is: a previous hand-off's notice lying here would explain this dictation
+        // with the last one's reason.
+        if let skipped = smartMode.skipped, let skipData = try? JSONEncoder().encode(skipped) {
+            defaults.set(skipData, forKey: SharedKeys.lastTranscriptionSmartModeSkipped)
+        } else {
+            defaults.removeObject(forKey: SharedKeys.lastTranscriptionSmartModeSkipped)
         }
         let token = UUID().uuidString
         polishHandoffToken = token
