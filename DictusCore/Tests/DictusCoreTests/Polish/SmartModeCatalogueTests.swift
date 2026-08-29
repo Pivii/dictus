@@ -220,4 +220,22 @@ final class SmartModeCatalogueTests: XCTestCase {
     func testTheDefaultPinsAreUnchangedByTheRename() {
         XCTAssertEqual(SmartModeCatalogue.defaultPinnedIdentifiers, ["notes", "translate.en"])
     }
+
+    /// The two rows a non-subscriber is promised (#404). Resolved from the seed rather
+    /// than from the store, because a non-subscriber cannot reach the mode list to
+    /// arrange anything.
+    func testTheDefaultPinnedModesResolveToTheSeedInOrder() {
+        XCTAssertEqual(
+            SmartModeCatalogue.defaultPinnedModes.map(\.id),
+            SmartModeCatalogue.defaultPinnedIdentifiers
+        )
+    }
+
+    /// And there are exactly enough of them for the slots the upgrade fan has left
+    /// after Normal and Dictus Pro take one each.
+    func testTheSeedFitsTheUpgradeFansModeSlots() {
+        XCTAssertEqual(
+            SmartModeCatalogue.defaultPinnedModes.count, SmartModeFanLayout.maximumEntries - 2
+        )
+    }
 }

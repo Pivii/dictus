@@ -94,7 +94,10 @@ struct SmartModeFanView: View {
     /// it here — that is the same honesty the paywall's capability filter applies
     /// (#79), one surface earlier.
     private func row(_ entry: SmartModeFanEntry, isHighlighted: Bool) -> some View {
-        let isEnabled = entry.smartMode == nil || !showsReason
+        // `modesAreArmable` and not `showsReason`: the non-subscriber's fan refuses
+        // every mode and shows no sentence, so inferring one from the other would draw
+        // its rows enabled (#404).
+        let isEnabled = entry.smartMode == nil || state.modesAreArmable
         // Icon and label centred as one group, not the label centred inside a
         // leading-aligned row (device feedback, 2026-08-24): the highlight capsule
         // spans the full width, and a label pinned to its left edge reads as text
@@ -117,94 +120,50 @@ struct SmartModeFanView: View {
         .opacity(isEnabled ? 1 : 0.4)
     }
 
-    /// What a row says about itself when the finger is not on it (#423).
+    /// What a row says about itself when the finger is not on it (#423, #404).
     ///
-    /// Two markers, because "armed" and "in force" stopped being the same thing the
-    /// moment a mode could stay armed and not run. Greying the mode rows says *you
-    /// cannot pick this*; it does not say *the thing you already picked will not
-    /// happen*, and only the second was true when the maintainer hit this.
+    /// Three tags, never two at once, and the precedence lives in
+    /// `SmartModeFanLayout.tag(for:...)` — in DictusCore, because this target has no
+    /// test bundle and the rule has enough branches to be worth checking.
     ///
-    /// - The row that **will run** carries the check. When the armed mode is
-    ///   honoured that is the mode; when it is not, it is Normal, because Normal is
-    ///   what the dictation does.
-    /// - The armed row, when it is not the one running, carries a muted `Off`
-    ///   instead. The choice survived — `resolveArmedMode` keeps it deliberately, so
-    ///   re-subscribing or switching the feature back on restores it without
-    ///   re-arming — and the marker is what says so without claiming it is active.
-    ///
-    /// A row can never carry both: the check is on `effectiveEntryID` and the `Off`
-    /// only on an armed row that is not it.
+    /// - **The check** goes on the row that will actually run. "Armed" and "in force"
+    ///   stopped being the same thing the moment a mode could stay armed and not run:
+    ///   greying a mode row says *you cannot pick this*, not *the thing you already
+    ///   picked will not happen*, and only the second was true when the maintainer hit
+    ///   #423.
+    /// - **`INACTIF`** goes on the armed row when it is not the one running. The choice
+    ///   survived — `resolveArmedMode` keeps it deliberately — and the tag says so
+    ///   without claiming it is active.
+    /// - **`PRO`** goes on every mode row of a non-subscriber's fan (#404). Verbatim
+    ///   and not localised: it is the product's own abbreviation and reads the same in
+    ///   both languages, like "Dictus Pro" beside it.
     @ViewBuilder
     private func marker(for entry: SmartModeFanEntry) -> some View {
-        if entry.id == state.effectiveEntryID {
+        switch state.tag(for: entry) {
+        case .effective:
             Image(systemName: "checkmark")
                 .font(.system(size: 13, weight: .bold))
-        } else if entry.id == state.armedEntryID {
-            Text(
+        case .inactive:
+            tagCapsule(Text(
                 "Off",
                 comment: "Marker on the Smart Mode fan row the user armed, when that mode will not run and the dictation goes in as Normal."
-            )
+            ))
+        case .pro:
+            tagCapsule(Text(verbatim: "PRO"))
+        case nil:
+            EmptyView()
+        }
+    }
+
+    /// The pill a word-tag sits in. Muted on purpose: it labels a row the user cannot
+    /// choose, and a loud badge on an unreachable row reads as an alarm.
+    private func tagCapsule(_ label: Text) -> some View {
+        label
             .font(.system(size: 11, weight: .semibold))
             .textCase(.uppercase)
             .padding(.horizontal, 6)
             .frame(height: 16)
             .background(Capsule().fill(Color.secondary.opacity(0.18)))
-        }
-    }
-
-    /// The Dictus Pro row: the whole of a non-subscriber's fan (#404, decided in
-    /// #392).
-    ///
-    /// ### Why it does not look like a mode row
-    ///
-    /// It is not one. Every other row changes a setting and stays in the keyboard;
-    /// this one leaves for the app's paywall. It wears the paywall's own gradient —
-    /// the same one `ToolbarView.proEntry` carries — so the Pro signal reads
-    /// identically across surfaces, and it says out loud what releasing on it does,
-    /// because a blind release at the end of a drag is not a place to be surprised.
-    ///
-    /// ### Why a rounded rectangle and not the capsule its neighbours use
-    ///
-    /// Because it has no neighbours. As the only entry it gets the whole area —
-    /// about 205 pt on a standard iPhone — and a capsule that tall is a lozenge with
-    /// a 100 pt radius, which reads as a shape rather than as a control. The capsule
-    /// exists to make a row look like one of the wide keys it replaced; one row
-    /// covering the whole keyboard is not that, and should not pretend to be.
-    private func proRow(isHighlighted: Bool) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 24, weight: .medium))
-
-            Text(verbatim: "Dictus Pro")
-                .font(.system(size: 22, weight: .bold))
-
-            Text(
-                "Release here to see the plans",
-                comment: "Caption on the Dictus Pro row of the Smart Mode fan, telling the user what releasing the long-press does."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .minimumScaleFactor(0.7)
-            .multilineTextAlignment(.center)
-        }
-        .foregroundStyle(
-            LinearGradient(
-                colors: [.dictusGradientStart, .dictusGradientEnd],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        )
-        .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity)
-        .frame(height: rowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.dictusAccent.opacity(isHighlighted ? 0.25 : 0))
-                .dictusGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-        )
     }
 
     /// The capsule under a row: glass at rest, washed accent under the finger.
@@ -240,6 +199,46 @@ struct SmartModeFanView: View {
     private func foreground(isHighlighted: Bool, isEnabled: Bool) -> Color {
         guard isEnabled else { return .secondary }
         return isHighlighted ? .dictusAccent : .primary
+    }
+
+    /// The Dictus Pro row: the last of the four in a non-subscriber's fan (#404).
+    ///
+    /// ### Why it is the same size and shape as its neighbours
+    ///
+    /// It was a single full-height row until 2026-08-29, when the maintainer saw it on
+    /// device: *"je ne suis pas fan qu'on ait cette grosse pilule qui prend tout le
+    /// clavier"*. The aesthetic objection turned out to be the smallest of three — the
+    /// one-row fan also removed the `Normal` row, and with it the only way a
+    /// non-subscriber could start a recording from the fan at all. Now the fan is the
+    /// same object for everyone, and subscribing un-greys it rather than replacing it.
+    ///
+    /// So it takes the capsule, the height and the layout of a mode row, and differs
+    /// only where it must: the paywall's own gradient, so the Pro signal reads the same
+    /// here as on `ToolbarView.proEntry`, and a chevron, because it is the one row that
+    /// leaves the keyboard.
+    private func proRow(isHighlighted: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 17, weight: .medium))
+
+            Text(verbatim: "Dictus Pro")
+                .font(.system(size: 17, weight: isHighlighted ? .bold : .semibold))
+                .lineLimit(1)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(
+            LinearGradient(
+                colors: [.dictusGradientStart, .dictusGradientEnd],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .frame(height: rowHeight)
+        .background(rowSurface(isHighlighted: isHighlighted))
     }
 
     /// Normal is named here rather than on the entry: DictusCore ships no string

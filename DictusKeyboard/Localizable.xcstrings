@@ -315,17 +315,6 @@
         }
       }
     },
-    "Release here to see the plans" : {
-      "comment" : "Caption on the Dictus Pro row of the Smart Mode fan, telling the user what releasing the long-press does.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relâche ici pour voir les offres"
-          }
-        }
-      }
-    },
     "Search Emoji" : {
       "localizations" : {
         "fr" : {

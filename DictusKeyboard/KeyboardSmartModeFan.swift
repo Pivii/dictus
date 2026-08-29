@@ -19,9 +19,28 @@ struct SmartModeFanState: Equatable {
     /// or down in the reason strip. Nil is the abort.
     var highlightedIndex: Int?
 
-    /// Why no mode may be armed, or nil when they all may. When set, every mode row
-    /// draws disabled and this sentence sits under them; Normal stays live.
+    /// The sentence under the rows, or nil when there is none.
+    ///
+    /// Nil in the non-subscriber's fan even though modes are refused there: the
+    /// `Dictus Pro` row *is* the message, and a strip repeating it would say the same
+    /// thing twice and take height from four rows that need it (#404). It is what
+    /// decides the geometry — `SmartModeFanLayout.rowHeight(showsReason:)` — so it
+    /// must not be repurposed as "are the modes disabled". That is `modesAreArmable`.
     let unavailableReason: String?
+
+    /// What the toolbar says when a release lands on a mode row that cannot be armed.
+    ///
+    /// Separate from `unavailableReason` for one case: in the non-subscriber's fan
+    /// there is no strip, and a release on a greyed `Liste` still has to be answered
+    /// with something. Everywhere else the two are the same string.
+    let refusalMessage: String?
+
+    /// Whether a mode row may be armed at all.
+    ///
+    /// Was inferred from `unavailableReason != nil` until #404, which is where the two
+    /// stopped meaning the same thing: the Pro fan refuses every mode and shows no
+    /// sentence. Leaving it inferred would have made those rows armable.
+    let modesAreArmable: Bool
 
     /// The row the stored armed mode corresponds to, or nil for Normal.
     ///
@@ -37,17 +56,34 @@ struct SmartModeFanState: Equatable {
     /// already picked will not happen", and only the second is the case.
     let effectiveEntryID: String
 
+    /// Whether the fan is the non-subscriber's, i.e. whether its mode rows are behind
+    /// Dictus Pro.
+    ///
+    /// Derived from the rows rather than stored beside them, so the tag and the row it
+    /// sits on cannot disagree.
+    var offersProUpgrade: Bool { entries.contains(.pro) }
+
+    /// What `entry` carries beside its name, if anything.
+    func tag(for entry: SmartModeFanEntry) -> SmartModeFanRowTag? {
+        SmartModeFanLayout.tag(
+            for: entry,
+            armedIdentifier: armedEntryID,
+            effectiveIdentifier: effectiveEntryID,
+            modesRequirePro: offersProUpgrade
+        )
+    }
+
     /// Whether a release on the highlighted row would do anything.
     var canCommitHighlighted: Bool {
         guard let highlightedIndex, entries.indices.contains(highlightedIndex) else { return false }
         switch entries[highlightedIndex] {
-        // Normal is always selectable: it is the free polish, and it is how a sticky
-        // mode is cleared on a device that has since lost Apple Intelligence.
+        // Normal is always selectable: it is the free polish, it is how a sticky mode
+        // is cleared on a device that has since lost Apple Intelligence, and in the
+        // non-subscriber's fan it is the only row that records at all (#404).
         case .normal: return true
-        // The Pro row leads to the paywall and is the only row in the fan when it is
-        // there at all, so nothing can make it unselectable.
+        // The Pro row leads to the paywall. Nothing about it is conditional.
         case .pro: return true
-        case .mode: return unavailableReason == nil
+        case .mode: return modesAreArmable
         }
     }
 }
@@ -213,10 +249,9 @@ final class KeyboardSmartModeState: ObservableObject {
         // and the app unpinning everything is exactly the moment it would be. One
         // read per long-press is not the cost that cache exists to avoid.
         let armed = SmartModeStore.armedMode
+        let offersPro = Self.offersProUpgrade(armability)
         let entries = SmartModeFanLayout.entries(
-            pinned: SmartModeCatalogue.pinnedModes,
-            armed: armed,
-            offersProUpgrade: Self.offersProUpgrade(armability)
+            pinned: SmartModeCatalogue.pinnedModes, armed: armed, offersProUpgrade: offersPro
         )
         guard !entries.isEmpty else {
             keyboard.logProbe("smartModeFanRefused", details: "reason=nothing-pinned")
@@ -230,12 +265,16 @@ final class KeyboardSmartModeState: ObservableObject {
             )
             return false
         }
+        let reason = armability.reason.map(Self.localizedReason)
         fan = SmartModeFanState(
             entries: entries,
             highlightedIndex: nil,
-            // The Pro row carries its own message, so the strip under it would say
-            // the same thing twice and take height from the one control on screen.
-            unavailableReason: entries == [.pro] ? nil : armability.reason.map(Self.localizedReason),
+            // The Dictus Pro row carries the message in the non-subscriber's fan, so
+            // the strip would say the same thing twice and take height from four rows
+            // that need it (#404).
+            unavailableReason: offersPro ? nil : reason,
+            refusalMessage: reason,
+            modesAreArmable: armability.isArmable,
             armedEntryID: armed?.id,
             // What will run, not what is set. With no entitlement that is Normal
             // whatever is armed, which is the fact #423 says nothing was telling
@@ -254,8 +293,8 @@ final class KeyboardSmartModeState: ObservableObject {
         return true
     }
 
-    /// Whether this fan is the single Dictus Pro row rather than a list of modes
-    /// (#404, decided in #392).
+    /// Whether this fan carries the Dictus Pro row and greys its modes behind it
+    /// (#404).
     ///
     /// Two conditions, and the second is not optional. `.notSubscribed` alone —
     /// which is what `isEntitled` used to collapse to — would show a paying
@@ -341,7 +380,7 @@ final class KeyboardSmartModeState: ObservableObject {
             // haptic and the reason: the user did point at something, and was told
             // no. The reason is already on screen under the rows, but the fan is
             // about to close, so it moves to the toolbar.
-            if let reason = current.unavailableReason, current.highlightedIndex != nil {
+            if let reason = current.refusalMessage, current.highlightedIndex != nil {
                 HapticFeedback.actionRefused()
                 keyboard.presentStatusMessage(
                     reason,
@@ -362,8 +401,12 @@ final class KeyboardSmartModeState: ObservableObject {
         // Pro row silently clear the user's mode on its way to the paywall.
         switch entry {
         case .pro:
-            // The release leaves the keyboard instead of arming anything (#404). No
-            // `noteGestureUsed`: nothing was armed, and retiring the discovery hint
+            // The release leaves the keyboard **for the paywall** instead of arming
+            // anything (#404). It landed on the app's home screen until 2026-08-29,
+            // which emptied the row of its purpose — the one row in the fan that leads
+            // anywhere led somewhere the user then had to search.
+            //
+            // No `noteGestureUsed`: nothing was armed, and retiring the discovery hint
             // for a user who has still never chosen a mode would take away the only
             // thing pointing them back here. Whether the hint should point a
             // non-subscriber at this gesture at all is #404's own open question,
@@ -375,7 +418,7 @@ final class KeyboardSmartModeState: ObservableObject {
             // that opened it is over. `close()` is idempotent, so the `defer` above
             // finds nothing to do.
             close()
-            keyboard.openDictusApp(intent: "pro")
+            keyboard.openDictusApp(intent: .pro)
             return
         case .normal:
             SmartModeStore.disarm()

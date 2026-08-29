@@ -47,35 +47,64 @@ final class SmartModeFanLayoutTests: XCTestCase {
 
     // MARK: - The non-subscriber's fan (#404)
 
-    /// One row, and it replaces the list rather than joining it. Three unusable rows
-    /// and a reason line is a worse advertisement than one control that leads
-    /// somewhere — #392's decision, in Pierre's words.
-    func testAnUpgradeOfferReplacesTheWholeFanWithOneRow() {
-        let entries = SmartModeFanLayout.entries(
-            pinned: [SmartModeCatalogue.notes, SmartModeCatalogue.translate(to: .english)],
-            armed: nil,
-            offersProUpgrade: true
-        )
-        XCTAssertEqual(entries, [.pro])
-    }
-
-    /// Including the Normal row, whose absence is what made this need a decision.
-    /// Safe because a user without entitlement is already getting Normal —
-    /// `resolveArmedMode()` refuses to honour the mode — so there is nothing to
-    /// escape from and #402's stranding cannot happen.
-    func testTheUpgradeFanCarriesNoNormalRowAndOpensAnyway() {
+    /// The shape re-decided on device on 2026-08-29: Normal, the default-pinned modes,
+    /// and the way out. Four rows — the same four slots a subscriber sees, so
+    /// subscribing un-greys the fan rather than replacing it.
+    func testTheUpgradeFanIsNormalTheDefaultModesAndTheProRow() {
         let entries = SmartModeFanLayout.entries(pinned: [], armed: nil, offersProUpgrade: true)
-        XCTAssertEqual(entries, [.pro])
-        XCTAssertFalse(entries.contains(.normal))
+        XCTAssertEqual(entries.first, .normal)
+        XCTAssertEqual(entries.last, .pro)
+        XCTAssertEqual(
+            entries.map(\.id),
+            ["normal"] + SmartModeCatalogue.defaultPinnedIdentifiers + ["pro"]
+        )
     }
 
-    /// And it opens for a user who armed a mode before they lapsed, where the
-    /// ordinary rules would have produced Normal alone (#403).
-    func testTheUpgradeFanWinsOverTheArmedModeAloneFan() {
+    /// The ceiling that made this four rows and not five. An iPhone SE row is 46.7 pt
+    /// at four and 37.4 pt at five, against Apple's 44 pt minimum — on a target
+    /// released blind, under the thumb covering it.
+    func testTheUpgradeFanNeverExceedsTheRowCeiling() {
         let entries = SmartModeFanLayout.entries(
-            pinned: [], armed: SmartModeCatalogue.translate(to: .german), offersProUpgrade: true
+            pinned: [SmartModeCatalogue.notes], armed: nil, offersProUpgrade: true
         )
-        XCTAssertEqual(entries, [.pro])
+        XCTAssertLessThanOrEqual(entries.count, SmartModeFanLayout.maximumEntries)
+        let height = SmartModeFanLayout.rowHeight(
+            availableHeight: compactHeight, entryCount: entries.count, showsReason: false
+        )
+        XCTAssertGreaterThanOrEqual(height, SmartModeFanLayout.minimumRowHeight)
+    }
+
+    /// The row that made the one-row shape wrong: without `Normal` a non-subscriber who
+    /// opened the fan could not start a recording from it at all — the Pro row leaves
+    /// for the app, and releasing back on the mic is the documented abort.
+    func testTheUpgradeFanAlwaysKeepsTheNormalRow() {
+        for (pinned, armed) in [
+            ([SmartMode](), SmartMode?.none),
+            ([SmartModeCatalogue.notes], nil),
+            ([], SmartModeCatalogue.translate(to: .german))
+        ] {
+            let entries = SmartModeFanLayout.entries(
+                pinned: pinned, armed: armed, offersProUpgrade: true
+            )
+            XCTAssertTrue(entries.contains(.normal), "pinned=\(pinned.count) armed=\(armed?.id ?? "-")")
+        }
+    }
+
+    /// It ignores the user's pinned list on purpose: a non-subscriber cannot reach the
+    /// mode list to arrange one, so the fan promises the modes they would actually get.
+    func testTheUpgradeFanShowsTheDefaultPinsRatherThanTheStoredOnes() {
+        let entries = SmartModeFanLayout.entries(
+            pinned: [SmartModeCatalogue.translate(to: .spanish)], armed: nil, offersProUpgrade: true
+        )
+        XCTAssertEqual(entries.compactMap { $0.smartMode?.id }, SmartModeCatalogue.defaultPinnedIdentifiers)
+    }
+
+    /// And it opens whatever is pinned or armed, which is what keeps #402 from coming
+    /// back through this door.
+    func testTheUpgradeFanOpensEvenWithNothingPinnedOrArmed() {
+        XCTAssertFalse(
+            SmartModeFanLayout.entries(pinned: [], armed: nil, offersProUpgrade: true).isEmpty
+        )
     }
 
     /// The Pro row is not a mode, and nothing may read it as one: `smartMode` is nil
@@ -93,6 +122,55 @@ final class SmartModeFanLayoutTests: XCTestCase {
             pinned: [SmartModeCatalogue.notes], armed: nil, offersProUpgrade: false
         )
         XCTAssertEqual(entries, [.normal, .mode(SmartModeCatalogue.notes)])
+    }
+
+    // MARK: - Row tags (#404, #423)
+
+    private func tag(_ entry: SmartModeFanEntry,
+                     armed: String? = nil,
+                     effective: String = "normal",
+                     requiresPro: Bool = false) -> SmartModeFanRowTag? {
+        SmartModeFanLayout.tag(
+            for: entry, armedIdentifier: armed, effectiveIdentifier: effective,
+            modesRequirePro: requiresPro
+        )
+    }
+
+    /// What will run carries the check, whichever row that is.
+    func testTheRowThatWillRunCarriesTheCheck() {
+        XCTAssertEqual(tag(.normal), .effective)
+        XCTAssertEqual(
+            tag(.mode(SmartModeCatalogue.notes), armed: "notes", effective: "notes"), .effective
+        )
+    }
+
+    /// #423: armed, and it will not run. Normal is what runs, so Normal takes the check
+    /// and the armed row says it is not in force.
+    func testAnArmedModeThatWillNotRunIsTaggedInactive() {
+        XCTAssertEqual(tag(.mode(SmartModeCatalogue.notes), armed: "notes"), .inactive)
+        XCTAssertEqual(tag(.normal, armed: "notes"), .effective)
+    }
+
+    /// #404: every mode row of a non-subscriber's fan is named and tagged, and Normal
+    /// still reads as the current selection because it still records.
+    func testAnUnsubscribedFanTagsEveryModeRowPro() {
+        XCTAssertEqual(tag(.mode(SmartModeCatalogue.notes), requiresPro: true), .pro)
+        XCTAssertEqual(tag(.normal, requiresPro: true), .effective)
+    }
+
+    /// The rule #404 states outright: `INACTIF` is for a subscriber who switched Smart
+    /// Modes off, `PRO` for someone who never subscribed. When both would be true, the
+    /// one the user can act on wins.
+    func testProBeatsInactiveOnTheSameRow() {
+        XCTAssertEqual(
+            tag(.mode(SmartModeCatalogue.notes), armed: "notes", requiresPro: true), .pro
+        )
+    }
+
+    /// The Pro row carries no tag: its own chevron says what it does.
+    func testTheProRowIsNeverTagged() {
+        XCTAssertNil(tag(.pro, requiresPro: true))
+        XCTAssertNil(tag(.pro, armed: "pro", effective: "pro", requiresPro: true))
     }
 
     // MARK: - Rows

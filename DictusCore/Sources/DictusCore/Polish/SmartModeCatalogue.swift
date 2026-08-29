@@ -196,4 +196,22 @@ public enum SmartModeCatalogue {
         notesIdentifier,
         translateIdentifier(target: .english)
     ]
+
+    /// The seed above as records, in its own order.
+    ///
+    /// What the **non-subscriber's** fan shows (#404): since the Dictus Pro row takes a
+    /// slot of the four, two mode rows remain, and showing the modes the user would get
+    /// pinned on subscribing makes the fan an exact promise rather than a sample. It is
+    /// deliberately the seed and not `pinnedModes` — a non-subscriber cannot reach the
+    /// mode list to arrange anything, so their stored list is this one anyway, and
+    /// reading it through the store would make the promise depend on a value nobody in
+    /// that state can have set.
+    ///
+    /// Resolved through `builtIns` rather than `all`, so it needs no `UserDefaults` read
+    /// and stamps no pin flag: nothing in the fan reads that flag.
+    public static var defaultPinnedModes: [SmartMode] {
+        defaultPinnedIdentifiers.compactMap { identifier in
+            builtIns.first { $0.id == identifier }
+        }
+    }
 }
