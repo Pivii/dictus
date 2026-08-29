@@ -24,7 +24,16 @@ import Foundation
 public enum PremiumFlags {
     /// Controls whether users can see and reach the paywall.
     /// `false` = the app looks like there is no subscription at all.
-    public static let paywallVisible = false
+    ///
+    /// TEST BRANCH ONLY — flipped to `true` here and NOT FOR MERGE. #279 is the
+    /// issue that owns turning this on for real, and its preconditions are not met:
+    /// #215 has not created the subscription in App Store Connect, so the paywall
+    /// will show a loading error rather than prices. It is `true` on this branch
+    /// because every Pro *surface* is gated behind it — the Pro Features toggles in
+    /// Settings (`SettingsView` 132 and 315) and the upgrade row in the fan
+    /// (`KeyboardSmartModeFan` 270) — so #423 and #404 cannot be exercised with it
+    /// off, whatever the entitlement says.
+    public static let paywallVisible = true
 
     /// Last day of the lifetime founder window, or `nil` while it is not
     /// scheduled (#350).
