@@ -88,8 +88,11 @@ change is measured and rejected.**
 **What lands: the Forbidden list bans deletion explicitly.** It banned adding, reordering
 and translating; *removing dictated content* was only implied by the Preserve list, and
 the measured run deleted `en calcul` from `le même prix en calcul` and still passed every
-gate. It is now stated: rules 6 and 7 (stutters, fillers) are the only licence to remove
-a word, rule 8 the only licence to change one. The Preserve list gains the two shapes the
+gate. It is now stated: the word the speaker *dictated* is what is protected, and the
+verbal-punctuation rule is named alongside the stutter and filler rules as a licence to
+remove one — it deletes `virgule` because the comma replaces it, which the first wording
+of this ban contradicted by promising that every noun survives. Rule 8 stays the only
+licence to *change* a word. The Preserve list gains the two shapes the
 run lost by name — placeholder words (`machin`, `truc`, `bidule`, which came back as
 `machine`) and the spoken forms `ça` and `ça va` + infinitive.
 
@@ -116,5 +119,8 @@ narrower than the contract's wording suggests**, and the six probes in
 **One gap that was in the dispatch rather than in the contract**, recorded because it
 explains the measurement: all six device runs went through `PolishAutoPrompt` (#239),
 because the device was in Auto-detect — and that prompt carries no rule 8 at all. "Rule 8
-is never applied" was, for those six, a prompt that never carried it. It still does not,
-now as a measured decision rather than an oversight.
+is never applied" was, for those six, a prompt that never carried it. `PolishAutoPrompt`
+still carries no rule 8, and after this round that absence is a measured decision rather
+than an oversight: the rule was written, shipped to the harness and scored over 60
+outputs before being rejected, so adding it to the auto prompt would ship a cost with no
+demonstrated benefit.

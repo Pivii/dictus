@@ -41,6 +41,15 @@ swift run polish-harness ab fixtures/seed.json --a /tmp/baseline.txt --b /tmp/ca
 # device SETTING, not a property of the text: an `autoDetect` device sends French
 # to PolishAutoPrompt, a French-pinned one to PolishNaturalPromptFR. Both have to
 # hold, so one fixture file measures both.
+#
+# An expectation that only holds on ONE of the two routes carries
+# `"onlyOnRoute": "perLanguage"` or `"auto"`, and `eval` filters on it. There is
+# one today: `notContains: "I think"` on `3-message-draft`. The off-language
+# fragment is a rule-8 repair target for PolishNaturalPromptFR and is PRESERVED
+# by name under PolishAutoPrompt, so asserting it on both routes would score the
+# auto prompt's own contract as a failure. `notContains: "salle à tante"` is NOT
+# marked and must not be: auto simply carries no rule 8, and that gap is the
+# measurement rather than a false failure.
 swift run polish-harness show Sources/polish-harness/fixtures/longform-fr.json --lang auto
 
 # Print the exact bytes the engine sends for a fixture: the resolved system

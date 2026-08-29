@@ -61,7 +61,7 @@ also in the fixture `expect` blocks so `eval` reports them per fixture.
 | 1 | Incoherent ASR segments repaired | **≥ 4 of 6, per run** |
 | 2 | Register preserved | **0** occurrences of `cela`, of an added `ne`, of `19h`-style forms expanded to `19 heures`, of `machin` → `machine` |
 | 3 | Dictated content deleted | **0** occurrences (`en calcul`, every figure, name, date, and fixture 5's trailing sentence) |
-| 4 | Content invented | **0** occurrences (holds 6/6 today, must not regress) |
+| 4 | Content invented | **0** occurrences (holds 6/6 today, must not regress) — scored by `eval`, **not** by `score.py`, which has no invention predicate |
 | 5 | Length ratio | inside **[0.92, 1.15]** per fixture, and guardrail rejections do not rise above the measured **0/6** |
 | 6 | **Scope fence** | **0** line breaks in any output, and 0 `<<NL>>` leaks |
 

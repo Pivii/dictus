@@ -50,6 +50,27 @@ struct Expectation: Codable {
     var lengthRatioMin: Double?
     /// polishedCount / rawCount must be ≤ this (guards against invention).
     var lengthRatioMax: Double?
+    /// Limit this assertion to one prompt route: `"perLanguage"` or `"auto"`.
+    /// Absent means it holds on both, which is the default and the common case.
+    ///
+    /// Needed because the two prompts disagree about one shape on purpose. An
+    /// off-language fragment inside otherwise-French speech is a rule-8 repair
+    /// target under `PolishNaturalPromptFR`, and under `PolishAutoPrompt` it is
+    /// PRESERVED by name (*"Mixed-language input keeps every part in its original
+    /// language"*). Asserting its absence on both routes marks the auto prompt's
+    /// own contract as a failure, which is measuring the fixture rather than the
+    /// prompt. Everything else here holds on both routes and carries no value.
+    var onlyOnRoute: String?
+
+    /// The route name a fixture runs under, for `onlyOnRoute`.
+    static func routeName(perLanguage: Bool) -> String {
+        perLanguage ? "perLanguage" : "auto"
+    }
+
+    /// Whether this assertion applies on `route`.
+    func applies(to route: String) -> Bool {
+        onlyOnRoute == nil || onlyOnRoute == route
+    }
 
     /// Evaluate against the polished output and the original raw. Returns nil on
     /// pass, or a human-readable failure reason.

@@ -27,8 +27,14 @@ from collections import defaultdict
 REPAIRS = [
     ("R1 salle à tante → salle d'attente", "3-message-draft",
      lambda t: "salle à tante" not in t and "salle d'attente" in t),
+    # The broken form disappearing is NOT enough here: deleting the clause outright
+    # satisfies "not in t" and would score as a repair. `rappelle` alone is no better
+    # — the raw already contains an unrelated "il faut que je rappelle pour le truc
+    # de la voiture", so a run that repairs nothing still matches it. What names the
+    # repair is the reconstructed clause: `rappelle` ADJACENT to `comptable`.
     ("R2 je répète le comptable → rappelle", "5-rambling",
-     lambda t: "répète le comptable" not in t),
+     lambda t: "répète le comptable" not in t
+     and re.search(r"rappelle\s+(?:le\s+)?comptable", t, re.IGNORECASE) is not None),
     ("R3 si je les zappais → si je l'ai zappé", "5-rambling",
      lambda t: "les zappais" not in t and "zappé" in t),
     ("R4 le cas honnête → honnêtement", "5-rambling",
@@ -71,9 +77,19 @@ KEEP = {
     "2-project-update": ["StoreKit", "Thomas", "Sarah", "fin octobre"],
     "3-message-draft": ["dentiste", "t'arrange"],
     "4-explanation": ["en calcul", "trois étapes", "90"],
-    "5-rambling": ["ça me reviendra", "Julien", "mardi", "février"],
+    # `comptable` is here so that deleting it reads as a violation rather than as a
+    # silence. R2's predicate refuses to score the repair without it; this makes the
+    # deletion itself visible in the run's violation list.
+    "5-rambling": ["ça me reviendra", "Julien", "mardi", "février", "comptable"],
     "6-unscripted": ["Dictus", "gros pavé", "c'est pas"],
 }
+
+# ── Bar 4 (invented content) is NOT scored here, and that is deliberate ──────
+# There is no predicate for "this sentence was not in the dictation" that does not
+# either miss paraphrase or fire on it. Bar 4 is carried by `eval`: every fixture's
+# `expect` block bounds `lengthRatioMax` at 1.15, which is what an invented clause
+# breaks first, and the outputs are read. Anything this file prints is silent about
+# bar 4 — do not read a clean run here as evidence for it.
 
 # ── Scope fence (#437 owns line breaks; this round must not move them) ────────
 # and the length band the guardrail enforces.

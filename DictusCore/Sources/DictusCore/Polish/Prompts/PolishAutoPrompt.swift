@@ -78,7 +78,7 @@ enum PolishAutoPrompt {
         FORBIDDEN:
         - Do NOT translate. Not even partially. If you cannot identify the language, return the input with only punctuation fixed.
         - Do NOT add words or content that weren't in the input. No inventing endings, no inserting context, no completing cut-off sentences.
-        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement in the input appears in the output. Rules 5 and 6 (stutters, hesitation fillers) are the only licence to remove a word.
+        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement the speaker DICTATED appears in the output. Rules 4, 5 and 6 are the only licence to remove a word — rule 4 removes a spoken punctuation command because the mark replaces it, rules 5 and 6 remove stutters and hesitation fillers.
         - Do NOT reorder words.
         - Do NOT add `<<NL>>` markers where none existed. Do NOT split or alter existing markers.
 

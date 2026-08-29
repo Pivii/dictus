@@ -435,9 +435,18 @@ func promptResolution(_ fx: Fixture, mode: SmartMode?) -> PromptResolution {
             detected: detectedCode
         )
     }
+    // The auto route has no per-language prompt, but it does have a prompt: the
+    // language-agnostic one `runOnceAuto` sends. `--lang auto` is documented as
+    // rerouting every fixture through it, so refusing here made the flag work on
+    // `show`/`eval` and not on `prompt`. `.english` is the placeholder the engine
+    // API requires and `PolishAutoPrompt` ignores, exactly as in `runOnceAuto`.
     guard let target = fx.language else {
-        print("error: [\(fx.id)] routes through auto mode, which has no per-language prompt")
-        exit(1)
+        return PromptResolution(
+            task: .auto,
+            preprocessed: PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode),
+            language: .english,
+            detected: detectedCode
+        )
     }
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
     guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
@@ -494,7 +503,8 @@ func runHarness() async {
         var passed = 0, total = 0
         for fx in fixtures {
             let o = await runOnce(fx, engine: engine, mode: mode)
-            let checks = fx.expect ?? []
+            let route = Expectation.routeName(perLanguage: fx.language != nil)
+            let checks = (fx.expect ?? []).filter { $0.applies(to: route) }
             // A mode that failed closed has no output to check, and that is a
             // failure of the fixture rather than a reason to skip it: the mode's own
             // contract refused what the engine produced, which is precisely what

@@ -111,9 +111,13 @@ Read straight:
   the one miss being `2-bilingue` losing `push` in a single run. 1 fixture-failure in 84
   checks against 0 in 42 — sampling noise at this resolution, not a signal.
 - `auto.json` (the anti-translation set, the one at risk from a new repair rule):
-  **10/10, 9/10, 9/10 before, then 10/10 three times after.** The rule 8 added to
-  `PolishAutoPrompt` did not cost the anti-translation contract, which was the main
-  identified risk in `bars.md`.
+  **10/10, 9/10, 9/10 before, then 10/10 three times after.** The rule 8 this round
+  added to `PolishAutoPrompt` **in the measured arm** did not cost the anti-translation
+  contract, which was the main identified risk in `bars.md`. That arm did not ship: the
+  widened rule 8 repaired none of the six segments, so it was cut from both prompts and
+  `PolishAutoPrompt` carries no rule 8 at all — `testAutoPromptDoesNotCarryASRRepair`
+  pins that. The number above says the risk was cleared, not that the rule is in the
+  shipped prompt.
 
 ## What the prompt edit cost
 
@@ -218,7 +222,11 @@ the rule-8 version, `short` is what ships.
 
 ## Regression on the untargeted sets
 
-- `seed.json`: **14/14 on all three passes** (`develop`: 3/3 clean; full edit: 5/6 clean).
+- `seed.json`: **5 of 6 passes at 14/14** after the full edit, against `develop`'s 3/3.
+  The miss is `2-bilingue` losing `push` in one pass — 1 fixture-failure in 84 checks
+  against 0 in 42, which is sampling noise at this resolution. The capture is
+  `raw/after-regression-eval-6seed-3auto.txt`, whose name used to say `3passes` while
+  holding six seed passes and three auto ones.
 - `auto.json`: **10/10, 9/10, 9/10** — identical to `develop`'s 10/10, 9/10, 9/10. The two
   misses are the `auto-verbal-*` fixtures dropping a `!`, the same sampling noise the
   baseline had.

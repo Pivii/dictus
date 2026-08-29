@@ -29,9 +29,17 @@ final class PolishNaturalPromptFRTests: XCTestCase {
     /// dropped `en calcul` mid-sentence and still passed every gate.
     func testForbiddenListBansDeletingMeaningfulWords() {
         XCTAssertTrue(prompt.contains("Do NOT delete words that carry meaning"))
-        // The three rules that ARE allowed to touch a word stay named, so the ban
-        // cannot be read as forbidding filler and stutter removal.
-        XCTAssertTrue(prompt.contains("Rules 6 and 7 (stutters, fillers)"))
+        // The rules that ARE allowed to remove a word stay named, so the ban cannot
+        // be read as forbidding what they license. Rule 4 is in that list because
+        // it deletes a spoken punctuation command — the first wording promised that
+        // every noun in the input survives, which told the model to keep `virgule`
+        // as a word. The pre-pass hides that on the four supported languages; on the
+        // auto path with an unsupported language it does not run at all.
+        XCTAssertTrue(prompt.contains("Rules 4, 6 and 7 are the only licence to remove a word"))
+        XCTAssertTrue(prompt.contains("rule 4 removes a spoken punctuation command"))
+        // The protection is scoped to what was DICTATED, not to every token present.
+        XCTAssertTrue(prompt.contains("the speaker DICTATED appears in the output"))
+        XCTAssertTrue(prompt.contains("rule 8 the only licence to change one"))
     }
 
     /// The Preserve entries #439 added by name. `machin` is the word the run

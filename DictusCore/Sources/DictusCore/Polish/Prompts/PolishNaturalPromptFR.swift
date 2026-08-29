@@ -51,7 +51,7 @@ enum PolishNaturalPromptFR {
 
         FORBIDDEN:
         - Do NOT add words or content that weren't in the input. No inventing endings like "Merci.", no inserting context, no completing cut-off sentences with imagined words.
-        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement in the input appears in the output. Rules 6 and 7 (stutters, fillers) are the only licence to remove a word, rule 8 the only licence to change one. A phrase that sounds clumsy is still what the speaker said.
+        - Do NOT delete words that carry meaning. Every noun, verb, adjective, number, name and complement the speaker DICTATED appears in the output. Rules 4, 6 and 7 are the only licence to remove a word — rule 4 removes a spoken punctuation command because the mark replaces it, rules 6 and 7 remove stutters and fillers — and rule 8 the only licence to change one. A phrase that sounds clumsy is still what the speaker said.
         - Do NOT reorder words.
         - Do NOT translate.
         - Do NOT add `<<NL>>` markers where none existed. Do NOT split or alter existing markers.

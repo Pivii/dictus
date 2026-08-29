@@ -60,6 +60,25 @@ final class PolishAutoPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Do NOT add `\(PolishPostpass.newlineMarker)` markers where none existed"))
     }
 
+    /// The deletion ban must except rule 4, and it matters MORE here than on the
+    /// per-language path.
+    ///
+    /// `PolishService.polishTargeted` runs `VerbalPunctuationPrepass` in code before
+    /// the model sees the text, so on the four supported languages `virgule` is
+    /// already a comma and a contradictory ban is inert. The auto path has no such
+    /// floor: `PolishPipeline.autoPreprocess` returns the raw UNCHANGED when
+    /// detection lands outside those four, which is exactly the input this prompt
+    /// exists for. Rule 4 is then the only mechanism, and a ban promising that every
+    /// noun in the input survives tells the model to keep the command word.
+    func testAutoPromptDeletionBanExceptsTheVerbalPunctuationRule() {
+        let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
+        XCTAssertTrue(prompt.contains("Rules 4, 5 and 6 are the only licence to remove a word"))
+        XCTAssertTrue(prompt.contains("rule 4 removes a spoken punctuation command"))
+        XCTAssertTrue(prompt.contains("the speaker DICTATED appears in the output"))
+        // The old wording, which promised the opposite of rule 4.
+        XCTAssertFalse(prompt.contains("Rules 5 and 6 (stutters, hesitation fillers) are the only licence"))
+    }
+
     func testAutoPromptEmbedsGlossary() {
         let prompt = PolishAutoPrompt.instructions(glossary: PolishGlossary.promptBlock)
         for term in PolishGlossary.terms {
