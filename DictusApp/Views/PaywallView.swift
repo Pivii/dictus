@@ -365,17 +365,17 @@ struct PaywallView: View {
     /// keeps running this build, and the line has to retire itself rather than
     /// contradict the price shown right above it.
     ///
-    /// WHY it names no later price, although "79,99 € ensuite" was the approved
+    /// WHY it names no later price, although "149,99 € ensuite" was the approved
     /// wording and is the more persuasive line: StoreKit gives us the *current*
     /// price in the buyer's own currency through `displayPrice`, but the future
     /// price is not a product yet, so it could only be written into the string —
-    /// and a US buyer would read $54.99 on the row with "79,99 € afterwards"
-    /// underneath, a currency they will never be charged in. The amount on a
-    /// non-euro storefront is not ours to state either: App Store Connect
-    /// derives it from Apple's price matrix and readjusts it as rates move. For
-    /// a window lasting weeks, being correct everywhere beats being persuasive.
-    /// The deadline carries the scarcity, and the rise is visible on the row
-    /// itself once it happens.
+    /// and a US buyer would read a dollar amount on the row with "149,99 €
+    /// afterwards" underneath, a currency they will never be charged in. The
+    /// amount on a non-euro storefront is not ours to state either: App Store
+    /// Connect derives it from Apple's price matrix and readjusts it as rates
+    /// move. For a window lasting weeks, being correct everywhere beats being
+    /// persuasive. The deadline carries the scarcity, and the rise is visible
+    /// on the row itself once it happens.
     ///
     /// The alternative considered and deliberately not built, still open: a
     /// second, never-offered StoreKit product holding the future price, so that
@@ -385,7 +385,7 @@ struct PaywallView: View {
     /// Either way this announces a future increase and not a reduction, which
     /// is what keeps it clear of the Omnibus directive (art. L.112-1-1): a
     /// struck-through reference price would have to have actually been charged
-    /// in the previous 30 days, and 79,99 € never was.
+    /// in the previous 30 days, and 149,99 € never was.
     private var founderOfferLabel: Text? {
         guard let end = LifetimeFounderWindow.announcedEnd() else { return nil }
         let date = end.formatted(.dateTime.day().month(.wide).year())

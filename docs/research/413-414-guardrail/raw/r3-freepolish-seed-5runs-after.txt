@@ -1,0 +1,218 @@
+
+━━ [1-normal] lang=fr stt=PK
+  raw:      Salut ça va ? J'espère que tu es passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+  polished #1: Salut, ça va ? J'espère que tu es passé un bon week-end. Moi de mon côté, c'était tranquille, j'ai bossé sur le projet, et franchement, ça avance bien. On devrait être dans les temps.
+            (success, 3056ms, detected=fr→natural)
+  polished #2: Salut, ça va ? J’espère que tu es passé un bon week-end. Moi de mon côté, c’était tranquille. J’ai bossé sur le projet et franchement, ça avance bien. On devrait être dans les temps.
+            (success, 1977ms, detected=fr→natural)
+  polished #3: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi, de mon côté, c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (success, 1963ms, detected=fr→natural)
+  polished #4: Salut, ça va ? J’espère que tu as passé un bon week-end. Moi, de mon côté, c’était tranquille. J’ai bossé sur le projet et franchement, ça avance bien. On devrait être dans les temps.
+            (success, 2015ms, detected=fr→natural)
+  polished #5: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté, c'était tranquille, j'ai bossé sur le projet et franchement, ça avance bien. On devrait être dans les temps.
+            (success, 1998ms, detected=fr→natural)
+
+━━ [2-bilingue] lang=fr stt=PK
+  raw:      Alors écoute, faut que je push le commit sur GitHub avant la deadline de today et ensuite je te laisse review la pull request. Normalement le merge va clôturer le slice et on pourra fermer l'issue.
+  polished #1: Alors écoute, faut que je pousse le commit sur GitHub avant la date limite de aujourd'hui et ensuite je te laisse faire la review de la pull request. Normalement, le merge va clôturer le slice et on pourra fermer l'issue.
+            (success, 2082ms, detected=fr→natural)
+  polished #2: Alors écoute, faut que je pousse le commit sur GitHub avant la date limite de aujourd'hui et ensuite je te laisse vérifier la demande de pull. Normalement, le merge va clôturer le slice et on pourra fermer l'issue.
+            (success, 2062ms, detected=fr→natural)
+  polished #3: Alors écoute, faut que je push le commit sur GitHub avant la deadline de today et ensuite je te laisse review la pull request. Normalement, le merge va clôturer le slice et on pourra fermer l'issue.
+            (success, 1839ms, detected=fr→natural)
+  polished #4: Alors écoute, faut que je push le commit sur GitHub avant la deadline de aujourd'hui et ensuite je te laisse review la pull request. Normalement, le merge va clôturer le slice et on pourra fermer l'issue.
+            (success, 1909ms, detected=fr→natural)
+  polished #5: Alors écoute, faut que je push le commit sur GitHub avant la deadline de aujourd'hui et ensuite je te laisse review la pull request. Normalement, le merge va clôturer le slice et on pourra fermer l'issue.
+            (success, 1919ms, detected=fr→natural)
+
+━━ [3-long] lang=fr stt=PK
+  raw:      Ce que j'aimerais bien tester aussi, c'est un texte un petit peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait tout simplement des fois il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral et j'ai envie de voir exactement comment ça se comporte avec dictus mais aussi avec whisperflow
+  polished #1: Ce que j'aimerais bien tester aussi, c'est un texte un peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire, pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée, c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait, tout simplement, des fois, il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral, et j'ai envie de voir exactement comment ça se comporte avec Dictus, mais aussi avec WhisperFlow.
+            (success, 3383ms, detected=fr→natural)
+  polished #2: Ce que j'aimerais bien tester aussi, c'est un texte un peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire, pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée, c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait, tout simplement, des fois, il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral, et j'ai envie de voir exactement comment ça se comporte avec Dictus mais aussi avec WhisperFlow.
+            (success, 3383ms, detected=fr→natural)
+  polished #3: Ce que j'aimerais bien tester aussi, c'est un texte un petit peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire, pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée, c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait, tout simplement, des fois, il m'arrive de répéter certains mots, comme on pourrait le faire quand on parle à l'oral, et j'ai envie de voir exactement comment ça se comporte avec Dictus, mais aussi avec WhisperFlow.
+            (success, 3446ms, detected=fr→natural)
+  polished #4: Ce que j'aimerais bien tester aussi, c'est un texte un peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire, pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée, c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait, tout simplement, des fois, il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral, et j'ai envie de voir exactement comment ça se comporte avec Dictus, mais aussi avec WhisperFlow.
+            (success, 3354ms, detected=fr→natural)
+  polished #5: Ce que j'aimerais bien tester aussi, c'est un texte un petit peu plus long, que je décris à l'oral, comme je suis en train de le faire en fait. Et justement, quand je ne sais pas trop dire quoi dire, pardon, comme je suis en train de le faire maintenant, il peut m'arriver de faire des erreurs et des répétitions. Et l'idée, c'est tout simplement de voir comment se comporte le modèle et l'application de manière générale. En fait, tout simplement, des fois, il m'arrive de répéter certains mots comme on pourrait le faire quand on parle à l'oral, et j'ai envie de voir exactement comment ça se comporte avec Dictus mais aussi avec WhisperFlow.
+            (success, 3362ms, detected=fr→natural)
+
+━━ [4-tricky-ponctuation] lang=fr stt=PK
+  raw:      Alors bonjour à tous, retour à la ligne. Voici le compte rendu de la réunion, retour à la ligne. Premièrement, on a validé le budget. Point d'exclamation. Retour à la ligne. Deuxièmement, est-ce que tout le monde est d'accord ? Point d'interrogation. Retour à la ligne. A très vite.
+  polished #1: Alors bonjour à tous,
+Voici le compte rendu de la réunion,
+Premièrement, on a validé le budget !
+Deuxièmement, est-ce que tout le monde est d'accord ?
+À très vite.
+            (success, 2099ms, detected=fr→natural)
+  polished #2: Bonjour à tous,
+Voici le compte rendu de la réunion.
+Premièrement, on a validé le budget !
+Deuxièmement, est-ce que tout le monde est d'accord ?
+À très vite.
+            (success, 2066ms, detected=fr→natural)
+  polished #3: Bonjour à tous,
+Voici le compte rendu de la réunion.
+Premièrement, on a validé le budget !
+Deuxièmement, est-ce que tout le monde est d'accord ?
+À très vite.
+            (success, 2049ms, detected=fr→natural)
+  polished #4: Bonjour à tous,
+Voici le compte rendu de la réunion.
+Premièrement, on a validé le budget !
+Deuxièmement, est-ce que tout le monde est d'accord ?
+À très vite.
+            (success, 2025ms, detected=fr→natural)
+  polished #5: Bonjour à tous,
+Voici le compte rendu de la réunion.
+Premièrement, on a validé le budget !
+Deuxièmement, est-ce que tout le monde est d'accord ?
+À très vite.
+            (success, 2067ms, detected=fr→natural)
+
+━━ [5-erreur-parakeet] lang=fr stt=PK
+  raw:      Et moi je vais faire un autre test, c'est le test on va dire special paratite where sometimes it arrive que ça traduise de l'anglais en fait et donc l'idée c'est de voir comment se comporte le modèle where the language is switching in English but par error.
+  polished #1: Et moi, je vais faire un autre test. C'est le test où on va dire "special paratite". Parfois, ça traduit de l'anglais en fait, et donc l'idée, c'est de voir comment se comporte le modèle où le langage change en anglais, mais par erreur.
+            (success, 2291ms, detected=fr→natural)
+  polished #2: Et moi, je vais faire un autre test. C'est le test où on va dire "special paratite". Parfois, il arrive que ça traduise de l'anglais en fait, et donc l'idée, c'est de voir comment se comporte le modèle, où le langage est en anglais mais par erreur.
+            (success, 2298ms, detected=fr→natural)
+  polished #3: Et moi, je vais faire un autre test, c'est le test sur la paratite spéciale. Parfois, il arrive que ça traduise de l'anglais en fait, et donc l'idée, c'est de voir comment se comporte le modèle, où le langage est en anglais mais par erreur.
+            (success, 2237ms, detected=fr→natural)
+  polished #4: Et moi je vais faire un autre test, c'est le test où on va dire "special paratite", où parfois ça traduit de l'anglais en fait, et donc l'idée, c'est de voir comment se comporte le modèle où le langage est en anglais mais par erreur.
+            (success, 2149ms, detected=fr→natural)
+  polished #5: Et moi je vais faire un autre test, c'est le test on va dire spécial paratite, où parfois il arrive que ça traduise de l'anglais en fait, et donc l'idée, c'est de voir comment se comporte le modèle où le langage est switché en anglais mais par erreur.
+            (success, 2212ms, detected=fr→natural)
+
+━━ [6-repair-es] lang=es stt=PK
+  raw:      Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+  polished #1: Saludos, ¿cómo estás? Espero que hayas pasado un buen fin de semana. Yo, por mi parte, fue tranquilo, trabajé en el proyecto y, sinceramente, está avanzando bien. Creo que deberíamos estar en los plazos.
+            (success, 1662ms, detected=fr→repair)
+  polished #2: Saludos, ¿cómo estás? Espero que hayas pasado un buen fin de semana. Yo, por mi parte, fue tranquilo, trabajé en el proyecto y, francamente, está avanzando bien. Creo que vamos a estar a tiempo.
+            (success, 1652ms, detected=fr→repair)
+  polished #3: Saludos, ¿cómo estás? Espero que hayas tenido un buen fin de semana. Yo, de mi lado, fue tranquilo, trabajé en el proyecto y, sinceramente, va bien. Creo que estaríamos dentro de los plazos.
+            (success, 1606ms, detected=fr→repair)
+  polished #4: Hola, ¿cómo estás? Espero que hayas pasado un buen fin de semana. Yo, de mi parte, fue tranquilo, trabajé en el proyecto y, francamente, está avanzando bien. Creo que estaremos en el plazo.
+            (success, 1631ms, detected=fr→repair)
+  polished #5: Saludos, cómo estás? Espero que hayas pasado un buen fin de semana. A mi lado, fue tranquilo, he trabajado en el proyecto y, francamente, está avanzando bien. Creo que estaríamos en los plazos.
+            (success, 1807ms, detected=fr→repair)
+
+━━ [7-repair-de] lang=de stt=PK
+  raw:      Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+  polished #1: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (rejectedGuardrail, 2575ms, detected=fr→repair)
+  engineOut #1: Cześć, jak się masz? Ufam, że dobrze spędziłeś wczoraj wieczór. Ja, z mojej strony, było spokojnie, pracowałem nad projektem i szczerze mówiąc, to idzie dobrze. Spodziewamy się, że będziemy w czasie.
+  polished #2: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (rejectedGuardrail, 2161ms, detected=fr→repair)
+  engineOut #2: Cześć, jak się masz? Mam nadzieję, że spędziłeś dobry weekend. Ja w moim przypadku było spokojne, pracowałem nad projektem i franchement, to się bardzo rozwinęło. Powinniśmy być w terminie.
+  polished #3: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (rejectedGuardrail, 2168ms, detected=fr→repair)
+  engineOut #3: Cześć, jak się masz? Mam nadzieję, że przeżyłeś dobrą weekend. Ja po mojej stronie było spokojne, pracowałem nad projektem, a franchement, to się rozwija dobrze. Będziemy w czasie.
+  polished #4: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (rejectedGuardrail, 2421ms, detected=fr→repair)
+  engineOut #4: Cześć, jak masz? Mam nadzieję, że spędzłeś dobry weekend. Ja po mojej stronie było spokojnie, pracowałem nad projektem, a szczerze mówiąc, to się bardzo poprawia. Powinniśmy być w czasie.
+  polished #5: Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. On devrait être dans les temps.
+            (rejectedGuardrail, 2458ms, detected=fr→repair)
+  engineOut #5: Cześć, jak się masz? Mam nadzieję, że spędziłeś dobry weekend. Ja, po mojej stronie, byłem w stanie, pracowałem nad projektem i szczerze mówiąc, to się rozwija dobrze. Powinniśmy być w czasie.
+
+━━ [8-verbal-clean] lang=fr stt=PK
+  raw:      Ok, virgule, petit test, virgule, deuxième test, point.
+  polished #1: Ok, petit test, deuxième test, point.
+            (success, 1872ms, detected=fr→natural)
+  polished #2: Ok, petit test, deuxième test, point.
+            (success, 1642ms, detected=fr→natural)
+  polished #3: Ok, petit test, deuxième test, point.
+            (success, 1409ms, detected=fr→natural)
+  polished #4: Ok, petit test, deuxième test, point.
+            (success, 1573ms, detected=fr→natural)
+  polished #5: Ok, petit test, deuxième test, point.
+            (success, 1576ms, detected=fr→natural)
+
+━━ [9-verbal-questions] lang=fr stt=PK
+  raw:      Salut, comment ça va ? Point d'interrogation. Génial. Point d'exclamation.
+  polished #1: Salut, comment ça va ? Génial !
+            (success, 1556ms, detected=fr→natural)
+  polished #2: Salut, comment ça va ? Génial !
+            (success, 1708ms, detected=fr→natural)
+  polished #3: Salut, comment ça va ? Génial !
+            (success, 1411ms, detected=fr→natural)
+  polished #4: Salut, comment ça va ? Génial !
+            (success, 1399ms, detected=fr→natural)
+  polished #5: Salut, comment ça va ? Génial !
+            (success, 1403ms, detected=fr→natural)
+
+━━ [10-verbal-list-parakeet-error] lang=fr stt=PK
+  raw:      Liste de point, pain, point virgule, les point virgule, oeuf, point.
+  polished #1: Liste de point, pain ; les ; œuf, point.
+            (success, 1434ms, detected=fr→natural)
+  polished #2: Liste de point, pain ; les ; œuf, point.
+            (success, 1434ms, detected=fr→natural)
+  polished #3: Liste de point, pain ; les ; œuf, point.
+            (success, 1428ms, detected=fr→natural)
+  polished #4: Liste de point, pain ; les ; œuf, point.
+            (success, 1452ms, detected=fr→natural)
+  polished #5: Liste de point, pain ; les ; œuf, point.
+            (success, 1427ms, detected=fr→natural)
+
+━━ [11-verbal-newlines] lang=fr stt=PK
+  raw:      Première ligne, retour à la ligne. Deuxième ligne, retour à la ligne, troisième ligne.
+  polished #1: Première ligne,
+Deuxième ligne,
+Troisième ligne.
+            (success, 1500ms, detected=fr→natural)
+  polished #2: Première ligne.
+Deuxième ligne.
+Troisième ligne.
+            (success, 1505ms, detected=fr→natural)
+  polished #3: Première ligne,
+Deuxième ligne,
+Troisième ligne.
+            (success, 1502ms, detected=fr→natural)
+  polished #4: Première ligne,
+Deuxième ligne,
+troisième ligne.
+            (success, 1490ms, detected=fr→natural)
+  polished #5: Première ligne,
+Deuxième ligne,
+troisième ligne.
+            (success, 1501ms, detected=fr→natural)
+
+━━ [12-point-noun-preserved] lang=fr stt=PK
+  raw:      Je mets un point final point.
+  polished #1: Je mets un point final.
+            (success, 1370ms, detected=fr→natural)
+  polished #2: Je mets un point final.
+            (success, 1358ms, detected=fr→natural)
+  polished #3: Je mets un point final.
+            (success, 1374ms, detected=fr→natural)
+  polished #4: Je mets un point final.
+            (success, 1369ms, detected=fr→natural)
+  polished #5: Je mets un point final.
+            (success, 1379ms, detected=fr→natural)
+
+━━ [13-verbal-mixed] lang=fr stt=PK
+  raw:      Bonjour Pierre, tu vas bien. Point d'interrogation. A très vite. Point.
+  polished #1: Bonjour Pierre, tu vas bien ? À très vite.
+            (success, 1443ms, detected=fr→natural)
+  polished #2: Bonjour Pierre, tu vas bien ? À très vite.
+            (success, 1459ms, detected=fr→natural)
+  polished #3: Bonjour Pierre, tu vas bien ? À très vite.
+            (success, 1439ms, detected=fr→natural)
+  polished #4: Bonjour Pierre, tu vas bien ? À très vite.
+            (success, 1413ms, detected=fr→natural)
+  polished #5: Bonjour Pierre, tu vas bien ? À très vite.
+            (success, 1437ms, detected=fr→natural)
+
+━━ [14-verbal-long-mixed] lang=fr stt=PK
+  raw:      Donc là je fais un petit test de transcription, retour à la ligne. Je vais faire des tests avec de la ponctuation. Point. Ça marche. Point d'exclamation. Est-ce que c'est normal ? Point d'interrogation.
+  polished #1: Donc, là, je fais un petit test de transcription,
+je vais faire des tests avec de la ponctuation. Point. Ça marche ! Est-ce que c'est normal ?
+            (success, 1858ms, detected=fr→natural)
+  polished #2: Donc, là, je fais un petit test de transcription. Je vais faire des tests avec de la ponctuation. Point. Ça marche ! Est-ce que c'est normal ?
+            (success, 1860ms, detected=fr→natural)
+  polished #3: Donc, là, je fais un petit test de transcription. Je vais faire des tests avec de la ponctuation. Point. Ça marche ! Est-ce que c'est normal ?
+            (success, 1835ms, detected=fr→natural)
+  polished #4: Donc, là, je fais un petit test de transcription. Je vais faire des tests avec de la ponctuation. Point. Ça marche ! Est-ce que c'est normal ?
+            (success, 1815ms, detected=fr→natural)
+  polished #5: Donc, là, je fais un petit test de transcription. Je vais faire des tests avec de la ponctuation. Point. Ça marche ! Est-ce que c'est normal ?
+            (success, 1807ms, detected=fr→natural)

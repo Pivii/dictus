@@ -34,6 +34,16 @@ struct MainTabView: View {
     /// recording. The overlay dismisses itself after its contextual ready state.
     @State private var preparingModelID: String?
 
+    /// The paywall, opened from the keyboard (#404).
+    ///
+    /// WHY here and not in `SettingsView`, which owns the other two entry points: a
+    /// `dictus://open?intent=pro` URL is answered by whichever view is in the tree, and
+    /// `SettingsView` only is when the Settings tab is selected. `paywallCover` is
+    /// documented as *"one way to open the paywall, shared by every entry point"*, and
+    /// a cover presented here covers the tab bar as well, so which tab the user lands
+    /// on stops mattering.
+    @State private var showsPaywall = false
+
     @Environment(\.scenePhase) private var scenePhase
 
     /// Seeds the presentation state from the URL this process was launched with (issue #264).
@@ -130,7 +140,30 @@ struct MainTabView: View {
         // still runs for it: it is what marks the URL handled, and re-asserting the same
         // state is a no-op. It remains the only path for every URL that arrives while the
         // process is already alive.
+        .paywallCover(isPresented: $showsPaywall)
         .onOpenURL { url in
+            // The keyboard's Pro entries (#241's panel pill, #404's fan row). Until
+            // 2026-08-29 nothing routed on `dictus://open` at all, so both of them
+            // brought the app forward on whatever screen it happened to be showing and
+            // left the user to find the paywall — which empties a Pro row of its
+            // purpose.
+            //
+            // Gated on `paywallVisible` on this side too (#236). The keyboard already
+            // refuses to draw either entry while the flag is down, but the scheme is
+            // public and the app must not be the half of the pair that trusts it.
+            if KeyboardOpenURL.intent(from: url) == .pro {
+                guard PremiumFlags.paywallVisible else { return }
+                // Logged because the two halves of this live in different processes:
+                // the keyboard records that it opened the URL, and this is the line
+                // that says the app received it and answered.
+                PersistentLog.log(.diagnosticProbe(
+                    component: "paywall", instanceID: "0", action: "keyboardProIntent",
+                    details: "source=keyboard"
+                ))
+                showsPaywall = true
+                return
+            }
+
             guard let intent = KeyboardDictationURL.intent(from: url) else { return }
 
             if intent == .prepare {

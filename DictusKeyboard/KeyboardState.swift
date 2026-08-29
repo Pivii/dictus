@@ -582,20 +582,23 @@ class KeyboardState: ObservableObject {
 
     // MARK: - Opening DictusApp from the panel
 
-    /// Open DictusApp from the hamburger panel (#241).
+    /// Open DictusApp on a particular screen (#241, #404).
     ///
-    /// `intent` travels in the URL so DictusApp can route to a specific screen
-    /// later. It has no route for `open` today, so the app simply comes to the
-    /// foreground — which is what both the gear and the Pro entry need now.
+    /// `intent` travels in the URL, and since #404 the app actually routes on it:
+    /// `.pro` lands on the paywall. It used to be a free-form `String` and the app had
+    /// no `open` route at all, so the Pro entries opened the app on whatever screen
+    /// happened to be showing and the user had to find the paywall themselves. The
+    /// vocabulary is `KeyboardOpenIntent` and the URL is built by `KeyboardOpenURL`,
+    /// which the app parses with the same type — this target has no test bundle, and a
+    /// string interpolated here against a string matched over there is exactly the
+    /// cross-process contract that drifted.
     ///
     /// Goes through `openDictusURL`, i.e. `extensionContext` first: that is the
     /// documented path for an app extension, and SwiftUI's `openURL` has no
     /// success result and can fail silently in a keyboard extension.
-    func openDictusApp(intent: String) {
-        guard let url = URL(string: "dictus://open?source=keyboard&intent=\(intent)") else {
-            return
-        }
-        logProbe("openDictusApp", details: "intent=\(intent)")
+    func openDictusApp(intent: KeyboardOpenIntent) {
+        guard let url = KeyboardOpenURL.url(intent: intent) else { return }
+        logProbe("openDictusApp", details: "intent=\(intent.rawValue)")
         openDictusURL(url)
     }
 

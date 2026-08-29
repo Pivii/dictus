@@ -99,6 +99,34 @@ are written to put pressure on their mode — a field dictation that failed on
 device, rambles with no structure, input already partly in the target language,
 and input in a language outside the four.
 
+## Guardrail corpora (#413, #414)
+
+`guardrail` scores the two output-inspection checks — the per-segment language
+check and the grounding check — against corpora of **hand-labelled outputs**,
+not fixtures of raw inputs. It drives **no model**, because both checks are
+deterministic local `NaturalLanguage` calls. That is the point: unlike every
+other command here, this measurement is re-runnable by anyone, with or without
+Apple Intelligence, so the numbers behind two shipped thresholds are
+reproducible rather than a claim.
+
+```sh
+# The confusion matrix at the shipping thresholds.
+swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json \
+                                   ../docs/research/413-414-guardrail/adversarial.json
+
+# --sweep    the threshold grid the #413 numbers were read off
+# --segments every segment with its language reading and confidence
+# --anchors  every name found per output, flagged when absent from the input
+```
+
+Corpora live in `docs/research/413-414-guardrail/`: `corpus.json` is every
+output the #393 campaign committed, `adversarial.json` the cases it does not
+contain — a French list quoting English product names, a German list (where
+every noun is capitalised), bullets too short to read, bare proper nouns, and
+hand-built fabrications. Labels are in the JSON rather than in code because
+they are judgements, and a judgement that decides a threshold has to be
+disagreeable with in the open.
+
 ## Fixtures
 
 A JSON array of cases (`fixtures/seed.json` seeds the 5 Wispr-Flow comparison
