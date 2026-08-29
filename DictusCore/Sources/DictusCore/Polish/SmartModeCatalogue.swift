@@ -59,7 +59,13 @@ public enum SmartModeCatalogue {
         contract: PolishAcceptanceContract(
             minimumLengthRatio: 0.1,
             maximumLengthRatio: 2.0,
-            outputLanguage: .sameAsInput
+            outputLanguage: .sameAsInput,
+            // The mode #414 was found on. Its prompt carries a worked example whose
+            // bullet — `- Appeler Sophie avant : elle a les données de décembre` —
+            // reached an accepted output on a dictation naming neither Sophie nor
+            // December. Every prompt in the repo carries examples, so this is the
+            // mode where the check earns its keep first, not only.
+            requiresGroundedNames: true
         ),
         // The mode built for a long rambling dictation is the one that walks users
         // into the context ceiling, so a refusal there costs the whole text. The
@@ -94,7 +100,12 @@ public enum SmartModeCatalogue {
             contract: PolishAcceptanceContract(
                 minimumLengthRatio: 0.4,
                 maximumLengthRatio: 3.0,
-                outputLanguage: .fixed(target)
+                outputLanguage: .fixed(target),
+                // A translation localises names: `Londres` becomes `London`,
+                // `mars` becomes `March`. Surface identity between output and input
+                // is not expected here, so the grounding check would be measuring
+                // the wrong thing rather than measuring nothing.
+                requiresGroundedNames: false
             ),
             // Translation cannot degrade: the floor is the input language, which is
             // the one thing this mode exists to change. Inserting it would be the

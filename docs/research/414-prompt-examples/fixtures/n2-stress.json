@@ -1,0 +1,23 @@
+[
+ {
+  "id": "N2-reunion-vrac",
+  "lang": "fr",
+  "sttEngine": "PK",
+  "_note": "STRESS. A copy of N2-reunion-vrac from the shipping fixture set, alone, so it can be run at high n. This is the fixture on which the prompt's worked example was copied verbatim into an accepted output — twice: round 1 run 5 of the #393 campaign, and again live on 2026-08-27 during PR #442's verification. Its shape is why: meeting prep, a person to call, a month named, which is the example's own shape. n=30 over six fixtures cannot resolve a ~15% event on one of them; n=30 on this one can. Lives here rather than in polish-harness/fixtures/ because that directory belongs to another change (#439).",
+  "raw": "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine",
+  "expect": [
+   {
+    "regexAbsent": "<<NL>>"
+   },
+   {
+    "regexAbsent": "\\[[^\\]]*\\]"
+   },
+   {
+    "contains": "Marion"
+   },
+   {
+    "lengthRatioMax": 1.0
+   }
+  ]
+ }
+]
