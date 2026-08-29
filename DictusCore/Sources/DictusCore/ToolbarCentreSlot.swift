@@ -34,7 +34,12 @@ import Foundation
 ///    will not run either: naming the mode there would be advertising something the
 ///    process has already stopped doing.
 /// 5. **Armed mode name** (#79) — a sticky setting the user made once, possibly
-///    weeks ago, on a surface they only see when idle.
+///    weeks ago, on a surface they only see when idle. Two cases at this rung, and
+///    which one shows is decided by whether a dictation starting now would actually
+///    honour it (#423): `armedMode` when it runs, `armedModeInactive` when it does
+///    not. Same rung because it is the same fact — this is what you armed — and
+///    demoting the inactive one would hide the very thing the user needs to see to
+///    understand why their dictations changed.
 /// 6. **Discovery hint** (#79) — costs nothing, because it only renders when there
 ///    is nothing else at all to show.
 public enum ToolbarCentreSlot: Equatable, Sendable {
@@ -57,6 +62,20 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     /// The armed Smart Mode's display name.
     case armedMode(String)
 
+    /// The armed Smart Mode's display name, for a mode that **will not run** (#423).
+    ///
+    /// A separate case rather than a flag on `armedMode` because the two say opposite
+    /// things and the view must not be able to draw one as the other. `armedMode` is
+    /// a statement about what the next dictation does; this one is a statement about
+    /// a setting that survived a condition it cannot run under — Smart Modes switched
+    /// off, no subscription, Apple Intelligence off, the model still downloading.
+    ///
+    /// It keeps the slot rather than falling through to the hint, because the choice
+    /// is still there and re-teaching the gesture to someone who has armed a mode
+    /// would be absurd. What it must not do is read as active: that is #423, where
+    /// the bar named the mode in accent blue while every dictation ran Normal.
+    case armedModeInactive(String)
+
     /// "Long-press for Smart Modes".
     case discoveryHint
 
@@ -65,8 +84,9 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     case empty
 
     // swiftlint:disable function_parameter_count
-    // Seven parameters because there are seven competitors, and a table with seven
-    // rows needs seven inputs. Wrapping them in a struct would move the seven names
+    // Eight parameters because there are seven competitors and one of them needs a
+    // second fact to pick between its two shapes (#423). A table with seven rows
+    // needs seven inputs. Wrapping them in a struct would move the seven names
     // one line up and add a type whose only job is to be unpacked here; the
     // alternative that would genuinely reduce the count — resolving some of them in
     // here — is worse, because it would put UserDefaults and Apple Intelligence reads
@@ -76,6 +96,11 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     ///
     /// - Parameter isChoosingMode: whether the long-press fan is on screen.
     /// - Parameter armedModeName: the armed mode's display name, or nil for Normal.
+    /// - Parameter armedModeIsEffective: whether a dictation starting now would
+    ///   actually run that mode — `SmartModeAvailability.forDictation` (#423). No
+    ///   default, for the reason `SmartModeAvailability.armability` gives about its
+    ///   own entitlement parameter: a default here is exactly the trap, because the
+    ///   safe-looking answer is the one that produced the bug.
     /// - Parameter offersDiscoveryHint: whether the hint is still worth showing —
     ///   the caller owns that policy, see `SmartModeDiscovery`.
     public static func resolve(isChoosingMode: Bool,
@@ -84,13 +109,16 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
                                hasSuggestions: Bool,
                                polishUnavailable: Bool,
                                armedModeName: String?,
+                               armedModeIsEffective: Bool,
                                offersDiscoveryHint: Bool) -> ToolbarCentreSlot {
         if isChoosingMode { return .choosingMode }
         if let errorMessage { return .error(errorMessage) }
         if offersDictationUndo { return .dictationUndo }
         if hasSuggestions { return .suggestions }
         if polishUnavailable { return .polishUnavailable }
-        if let armedModeName { return .armedMode(armedModeName) }
+        if let armedModeName {
+            return armedModeIsEffective ? .armedMode(armedModeName) : .armedModeInactive(armedModeName)
+        }
         if offersDiscoveryHint { return .discoveryHint }
         return .empty
     }
@@ -104,7 +132,9 @@ public enum ToolbarCentreSlot: Equatable, Sendable {
     public var evictsHamburger: Bool {
         switch self {
         case .error, .dictationUndo, .suggestions: return true
-        case .choosingMode, .polishUnavailable, .armedMode, .discoveryHint, .empty: return false
+        case .choosingMode, .polishUnavailable, .armedMode, .armedModeInactive,
+             .discoveryHint, .empty:
+            return false
         }
     }
 }

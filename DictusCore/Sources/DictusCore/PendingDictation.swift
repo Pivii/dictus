@@ -55,6 +55,20 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     /// free polish, which is what that dictation was started under anyway.
     public let smartMode: SmartMode?
 
+    /// The mode that was armed and **did not** run, when the dictation was resolved
+    /// down to Normal (#423), or nil when nothing was skipped.
+    ///
+    /// The mirror of `smartMode` above and mutually exclusive with it: a mode that
+    /// ran was not skipped. It travels on this record rather than in a field of the
+    /// coordinator because the sentence is shown *after* the insertion — a message
+    /// raised before it is wiped by `KeyboardState.insertDictation` on its way to
+    /// idle — and by then a newer dictation may already own the slot. This record is
+    /// the thing that is superseded correctly.
+    ///
+    /// Optional and decoded as absent on records written before it existed, like
+    /// `smartMode`: the worst case is a lost transient notice.
+    public let skippedSmartMode: SmartModeSkipNotice?
+
     /// How long the user spoke. Feeds the polish duration gate (#141), which is
     /// otherwise unanswerable in the extension: it never saw the audio.
     public let recordingDuration: TimeInterval
@@ -117,12 +131,14 @@ public struct PendingDictation: Codable, Equatable, Sendable {
     public init(raw: String,
                 policy: TranscriptionLanguagePolicy,
                 smartMode: SmartMode? = nil,
+                skippedSmartMode: SmartModeSkipNotice? = nil,
                 recordingDuration: TimeInterval,
                 documentIdentifier: String?,
                 claimedAt: TimeInterval = Date().timeIntervalSince1970) {
         self.raw = raw
         self.policy = policy
         self.smartMode = smartMode
+        self.skippedSmartMode = skippedSmartMode
         self.recordingDuration = recordingDuration
         self.documentIdentifier = documentIdentifier
         self.claimedAt = claimedAt

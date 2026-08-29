@@ -10,7 +10,12 @@ import Foundation
 /// candidate takes 13.8 s backgrounded against Apple FM's field p50 of 1,654 ms. So
 /// this enum is not a list of degraded states to fall back through — it is the list
 /// of sentences the user is owed instead of a feature.
-public enum SmartModeUnavailableReason: Equatable, Sendable {
+///
+/// `Codable` since #423, because a skip notice crosses the App Group: the reason is
+/// resolved in DictusApp and the sentence is shown by the keyboard. The synthesised
+/// coding is fine here — the only associated value is `.other`'s string — and a
+/// decode that fails costs a transient notice, never a dictation.
+public enum SmartModeUnavailableReason: Equatable, Sendable, Codable {
 
     /// Apple Intelligence is off, or refuses to enable. Recoverable by the user; the
     /// most common cause is the Siri-vs-iPhone language mismatch.
@@ -46,6 +51,21 @@ public enum SmartModeUnavailableReason: Equatable, Sendable {
     /// share a sentence. This one has a remedy the user can act on today.
     case notSubscribed
 
+    /// The user pays for Smart Modes and has switched them off in Settings (#423).
+    ///
+    /// Split out of `.notSubscribed` because that case used to carry both, and
+    /// `FeatureGate.isAvailable` is where they got merged: `isProActive && toggle`.
+    /// It is the same argument `.notSubscribed` makes one rung up — two different
+    /// people must never share a sentence — and it was the maintainer's own
+    /// reproduction of #423 that showed the merge as a lie. Someone who turned the
+    /// feature off is not being sold anything, and "Smart Modes are part of Dictus
+    /// Pro" says the opposite of the true thing: nothing failed, they turned it off.
+    ///
+    /// Also what keeps #404 honest. The non-subscriber's fan is a single Dictus Pro
+    /// row, and a subscriber who switched the feature off must not be shown an
+    /// advertisement for what they already pay for.
+    case switchedOff
+
     /// Stable name for logs and for a UI that wants to key off the reason without
     /// switching over the enum.
     public var slug: String {
@@ -58,6 +78,7 @@ public enum SmartModeUnavailableReason: Equatable, Sendable {
         case .engineRefusing: return "engineRefusing"
         case .other(let detail): return "other:\(detail)"
         case .notSubscribed: return "notSubscribed"
+        case .switchedOff: return "switchedOff"
         }
     }
 
@@ -85,6 +106,8 @@ public enum SmartModeUnavailableReason: Equatable, Sendable {
             return "Smart Modes are unavailable (\(detail))."
         case .notSubscribed:
             return "Smart Modes are part of Dictus Pro."
+        case .switchedOff:
+            return "Smart Modes are switched off in Dictus."
         }
     }
 
@@ -105,10 +128,49 @@ public enum SmartModeUnavailableReason: Equatable, Sendable {
         // for definitive reasons only, and a lapsed subscription must not silently
         // erase which mode the user had armed. They resubscribe and it is still
         // there.
+        // `.switchedOff` is recoverable for the plainest reason on this list: the
+        // user turned it off and can turn it back on. Disarming over it would throw
+        // away the mode they chose because they paused the feature for an afternoon.
         case .appleIntelligenceNotEnabled, .modelNotReady, .engineRefusing, .other,
-             .notSubscribed:
+             .notSubscribed, .switchedOff:
             return true
         case .deviceNotEligible, .osTooOld, .sdkMissing: return false
+        }
+    }
+}
+
+/// What the user's subscription and per-feature toggle say together.
+///
+/// Three states rather than a `Bool`, because `FeatureGate.isAvailable(.smartMode)`
+/// answers `isProActive && toggle` and the two halves of that `&&` are two different
+/// people (#423). Passing the merged bool into `armability` is what produced a fan
+/// telling a paying subscriber that Smart Modes "are part of Dictus Pro" after they
+/// switched them off themselves — and, had #404 been built on it, a Dictus Pro
+/// advertisement shown to someone who already pays.
+public enum SmartModeEntitlement: Equatable, Sendable {
+
+    /// Pro is active and the Smart Mode toggle is on.
+    case entitled
+
+    /// No Pro subscription. The one state #404's single Dictus Pro row is for.
+    case notSubscribed
+
+    /// Pro is active; the user switched Smart Modes off in Settings.
+    case switchedOff
+
+    /// What the App Group says right now. Both processes read it the same way:
+    /// `FeatureGate` goes to the App Group, which the keyboard and the app share.
+    public static var current: SmartModeEntitlement {
+        guard FeatureGate.isProActive else { return .notSubscribed }
+        return FeatureGate.isEnabled(.smartMode) ? .entitled : .switchedOff
+    }
+
+    /// The unavailability this entitlement produces, or nil when it produces none.
+    var unavailableReason: SmartModeUnavailableReason? {
+        switch self {
+        case .entitled: return nil
+        case .notSubscribed: return .notSubscribed
+        case .switchedOff: return .switchedOff
         }
     }
 }
@@ -144,7 +206,8 @@ public enum SmartModeAvailability {
     ///   configuration say, from `PolishAvailability.state`.
     /// - Parameter engineIsRefusing: whether the process that will run the
     ///   generation has given up on the engine for its lifetime (#315).
-    /// - Parameter isEntitled: whether the user is paying for Smart Modes (#392).
+    /// - Parameter entitlement: what the subscription and the per-feature toggle say
+    ///   together (#392, #423).
     ///
     /// **The order is the message.** A device that cannot run the engine is told
     /// that, not sold a subscription it could never use — #79 sells Pro on such
@@ -153,13 +216,14 @@ public enum SmartModeAvailability {
     /// misleading-metadata rejection that issue names. Capability first,
     /// entitlement second, transient refusal last.
     ///
-    /// `isEntitled` has no default on purpose. #392 exists because this property is
+    /// `entitlement` has no default on purpose. #392 exists because this property is
     /// named "the arming policy" and answered on Apple Intelligence alone, which is
     /// exactly what someone building a paid surface on top of it would trust. A
-    /// default would put that trap back.
+    /// default would put that trap back. It is a three-state value rather than a
+    /// bool for the reason `SmartModeEntitlement` gives.
     public static func armability(engineState: PolishAvailabilityState,
                                   engineIsRefusing: Bool,
-                                  isEntitled: Bool) -> SmartModeArmability {
+                                  entitlement: SmartModeEntitlement) -> SmartModeArmability {
         switch engineState {
         case .appleIntelligenceNotEnabled: return .unavailable(.appleIntelligenceNotEnabled)
         case .modelNotReady: return .unavailable(.modelNotReady)
@@ -168,7 +232,7 @@ public enum SmartModeAvailability {
         case .sdkMissing: return .unavailable(.sdkMissing)
         case .other(let detail): return .unavailable(.other(detail))
         case .available:
-            guard isEntitled else { return .unavailable(.notSubscribed) }
+            if let reason = entitlement.unavailableReason { return .unavailable(reason) }
             return engineIsRefusing ? .unavailable(.engineRefusing) : .armable
         }
     }
@@ -188,17 +252,39 @@ public enum SmartModeAvailability {
         armability(
             engineState: PolishAvailability.state,
             engineIsRefusing: PolishAvailabilityChannel.isUnavailable,
-            isEntitled: isEntitled
+            entitlement: SmartModeEntitlement.current
         )
     }
 
-    /// Whether the user is paying for Smart Modes.
+    /// The armability a dictation starting **right now** would resolve against.
+    ///
+    /// The same three facts `SmartModeStore.resolveArmedMode()` consults, in one
+    /// expression, so the pipeline and the surfaces cannot disagree about whether the
+    /// armed mode will run. That disagreement is the whole of #423: the toolbar and
+    /// the mic badge announced a mode the dictation had already decided to skip, and
+    /// nothing in the code tied the two answers together.
+    ///
+    /// Differs from `current` in exactly one input: the #315 rate-limit latch is
+    /// deliberately not consulted, because it is per-process and belongs to whichever
+    /// process runs generations. The toolbar already says that separately, at a higher
+    /// rung of the centre slot's table (`ToolbarCentreSlot.polishUnavailable`).
+    public static var forDictation: SmartModeArmability {
+        armability(
+            engineState: PolishAvailability.state,
+            engineIsRefusing: false,
+            entitlement: SmartModeEntitlement.current
+        )
+    }
+
+    /// Whether the user is paying for Smart Modes *and* has them switched on.
     ///
     /// `FeatureGate.isAvailable` and not `isProActive`: the per-feature toggle is
     /// part of the entitlement, and a subscriber who switched Smart Mode off in
-    /// Settings has said what they want.
+    /// Settings has said what they want. Which of the two refused is
+    /// `SmartModeEntitlement.current`'s business — this stays for callers that only
+    /// need the yes/no.
     public static var isEntitled: Bool {
-        FeatureGate.isAvailable(.smartMode)
+        SmartModeEntitlement.current == .entitled
     }
 
     /// Whether the device could ever run a Smart Mode, ignoring transient refusals
@@ -207,12 +293,12 @@ public enum SmartModeAvailability {
     /// This is the half that decides whether an armed mode *survives*: a device that
     /// has lost Apple Intelligence cannot honour the mode at all, while a process on
     /// the wrong side of a rate limit — or a lapsed subscription — will be fine
-    /// again later. Entitlement is deliberately `true` here for that reason: a
+    /// again later. Entitlement is deliberately `.entitled` here for that reason: a
     /// cancelled subscription must stop the mode applying without erasing which mode
     /// the user had armed.
     public static var deviceCanRunModes: Bool {
         armability(
-            engineState: PolishAvailability.state, engineIsRefusing: false, isEntitled: true
+            engineState: PolishAvailability.state, engineIsRefusing: false, entitlement: .entitled
         ).isArmable
     }
 
@@ -228,7 +314,7 @@ public enum SmartModeAvailability {
     /// could drift from the first.
     public static var deviceIsCapable: Bool {
         switch armability(
-            engineState: PolishAvailability.state, engineIsRefusing: false, isEntitled: true
+            engineState: PolishAvailability.state, engineIsRefusing: false, entitlement: .entitled
         ) {
         case .armable: return true
         case .unavailable(let reason): return reason.isRecoverable
