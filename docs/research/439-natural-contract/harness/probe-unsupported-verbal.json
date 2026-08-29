@@ -1,0 +1,14 @@
+[
+  {
+    "id": "it-verbal",
+    "lang": "it",
+    "sttEngine": "PK",
+    "raw": "ho finito il lavoro punto esclamativo ci vediamo domani virgola fammi sapere se ti va bene"
+  },
+  {
+    "id": "pt-verbal",
+    "lang": "pt",
+    "sttEngine": "PK",
+    "raw": "acabei de terminar o relatório ponto final mando amanhã de manhã vírgula diz-me se está bem"
+  }
+]
