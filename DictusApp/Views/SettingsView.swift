@@ -18,6 +18,9 @@ struct SettingsView: View {
 
     @EnvironmentObject var proStatus: ProStatusManager
 
+    /// The saved dictations, for the destructive row below (#70).
+    @EnvironmentObject var history: TranscriptionHistoryStore
+
     // MARK: - Preferences (App Group persisted)
 
     @AppStorage(SharedKeys.language, store: UserDefaults(suiteName: AppGroup.identifier))
@@ -113,6 +116,9 @@ struct SettingsView: View {
     /// Confirmation dialog for resetting the learned-words dictionary (#222).
     @State private var showResetDictionaryConfirmation = false
 
+    /// Confirmation dialog for emptying the transcription history (#70).
+    @State private var showClearHistoryConfirmation = false
+
     /// Drives the paywall cover. Shared by the Dictus Pro row and every locked
     /// feature row: they open the same screen, so one flag serves both.
     @State private var showPaywall = false
@@ -176,6 +182,15 @@ struct SettingsView: View {
                 if PolishAvailability.isToggleVisible {
                     Toggle("Polish transcription", isOn: $polishEnabled)
                     polishStateFooter
+                }
+
+                // Visible for a subscriber, and for anyone who still has saved
+                // transcriptions after an entitlement went away (#70). See
+                // `HistoryAvailability.clearRowIsVisible`.
+                if HistoryAvailability.clearRowIsVisible(
+                    isEntitled: historyIsEntitled, hasSavedRecords: !history.isEmpty
+                ) {
+                    clearHistoryRow
                 }
             } header: {
                 Text("Transcription")
@@ -474,6 +489,55 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// Whether the user is entitled to the history right now.
+    ///
+    /// Reads `proStatus.isProActive` so the row reacts: `FeatureGate` goes to the
+    /// App Group, which publishes nothing on its own.
+    private var historyIsEntitled: Bool {
+        _ = proStatus.isProActive
+        return HistoryAvailability.isEntitled
+    }
+
+    /// Empties the transcription history (#70, brief decision 3).
+    ///
+    /// WHY this row exists at all: the history is a local plaintext record of
+    /// everything the user has ever dictated. A store like that needs a visible
+    /// switch that removes it, both for the user and for what Dictus declares at
+    /// review time. Per-item delete stays where the issue put it, on the cards.
+    ///
+    /// WHY the count sits on the row and not in the confirmation sentence: a count
+    /// inside a sentence has to agree with it in both languages, and "1
+    /// transcriptions" is the bug that always ships. As a trailing detail it is a
+    /// number next to a label, which is also how iOS writes it.
+    private var clearHistoryRow: some View {
+        Button(role: .destructive) {
+            showClearHistoryConfirmation = true
+        } label: {
+            HStack {
+                Text("Clear history")
+                Spacer()
+                // `format:` rather than an interpolated literal: the latter would put
+                // a "%lld" key in the string catalogue for a number that has nothing
+                // to translate, and this way the digits group per the user's locale.
+                Text(history.count, format: .number)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .disabled(history.isEmpty)
+        .confirmationDialog(
+            "Clear history?",
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete all", role: .destructive) {
+                history.clear()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every transcription saved on this device will be deleted. This cannot be undone.")
+        }
+    }
 
     /// The chevron `NavigationLink` draws on a List row, for rows that open a
     /// cover instead and therefore have to draw it themselves.

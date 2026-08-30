@@ -30,6 +30,20 @@ protocol SpeechModelProtocol {
     ///     mode — Whisper's built-in language detection).
     /// - Returns: Transcribed text string.
     func transcribe(audioSamples: [Float], language: String?) async throws -> String
+
+    /// Run one inference on generated silence and throw the result away (issue #426).
+    ///
+    /// WHY every engine has to answer this: loading a model is not the same as being
+    /// ready to run one. The Neural Engine specializes per tensor shape at the FIRST
+    /// inference, so whichever call is first pays that cost — and until this existed
+    /// that call was always the user's first dictation, 4.1 s slower than the next one
+    /// on the same clip. The coordinator calls this inside the load, before the engine
+    /// is published, so the cost lands where the user is already watching a preparation
+    /// state.
+    ///
+    /// Distinct from `UnifiedAudioEngine.warmUp()` (#106), which warms the audio
+    /// engine. Different subsystem, similar name; hence "warm inference" throughout.
+    func runWarmInference() async throws
 }
 
 /// Failures raised while preparing a speech model for transcription.
@@ -132,6 +146,15 @@ class WhisperKitEngine: SpeechModelProtocol {
         self.whisperKit = kit
     }
 
+    /// Load a model from scratch into this engine.
+    ///
+    /// NOTHING CALLS THIS TODAY. The live load path is
+    /// `DictationCoordinator.ensureWhisperKitEngineReady`, which builds the `WhisperKit`
+    /// instance itself and hands it over through `setWhisperKit`. Whoever revives this
+    /// method has to call `runWarmInference()` after the load and before handing the
+    /// engine out, or they re-create issue #426: `prewarm: true, load: true` compiles
+    /// and loads the weights and runs no inference, so the Neural Engine's per-shape
+    /// specialization lands in the user's first dictation instead.
     func prepare(modelIdentifier: String) async throws {
         // Skip if same model is already loaded
         if loadedModelName == modelIdentifier, whisperKit != nil {
@@ -159,6 +182,52 @@ class WhisperKitEngine: SpeechModelProtocol {
         let kit = try await WhisperKit(config)
         self.whisperKit = kit
         self.loadedModelName = modelIdentifier
+    }
+
+    /// One discarded inference, with every knob that could make it silently useless
+    /// pinned down (issue #426).
+    ///
+    /// The options deliberately differ from `transcribe` above in exactly two places,
+    /// and neither changes a tensor shape — which is all that specialization depends on:
+    ///
+    /// - `temperatureFallbackCount: 0`. Silence trips `logProbThreshold` easily, and the
+    ///   production value of 5 would buy up to six full decode passes for a result that
+    ///   is about to be thrown away.
+    /// - `sampleLength: 16`. `TextDecoder.decodeText` loops
+    ///   `for tokenIndex in prefilledIndex..<min(sampleLength, 223)`, and `prefilledIndex`
+    ///   is the prefill cache length — 3 or 4 with `usePrefillPrompt: true`. A sample
+    ///   length at or below that runs the decoder ZERO times and specializes only the
+    ///   encoder. Sixteen leaves room above the prefill without letting the loop run on.
+    ///
+    /// `chunkingStrategy` is left off because it cannot apply: `WhisperKit.transcribe`
+    /// only consults it when the buffer exceeds one 30 s window, and this one is 2 s. It
+    /// therefore takes `runTranscribeTask` directly — the same path each VAD chunk of a
+    /// real recording takes, padded to the same 480 000-sample window.
+    ///
+    /// The language is fixed rather than read from the user's policy: the prefill token
+    /// differs, the shapes do not, and a load has no business reaching into the
+    /// dictation language snapshot.
+    func runWarmInference() async throws {
+        guard let whisperKit else {
+            throw TranscriptionError.notReady
+        }
+
+        let options = DecodingOptions(
+            task: .transcribe,
+            language: "en",
+            temperature: 0.0,
+            temperatureFallbackCount: 0,
+            sampleLength: 16,
+            usePrefillPrompt: true,
+            usePrefillCache: true,
+            detectLanguage: false,
+            skipSpecialTokens: true
+        )
+
+        _ = try await whisperKit.transcribe(
+            audioArray: WarmInferenceAudio.silence(),
+            decodeOptions: options
+        )
     }
 
     func transcribe(audioSamples: [Float], language: String?) async throws -> String {

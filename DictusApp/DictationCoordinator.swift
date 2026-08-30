@@ -100,6 +100,12 @@ class DictationCoordinator: ObservableObject {
     /// Fires when the keyboard never says it finished (#361 decision 14).
     var polishHandoffWatchdog: Timer?
 
+    /// The history record this hand-off saved with the raw text (#70), so the text
+    /// the keyboard reports typing can replace it in place rather than arrive as a
+    /// second card for the same dictation. Nil when nothing was saved — an empty
+    /// dictation, or a full history the record fell straight out of.
+    var polishHandoffHistoryID: UUID?
+
     /// Which dictation the app is currently in. Moves when one starts and when one
     /// is abandoned -- see `DictationSessionGeneration` for why both matter.
     private var sessionGeneration = DictationSessionGeneration()
@@ -202,6 +208,14 @@ class DictationCoordinator: ObservableObject {
     /// `ModelManager` is instantiated more than once (onboarding builds its own), so a
     /// lock owned by an instance never covered the other instance either.
     var neuralEngineHolder: String?
+
+    /// Which model this process has already run a discarded inference on (issue #426).
+    ///
+    /// The gate is consulted by `runWarmInference(on:modelName:)` in
+    /// `DictationCoordinator+ModelLoad.swift`, which is why this is not `private`.
+    /// Process-scoped, like `abandonedModel` and for the same reason: it describes a
+    /// live engine in this process, and an engine does not survive one.
+    var warmInferenceLedger = WarmInferenceLedger()
 
     /// The model the user walked away from preparing, or that blew its launch deadline.
     ///
@@ -1555,6 +1569,18 @@ private extension DictationCoordinator {
 
             let kit = try await WhisperKit(config)
 
+            // The weights are resident and the model is still not ready to run at
+            // speed: the Neural Engine specializes per shape at the first inference,
+            // never at load (issue #426). Run one here, on silence, and throw it away.
+            //
+            // BEFORE PUBLISHING, not after. The engine only becomes reachable at
+            // `self.whisperKit = kit` below, and every other caller is parked on this
+            // very task through `awaitInFlightEngineInit` — so nothing can start a real
+            // transcription on a half-warm engine. Publishing first and warming after
+            // would put two `transcribe` calls on one instance, which is the #144
+            // cancellation storm.
+            let whisperKitEngine = await self.warmedWhisperKitEngine(for: kit, modelName: modelName)
+
             guard self.shouldPublishLoad(
                 epoch: epoch, component: "WhisperKitLoad", modelName: modelName
             ) else {
@@ -1563,7 +1589,7 @@ private extension DictationCoordinator {
                 // as a loaded engine. A cold-start dictation is one of those callers:
                 // it would write `.ready` with `whisperKit == nil` behind it and then
                 // call `transcribe` on nothing (issue #428 review, finding 1).
-                throw SpeechModelError.loadAbandoned(identifier: modelName)
+                throw self.abandonedLoadError(for: modelName)
             }
 
             self.whisperKit = kit
@@ -1573,9 +1599,6 @@ private extension DictationCoordinator {
 
             // Share with TranscriptionService only — UnifiedAudioEngine doesn't need WhisperKit
             transcriptionService.prepare(whisperKit: kit)
-
-            let whisperKitEngine = WhisperKitEngine()
-            whisperKitEngine.setWhisperKit(kit)
             transcriptionService.prepare(engine: whisperKitEngine)
 
             if #available(iOS 14.0, *) {
@@ -1666,8 +1689,11 @@ private extension DictationCoordinator {
                     DictusLogger.app.info("Initializing ParakeetEngine for model: \(modelName, privacy: .public)")
                 }
 
-                let parakeetEngine = ParakeetEngine()
-                try await parakeetEngine.prepare(modelIdentifier: modelName)
+                // Loaded and warmed before anything can reach it, same rule and same
+                // ordering as the WhisperKit path (issue #426). The warm inference is
+                // unmeasured on Parakeet — see `ParakeetEngine.runWarmInference` for
+                // what is known and what is not.
+                let parakeetEngine = try await self.warmedParakeetEngine(modelName: modelName)
 
                 guard self.shouldPublishLoad(
                     epoch: epoch, component: "ParakeetLoad", modelName: modelName
@@ -1675,7 +1701,7 @@ private extension DictationCoordinator {
                     // Throws for the same reason as the WhisperKit path above: this is
                     // the shared lock, and a silent success would hand every awaiting
                     // caller an engine that was discarded.
-                    throw SpeechModelError.loadAbandoned(identifier: modelName)
+                    throw self.abandonedLoadError(for: modelName)
                 }
 
                 self.whisperKit = nil

@@ -200,4 +200,5 @@ struct MainTabView: View {
 #Preview {
     MainTabView()
         .environmentObject(DictationCoordinator.shared)
+        .environmentObject(TranscriptionHistoryStore.shared)
 }
