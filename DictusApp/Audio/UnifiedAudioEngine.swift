@@ -444,14 +444,7 @@ class UnifiedAudioEngine: ObservableObject {
         logHapticsAllowance(context: "mediaServicesReset")
 
         cancelIdleRelease()
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        // Bump generation BEFORE replacing the engine so any in-flight tap callbacks
-        // from the old engine see a stale generation and bail out instead of writing
-        // into shared audio-thread state and racing with the new engine's tap.
-        engineGeneration &+= 1
-        engine = AVAudioEngine()
-        converter = nil
+        replaceEngine()
         sessionConfigured = false
         isInterrupted = true
         isRecording = false
@@ -459,6 +452,32 @@ class UnifiedAudioEngine: ObservableObject {
 
         NotificationCenter.default.post(name: .dictusAudioSessionInterrupted, object: nil)
         DarwinNotificationCenter.post(DarwinNotificationName.audioSessionInterrupted)
+    }
+
+    /// Throw the current `AVAudioEngine` away and put a fresh one in its place.
+    ///
+    /// This is the only operation in the class that discards the input node, and
+    /// therefore the only one that can clear a format the node has latched. Extracted
+    /// from `handleMediaServicesReset()` for #123, where a dead input format needs
+    /// exactly this and nothing else.
+    ///
+    /// WHY the two callers are not the same call: the reset handler additionally tears
+    /// down `sessionConfigured`, raises `isInterrupted`, clears the recording flags and
+    /// posts both interruption notifications. None of that may happen inside
+    /// `startEngine()` — the flags in particular, because `forceRestart()` reaches
+    /// `startEngine()` in the middle of a live recording and clearing them there would
+    /// silently stop accumulating samples.
+    ///
+    /// The generation bump stays welded to the replacement: it must happen BEFORE the
+    /// new engine exists so any in-flight tap callback from the old one sees a stale
+    /// generation and bails out, instead of writing into shared audio-thread state and
+    /// racing the new engine's tap.
+    private func replaceEngine() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        engineGeneration &+= 1
+        engine = AVAudioEngine()
+        converter = nil
     }
 
     // MARK: - Session & Permissions (ported from AudioRecorder)
