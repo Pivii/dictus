@@ -716,7 +716,22 @@ class DictationCoordinator: ObservableObject {
                     // cancel to arrive mid-flight. `setModelLoadState` stays ungated
                     // on purpose: it describes the model, which outlives any one
                     // dictation, and the next session needs it to be accurate.
-                    self.setModelLoadState(.idle, reason: "cold-start-failed")
+                    //
+                    // Which is exactly why the value cannot be a constant `.idle`
+                    // (issue #427). Since the prewarm deadline became detachable, a
+                    // load the app gave up on can LAND: it publishes its engine and
+                    // writes `.ready`, while the cancellation that abandoning it
+                    // produced arrives here as this dictation's failure. Measured on
+                    // device 2026-08-30, both in the same second —
+                    // `init-preload-late-success` then `cold-start-failed` over the top
+                    // of it, with the engine loaded and running. The flag said the
+                    // engine was not there. `ModelLoadState.afterFailedDictation` asks
+                    // the only question the flag is entitled to answer, and the resolver
+                    // lives next to the rest of the load policy in
+                    // `DictationCoordinator+ModelLoad.swift` — this file is at its
+                    // #146 length budget, which is what that file exists for.
+                    let state = self.modelLoadStateAfterFailedDictation(published: self.currentModelName)
+                    self.setModelLoadState(state, reason: "cold-start-failed")
                     guard self.mayReport(session, "cold start failure") else { return }
                     self.handleError(message)
                     // The keyboard has been told. Released here so the assertion ends on
@@ -1203,7 +1218,9 @@ class DictationCoordinator: ObservableObject {
     ///   after a cancel.
     /// - `setModelLoadState(...)` describes the *model*, which outlives any one
     ///   dictation. Suppressing it would leave the next session reading a load state
-    ///   that never happened.
+    ///   that never happened. Note what does the work in the cold-start catch since
+    ///   issue #427: not gating, but writing the true value. Ungated and constant
+    ///   `.idle` was how a failed dictation came to contradict a published engine.
     /// - `schedulePolishPrewarm()` warms a model and publishes nothing.
     /// - The stage watchdog re-checks `self.status` against the status it was armed
     ///   for before it fires.
