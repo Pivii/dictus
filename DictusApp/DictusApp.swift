@@ -48,6 +48,11 @@ struct DictusApp: App {
     @StateObject private var proStatus: ProStatusManager
     @StateObject private var subscriptionManager: SubscriptionManager
 
+    /// The saved dictations (#70). A `StateObject` on the singleton, like the
+    /// coordinator above: the object outlives every view, and this is what publishes
+    /// it to the screens that read it.
+    @StateObject private var history = TranscriptionHistoryStore.shared
+
     /// Onboarding completion flag stored in App Group for cross-process access.
     ///
     /// WHY AppStorage with suiteName instead of plain @State:
@@ -186,6 +191,7 @@ struct DictusApp: App {
                 .environmentObject(coordinator)
                 .environmentObject(proStatus)
                 .environmentObject(subscriptionManager)
+                .environmentObject(history)
                 .onOpenURL { url in
                     handleIncomingURL(url)
                 }

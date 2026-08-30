@@ -111,6 +111,18 @@ extension DictationCoordinator {
         guard mayReport(session, "transcription result") else { return }
 
         lastResult = finalText
+        // Saved to the history (#70) at the moment the text becomes the user's, and
+        // on this side of the `mayReport` gate: a dictation they cancelled must not
+        // turn up in a list of what they dictated. In-app dictations are finished
+        // here, so unlike the keyboard path below this is the one and only write.
+        //
+        // The history is a Pro feature, and the entitlement is checked inside
+        // `append` rather than here — see `TranscriptionHistoryStore`. Without it
+        // this call stores nothing and returns nil; there is no path on which a
+        // non-subscriber's dictation reaches the file.
+        TranscriptionHistoryStore.shared.append(TranscriptionRecord(
+            text: finalText, policy: languagePolicy, duration: audioDuration
+        ))
         status = .ready
         defaults.set(finalText, forKey: SharedKeys.lastTranscription)
         defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
@@ -173,6 +185,19 @@ extension DictationCoordinator {
         // what it actually typed. Raw rather than nothing: if the keyboard never gets
         // back to us, the card should still show the dictation that happened.
         lastResult = rawText
+        // The history entry is created from the raw, for the same reason the raw is
+        // what gets written to the App Group: this is the last moment the dictation
+        // is certainly still ours (#70, #361). The keyboard polishes in a process iOS
+        // may stop at any moment, and a dictation that never comes back should be in
+        // the history as the raw rather than missing from it. `polishHandoffFinished`
+        // replaces the text in place when the keyboard reports what it typed.
+        //
+        // Nil for a non-subscriber, because `append` refuses without the Pro
+        // entitlement (#70). `polishHandoffFinished` then has no record to update,
+        // which is the correct outcome rather than a missing branch.
+        polishHandoffHistoryID = TranscriptionHistoryStore.shared.append(TranscriptionRecord(
+            text: rawText, policy: languagePolicy, duration: audioDuration
+        ))?.id
         status = .ready
         defaults.set(rawText, forKey: SharedKeys.lastTranscription)
         if let policyData = try? JSONEncoder().encode(languagePolicy) {
@@ -277,6 +302,7 @@ extension DictationCoordinator {
         polishHandoffSession = nil
         polishHandoffPreview = nil
         polishHandoffToken = nil
+        polishHandoffHistoryID = nil
         if let reason {
             PersistentLog.log(.polishHandoff(step: "abandoned", outcome: reason, chars: 0))
         }
@@ -309,12 +335,21 @@ extension DictationCoordinator {
         // typed text and there never will be, so the raw this dictation handed over is
         // the only honest preview.
         let raw = polishHandoffPreview
+        // Captured for the same reason `raw` is: `endPolishHandoff` clears it.
+        let historyID = polishHandoffHistoryID
         endPolishHandoff(abandonedAs: nil)
         // `typed` is nil when the keyboard refused to insert (decision 7), or when it
         // has not tried yet. The dictation still ended for display purposes, so the
         // Island still comes home — on the raw, because nothing was typed to preview.
         if let typed {
             lastResult = typed
+            // The history card catches up with what was actually typed (#70). A
+            // refusal leaves the raw standing, which is the honest record: the
+            // dictation happened, and the history is where the user recovers text
+            // their document never received.
+            if let historyID {
+                TranscriptionHistoryStore.shared.updateText(id: historyID, to: typed)
+            }
         }
         PersistentLog.log(.polishHandoff(
             step: "finished",

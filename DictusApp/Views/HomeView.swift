@@ -12,8 +12,35 @@ import DictusCore
 struct HomeView: View {
     @EnvironmentObject var coordinator: DictationCoordinator
     @EnvironmentObject var proStatus: ProStatusManager
+    @EnvironmentObject var history: TranscriptionHistoryStore
     @ObservedObject var modelManager: ModelManager
     @State private var showCopiedFeedback = false
+
+    /// Drives the history sheet (#70).
+    @State private var showHistory = false
+
+    /// Drives the paywall when a non-subscriber reaches for the history.
+    @State private var showPaywall = false
+
+    /// What the history offers this user (#70, corrected 2026-08-28): the feature is
+    /// Pro, so the hint and the gesture are open, locked, or absent.
+    ///
+    /// Recomputed on every body evaluation rather than stored, and read through
+    /// `proStatus.isProActive` first so SwiftUI actually re-renders: `FeatureGate`
+    /// goes straight to the App Group, which publishes nothing. Without touching the
+    /// observed object here, a subscription that arrived or lapsed while this screen
+    /// was on show would not move the hint until something else redrew it.
+    private var entryPoint: HistoryEntryPoint {
+        _ = proStatus.isProActive
+        return HistoryAvailability.entryPoint
+    }
+
+    /// How far up the finger has to travel before the history opens.
+    ///
+    /// WHY 60pt and not the 20pt that would already register as a drag: this gesture
+    /// sits over the whole dashboard, including two buttons and a card. A short flick
+    /// while reaching for one of them must not open another screen.
+    private let swipeUpThreshold: CGFloat = 60
 
     /// Read active model name from App Group for display.
     private var activeModelName: String? {
@@ -48,9 +75,68 @@ struct HomeView: View {
             }
 
             Spacer()
+
+            // The affordance for the history (#70), last so it sits at the bottom
+            // edge the swipe starts from. Absent entirely on `.hidden`: while the
+            // paywall is unreachable the app must look like there is no subscription
+            // at all (#236), and a lock leading nowhere is the one place that would
+            // break it.
+            switch entryPoint {
+            case .open:
+                SwipeUpHintView { showHistory = true }
+            case .locked:
+                SwipeUpHintView(isLocked: true) { showPaywall = true }
+            case .hidden:
+                EmptyView()
+            }
         }
         .padding()
         .background(Color.dictusBackground.ignoresSafeArea())
+        // The swipe itself. Attached to the whole dashboard rather than to the hint,
+        // because the issue asks for a swipe up "from the home screen" — the hint
+        // says where, it is not the only place the gesture is allowed to start.
+        //
+        // `.gesture` and not `.simultaneousGesture`: a simultaneous drag would fire
+        // alongside the buttons underneath instead of losing to their taps, which is
+        // exactly backwards. With `minimumDistance` set, a tap never reaches here.
+        //
+        // Installed only when the gesture leads somewhere. On `.hidden` there is no
+        // gesture at all, so nothing on this screen behaves differently for someone
+        // who has never heard of the feature; on `.locked` the same swipe opens the
+        // paywall, because a user who performed the gesture has asked for the thing.
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { value in
+                    // The predicted end is what makes a fast flick work: the finger
+                    // may lift after 30pt while still travelling. Either the actual
+                    // or the predicted travel clearing the threshold opens the sheet.
+                    let travelled = min(value.translation.height, value.predictedEndTranslation.height)
+                    guard travelled < -swipeUpThreshold else { return }
+                    if entryPoint == .open {
+                        showHistory = true
+                    } else {
+                        showPaywall = true
+                    }
+                },
+            // `.none` rather than an optional gesture: `gesture(_:)` takes a
+            // concrete `Gesture`, and the mask is the API's own way to say "declared
+            // but not receiving". On `.hidden` no touch on this screen reaches the
+            // drag at all.
+            including: entryPoint == .hidden ? .none : .all
+        )
+        .sheet(isPresented: $showHistory) {
+            // A sheet is the vertical transition the issue asks for, and it brings
+            // the swipe-down back to the home screen with it. See HistoryView.
+            //
+            // The store is handed over explicitly rather than left to the ambient
+            // environment: a sheet is presented from a different part of the view
+            // tree, and an `@EnvironmentObject` that resolves today because the root
+            // happens to publish it is a crash waiting for someone to move it.
+            HistoryView()
+                .environmentObject(history)
+                .environmentObject(proStatus)
+        }
+        .paywallCover(isPresented: $showPaywall)
         .onAppear {
             // Refresh model state every time HomeView appears.
             modelManager.loadState()
@@ -218,5 +304,6 @@ struct HomeView: View {
         HomeView(modelManager: ModelManager())
             .environmentObject(DictationCoordinator.shared)
             .environmentObject(ProStatusManager())
+            .environmentObject(TranscriptionHistoryStore.shared)
     }
 }

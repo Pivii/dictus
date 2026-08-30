@@ -100,6 +100,12 @@ class DictationCoordinator: ObservableObject {
     /// Fires when the keyboard never says it finished (#361 decision 14).
     var polishHandoffWatchdog: Timer?
 
+    /// The history record this hand-off saved with the raw text (#70), so the text
+    /// the keyboard reports typing can replace it in place rather than arrive as a
+    /// second card for the same dictation. Nil when nothing was saved — an empty
+    /// dictation, or a full history the record fell straight out of.
+    var polishHandoffHistoryID: UUID?
+
     /// Which dictation the app is currently in. Moves when one starts and when one
     /// is abandoned -- see `DictationSessionGeneration` for why both matter.
     private var sessionGeneration = DictationSessionGeneration()
