@@ -110,7 +110,22 @@ public struct FeatureGate {
     /// Returns true only when Pro is active AND the feature is individually enabled.
     public static func isAvailable(_ feature: ProFeature) -> Bool {
         guard isProActive else { return false }
-        return AppGroup.defaults.bool(forKey: feature.settingsKey)
+        return isEnabled(feature)
+    }
+
+    /// The per-feature toggle alone, with no subscription check.
+    ///
+    /// WHY this is exposed separately from `isAvailable` (#423): the two halves of
+    /// that `&&` describe two different people. Someone without Pro is being sold
+    /// something; a subscriber who switched Smart Modes off in Settings has said
+    /// what they want, and telling them the feature "is part of Dictus Pro" is
+    /// false. `SmartModeEntitlement` is the type that keeps them apart, and this is
+    /// what it reads to do it.
+    ///
+    /// Seeded to `true` at first launch by `ProStatusManager.seedFeatureTogglesIfNeeded`,
+    /// so "never touched the toggle" reads as on rather than off.
+    public static func isEnabled(_ feature: ProFeature) -> Bool {
+        AppGroup.defaults.bool(forKey: feature.settingsKey)
     }
 
     /// Check if Pro subscription is active (beta OR paid).

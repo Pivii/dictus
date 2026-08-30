@@ -1,0 +1,169 @@
+
+━━ [N2-reunion-vrac] lang=fr stt=PK
+  raw:      bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine
+  polished #1: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire parce que leur devis a augmenté
+- Réserver la salle du deuxième étage
+            (success, 1675ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1436ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #3: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire pour validé le devis.
+- Réserver la salle du deuxième étage.
+            (success, 1541ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis
+- Réserver la salle du deuxième étage
+            (success, 1559ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1453ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #6: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1421ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #7: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1570ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #8: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+- Valider le devis du prestataire
+            (success, 1641ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #9: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1584ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #10: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1453ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #11: - Récupérer les chiffres de janvier auprès de Marion, elle m'a dit qu'elle les aurait mardi, enfin non mercredi.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire, leur devis est passé de 12000 à 15000 euros, et ça personne l'a validé.
+- Réserver la salle du deuxième étage, l'autre est prise toute la semaine.
+            (success, 2193ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #12: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+- Valider le devis
+            (success, 1712ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #13: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1501ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #14: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1472ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #15: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1480ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #16: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire pour valider le devis.
+- Réserver la salle du deuxième étage.
+            (success, 1611ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #17: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1470ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #18: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis de 12000 euros à 15000 euros
+- Réserver la salle du deuxième étage
+            (success, 1836ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #19: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis
+- Réserver la salle du deuxième étage
+            (success, 1720ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #20: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire car leur devis a augmenté de 12000 à 15000 euros
+- Réserver la salle du deuxième étage
+- Bon voilà
+            (success, 1940ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #21: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1585ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #22: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1426ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #23: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1539ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #24: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1448ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #25: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1486ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #26: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1446ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #27: - Rappeler le client cette semaine
+- Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+            (success, 1586ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #28: - Récupérer les chiffres de janvier auprès de Marion, elle m'a dit qu'elle les aurait mardi.
+- Non, mercredi.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire, leur devis est passé de 12000 à 15000 euros.
+- Personne l'a validé.
+- Réserver la salle du deuxième étage, l'autre est prise toute la semaine.
+            (success, 2199ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #29: - Récupérer les chiffres de janvier auprès de Marion mardi.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire pour validé le devis.
+- Réserver la salle du deuxième étage.
+            (success, 1622ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #30: - Récupérer les chiffres de janvier auprès de Marion.
+- Faire le tableau comparatif avec ceux de l'année dernière.
+- Appeler le prestataire.
+- Réserver la salle du deuxième étage.
+            (success, 1472ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+
+── outcomes: 30/30 success

@@ -7,9 +7,9 @@ final class SmartModeAvailabilityTests: XCTestCase {
 
     private func armability(_ state: PolishAvailabilityState,
                             refusing: Bool = false,
-                            entitled: Bool = true) -> SmartModeArmability {
+                            entitlement: SmartModeEntitlement = .entitled) -> SmartModeArmability {
         SmartModeAvailability.armability(
-            engineState: state, engineIsRefusing: refusing, isEntitled: entitled
+            engineState: state, engineIsRefusing: refusing, entitlement: entitlement
         )
     }
 
@@ -81,7 +81,7 @@ final class SmartModeAvailabilityTests: XCTestCase {
     // MARK: - Pro entitlement (#392)
 
     func testACapableDeviceWithoutASubscriptionIsNotArmable() {
-        XCTAssertEqual(armability(.available, entitled: false).reason, .notSubscribed)
+        XCTAssertEqual(armability(.available, entitlement: .notSubscribed).reason, .notSubscribed)
     }
 
     /// The ordering that keeps the paywall honest (#79): a device that cannot run
@@ -90,7 +90,7 @@ final class SmartModeAvailabilityTests: XCTestCase {
     func testCapabilityIsNamedBeforeEntitlement() {
         for state in [PolishAvailabilityState.deviceNotEligible, .osTooOld, .sdkMissing] {
             XCTAssertEqual(
-                armability(state, entitled: false).reason,
+                armability(state, entitlement: .notSubscribed).reason,
                 SmartModeUnavailableReason(matching: state),
                 "\(state) must name the capability, not the subscription"
             )
@@ -111,6 +111,49 @@ final class SmartModeAvailabilityTests: XCTestCase {
             SmartModeUnavailableReason.deviceNotEligible.englishDescription,
             "\"not entitled\" and \"not capable\" are two different people"
         )
+    }
+
+    // MARK: - Switched off is not unsubscribed (#423)
+
+    /// The reproduction that opened #423: a Pro subscriber turns Smart Modes off in
+    /// Settings, and the fan told them the feature "is part of Dictus Pro". Two
+    /// different people, so two different reasons — the same argument
+    /// `.notSubscribed` already makes against `.deviceNotEligible`, one rung down.
+    func testSwitchingTheFeatureOffIsNotTheSameAsHavingNoSubscription() {
+        XCTAssertEqual(armability(.available, entitlement: .switchedOff).reason, .switchedOff)
+        XCTAssertEqual(armability(.available, entitlement: .notSubscribed).reason, .notSubscribed)
+        XCTAssertNotEqual(
+            SmartModeUnavailableReason.switchedOff.englishDescription,
+            SmartModeUnavailableReason.notSubscribed.englishDescription,
+            "someone who turned it off is not being sold anything"
+        )
+        XCTAssertEqual(SmartModeUnavailableReason.switchedOff.slug, "switchedOff")
+    }
+
+    /// And it must not cost them the mode they armed: they flip the switch back and
+    /// their choice is still there.
+    func testSwitchedOffIsRecoverableSoItNeverDisarms() {
+        XCTAssertTrue(SmartModeUnavailableReason.switchedOff.isRecoverable)
+    }
+
+    /// Capability still comes first for it, exactly as for `.notSubscribed`: on an
+    /// iPhone that cannot run the engine, the toggle is not the interesting fact.
+    func testCapabilityIsNamedBeforeASwitchedOffToggleToo() {
+        XCTAssertEqual(
+            armability(.deviceNotEligible, entitlement: .switchedOff).reason, .deviceNotEligible
+        )
+    }
+
+    /// Every reason has to survive the App Group trip a skip notice makes (#423).
+    func testEveryReasonRoundTripsThroughItsCoding() throws {
+        let reasons: [SmartModeUnavailableReason] = [
+            .appleIntelligenceNotEnabled, .modelNotReady, .deviceNotEligible, .osTooOld,
+            .sdkMissing, .engineRefusing, .notSubscribed, .switchedOff, .other("newThing")
+        ]
+        for reason in reasons {
+            let data = try JSONEncoder().encode(reason)
+            XCTAssertEqual(try JSONDecoder().decode(SmartModeUnavailableReason.self, from: data), reason)
+        }
     }
 
     // MARK: - Capability, as the paywall asks it

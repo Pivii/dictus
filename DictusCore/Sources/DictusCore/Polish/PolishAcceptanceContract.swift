@@ -103,12 +103,63 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// The language the output has to read as.
     public let outputLanguage: PolishOutputLanguage
 
+    /// Whether every person, place and organisation the output names has to appear
+    /// in the input already (#414).
+    ///
+    /// ### Why a mode has to answer this
+    ///
+    /// The check is only sound where the output stays in the input's own language
+    /// **and** the transformation is not licensed to replace words:
+    ///
+    /// - **A translation localises names.** `Londres` becomes `London`. Surface
+    ///   identity is not expected, so the check would be measuring the wrong thing.
+    /// - **Repair reconstructs words by design** (ADR 0002): its contract is
+    ///   substituting what the speaker probably meant for what the STT emitted,
+    ///   which can legitimately produce a name the raw does not carry.
+    ///
+    /// ### Why a field rather than a derivation
+    ///
+    /// `outputLanguage` happens to discriminate the translation case today, and
+    /// deriving from it would work for this catalogue — the same argument
+    /// `SmartModeOverflowBehaviour` answers, with the same conclusion. A custom mode
+    /// (#269) must *answer* the question rather than inherit an answer from a
+    /// property chosen for an unrelated reason, and a mode that condenses *and*
+    /// reconstructs would break the derivation silently. It cannot break an answer
+    /// someone had to write down.
+    public let requiresGroundedNames: Bool
+
     public init(minimumLengthRatio: Double,
                 maximumLengthRatio: Double,
-                outputLanguage: PolishOutputLanguage) {
+                outputLanguage: PolishOutputLanguage,
+                requiresGroundedNames: Bool) {
         self.minimumLengthRatio = minimumLengthRatio
         self.maximumLengthRatio = maximumLengthRatio
         self.outputLanguage = outputLanguage
+        self.requiresGroundedNames = requiresGroundedNames
+    }
+
+    // MARK: - Decoding
+
+    /// Hand-written so `requiresGroundedNames` can default rather than fail the
+    /// whole record, for the reason `SmartMode.init(from:)` is hand-written: a
+    /// contract crosses the App Group inside the per-dictation snapshot, and an app
+    /// update can land between the write and the read.
+    ///
+    /// The default is **off**, which is the safe half here. A record written by a
+    /// build that did not know about this check gets exactly today's behaviour for
+    /// one dictation across one upgrade; the other default would turn a brand-new
+    /// rejection on for a snapshot nobody measured, and a rejection on a Smart Mode
+    /// costs the user everything they said.
+    ///
+    /// `encode(to:)` stays synthesised — it always writes every key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.minimumLengthRatio = try container.decode(Double.self, forKey: .minimumLengthRatio)
+        self.maximumLengthRatio = try container.decode(Double.self, forKey: .maximumLengthRatio)
+        self.outputLanguage = try container.decode(PolishOutputLanguage.self, forKey: .outputLanguage)
+        self.requiresGroundedNames = try container.decodeIfPresent(
+            Bool.self, forKey: .requiresGroundedNames
+        ) ?? false
     }
 
     /// The band as a range, for `PolishGuardrail.accepts(raw:polished:band:)`.
@@ -121,19 +172,37 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     // MARK: - The free-polish contracts (ADR 0003, unchanged)
 
     /// Natural polish. The ADR 0003 band, and the historical target-language check.
+    ///
+    /// Grounded because ADR 0003's forbidden list already says so — *"adding words
+    /// or content that were not in the input"* — and this is the first runtime
+    /// enforcement of that line. It is also the cheapest place in the codebase to
+    /// be wrong: a rejection here hands back the deterministic floor, so the user
+    /// keeps their words and loses only the polish.
     public static let natural = PolishAcceptanceContract(
-        minimumLengthRatio: 0.5, maximumLengthRatio: 2.0, outputLanguage: .polishTarget
+        minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
+        outputLanguage: .polishTarget, requiresGroundedNames: true
     )
 
     /// Repair. Wider on both sides because reconstructing intent legitimately
     /// rewrites more of the text (ADR 0002).
+    ///
+    /// **Not** grounded, and this is the one exclusion that is about the
+    /// transformation rather than the language: repair's whole contract is
+    /// substituting what the speaker probably meant for what Parakeet emitted, so a
+    /// name it reconstructs need not appear in the raw. #349's refusal was recorded
+    /// under this mode, and closing it needs the *other* query over
+    /// `PolishGrounding` — how much of the output's vocabulary appears in the input
+    /// at all — not this one.
     public static let repair = PolishAcceptanceContract(
-        minimumLengthRatio: 0.3, maximumLengthRatio: 3.0, outputLanguage: .polishTarget
+        minimumLengthRatio: 0.3, maximumLengthRatio: 3.0,
+        outputLanguage: .polishTarget, requiresGroundedNames: false
     )
 
     /// Auto-detect polish (#239): the Natural band, and the never-translate check
-    /// against the input's own detected language.
+    /// against the input's own detected language. Same grounding answer as Natural,
+    /// for the same reason — the auto prompt is light-corrections-only.
     public static let auto = PolishAcceptanceContract(
-        minimumLengthRatio: 0.5, maximumLengthRatio: 2.0, outputLanguage: .sameAsInput
+        minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
+        outputLanguage: .sameAsInput, requiresGroundedNames: true
     )
 }

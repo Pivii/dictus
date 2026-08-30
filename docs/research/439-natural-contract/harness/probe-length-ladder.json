@@ -1,0 +1,37 @@
+[
+  {
+    "id": "L1-tail-only",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "#439 bar 3. The same closing clause (`le même prix en calcul`) under growing amounts of its own real context. Isolated, `en calcul` survives 5/5; at full length it is deleted 4/5. This ladder asks whether the deletion is a rule the prompt can reach or a function of input length.",
+    "raw": "Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation les majuscules éventuellement on découpe en paragraphes le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul le deuxième c'est 90% du temps."
+  },
+  {
+    "id": "L2-half",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "#439 bar 3. The same closing clause (`le même prix en calcul`) under growing amounts of its own real context. Isolated, `en calcul` survives 5/5; at full length it is deleted 4/5. This ladder asks whether the deletion is a rule the prompt can reach or a function of input length.",
+    "raw": "La deuxième étape c'est le modèle. Il prend ses morceaux et il essaye de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation les majuscules éventuellement on découpe en paragraphes le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul le deuxième c'est 90% du temps."
+  },
+  {
+    "id": "L3-most",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "#439 bar 3. The same closing clause (`le même prix en calcul`) under growing amounts of its own real context. Isolated, `en calcul` survives 5/5; at full length it is deleted 4/5. This ladder asks whether the deletion is a rule the prompt can reach or a function of input length.",
+    "raw": "La première c'est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape c'est le modèle. Il prend ses morceaux et il essaye de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation les majuscules éventuellement on découpe en paragraphes le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul le deuxième c'est 90% du temps."
+  },
+  {
+    "id": "L4-full",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "#439 bar 3. The same closing clause (`le même prix en calcul`) under growing amounts of its own real context. Isolated, `en calcul` survives 5/5; at full length it is deleted 4/5. This ladder asks whether the deletion is a rule the prompt can reach or a function of input length.",
+    "raw": "Alors je t'explique comment fonctionne la reconnaissance vocale sur le téléphone. En gros il y a trois étapes. La première c'est la capture. Le micro enregistre le son et le système le découpe en petits morceaux de quelques millisecondes. La deuxième étape c'est le modèle. Il prend ses morceaux et il essaye de deviner quels sons ont été prononcés, puis quels mots ces sons forment. Et pour ça, il utilise à la fois ce qu'il entend et ce qu'il a déjà écrit avant. Parce que le contexte aide énormément à lever les ambiguïtés. Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation les majuscules éventuellement on découpe en paragraphes le truc important à comprendre c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul le deuxième c'est 90% du temps."
+  },
+  {
+    "id": "L5-tail-punctuated",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "L1's words with the sentence boundaries supplied. Same length, same content, no run-on left to segment.",
+    "raw": "Et la troisième étape, c'est la mise en forme. Là on prend le texte brut qui sort du modèle et on ajoute la ponctuation, les majuscules, éventuellement on découpe en paragraphes. Le truc important à comprendre, c'est que ces trois étapes ne coûtent pas du tout le même prix en calcul. Le deuxième c'est 90% du temps."
+  }
+]
