@@ -115,4 +115,57 @@ final class ModelLoadStateTests: XCTestCase {
         XCTAssertEqual(ModelLoadState(rawValue: "idle"), .idle)
         XCTAssertNotEqual(ModelLoadState.idle, .loading)
     }
+
+    // MARK: - What a failed dictation may say about the model (issue #427)
+
+    /// The defect this rule exists for, measured on device 2026-08-30: an abandoned
+    /// launch preload landed, published its engine and set `.ready`, and the cold-start
+    /// dictation that had been waiting on it failed on the cancellation abandoning it
+    /// produced, writing `.idle` in the same second. The engine was loaded. The flag
+    /// said it was not.
+    func testAFailedDictationCannotContradictAPublishedEngine() {
+        XCTAssertEqual(
+            ModelLoadState.afterFailedDictation(
+                publishedModel: "openai_whisper-large-v3-v20240930_turbo_632MB",
+                activeModel: "openai_whisper-large-v3-v20240930_turbo_632MB"
+            ),
+            .ready
+        )
+    }
+
+    /// The ordinary failure, and the reason this cannot simply stop writing: nothing is
+    /// loaded, and the next session has to read that.
+    func testAFailedDictationWithNothingLoadedStillReportsIdle() {
+        XCTAssertEqual(
+            ModelLoadState.afterFailedDictation(publishedModel: nil, activeModel: "openai_whisper-small"),
+            .idle
+        )
+    }
+
+    /// An engine for a model the user has since moved off is not this model's engine.
+    /// The flag is read as a claim about the ACTIVE model, so a mismatch is `.idle`.
+    func testAnEngineForAnotherModelDoesNotCountAsReady() {
+        XCTAssertEqual(
+            ModelLoadState.afterFailedDictation(
+                publishedModel: "openai_whisper-medium",
+                activeModel: "parakeet-tdt-0.6b-v3"
+            ),
+            .idle
+        )
+    }
+
+    /// No elected model, no readiness — the shape issue #433 gave `isModelReady`. A
+    /// device whose first download was interrupted can reach here with an engine in RAM
+    /// and nothing chosen, and "ready" would send the keyboard at a model that is not
+    /// selected.
+    func testNoActiveModelIsNeverReadyHoweverMuchIsLoaded() {
+        XCTAssertEqual(
+            ModelLoadState.afterFailedDictation(publishedModel: "openai_whisper-small", activeModel: nil),
+            .idle
+        )
+        XCTAssertEqual(
+            ModelLoadState.afterFailedDictation(publishedModel: nil, activeModel: nil),
+            .idle
+        )
+    }
 }

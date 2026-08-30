@@ -294,6 +294,21 @@ extension DictationCoordinator {
         neuralEngineHolder = holder
     }
 
+    /// What the model load flag must say once a dictation has failed (issue #427).
+    ///
+    /// The rule itself is `ModelLoadState.afterFailedDictation`, in DictusCore where it
+    /// is unit-tested. This is the half that needs the coordinator: the identifier whose
+    /// engine is actually in RAM is the caller's to supply, because it is `private` to
+    /// `DictationCoordinator.swift`, and the active model comes from the App Group.
+    ///
+    /// - Parameter published: the model whose engine is loaded right now, or nil.
+    func modelLoadStateAfterFailedDictation(published: String?) -> ModelLoadState {
+        ModelLoadState.afterFailedDictation(
+            publishedModel: published,
+            activeModel: defaults.string(forKey: SharedKeys.activeModel)
+        )
+    }
+
     /// Give the Neural Engine back, if this holder still has it.
     ///
     /// The identity check makes a mismatched release a no-op rather than a way to hand
