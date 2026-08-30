@@ -416,6 +416,43 @@ class ModelManager: ObservableObject {
             // bounded, in the only sense available: the spinner ends at 120s even though
             // the compile behind it does not.
             //
+            // WHAT AN ABANDONED COMPILE DOES NOT SURVIVE: the app leaving the
+            // foreground. Nothing owns it — that is the whole point of abandoning it —
+            // so nothing holds the process up for it. iOS may suspend the process on
+            // backgrounding, in which case the compile simply stops running, and it may
+            // reclaim the process outright, in which case the compile dies with it. Both
+            // take with them the warm Core ML cache that abandoning was supposed to buy.
+            //
+            // Observed 2026-08-30 on an iPhone 15 Pro Max: a 5s deadline fired at
+            // 13:06:43, the app backgrounded at 13:07:09, and at 13:08:39 a NEW process
+            // logged `appLaunched`. No `abandonedCompileLanded` was ever written and the
+            // next attempt paid the full 3 min 46 s again. Whether that process was
+            // jetsammed or crashed is NOT established — a debug log cannot tell those
+            // apart, only a `.ips` can, and `thermal=serious` in the same snapshot means
+            // the memory-pressure reading is at least plausible. So nothing is fixed
+            // here on a cause nobody has localised.
+            //
+            // NOTHING IN THIS DESIGN CAN HOLD THAT WINDOW, and the options were checked
+            // rather than assumed. `beginBackgroundTask` has precedent in this app
+            // (#311, `coldStartAssertion`) but buys tens of seconds against a compile
+            // that runs for two hundred; it would move the kill, not prevent it.
+            // `UIBackgroundModes: audio` is already declared and only keeps the process
+            // alive while audio is actually capturing, which a prewarm is not. Refusing
+            // to abandon while backgrounded changes nothing either: abandoning decides
+            // who WAITS, not who runs, and there is no UI in the background to hand back.
+            //
+            // Say it plainly: the trade #427 made was accepted without this case in
+            // mind. Its argument was that the compile finishes anyway and the retry is
+            // cheap, which is measured and true with the app in front of the user
+            // (`abandonedCompileLanded`, 2026-08-30 12:26), and was never costed for an
+            // app the user has walked away from.
+            //
+            // What bounds the damage is that it is not a regression. When the process
+            // does die, the user pays one full compile on the retry — exactly what they
+            // paid before this branch existed, and before it they also waited out that
+            // compile and were then told it had failed. The failure mode is "abandoning
+            // bought nothing", not "abandoning broke something".
+            //
             // Whatever this resolves to is the number that reaches the user: it is
             // carried by the thrown `.prewarmTimeout(seconds:)` into both the
             // `.modelPrewarmTimeout` log line and the error text on the model card, so
