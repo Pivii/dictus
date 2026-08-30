@@ -9,6 +9,7 @@
 // private state wholesale.
 import Foundation
 import DictusCore
+import WhisperKit
 
 /// Where a path logs `engineWarmUpAttempt`, which is not the same for all of them.
 enum WarmUpAttemptPosition {
@@ -468,6 +469,96 @@ extension DictationCoordinator {
             details: "waitingForCompile=true recordingPreserved=true"
         ))
         return true
+    }
+
+    /// Wrap a freshly loaded `WhisperKit` and warm it, ready to be published (#426).
+    ///
+    /// A seam rather than three lines at the call site for the reason this whole file
+    /// exists: `DictationCoordinator.swift` sits at the file-length budget issue #146
+    /// calibrated against it. It also keeps the ordering rule in one place — the engine
+    /// is warm before anyone can reach it.
+    func warmedWhisperKitEngine(for kit: WhisperKit, modelName: String) async -> WhisperKitEngine {
+        let engine = WhisperKitEngine()
+        engine.setWhisperKit(kit)
+        await runWarmInference(on: engine, modelName: modelName)
+        return engine
+    }
+
+    /// The Parakeet counterpart: load from the local cache, then warm, then hand back.
+    @available(iOS 17.0, *)
+    func warmedParakeetEngine(modelName: String) async throws -> ParakeetEngine {
+        let engine = ParakeetEngine()
+        try await engine.prepare(modelIdentifier: modelName)
+        await runWarmInference(on: engine, modelName: modelName)
+        return engine
+    }
+
+    /// Give up on a load whose engine is not going to be published.
+    ///
+    /// Clears the warm-inference claim on the way out: nothing in this process is warm
+    /// for a model whose engine was discarded, and saying otherwise would make the next
+    /// load of it skip the warm inference entirely.
+    ///
+    /// Returns the error rather than throwing it, so the call site keeps the `throw` in
+    /// view. That matters here: a plain `return` from the shared init task reads as a
+    /// loaded engine to every caller parked on it (issue #428 review, finding 1).
+    func abandonedLoadError(for modelName: String) -> SpeechModelError {
+        warmInferenceLedger.release(ifMatches: modelName)
+        return SpeechModelError.loadAbandoned(identifier: modelName)
+    }
+
+    /// Run the discarded inference that turns a loaded model into a ready one (#426).
+    ///
+    /// WHY IT NEVER THROWS. A warm inference is an optimisation, and a load that
+    /// produced a working engine must not be failed because the optimisation did not
+    /// take. If it throws, the engine is published anyway and the first real
+    /// transcription pays the specialization exactly as it did before this existed —
+    /// the old behaviour, not a broken one. A cancelled load takes this branch too:
+    /// `WhisperKit.transcribe` checks cancellation between its stages.
+    ///
+    /// WHY THE LEDGER RATHER THAN THE CALL SITE. Every caller reaches this from inside
+    /// the engine-load task, which only runs on a genuine load, so the once-per-load
+    /// rule is already true by construction — `warmUpEngineOnForeground` returns at
+    /// `ensureWhisperKitEngineReady`'s "already loaded" guard and never gets here, which
+    /// is what stops a repeated foregrounding from buying a throwaway inference every
+    /// time the user comes back. The ledger states that rule instead of leaving it
+    /// implicit in a control-flow accident, and it is the one piece of this that can be
+    /// tested off-device, where no Core ML model can be loaded at all.
+    ///
+    /// The `ms=` in the completed line is the measurement #426 asks for, and it is also
+    /// the only way to tell a real warm inference from one that silently did nothing:
+    /// a figure near zero means the buffer never reached the encoder.
+    func runWarmInference(on engine: SpeechModelProtocol, modelName: String) async {
+        guard warmInferenceLedger.claim(modelName) else {
+            PersistentLog.log(.diagnosticProbe(
+                component: "WarmInference",
+                instanceID: modelName,
+                action: "skipped",
+                details: "reason=alreadyWarm engine=\(engine.engineName)"
+            ))
+            return
+        }
+
+        let start = Date()
+        do {
+            try await engine.runWarmInference()
+            PersistentLog.log(.diagnosticProbe(
+                component: "WarmInference",
+                instanceID: modelName,
+                action: "completed",
+                details: "ms=\(Int(Date().timeIntervalSince(start) * 1000)) engine=\(engine.engineName) samples=\(WarmInferenceAudio.sampleCount)"
+            ))
+        } catch {
+            // Not warm after all, so do not remember it as warm: the next load of this
+            // model has to be allowed to try again.
+            warmInferenceLedger.release(ifMatches: modelName)
+            PersistentLog.log(.diagnosticProbe(
+                component: "WarmInference",
+                instanceID: modelName,
+                action: "failed",
+                details: "ms=\(Int(Date().timeIntervalSince(start) * 1000)) engine=\(engine.engineName) error=\(DictationFailureMessage.diagnostic(for: error))"
+            ))
+        }
     }
 
     /// Forget that a model was abandoned, once a load of it has actually succeeded.
