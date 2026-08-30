@@ -218,6 +218,27 @@ public struct PolishMetrics: Sendable, Codable {
         }
     }
 
+    /// Name which guardrail refused an engine output (#413, #414).
+    ///
+    /// `outcome = rejectedGuardrail` says a check failed and never which one, and
+    /// there are three now — length, language, grounding. The reader of this log is
+    /// an agent triaging a report of "the mode gave me nothing", and the three have
+    /// three different answers: the band is mis-sized for the mode, the prompt
+    /// drifted out of the speaker's language, or the model invented a name. One
+    /// word tells them apart.
+    ///
+    /// Deliberately not a new `Outcome` case. Splitting the outcome would ripple
+    /// into the debug exporter, the debug view's filter list and the availability
+    /// gate, for a distinction that belongs in the log line rather than in the
+    /// counter. #349 asks for a separate outcome and can still have one.
+    public static func logGuardrailRejection(check: String, task: PolishTask) {
+        if #available(iOS 14.0, macOS 11.0, *) {
+            PolishLog.logger.info(
+                "📊 polish guardrail-rejected check=\(check, privacy: .public) mode=\(task.identifier, privacy: .public)"
+            )
+        }
+    }
+
     /// Emit one line to the `polish` os_log category. Prefixed with `📊 polish`
     /// so debug log readers can grep for the polish stream.
     public static func log(_ m: PolishMetrics) {

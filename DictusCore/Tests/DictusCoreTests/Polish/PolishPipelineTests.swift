@@ -168,6 +168,98 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(result.outcome, .rejectedGuardrail)
     }
 
+    // MARK: - The two holes #393 found, end to end (#413, #414)
+
+    /// The measured #413 case, through the whole pipeline: the guardrail must
+    /// refuse it, and a Smart Mode refusing means NOTHING is inserted.
+    func testABilingualListIsRefusedAndTheModeInsertsNothing() async {
+        let raw = "alors euh je fais le point général donc côté design c'est bon les maquettes ont "
+            + "été validées vendredi par contre le dev a pris deux semaines de retard à cause de "
+            + "l'API du prestataire et on décale la livraison au 15 mars"
+        let drift = """
+        - Design: maquettes validées vendredi
+        - Development: two-week delay due to API issues
+        - Delivery: potential delay to March 15
+        - Budget: 8000 euros remaining, 3000 euros from February licenses
+        """
+        let job = PolishJob(
+            task: .smart(SmartModeCatalogue.notes), promptLanguage: .french, languageAgnosticPath: false
+        )
+        let result = await PolishPipeline.transform(
+            preprocessed: raw, engine: FixedOutputEngine(output: drift), job: job
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertNil(PolishPipeline.resolvedOutput(result, preprocessed: raw, job: job))
+    }
+
+    /// The measured #414 case, through the whole pipeline. The last bullet is the
+    /// worked example inside `SmartModeNotesPrompt`, on a dictation naming neither
+    /// Sophie nor December.
+    func testAFabricatedNameIsRefusedAndTheModeInsertsNothing() async {
+        let raw = "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc "
+            + "déjà faut que je récupère les chiffres de janvier auprès de Marion et puis il faut "
+            + "que j'appelle le prestataire et réserver la salle du deuxième étage"
+        let output = """
+        - Récupérer les chiffres de janvier auprès de Marion
+        - Appeler le prestataire
+        - Réserver la salle du deuxième étage
+        - Appeler Sophie avant : elle a les données de décembre
+        """
+        let job = PolishJob(
+            task: .smart(SmartModeCatalogue.notes), promptLanguage: .french, languageAgnosticPath: false
+        )
+        let result = await PolishPipeline.transform(
+            preprocessed: raw, engine: FixedOutputEngine(output: output), job: job
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertNil(PolishPipeline.resolvedOutput(result, preprocessed: raw, job: job))
+    }
+
+    /// The counter-test that matters just as much: the same fixture, condensed
+    /// faithfully, still reaches the document.
+    func testAGroundedFrenchListIsStillAccepted() async {
+        let raw = "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc "
+            + "déjà faut que je récupère les chiffres de janvier auprès de Marion et puis il faut "
+            + "que j'appelle le prestataire et réserver la salle du deuxième étage"
+        let output = """
+        - Récupérer les chiffres de janvier auprès de Marion
+        - Appeler le prestataire
+        - Réserver la salle du deuxième étage
+        """
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: output),
+            job: PolishJob(task: .smart(SmartModeCatalogue.notes),
+                           promptLanguage: .french, languageAgnosticPath: false)
+        )
+        XCTAssertEqual(result.outcome, .success)
+    }
+
+    /// A translation legitimately localises a name, so the grounding check must not
+    /// run on it. `Londres` -> `London` appears in no input; refusing it would be
+    /// refusing a correct translation.
+    func testATranslationThatLocalisesANameIsNotRefusedForGrounding() async {
+        let result = await PolishPipeline.transform(
+            preprocessed: "je pars à Londres lundi prochain pour trois jours",
+            engine: FixedOutputEngine(output: "I am going to London next Monday for three days"),
+            job: PolishJob(task: .smart(SmartModeCatalogue.translate(to: .english)),
+                           promptLanguage: .french, languageAgnosticPath: false)
+        )
+        XCTAssertEqual(result.outcome, .success)
+    }
+
+    /// Repair reconstructs words to rebuild intent (ADR 0002), so a name it rebuilds
+    /// need not appear in the raw. #349 is the reason this exclusion is deliberate
+    /// rather than an oversight.
+    func testRepairIsNotRefusedForAReconstructedName() async {
+        let result = await PolishPipeline.transform(
+            preprocessed: "je dois rappeler Mario un demain matin avant la réunion",
+            engine: FixedOutputEngine(output: "Je dois rappeler Marion demain matin avant la réunion."),
+            job: PolishJob(task: .repair, promptLanguage: .french, languageAgnosticPath: false)
+        )
+        XCTAssertEqual(result.outcome, .success)
+    }
+
     /// The typography post-pass keys on the OUTPUT language, which for a translation
     /// is the target — here French NBSP applied to output produced from English.
     func testTranslationAppliesTheTargetsTypographyNotTheInputs() async {

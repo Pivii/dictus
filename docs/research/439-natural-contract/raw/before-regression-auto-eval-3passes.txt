@@ -1,0 +1,46 @@
+───── eval auto.json pass 1
+Build of product 'polish-harness' complete! (0.13s)
+✓ [auto-fr]  (success, 1974ms)
+✓ [auto-en]  (success, 1506ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1449ms)
+✓ [auto-zh]  (success, 1443ms)
+✓ [auto-it]  (success, 1543ms)
+✓ [auto-newline-marker]  (success, 1509ms)
+✓ [auto-verbal-fr]  (success, 1574ms)
+✓ [auto-verbal-en]  (success, 1702ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1428ms)
+✓ [auto-verbal-es-prompt-layer]  (success, 1333ms)
+
+Summary: 10/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval auto.json pass 2
+Build of product 'polish-harness' complete! (0.13s)
+✓ [auto-fr]  (success, 1395ms)
+✓ [auto-en]  (success, 1362ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1414ms)
+✓ [auto-zh]  (success, 1449ms)
+✓ [auto-it]  (success, 1559ms)
+✓ [auto-newline-marker]  (success, 1501ms)
+✓ [auto-verbal-fr]  (success, 1531ms)
+✓ [auto-verbal-en]  (success, 1413ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1401ms)
+✗ [auto-verbal-es-prompt-layer]  (success, 1302ms)
+    – missing "!"
+    → Perfecto, nos vemos mañana a las nueve.
+
+Summary: 9/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)
+───── eval auto.json pass 3
+Build of product 'polish-harness' complete! (0.14s)
+✓ [auto-fr]  (success, 1395ms)
+✓ [auto-en]  (success, 1360ms)
+✓ [auto-en-parakeet-french-keyboard]  (success, 1436ms)
+✓ [auto-zh]  (success, 1498ms)
+✓ [auto-it]  (success, 1531ms)
+✓ [auto-newline-marker]  (success, 1535ms)
+✓ [auto-verbal-fr]  (success, 1618ms)
+✓ [auto-verbal-en]  (success, 1485ms)
+✓ [auto-verbal-period-word-tolerance-fr]  (success, 1402ms)
+✗ [auto-verbal-es-prompt-layer]  (success, 1299ms)
+    – missing "!"
+    → Perfecto, nos vemos mañana a las nueve.
+
+Summary: 9/10 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)

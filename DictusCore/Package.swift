@@ -18,6 +18,9 @@ let package = Package(
             name: "polish-harness",
             dependencies: ["DictusCore"],
             path: "Sources/polish-harness",
+            // Undeclared, SwiftPM warns "unhandled file" and that warning is the
+            // first line of every committed capture in docs/research/.
+            exclude: ["README.md"],
             resources: [.copy("fixtures")]
         ),
         .testTarget(

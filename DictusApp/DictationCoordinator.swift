@@ -843,7 +843,11 @@ class DictationCoordinator: ObservableObject {
                 // it is the process whose UI changes it.
                 //
                 // `resolveArmedMode` is also where a mode this device can no longer
-                // run gets cleared; see `SmartModeStore`.
+                // run gets cleared; see `SmartModeStore`. It hands back what the
+                // dictation will actually run **and** the notice owed to the user
+                // when that is not what they armed (#423) — the fallback used to be
+                // silent, which for a translation means their own language comes
+                // back with nothing saying why.
                 let smartMode = SmartModeStore.resolveArmedMode()
 
                 let rawText = try await transcriptionService.transcribe(
@@ -862,10 +866,15 @@ class DictationCoordinator: ObservableObject {
                 // polishing in place (decision 4).
                 switch dictationOrigin {
                 case .app:
+                    // The skipped notice is deliberately not passed here: this
+                    // target has no non-fatal notice surface, which is the gap
+                    // `finishInApp` already documents against a Smart Mode refusal.
+                    // Showing it in the keyboard, which runs the overwhelming
+                    // majority of dictations, is #423's scope.
                     await finishInApp(
                         rawText: rawText,
                         languagePolicy: languagePolicy,
-                        smartMode: smartMode,
+                        smartMode: smartMode.mode,
                         audioDuration: audioDuration,
                         session: session
                     )

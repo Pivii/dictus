@@ -2,6 +2,58 @@
 // The armed Smart Mode and the pinned list, in the App Group (issue #79).
 import Foundation
 
+/// A dictation's armed mode was resolved away, and the user has not been told (#423).
+///
+/// Carries the mode's own name rather than only its identifier because the surface
+/// that shows the sentence is in the other process, and it should not have to resolve
+/// a record to name what did not happen.
+public struct SmartModeSkipNotice: Codable, Equatable, Sendable {
+
+    /// The mode that stayed armed and did not run.
+    public let modeIdentifier: String
+
+    /// Its catalogue label — "List", "\u{2192} EN" — for the sentence.
+    public let modeDisplayName: String
+
+    /// Why it did not run. Decides which sentence the surface shows.
+    public let reason: SmartModeUnavailableReason
+
+    public init(modeIdentifier: String, modeDisplayName: String, reason: SmartModeUnavailableReason) {
+        self.modeIdentifier = modeIdentifier
+        self.modeDisplayName = modeDisplayName
+        self.reason = reason
+    }
+
+    /// What `SmartModeStore.hasAnnouncedSkip` compares. Both halves, because the same
+    /// mode can become unrunnable for a different reason and that is a new thing to
+    /// say.
+    var token: String { "\(modeIdentifier)|\(reason.slug)" }
+}
+
+/// What a starting dictation gets back from `SmartModeStore.resolveArmedMode()`.
+///
+/// Two values rather than one because the second used to be thrown away. The mode is
+/// what the pipeline runs; the notice is what the user is owed when the answer to
+/// "which mode" is "none of the one you armed". #79 specifies that an unavailable
+/// Smart Mode fails closed with an explicit message, and this path failed **open**
+/// and said nothing.
+public struct SmartModeResolution: Equatable, Sendable {
+
+    /// The mode this dictation will actually run, or nil for Normal.
+    public let mode: SmartMode?
+
+    /// Set only when a mode was armed, will not run, and the user should hear about
+    /// it. Nil when nothing was armed, when the mode runs, or when the armed value
+    /// was garbage this build cleared on sight — there is no user choice to explain
+    /// in that last case.
+    public let skipped: SmartModeSkipNotice?
+
+    public init(mode: SmartMode?, skipped: SmartModeSkipNotice? = nil) {
+        self.mode = mode
+        self.skipped = skipped
+    }
+}
+
 /// What the user has chosen about Smart Modes, shared across the two processes.
 ///
 /// ### The mode is sticky
@@ -48,12 +100,16 @@ public enum SmartModeStore {
     /// a stack.
     public static func arm(_ mode: SmartMode) {
         defaults.set(mode.id, forKey: SharedKeys.smartModeArmed)
+        // The state changed, so whatever the user was last told about a skip no
+        // longer describes what they have set (#423).
+        clearAnnouncedSkip()
         defaults.synchronize()
     }
 
     /// Return to Normal: the free polish, which is the default state.
     public static func disarm() {
         defaults.removeObject(forKey: SharedKeys.smartModeArmed)
+        clearAnnouncedSkip()
         defaults.synchronize()
     }
 
@@ -94,35 +150,86 @@ public enum SmartModeStore {
     /// where a cancelled user stops getting the paid feature, rather than whenever
     /// they next open the app (#392). It does not disarm, because `.notSubscribed`
     /// is recoverable: resubscribe and the mode they chose is still there.
-    public static func resolveArmedMode() -> SmartMode? {
-        guard let identifier = armedIdentifier else { return nil }
+    ///
+    /// ### Why it returns a notice as well as a mode
+    ///
+    /// Keeping the armed value is right and stays. What was wrong is that the
+    /// fallback was **silent** (#423): text was inserted, the outcome was an
+    /// ordinary success, and the only trace was a WARNING in a log the user never
+    /// reads. #79 specifies that an unavailable Smart Mode fails closed with an
+    /// explicit message; this path fails open, so it owes one. The notice travels
+    /// to whichever surface can say it — for a keyboard dictation, across the App
+    /// Group, because the toolbar belongs to the other process.
+    public static func resolveArmedMode() -> SmartModeResolution {
+        guard let identifier = armedIdentifier else { return SmartModeResolution(mode: nil) }
         guard let mode = SmartModeCatalogue.mode(withIdentifier: identifier) else {
             // An identifier this build does not know: a downgrade, or a corrupted
             // value. Definitively unusable, so clear it — the state on disk should
             // match the Normal the user is actually getting.
+            //
+            // No notice, and that is the one skip with nothing to explain: there is
+            // no mode to name, and the user made no choice this build can describe.
             disarm()
             PersistentLog.log(.smartModeSkipped(
                 mode: identifier, reason: "unknown-mode", disarmed: true
             ))
-            return nil
+            return SmartModeResolution(mode: nil)
         }
-        let armability = SmartModeAvailability.armability(
-            engineState: PolishAvailability.state,
-            engineIsRefusing: false,
-            // The enforcement point for a lapsed subscription (#392). Checked on
-            // every dictation, in the process that runs it, so a cancellation stops
-            // applying the mode without waiting for the user to open the app —
-            // otherwise a cancelled subscriber keeps the paid feature until
-            // something else happens to clear the value.
-            isEntitled: SmartModeAvailability.isEntitled
-        )
-        guard let reason = armability.reason else { return mode }
+        // The enforcement point for a lapsed subscription (#392) and for a switched
+        // off feature (#423). Checked on every dictation, in the process that runs
+        // it, so a cancellation stops applying the mode without waiting for the user
+        // to open the app — otherwise a cancelled subscriber keeps the paid feature
+        // until something else happens to clear the value.
+        //
+        // `SmartModeAvailability.forDictation` and not an inline call, so the
+        // surfaces that draw the armed mode resolve it from the same expression. The
+        // two answering differently is #423.
+        guard let reason = SmartModeAvailability.forDictation.reason else {
+            // The mode is running, so any skip the user was told about is over.
+            clearAnnouncedSkip()
+            return SmartModeResolution(mode: mode)
+        }
         let disarms = !reason.isRecoverable
         if disarms { disarm() }
         PersistentLog.log(.smartModeSkipped(
             mode: identifier, reason: reason.slug, disarmed: disarms
         ))
-        return nil
+        return SmartModeResolution(
+            mode: nil,
+            skipped: SmartModeSkipNotice(
+                modeIdentifier: identifier,
+                modeDisplayName: mode.displayName,
+                reason: reason
+            )
+        )
+    }
+
+    // MARK: - Telling the user, once
+
+    /// Whether `notice` has already been shown since the state last changed (#423).
+    ///
+    /// WHY the decision lives here and the *act* of announcing does not: the resolve
+    /// runs in DictusApp and the sentence appears in the keyboard, and DictusApp has
+    /// no non-fatal notice surface of its own (see `DictationHandoff`). A resolve
+    /// that marked the notice spent would let an in-app dictation consume the one
+    /// showing the keyboard was going to do. So the surface that actually put the
+    /// words on screen is the one that calls `noteSkipAnnounced`.
+    public static func hasAnnouncedSkip(_ notice: SmartModeSkipNotice) -> Bool {
+        defaults.string(forKey: SharedKeys.smartModeSkipAnnounced) == notice.token
+    }
+
+    /// Record that the user has now been told about `notice`.
+    public static func noteSkipAnnounced(_ notice: SmartModeSkipNotice) {
+        defaults.set(notice.token, forKey: SharedKeys.smartModeSkipAnnounced)
+        defaults.synchronize()
+    }
+
+    /// Forget what the user was told, so the next skip is announced again.
+    ///
+    /// Called from `arm`, `disarm` and a successful resolve — the three ways the
+    /// state this describes can change.
+    public static func clearAnnouncedSkip() {
+        defaults.removeObject(forKey: SharedKeys.smartModeSkipAnnounced)
     }
 
     // MARK: - The pinned list
