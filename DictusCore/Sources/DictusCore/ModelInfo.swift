@@ -445,8 +445,12 @@ public struct ModelInfo: Identifiable {
             // free disk, and the TestFlight report behind issue #406 came from a phone
             // with 5.3 GB free of 254 GB.
             //
-            // It does NOT bound a hang — see #427 and the note at the call site: this
-            // budget reports, it does not interrupt.
+            // It bounds the WAIT, not the compile — see #427 and the note at the call
+            // site. Core ML cannot be interrupted mid-compile, so at the deadline the
+            // app stops awaiting it and the compile is left to finish and warm the
+            // cache; a retry then costs seconds instead of minutes. This comment used
+            // to say the budget only reports and never interrupts, which was true of
+            // the task-group version #427 replaced.
             //
             // The maintainer's iPhone 15 Pro Max hit the old flat 120s guard on THIS
             // variant on 2026-08-25, which is what shows issue #408's 39% size cut
