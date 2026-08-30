@@ -355,13 +355,28 @@ public struct ModelInfo: Identifiable {
             // which is the second reason to stay generous — the guard is closing the
             // absence of a guard, not a reported symptom.
             //
-            // A FRESH DEVICE FIGURE IS OWED. A Core ML compile cannot be measured off
-            // device, so nobody could take one while writing #422. The next Parakeet
-            // download on a physical iPhone logs `modelCompilationCompleted` with a
-            // `durationMs`; that reading belongs on #422, and after it lands this
-            // number can be chosen instead of inherited. `firstPreparationSeconds`
-            // stays nil until then, for the same reason it is nil everywhere else
-            // nobody watched a compile finish.
+            // THE FRESH FIGURE ARRIVED, and it agrees with the old one. Measured
+            // 2026-08-30 on an iPhone 15 Pro Max (iPhone16,2), on a device already at
+            // `thermal=serious`:
+            //
+            //     modelCompilationCompleted parakeet-tdt-0.6b-v3 duration=17252ms
+            //
+            // 17.25s against a 120s budget — 7x headroom, and within a second of the
+            // ~17s Phase 37 encoder reading the default was calibrated on five months
+            // earlier. Two independent readings that close together are the strongest
+            // argument available for leaving this number exactly where it is: it is
+            // still inherited rather than derived, but it is no longer resting on a
+            // single figure nobody had rechecked.
+            //
+            // It is also the first Parakeet compile anyone has watched finish through
+            // the guarded path, which is what #422 asked for.
+            //
+            // `firstPreparationSeconds` is deliberately still nil. Promoting 17s into it
+            // would put a duration on the onboarding preparation screen for the default
+            // model (issue #432), which is a copy decision about the first thing a new
+            // user sees, not a consequence of measuring a compile. One reading, on the
+            // fastest hardware this model is offered on, is thin ground for a promise
+            // made to every device. Worth doing, deliberately not done here.
         ),
         // Phase 37 (issue #104): Whisper Turbo re-introduced using an Argmax
         // iPhone-supported QUANTIZED variant.

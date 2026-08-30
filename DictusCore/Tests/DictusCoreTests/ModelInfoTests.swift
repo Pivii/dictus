@@ -579,6 +579,12 @@ final class ModelInfoTests: XCTestCase {
     /// must stay the Phase 37 default, and it must stay far above the ~17s Parakeet
     /// Encoder reading that default was calibrated on, because onboarding's default
     /// model is not where a tight budget gets tried out.
+    ///
+    /// The device measurement #422 was owed has since arrived and agrees: 17252 ms on
+    /// an iPhone16,2 at `thermal=serious`, 2026-08-30. `firstPreparationSeconds` stays
+    /// nil all the same, and that is now a decision rather than a gap — putting a
+    /// duration on the onboarding preparation screen for the default model is a copy
+    /// decision (issue #432), not a consequence of having measured one compile.
     func testParakeetKeepsTheInheritedBudgetItsPathNowEnforces() {
         guard let parakeet = ModelInfo.forIdentifier("parakeet-tdt-0.6b-v3") else {
             XCTFail("parakeet-tdt-0.6b-v3 is missing from the catalogue")
@@ -587,9 +593,9 @@ final class ModelInfoTests: XCTestCase {
         XCTAssertEqual(parakeet.prewarmTimeoutSeconds, ModelInfo.defaultPrewarmTimeoutSeconds)
         let phase37EncoderSeconds = 17
         XCTAssertGreaterThan(parakeet.prewarmTimeoutSeconds, phase37EncoderSeconds * 4)
-        // And the reading that would let the number be chosen instead of inherited
-        // still does not exist. When somebody measures one on device, this is the
-        // assertion that has to be updated rather than quietly outgrown.
+        // Not promoted to `firstPreparationSeconds`, deliberately — see above. This is
+        // the assertion to update if that copy decision is ever made, rather than
+        // letting it be quietly outgrown.
         XCTAssertNil(parakeet.firstPreparationSeconds)
     }
 
