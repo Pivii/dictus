@@ -29,7 +29,13 @@ enum AudioEngineError: Error, DiagnosableError {
     /// wrong one is worse than one that asserts nothing (#313 review).
     case phoneCallActive(evidence: String)
 
-    case audioHardwareUnavailable
+    /// The input node reported a format nothing can be recorded from, and it reported
+    /// it again from a node that had just been built (#123). The payload names which
+    /// half of the format was missing — `AudioInputFormatFailure.rawValue` — and is
+    /// diagnostic only, for the same reason `phoneCallActive` carries evidence: the
+    /// two ways to reach this are indistinguishable in a log that only says "the
+    /// hardware is unavailable".
+    case audioHardwareUnavailable(reason: String)
 
     /// `installTap` or `engine.start` raised an Objective-C exception. The payload is the
     /// exception's own text and is diagnostic only — it is an AVFoundation sentence that
@@ -67,8 +73,8 @@ enum AudioEngineError: Error, DiagnosableError {
             return "microphone permission not yet requested"
         case .phoneCallActive(let evidence):
             return "a call holds the microphone — \(evidence)"
-        case .audioHardwareUnavailable:
-            return "input node reports an unusable format after the retry"
+        case .audioHardwareUnavailable(let reason):
+            return "input node reports an unusable format after the engine rebuild — \(reason)"
         case .installTapFailed(let reason):
             return "installTap/engine.start raised: \(reason)"
         }
@@ -870,45 +876,35 @@ class UnifiedAudioEngine: ObservableObject {
         lastWaveformWrite = 0
         lastWaveformDiagnosticsWrite = 0
 
-        let inputNode = engine.inputNode
-        var hwFormat = inputNode.outputFormat(forBus: 0)
-
-        // Guard: zero-channel format means hardware is unavailable (phone call active)
-        guard hwFormat.channelCount > 0 else {
-            throw AudioEngineError.phoneCallActive(evidence: "input node reports zero channels")
-        }
-
-        // B.2 — One-shot retry when hardware reports a valid channel count but
-        // sampleRate == 0. Seen on wake-from-URL-scheme: setActive(true) returns
-        // success but the input node hasn't finished negotiating the format.
-        // installTap throws `IsFormatSampleRateAndChannelCountValid` NSException
-        // in that window, causing SIGABRT (#102).
-        if hwFormat.sampleRate == 0 {
-            usleep(50_000)
-            hwFormat = inputNode.outputFormat(forBus: 0)
-        }
-
-        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
-            PersistentLog.log(.dictationFailed(
-                error: "invalid hwFormat: sr=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount)"
-            ))
-            throw AudioEngineError.audioHardwareUnavailable
-        }
+        let (inputNode, hwFormat) = try resolveUsableInputFormat(context: context)
 
         // Guard: detect telephony audio route (phone call in progress)
         // WHY only check inputs for "telephony" (not builtInReceiver on outputs):
         // Without .defaultToSpeaker, iOS routes output to builtInReceiver by default.
         // That's normal operation, not a phone call indicator.
+        //
+        // Since #123 this is the ONLY site that produces the phone-call message. The
+        // zero-channel guard above used to throw it too, on the strength of a format
+        // that says nothing about telephony — see `resolveUsableInputFormat`.
         let currentRoute = AVAudioSession.sharedInstance().currentRoute
         let hasTelephony = currentRoute.inputs.contains {
             $0.portType.rawValue.lowercased().contains("telephony")
         }
         if hasTelephony {
+            PersistentLog.log(.dictationFailed(
+                error: "telephony input route active — \(routeStateDescription())"
+            ))
             throw AudioEngineError.phoneCallActive(evidence: "a telephony input route is active")
         }
 
         // Create converter from hardware format to 16kHz mono
         guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
+            // Logged for the same reason as the guards above (#123): a start that
+            // fails here leaves no trace at all, and the format that could not be
+            // converted is the only thing that would explain it.
+            PersistentLog.log(.dictationFailed(
+                error: "no converter from sr=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount) to 16kHz mono"
+            ))
             throw NSError(domain: "UnifiedAudioEngine", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Cannot create audio converter from \(hwFormat) to 16kHz mono"])
         }
@@ -964,6 +960,11 @@ class UnifiedAudioEngine: ObservableObject {
         }
         if let swiftStartError {
             inputNode.removeTap(onBus: 0)
+            // The last silent throw in this function before #123. AUIOClient_StartIO
+            // failures land here and left nothing in the log to date them by.
+            PersistentLog.log(.dictationFailed(
+                error: "engine.start failed: \((swiftStartError as NSError).localizedDescription)"
+            ))
             throw swiftStartError
         }
 
@@ -985,6 +986,105 @@ class UnifiedAudioEngine: ObservableObject {
         if #available(iOS 14.0, *) {
             DictusLogger.app.info("UnifiedAudioEngine started (hw: \(hwFormat.sampleRate, privacy: .public)Hz -> 16kHz)")
         }
+    }
+
+    /// Get an input node whose format can actually be recorded from, rebuilding the
+    /// engine once if the one we have reports a dead format.
+    ///
+    /// ### The bug (issue #123, three device captures)
+    ///
+    /// The audio session momentarily reports no input at all
+    /// (`audioRouteChanged details=inputs=none`). The input node, read in that window,
+    /// latches `sr=0.0 ch=2` — what `outputFormat(forBus:)` returns with no input
+    /// present. The route comes back a second later; the node keeps the dead format
+    /// for the life of the process. Every dictation after that failed, and the only
+    /// thing that ever cleared it was the user force-quitting the app.
+    ///
+    /// The old code answered `sr == 0` with a 50 ms sleep and a re-read of **the same
+    /// node**, which cannot work: the node is what is latched. `engine` was created
+    /// once and replaced in exactly one place — `handleMediaServicesReset()`, which
+    /// never fired in any of the three captures (`audioMediaServicesReset` count 0).
+    ///
+    /// So a dead format means "this engine is unusable", and the answer is a new one.
+    /// `replaceEngine()` is the media-services-reset rebuild, extracted; the 50 ms
+    /// settle stays because it is the separate #102 fix, for a node that has not
+    /// finished negotiating its format after a wake-from-URL-scheme `setActive(true)`.
+    /// A fresh node deserves that window just as much as the old one did.
+    ///
+    /// ### Why the loop terminates
+    ///
+    /// `AudioInputFormatPolicy.decide` returns `.rebuildEngine` only while
+    /// `hasRebuiltEngine` is false, and the only branch that does not return or throw
+    /// sets it to true. Pinned by `testAtMostOneRebuildIsEverAsked` in DictusCore.
+    ///
+    /// - Returns: the node the tap must be installed on — which is NOT necessarily
+    ///   `engine.inputNode` as read by the caller before this ran — and its format.
+    private func resolveUsableInputFormat(context: String) throws -> (AVAudioInputNode, AVAudioFormat) {
+        var node = engine.inputNode
+        var format = node.outputFormat(forBus: 0)
+        var hasRebuiltEngine = false
+
+        while true {
+            let decision = AudioInputFormatPolicy.decide(
+                channelCount: format.channelCount,
+                sampleRate: format.sampleRate,
+                hasRebuiltEngine: hasRebuiltEngine
+            )
+
+            switch decision {
+            case .proceed:
+                return (node, format)
+
+            case .rebuildEngine:
+                let before = "sr=\(format.sampleRate) ch=\(format.channelCount)"
+                replaceEngine()
+                hasRebuiltEngine = true
+                usleep(50_000)
+                node = engine.inputNode
+                format = node.outputFormat(forBus: 0)
+
+                // The trigger is sporadic and has no identified cause, so the next
+                // field occurrence has to be able to tell its own story: this line is
+                // what will say whether the rebuild is what unblocked the user.
+                PersistentLog.log(.diagnosticProbe(
+                    component: "UnifiedAudioEngine",
+                    instanceID: context,
+                    action: "engineRebuiltOnDeadFormat",
+                    details: "before=\(before) after=sr=\(format.sampleRate) ch=\(format.channelCount) \(routeStateDescription())"
+                ))
+
+            case .fail(let reason):
+                // A fresh node reporting a dead format is not a latch, it is an
+                // absence — the hardware is not there. `reason` names which half was
+                // missing; the user-facing sentence is the same either way (#313).
+                PersistentLog.log(.dictationFailed(
+                    error: "invalid hwFormat after engine rebuild: sr=\(format.sampleRate) ch=\(format.channelCount) reason=\(reason.rawValue) \(routeStateDescription())"
+                ))
+                throw AudioEngineError.audioHardwareUnavailable(reason: reason.rawValue)
+            }
+        }
+    }
+
+    /// What the audio session says about its inputs right now, for a log line.
+    ///
+    /// WHY all three fields (issue #123): the failure this file spent months not
+    /// explaining was a route that went empty and came back. `route` alone would have
+    /// shown the built-in mic by the time the guard ran and told the reader nothing;
+    /// `available` and `preferred` are what separate "nothing is connected" from "we
+    /// asked for a device that is gone".
+    private func routeStateDescription() -> String {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute.inputs
+            .map { $0.portType.rawValue }
+            .joined(separator: ",")
+        let available = (session.availableInputs ?? [])
+            .map { $0.portType.rawValue }
+            .joined(separator: ",")
+        let preferred = session.preferredInput?.portType.rawValue
+
+        return "route=\(route.isEmpty ? "none" : route)"
+            + " available=\(available.isEmpty ? "none" : available)"
+            + " preferred=\(preferred ?? "none")"
     }
 
     /// Reset recording state without stopping the engine.
