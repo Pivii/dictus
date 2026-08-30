@@ -46,6 +46,13 @@ public struct DeadlineExpired: Error, Equatable {
 /// problem; what expiry buys is the only thing ever on offer, which is that the app
 /// stops waiting.
 ///
+/// WHAT NOBODY OWNS, THE OPERATION ALSO LOSES: an abandoned operation has no owner by
+/// construction, so nothing keeps its process alive for it. On iOS that means the host
+/// app leaving the foreground can suspend it or take it away entirely, and whatever the
+/// operation was going to leave behind is lost with it. Observed on 2026-08-30 for a
+/// Core ML compile; `ModelManager.downloadWhisperKitModel` carries the full reasoning
+/// and the reasons nothing here tries to prevent it.
+///
 /// WHAT THE CALLER OWES: `onLateCompletion` fires, on the main actor, if and only if
 /// the operation lands after the deadline already won. It is where anything the
 /// abandoned work still owns gets handed back. A caller that holds a resource for the
