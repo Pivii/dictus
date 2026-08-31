@@ -423,22 +423,60 @@ class UnifiedAudioEngine: ObservableObject {
     /// tear down the engine here; that path is reserved for explicit interruptions.
     /// If the input route disappears entirely, the next recording attempt fails
     /// gracefully via the hwFormat guards in `startEngine()`.
+    /// - Note on what this line carries (issue #123): this handler describes the
+    ///   moment the dead-input-node fault is *created*, so it is the one line in the
+    ///   file a reader reaches for first, and it used to say almost nothing.
+    ///   `reason` printed raw (`AVAudioSessionRouteChangeReason(rawValue: 0)`), which
+    ///   sends the reader to a lookup table for the only genuinely diagnostic part of
+    ///   the field. `inputs=none` said what the route had become and never what it had
+    ///   been, which is exactly the question — what disappeared? And without
+    ///   `availableInputs`, "no input, nothing connected" and "no input while the
+    ///   built-in mic sits right there" read identically, though they are two
+    ///   different faults.
     private func handleRouteChange(_ note: Notification) {
         guard let userInfo = note.userInfo,
-              let raw = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else {
+              let raw = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt else {
             return
         }
 
-        let inputs = AVAudioSession.sharedInstance()
-            .currentRoute.inputs
-            .map { $0.portType.rawValue }
-            .joined(separator: ",")
+        // WHY the previous route comes from `userInfo` and not from a field we kept:
+        // AVAudioSession hands it to us in the notification and it is the only place
+        // it exists. Tracking it ourselves would mean holding a copy that is wrong for
+        // every route change that happens while the app is suspended.
+        let previous = (userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription)
+            .map { portList($0.inputs) } ?? "unknown"
 
         PersistentLog.log(.audioRouteChanged(
-            reason: "\(reason)",
-            details: "inputs=\(inputs.isEmpty ? "none" : inputs)"
+            reason: Self.routeChangeReasonName(raw),
+            details: "previous=\(previous) \(routeStateDescription())"
         ))
+    }
+
+    /// The name of a route-change reason, with its raw value kept alongside.
+    ///
+    /// WHY both (issue #123): the eight case names are the whole diagnostic value of
+    /// the field, and the raw value is what survives a reason iOS adds after this
+    /// build shipped — an unmapped one now logs `unmapped(9)` instead of what the old
+    /// `guard let` did, which was to drop the line entirely and leave a route change
+    /// with no trace at all.
+    private static func routeChangeReasonName(_ raw: UInt) -> String {
+        guard let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else {
+            return "unmapped(\(raw))"
+        }
+
+        let name: String
+        switch reason {
+        case .unknown: name = "unknown"
+        case .newDeviceAvailable: name = "newDeviceAvailable"
+        case .oldDeviceUnavailable: name = "oldDeviceUnavailable"
+        case .categoryChange: name = "categoryChange"
+        case .override: name = "override"
+        case .wakeFromSleep: name = "wakeFromSleep"
+        case .noSuitableRouteForCategory: name = "noSuitableRouteForCategory"
+        case .routeConfigurationChange: name = "routeConfigurationChange"
+        @unknown default: name = "unmapped"
+        }
+        return "\(name)(\(raw))"
     }
 
     /// AVAudioSession.mediaServicesWereReset handler. This is rare but brutal:
@@ -1074,17 +1112,18 @@ class UnifiedAudioEngine: ObservableObject {
     /// asked for a device that is gone".
     private func routeStateDescription() -> String {
         let session = AVAudioSession.sharedInstance()
-        let route = session.currentRoute.inputs
-            .map { $0.portType.rawValue }
-            .joined(separator: ",")
-        let available = (session.availableInputs ?? [])
-            .map { $0.portType.rawValue }
-            .joined(separator: ",")
-        let preferred = session.preferredInput?.portType.rawValue
+        return "route=\(portList(session.currentRoute.inputs))"
+            + " available=\(portList(session.availableInputs ?? []))"
+            + " preferred=\(session.preferredInput.map { $0.portType.rawValue } ?? "none")"
+    }
 
-        return "route=\(route.isEmpty ? "none" : route)"
-            + " available=\(available.isEmpty ? "none" : available)"
-            + " preferred=\(preferred ?? "none")"
+    /// Port types as one comma-separated token, or `none` for an empty list.
+    ///
+    /// Shared by `routeStateDescription()` and the route-change handler so the same
+    /// fact never gets two spellings in the log an agent has to scan (#255).
+    private func portList(_ ports: [AVAudioSessionPortDescription]) -> String {
+        let names = ports.map { $0.portType.rawValue }.joined(separator: ",")
+        return names.isEmpty ? "none" : names
     }
 
     /// Reset recording state without stopping the engine.
