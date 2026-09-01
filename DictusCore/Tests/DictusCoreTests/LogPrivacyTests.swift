@@ -22,6 +22,37 @@ final class LogPrivacyTests: XCTestCase {
             .modelDownloadStarted(name: "large-v3", sizeMB: 1500),
             .modelDownloadCompleted(name: "large-v3"),
             .modelDownloadFailed(name: "large-v3", error: "networkTimeout"),
+            // Background transfer (#449). The chunk line is the one to watch: it carries
+            // a CDN host, and the signed query string that host serves must never travel
+            // with it.
+            .modelDownloadResumed(
+                name: "parakeet-tdt-0.6b-v3",
+                path: "Encoder.mlmodelc/weights/weight.bin",
+                offsetMB: 96,
+                totalMB: 445,
+                source: "relaunch"
+            ),
+            .modelDownloadRangeRejected(
+                name: "parakeet-tdt-0.6b-v3",
+                path: "Encoder.mlmodelc/weights/weight.bin",
+                statusCode: 200,
+                reason: "http200-range-ignored"
+            ),
+            .modelDownloadChunk(
+                name: "parakeet-tdt-0.6b-v3",
+                path: "Encoder.mlmodelc/weights/weight.bin",
+                index: 3,
+                count: 14,
+                statusCode: 206,
+                host: "us.aws.cdn.hf.co",
+                validated: true
+            ),
+            .modelDownloadIntegrityFailed(
+                name: "parakeet-tdt-0.6b-v3",
+                path: "Encoder.mlmodelc/weights/weight.bin",
+                reason: "sha256 mismatch"
+            ),
+            .modelDownloadSessionRestored(tasks: 0, models: 1),
             .modelSelected(name: "base"),
             .modelCompilationStarted(name: "base"),
             .modelCompilationCompleted(name: "base", durationMs: 5000),

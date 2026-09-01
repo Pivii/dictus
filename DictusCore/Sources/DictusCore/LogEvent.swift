@@ -110,6 +110,41 @@ public enum LogEvent: Sendable {
     /// ordinary download in flight.
     case modelReconciledFromDisk(name: String)
 
+    // MARK: Background model transfer (#449)
+    // The download is a background `URLSession` that resumes a file at the byte it
+    // stopped on, across backgrounding and across process launches. None of that is
+    // visible from the outside, so every branch of it says which one it took.
+    /// A file's transfer picked up from bytes already on disk instead of from zero.
+    /// `source` is `manifest` for a resume within a live download and
+    /// `relaunch` for one adopted from a previous process.
+    case modelDownloadResumed(name: String, path: String, offsetMB: Int, totalMB: Int, source: String)
+    /// A ranged request was answered in a way that forbids appending. `reason` says
+    /// which rule refused it — a `200` that ignored the range, a `Content-Range`
+    /// starting somewhere else, a total that changed. This is the line the acceptance
+    /// criterion "records why byte-range resume was impossible" asks for.
+    case modelDownloadRangeRejected(name: String, path: String, statusCode: Int, reason: String)
+    /// One chunk of one file landed. `host` is the CDN that served it, with no query
+    /// string: those carry short-lived signatures and belong in no log.
+    case modelDownloadChunk(
+        name: String,
+        path: String,
+        index: Int,
+        count: Int,
+        statusCode: Int,
+        host: String,
+        validated: Bool
+    )
+    /// An assembled file failed its size or SHA-256 check and was thrown away rather
+    /// than published. Never expected; a line here means a resume appended bytes that
+    /// did not belong together, which is the failure every guard on that path exists
+    /// to prevent.
+    case modelDownloadIntegrityFailed(name: String, path: String, reason: String)
+    /// The background session was re-attached after a relaunch. `tasks` is how many
+    /// transfers the system handed back, `models` how many manifests were found on
+    /// disk. `tasks=0 models=1` is the force-quit shape: iOS cancelled the transfers
+    /// and the bytes on disk are what the retry starts from.
+    case modelDownloadSessionRestored(tasks: Int, models: Int)
+
     // MARK: Keyboard
     case keyboardDidAppear
     case keyboardDidDisappear
@@ -363,7 +398,9 @@ public enum LogEvent: Sendable {
              .modelDeleted, .modelDeleteFailed, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged,
              .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch,
-             .modelReconciledFromDisk:
+             .modelReconciledFromDisk,
+             .modelDownloadResumed, .modelDownloadRangeRejected, .modelDownloadChunk,
+             .modelDownloadIntegrityFailed, .modelDownloadSessionRestored:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .keyRepeatStarted, .keyRepeatStopped,
@@ -423,7 +460,8 @@ public enum LogEvent: Sendable {
         // Errors
         case .dictationFailed, .audioSessionFailed, .transcriptionFailed,
              .modelDownloadFailed, .modelDeleteFailed,
-             .liveActivityFailed, .subscriptionError, .idleInvariantViolation:
+             .liveActivityFailed, .subscriptionError, .idleInvariantViolation,
+             .modelDownloadIntegrityFailed:
             return .error
 
         // Warnings
@@ -433,7 +471,7 @@ public enum LogEvent: Sendable {
              .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
              .modelDownloadStalled, .audioHapticsAllowanceFailed,
-             .modelDownloadSizeMismatch:
+             .modelDownloadSizeMismatch, .modelDownloadRangeRejected:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -447,6 +485,7 @@ public enum LogEvent: Sendable {
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelReconciledFromDisk,
+             .modelDownloadResumed, .modelDownloadSessionRestored,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
              .dictationMessageSet, .dictationMessageDisplayed,
@@ -477,6 +516,9 @@ public enum LogEvent: Sendable {
              .engineStateSnapshot, .engineCollectResult, .engineDarwinStartReceived,
              .waveformHeartbeat, .overlayTimerStarted, .overlayTimerStopped,
              .diagnosticProbe,
+             // One line per 32 MB chunk: ~14 for the biggest model, which is the
+             // grain a reader needs to see a resume land and still fits a 1 MB log.
+             .modelDownloadChunk,
              // Debug, not info: one line per newly learned word is the finest grain
              // in this group. The eviction and reset lines are the ones a reader
              // scans for.
@@ -612,6 +654,11 @@ public enum LogEvent: Sendable {
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
         case .modelDownloadSizeMismatch: return "modelDownloadSizeMismatch"
+        case .modelDownloadResumed: return "modelDownloadResumed"
+        case .modelDownloadRangeRejected: return "modelDownloadRangeRejected"
+        case .modelDownloadChunk: return "modelDownloadChunk"
+        case .modelDownloadIntegrityFailed: return "modelDownloadIntegrityFailed"
+        case .modelDownloadSessionRestored: return "modelDownloadSessionRestored"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
         case .polishHandoff: return "polishHandoff"
@@ -709,6 +756,19 @@ public enum LogEvent: Sendable {
             return "name=\(name) path=\(path) timeout=\(timeoutSeconds)s attempt=\(attempt)"
         case .modelDownloadSizeMismatch(let name, let catalogMB, let actualMB):
             return "name=\(name) catalog=\(catalogMB)MB actual=\(actualMB)MB"
+        case .modelDownloadResumed(let name, let path, let offsetMB, let totalMB, let source):
+            return "name=\(name) path=\(path) offset=\(offsetMB)MB total=\(totalMB)MB source=\(source)"
+        case .modelDownloadRangeRejected(let name, let path, let statusCode, let reason):
+            return "name=\(name) path=\(path) status=\(statusCode) reason=\(reason)"
+        case .modelDownloadChunk(
+            let name, let path, let index, let count, let statusCode, let host, let validated
+        ):
+            return "name=\(name) path=\(path) chunk=\(index)/\(count) "
+                + "status=\(statusCode) host=\(host) validated=\(validated)"
+        case .modelDownloadIntegrityFailed(let name, let path, let reason):
+            return "name=\(name) path=\(path) reason=\(reason)"
+        case .modelDownloadSessionRestored(let tasks, let models):
+            return "tasks=\(tasks) models=\(models)"
 
         // Keyboard (no content parameters -- privacy)
         case .keyboardDidAppear, .keyboardDidDisappear,

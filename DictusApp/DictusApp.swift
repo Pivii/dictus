@@ -21,6 +21,42 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return false
     }
 
+    /// Reconnects the app to model transfers that outlived the previous process
+    /// (issue #449).
+    ///
+    /// WHY HERE AND NOWHERE ELSE: recreating the background `URLSession` with its stable
+    /// identifier is what makes the system hand back the tasks it kept running, and it
+    /// has to happen before anything can ask for a download — otherwise a second copy of
+    /// a live transfer is exactly what starts. This is also the earliest callback that
+    /// exists on every launch, including the ones iOS makes in the background purely to
+    /// deliver those transfers' events.
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        BackgroundModelDownloadService.shared.restore()
+        return true
+    }
+
+    /// iOS relaunched (or resumed) the app to deliver background transfer events.
+    ///
+    /// The handler must be called once the session says it has no more events, and on the
+    /// main thread — that is what lets the system snapshot the UI and suspend the process
+    /// again. `BackgroundModelDownloadService` holds it until
+    /// `urlSessionDidFinishEvents(forBackgroundURLSession:)` fires.
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard identifier == BackgroundModelDownloadService.sessionIdentifier else {
+            completionHandler()
+            return
+        }
+        let box = BackgroundEventsHandlerBox(completionHandler)
+        BackgroundModelDownloadService.shared.setBackgroundCompletionHandler { box.call() }
+    }
+
     /// Installs `DictusSceneDelegate` so the launch URL can be read at scene connection.
     ///
     /// WHY here rather than in Info.plist: the app has no `UISceneConfigurations` entry,
@@ -38,6 +74,26 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         )
         configuration.delegateClass = DictusSceneDelegate.self
         return configuration
+    }
+}
+
+/// Carries UIKit's background-session completion handler across one queue hop.
+///
+/// WHY a box: `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+/// hands over a plain, non-`Sendable` closure, and it has to reach the download
+/// service's serial queue and come back to the main thread to be called.
+/// `@unchecked` is honest here because exactly one place ever calls it —
+/// `BackgroundModelDownloadService.drainBackgroundEventsIfNeeded`, on the main queue,
+/// once, after the session reports it has no more events to deliver.
+private final class BackgroundEventsHandlerBox: @unchecked Sendable {
+    private let handler: () -> Void
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    func call() {
+        handler()
     }
 }
 
@@ -393,5 +449,14 @@ extension Notification.Name {
     /// later, explicit microphone tap (issue #262).
     static let dictusKeyboardPreparationRequested = Notification.Name(
         "DictusKeyboardPreparationRequested"
+    )
+
+    /// Posted by a `ModelManager` whenever a model's preparation state or download
+    /// progress changes, so the other instance in this process draws the same thing
+    /// (issue #449). Process-local: `MainTabView` builds one `ModelManager` and
+    /// onboarding's `ModelDownloadPage` builds another, and after a relaunch the
+    /// download is resumed by whichever of them was created first.
+    static let dictusModelPreparationChanged = Notification.Name(
+        "DictusModelPreparationChanged"
     )
 }
