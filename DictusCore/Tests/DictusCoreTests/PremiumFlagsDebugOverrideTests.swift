@@ -78,5 +78,46 @@ final class PremiumFlagsDebugOverrideTests: XCTestCase {
         XCTAssertFalse(FeatureGate.isProActive)
         XCTAssertEqual(SmartModeEntitlement.current, .notSubscribed)
     }
+
+    /// The published half has to agree with the static one (#460 review).
+    ///
+    /// `SubscriptionManager.updateProStatus()` runs at every launch and calls
+    /// `setProActive(false)` when StoreKit reports no entitlement. Assigning that
+    /// argument straight to the published property made the app say "not Pro" while
+    /// `FeatureGate` and the keyboard both said "Pro" — two answers to the one question
+    /// this class's own comment says it is the single place to answer.
+    @MainActor
+    func testSettingTheStoredStatusDoesNotOverruleTheOverride() {
+        PremiumFlags.debugProEntitlementForced = true
+        let manager = ProStatusManager()
+
+        manager.setProActive(false)
+
+        XCTAssertTrue(manager.isProActive,
+                      "the published property contradicts FeatureGate.isProActive")
+        XCTAssertTrue(FeatureGate.isProActive)
+        XCTAssertFalse(AppGroup.defaults.bool(forKey: SharedKeys.proActive),
+                       "the stored key should still record the real, unforced status")
+    }
+
+    /// What the Settings switch calls. It must publish the new answer **without**
+    /// writing `SharedKeys.proActive`: a forced entitlement persisted into the real key
+    /// would outlive the switch and be indistinguishable from a genuine subscription.
+    @MainActor
+    func testRefreshingPublishesTheOverrideWithoutStoringIt() {
+        let manager = ProStatusManager()
+        XCTAssertFalse(manager.isProActive)
+
+        PremiumFlags.debugProEntitlementForced = true
+        manager.refreshFromAppGroup()
+
+        XCTAssertTrue(manager.isProActive)
+        XCTAssertFalse(AppGroup.defaults.bool(forKey: SharedKeys.proActive),
+                       "refreshing wrote a forced entitlement into the real key")
+
+        PremiumFlags.debugProEntitlementForced = false
+        manager.refreshFromAppGroup()
+        XCTAssertFalse(manager.isProActive)
+    }
 }
 #endif

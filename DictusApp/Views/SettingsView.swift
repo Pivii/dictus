@@ -134,6 +134,14 @@ struct SettingsView: View {
     /// #460 asks for **one** source of truth for entitlement, and a second property
     /// wrapper reading the key directly would be a parallel force path — one this
     /// screen could then diverge from without the compiler noticing.
+    ///
+    /// The setter also refreshes `proStatus` (#460 review). `proStatus.isProActive` is
+    /// a published cache of the same answer this switch changes, and every Pro row in
+    /// the app redraws off it — without the refresh the switch changed what
+    /// `FeatureGate` and the keyboard believed while every observing view kept
+    /// rendering the old answer until the next launch. `refreshFromAppGroup` and not
+    /// `setProActive`, deliberately: a forced entitlement must never be written into
+    /// `SharedKeys.proActive`, where it would outlive the switch.
     private var proEntitlementForced: Binding<Bool> {
         Binding(
             get: {
@@ -142,6 +150,7 @@ struct SettingsView: View {
             },
             set: { forced in
                 PremiumFlags.debugProEntitlementForced = forced
+                proStatus.refreshFromAppGroup()
                 proEntitlementRevision += 1
             }
         )
