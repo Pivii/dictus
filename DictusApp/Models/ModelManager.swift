@@ -133,6 +133,17 @@ class ModelManager: ObservableObject {
            let state = ModelLoadState(rawValue: raw) {
             modelLoadState = state
         }
+        // WHY `MainActor.assumeIsolated` and not `Task { @MainActor in }`: the write
+        // has to land in the same run-loop turn as the post, because it is not the
+        // only consumer of that post. `ModelLoadingOverlay` observes the very same
+        // notification through a Combine publisher and its `checkForCompletion()`
+        // reads `modelManager.modelLoadState` back while the post is still being
+        // delivered. Deferring the write by a turn would hand that read the previous
+        // value, on the screen #428 is about escaping. `queue: .main` already makes
+        // this closure main-thread-only — measured for a post from either a main or a
+        // background thread — so there is no assumption here left to violate. The
+        // same reasoning, on the same API, is written out at
+        // `UnifiedAudioEngine.registerInterruptionObservers`.
         loadStateObserver = NotificationCenter.default.addObserver(
             forName: .dictusModelLoadStateChanged,
             object: nil,
@@ -140,7 +151,7 @@ class ModelManager: ObservableObject {
         ) { [weak self] note in
             guard let raw = note.userInfo?["state"] as? String,
                   let state = ModelLoadState(rawValue: raw) else { return }
-            self?.modelLoadState = state
+            MainActor.assumeIsolated { self?.modelLoadState = state }
         }
     }
 
