@@ -400,7 +400,14 @@ final class KeyboardPolishCoordinator {
         guard !SmartModeStore.hasAnnouncedSkip(notice) else { return }
         SmartModeStore.noteSkipAnnounced(notice)
         KeyboardState.shared.presentStatusMessage(
-            KeyboardSmartModeState.localizedSkipNotice(notice),
+            KeyboardSmartModeState.localizedSkipNotice(
+                notice,
+                // The notice carries the reason it was resolved with, so the gate is
+                // asked about that reason and not about the state now (#460).
+                sellsPro: SmartModeSurface.sellsPro(
+                    reason: notice.reason, paywallVisible: PremiumFlags.paywallVisible
+                )
+            ),
             reason: "smartModeSkipped-\(notice.reason.slug)",
             timeoutReason: "smartModeSkipped-timeout"
         )
