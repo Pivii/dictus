@@ -1,6 +1,13 @@
 # Xcode
 build/
 DerivedData/
+
+# Archives and export options produced by scripts/ and `asc xcode archive`.
+# A .xcarchive is a build output: 43 MB tracked here against a 59 MB pack, and
+# every new archive overwrites it and leaves the tree dirty, which is enough to
+# make cut-testflight.sh refuse and `git pull` fail. The binary that ships is
+# the one in App Store Connect; the local copy is reproducible from `build/N`.
+.asc/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
