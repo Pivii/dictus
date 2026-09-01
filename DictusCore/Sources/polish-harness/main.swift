@@ -53,8 +53,65 @@ func optionValue(_ name: String, in args: [String]) -> String? {
     return args[i + 1]
 }
 
+/// A numeric option that must be valid **when present**, and takes `fallback` only
+/// when the flag is absent entirely.
+///
+/// WHY this is not `Type(optionValue(…) ?? "") ?? fallback`, which is what the two
+/// call sites below used to be: that spelling cannot tell "you did not ask" from
+/// "you asked for something I could not read", and answers both with the default.
+/// `--floor 0.7O` (letter O) would have swept at 0.60 and printed `<-- shipping`
+/// against it, and `--runs five` would have run once. This harness is the instrument
+/// the shipped 0.60 floor was measured on, and an instrument that silently
+/// substitutes a value for the one you asked for produces a number you then believe.
+/// Refusing costs a re-run; being quietly wrong costs the measurement.
+///
+/// `isValid` is separate from parsing because the two rejections have different
+/// causes and the same cure — `--floor 1.5` parses perfectly and is still not a
+/// share of anything.
+func numericOption<T: LosslessStringConvertible>(
+    _ name: String,
+    in args: [String],
+    default fallback: T,
+    expected: String,
+    isValid: (T) -> Bool
+) -> T {
+    guard args.contains(name) else { return fallback }
+    guard let raw = optionValue(name, in: args), let value = T(raw), isValid(value) else {
+        print("error: \(name) \(expected)")
+        exit(2)
+    }
+    return value
+}
+
+/// The corpus paths in `args`: everything after the command that is neither a flag
+/// nor a flag's value.
+///
+/// WHY a flag's value has to be excluded explicitly. `--floor 0.75` puts `0.75` into
+/// the argument list as a bare token, so a filter that only drops `--`-prefixed
+/// tokens hands it straight to the corpus loader as a file path — which is exactly
+/// what happened: `target … --floor 0.75` failed with `cannot read corpus at 0.75`
+/// and no invocation had ever passed the flag until it was tested. `guardrail` never
+/// noticed because all three of its flags are boolean; `target` is the first command
+/// here to carry a valued one.
+func corpusPaths(in args: [String], valuedOptions: Set<String> = []) -> [String] {
+    var paths: [String] = []
+    var skipValue = false
+    for argument in args.dropFirst() {
+        if skipValue {
+            skipValue = false
+            continue
+        }
+        if argument.hasPrefix("--") {
+            skipValue = valuedOptions.contains(argument)
+            continue
+        }
+        paths.append(argument)
+    }
+    return paths
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
-guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].contains(command), args.count >= 2 else {
+guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "target"].contains(command), args.count >= 2 else {
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
@@ -63,6 +120,7 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
       ab     <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>] [--mode <id>] [--mode-a <id>] [--mode-b <id>]
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>] [--mode <id>]
       guardrail <corpus.json> [<corpus.json> …] [--segments] [--sweep] [--anchors]
+      target    <corpus.json> [<corpus.json> …] [--sweep] [--floor N]
 
     --lang (#439) reroutes every fixture in the file — `--lang auto` runs a
     per-language set through the Auto-detect prompt, `--lang fr` pins an auto set
@@ -78,6 +136,11 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
     Intelligence, so the measurement behind their thresholds is re-runnable by
     anyone. Corpora live in docs/research/413-414-guardrail/.
 
+    target (#456) scores the polish TARGET election — which language the model is
+    told to write in — against committed, hand-labelled raw transcripts, and
+    --sweep sweeps the dominance floor it turns on. Also drives no model. Corpus
+    in docs/research/456-target-election/.
+
     --framing (#79) overrides the USER turn, which is otherwise hardcoded as
     "Polish this text…". `{{INPUT}}` marks where the text goes. Requires
     --instructions, and cannot be combined with --mode.
@@ -91,7 +154,8 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
 }
 
 let fixturesPath = args[1]
-let runs = Int(optionValue("--runs", in: args) ?? "1") ?? 1
+let runs = numericOption("--runs", in: args, default: 1,
+                         expected: "must be a whole number of 1 or more") { $0 >= 1 }
 let instructionsFile = optionValue("--instructions", in: args)
 let abA = optionValue("--a", in: args)
 let abB = optionValue("--b", in: args)
@@ -118,10 +182,11 @@ let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 // MARK: - Load fixtures
 
 let fixtures: [Fixture]
-// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS, not fixtures of
-// raw inputs, so it is the one command with nothing to load here. `--lang` (#439)
-// reroutes what IS loaded, so it stays inside the loading branch.
-if command == "guardrail" {
+// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS and `target`
+// (#456) corpora of hand-labelled raw transcripts, neither of which is a fixture,
+// so those two have nothing to load here. `--lang` (#439) reroutes what IS loaded,
+// so it stays inside the loading branch.
+if ["guardrail", "target"].contains(command) {
     fixtures = []
 } else {
     do {
@@ -351,12 +416,20 @@ func runOnce(_ fx: Fixture,
     }
     let smartTask = mode.map(PolishTask.smart)
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
-    // The raw NLLanguage code, kept for the route line even where the engine never
-    // runs, for the reason `PolishService` records it at its own skip exits: "we
-    // could not read it" and "you dictated Italian" are different events, and only
-    // the code tells them apart.
-    let detectedCode = PolishPipeline.detectLanguageCode(in: preprocessed)
-    let detected = detectedCode.flatMap(SupportedLanguage.init(rawValue:))
+    // What the transcript is made of, measured on the RAW rather than on the pre-pass
+    // output — the same input `PolishService` measures, for the same reason: the
+    // pre-pass only swaps spoken punctuation words for marks, which can only remove
+    // language signal (#456).
+    //
+    // The leading language of that mix, NOT the whole-blob reading, is what gates and
+    // what selects natural-vs-repair here, because it is what does both in the app.
+    // Measuring the repair prompt on an input the app would send to the natural one
+    // would make this harness measure a path no user takes — and on the #456 capture
+    // that is exactly the difference: whole-blob `en` against a French target selects
+    // repair, the proportion elects French and selects natural.
+    let mix = PolishLanguageMix.measure(fx.raw)
+    let detectedCode = mix.dominantCode
+    let detected = mix.dominantSupportedLanguage
     // Gibberish gate, off `PolishGatePolicy` so the harness skips exactly where the
     // app does. The free polish returns the deterministic floor (decoded pre-pass),
     // never the literal raw (#185). An armed mode does not skip at all: short
@@ -462,7 +535,10 @@ func promptResolution(_ fx: Fixture, mode: SmartMode?) -> PromptResolution {
         )
     }
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
-    guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+    // Off the proportion, like `runOnce` and like the app (#456): this decides which
+    // prompt gets printed, so reading it differently here would print a prompt the
+    // pipeline would not have used.
+    guard let detected = PolishLanguageMix.measure(fx.raw).dominantSupportedLanguage else {
         print("error: [\(fx.id)] language detection returned nil — the pipeline "
               + "would skip the engine entirely, so there is no prompt to print")
         exit(1)
@@ -488,13 +564,13 @@ func runGuardrail() {
     // argument check, load nothing, and report a clean `0/0`. A measurement tool
     // that answers "no failures" to a malformed question is worse than one that
     // errors, because the zero reads like a result.
-    let corpusPaths = args.dropFirst().filter { !$0.hasPrefix("--") }
-    guard !corpusPaths.isEmpty else {
+    let paths = corpusPaths(in: args)
+    guard !paths.isEmpty else {
         print("error: guardrail needs at least one corpus file, e.g.\n"
               + "  swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json")
         exit(2)
     }
-    let cases = GuardrailCorpus.load(corpusPaths)
+    let cases = GuardrailCorpus.load(paths)
     print("corpus: \(cases.count) outputs from \(Set(cases.map(\.source)).count) sources")
     if args.contains("--segments") { GuardrailCorpus.segmentTable(cases) }
     if args.contains("--sweep") { GuardrailCorpus.sweep(cases) }
@@ -509,6 +585,35 @@ func runGuardrail() {
     let grounding = GuardrailCorpus.scoreGrounding(cases)
     print("\n── #414 grounding check (translation cases skipped: the check is unsound there)")
     GuardrailCorpus.report(grounding)
+}
+
+// #456. Scores the polish target election against committed raw transcripts. No
+// model runs: the election is `PolishLanguageMix.measure` plus a comparison, both
+// deterministic local calls, which is what makes the dominance floor a measurement
+// rather than a claim.
+func runTargetElection() {
+    // Same reasoning as `runGuardrail`: a flag-only invocation must error rather
+    // than report a clean 0/0 that reads like a result.
+    let paths = corpusPaths(in: args, valuedOptions: ["--floor"])
+    guard !paths.isEmpty else {
+        print("error: target needs at least one corpus file, e.g.\n"
+              + "  swift run polish-harness target ../docs/research/456-target-election/corpus.json")
+        exit(2)
+    }
+    let cases = TargetElectionCorpus.load(paths)
+    let floor = numericOption(
+        "--floor", in: args,
+        default: TranscriptionLanguagePolicy.dominantLanguageShareFloor,
+        expected: "must be a finite share from 0 to 1"
+    ) { $0.isFinite && (0...1).contains($0) }
+    print("corpus: \(cases.count) transcripts")
+    TargetElectionCorpus.table(cases, floor: floor)
+    if args.contains("--sweep") { TargetElectionCorpus.sweep(cases) }
+
+    let score = TargetElectionCorpus.score(cases, floor: floor)
+    print("\n── #456 target election, floor \(String(format: "%.2f", floor))")
+    print("   \(score.line)")
+    for wrong in score.wrong { print("   WRONG: \(wrong)") }
 }
 
 @available(macOS 26.0, *)
@@ -645,19 +750,29 @@ func runHarness() async {
             }
         }
 
-    // #413, #414. Scores the per-segment language check and the grounding check
-    // against the committed corpus of hand-labelled outputs. No model runs: both
-    // checks are deterministic local NaturalLanguage calls, which is what makes
-    // the numbers behind their thresholds reproducible rather than a claim.
-    case "guardrail":
-        runGuardrail()
-
     default:
         break
     }
 }
 
-await runHarness()
+// `guardrail` (#413, #414) and `target` (#456) score committed corpora with
+// deterministic local `NaturalLanguage` calls and drive no model at all. They are
+// dispatched here rather than inside `runHarness` because they need neither its
+// macOS 26 availability nor Apple Intelligence — which is the whole point of them:
+// the numbers behind a shipped threshold have to be re-runnable by anyone.
+switch command {
+case "guardrail":
+    runGuardrail()
+case "target":
+    runTargetElection()
+default:
+    if #available(macOS 26.0, *) {
+        await runHarness()
+    } else {
+        print("error: this command drives Apple Foundation Models and needs macOS 26.")
+        exit(1)
+    }
+}
 
 #else
 

@@ -143,12 +143,20 @@ class LiveActivityManager {
         // End all Live Activities when the app is terminated (force-quit from app switcher).
         // WHY: Without this, the DI stays visible for up to 8 hours after a force-quit.
         // willTerminate fires reliably when the user swipes up in the app switcher.
+        //
+        // WHY `MainActor.assumeIsolated` and not `Task { @MainActor in }` (issue #470):
+        // this is the one observer here that cannot afford a hop at all. The process is
+        // being torn down, and `endAllActivitiesSync` drains its own `activity.end`
+        // calls with `RunLoop.current.run(until:)` precisely because there is no later
+        // turn to be had. Deferred work may simply never run, and the DI then survives
+        // the force-quit for hours — the exact failure this observer exists to prevent.
+        // `queue: .main` already confines the closure to the main thread.
         NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.endAllActivitiesSync()
+            MainActor.assumeIsolated { self?.endAllActivitiesSync() }
         }
 
         // End the Live Activity when the audio session is interrupted (phone call,

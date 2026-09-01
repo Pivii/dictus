@@ -1,0 +1,22 @@
+[
+ {
+  "id": "456-capture",
+  "raw": "Okay, it's coming to approach to what I've got on the pencil to other children. It's completely different. In fact, when you have curseur, we have our héros qui est comme tel avec les animations qu'on connaît aujourd'hui quand le curseur apparaît en fait la cloche elle apparaît et elle suit le curseur donc ça veut dire que l'utilisateur va pouvoir jouer sur le héros directement avec son curseur. Et si son curseur descend du héros, la couche disparaît tout simplement.",
+  "lang": "fr",
+  "sttEngine": "PK",
+  "expect": [
+   {
+    "contains": "curseur"
+   },
+   {
+    "contains": "héros"
+   },
+   {
+    "lengthRatioMin": 0.5
+   },
+   {
+    "lengthRatioMax": 2.0
+   }
+  ]
+ }
+]

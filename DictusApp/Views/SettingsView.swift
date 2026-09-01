@@ -123,6 +123,40 @@ struct SettingsView: View {
     /// feature row: they open the same screen, so one flag serves both.
     @State private var showPaywall = false
 
+    #if DEBUG
+    /// Redraw trigger for the forced-entitlement switch below, the same shape
+    /// `layoutRevision` uses above and for the same reason.
+    @State private var proEntitlementRevision = 0
+
+    /// The Developer section's forced-entitlement switch (#460).
+    ///
+    /// A `Binding` onto `PremiumFlags` rather than an `@AppStorage` on the same key:
+    /// #460 asks for **one** source of truth for entitlement, and a second property
+    /// wrapper reading the key directly would be a parallel force path — one this
+    /// screen could then diverge from without the compiler noticing.
+    ///
+    /// The setter also refreshes `proStatus` (#460 review). `proStatus.isProActive` is
+    /// a published cache of the same answer this switch changes, and every Pro row in
+    /// the app redraws off it — without the refresh the switch changed what
+    /// `FeatureGate` and the keyboard believed while every observing view kept
+    /// rendering the old answer until the next launch. `refreshFromAppGroup` and not
+    /// `setProActive`, deliberately: a forced entitlement must never be written into
+    /// `SharedKeys.proActive`, where it would outlive the switch.
+    private var proEntitlementForced: Binding<Bool> {
+        Binding(
+            get: {
+                _ = proEntitlementRevision
+                return PremiumFlags.debugProEntitlementForced
+            },
+            set: { forced in
+                PremiumFlags.debugProEntitlementForced = forced
+                proStatus.refreshFromAppGroup()
+                proEntitlementRevision += 1
+            }
+        )
+    }
+    #endif
+
     // MARK: - Body
 
     var body: some View {
@@ -403,6 +437,21 @@ struct SettingsView: View {
                         .foregroundColor(.orange)
                 } else {
                     Text("Logs autocorrect decisions for debugging. Off by default.")
+                }
+            }
+
+            // The way back into a surface #460 hides from everyone, the maintainer
+            // included. Its own section rather than a row beside the autocorrect log:
+            // that one is about what gets written down, this one changes what the app
+            // and the keyboard both believe about the user.
+            Section {
+                Toggle("Force Pro entitlement", isOn: proEntitlementForced)
+            } footer: {
+                if proEntitlementForced.wrappedValue {
+                    Text("Smart Modes and every other Pro feature behave as if subscribed. The paywall stays hidden. Debug builds only.")
+                        .foregroundColor(.orange)
+                } else {
+                    Text("Grants Pro without a purchase, so hidden Pro features can be tested on device. Off by default.")
                 }
             }
             #endif

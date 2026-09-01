@@ -1,0 +1,106 @@
+[
+ {
+  "id": "A1-capture-parakeet-tete-anglaise",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "The event captured on device 2026-08-29, verbatim from #456. 471 characters, 33 s of audio, Parakeet on a French keyboard. Parakeet mistranscribes the first two sentences as English and reverts to French. The whole-blob recogniser reads en 0.9995; this is the case the issue exists for.",
+  "raw": "Okay, it's coming to approach to what I've got on the pencil to other children. It's completely different. In fact, when you have curseur, we have our héros qui est comme tel avec les animations qu'on connaît aujourd'hui quand le curseur apparaît en fait la cloche elle apparaît et elle suit le curseur donc ça veut dire que l'utilisateur va pouvoir jouer sur le héros directement avec son curseur. Et si son curseur descend du héros, la couche disparaît tout simplement."
+ },
+ {
+  "id": "A2-fr-anglicismes-techniques",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "Acceptance criterion 3, hardest form. A French developer dictating, with the English technical vocabulary they actually speak, and no sentence punctuation at all — so the tokenizer returns one long segment and the measurement has to survive that. Same raw as X1 of the #413 corpus.",
+  "raw": "bon alors faut que je merge la PR avant le standup et euh ensuite je dois checker le build sur GitHub Actions parce que le deploy de hier a fail et puis faut que je rollback la feature flag sur staging"
+ },
+ {
+  "id": "A3-fr-noms-de-produits-anglais",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "Acceptance criterion 3. A French dictation quoting English product names. Names are not a language, and this must stay French.",
+  "raw": "Il faut que je publie sur TestFlight ce soir. Ensuite je préviens le support Apple et je regarde le ticket sur GitHub avant la réunion. Si j'ai le temps je relis aussi la page pricing du site."
+ },
+ {
+  "id": "A4-fr-avec-clause-anglaise-citee",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "Acceptance criterion 3, the other shape: a whole English clause quoted inside French speech. One English sentence against four French ones, and the French holds the characters.",
+  "raw": "J'ai eu le client au téléphone ce matin et il était plutôt content de la démo. À la fin il m'a dit textuellement: we will make a decision before the end of the month. Donc on a encore un peu de temps mais il ne faut pas traîner non plus. Je vais préparer le devis cette semaine et le leur envoyer lundi."
+ },
+ {
+  "id": "A5-en-passage-complet-clavier-fr",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "en",
+  "expectsGibberishSkip": false,
+  "note": "Acceptance criterion 4. A user on a French keyboard who deliberately dictates a whole passage in English still gets English — this is the case .followKeyboard exists for, and the fix must not take it away.",
+  "raw": "I wanted to walk you through the plan for next quarter before we meet on Thursday. We are going to focus on the onboarding flow first, because that is where most of the drop off happens right now. After that we will look at the pricing page and see whether the annual plan needs to be more visible."
+ },
+ {
+  "id": "A6-bilingue-moitie-moitie",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "Acceptance criterion 5, and the fixture the dominance floor is bounded from below by. A genuinely bilingual dictation, deliberately balanced: no language legitimately wins, so nothing may be elected and the keyboard language takes over. The expected target here is the keyboard's, reached by falling back and NOT by election — the harness reports which.",
+  "raw": "Alors j'ai relu le contrat hier soir et il y a deux points qui me gênent vraiment. Le premier c'est la clause de renouvellement automatique qui est beaucoup trop longue à mon avis. I raised both of them with their legal team this morning and they were fairly open about it. They said they could shorten the notice period to thirty days if we sign before the end of the month."
+ },
+ {
+  "id": "A7-de-sur-clavier-de",
+  "keyboardLanguage": "de",
+  "expectedTarget": "de",
+  "expectsGibberishSkip": false,
+  "note": "A monolingual German dictation on a German keyboard. Nothing about this case is interesting, which is the point: the ordinary path must not move.",
+  "raw": "Ich habe gestern mit dem Kunden gesprochen und er war mit der Präsentation zufrieden. Wir sollten trotzdem die Zahlen für das dritte Quartal noch einmal überprüfen. Danach schicke ich ihm das Angebot per Mail."
+ },
+ {
+  "id": "A8-es-sur-clavier-es",
+  "keyboardLanguage": "es",
+  "expectedTarget": "es",
+  "expectsGibberishSkip": false,
+  "note": "The same, in Spanish.",
+  "raw": "He hablado esta mañana con el equipo de diseño sobre los cambios en la pantalla de inicio. Creo que deberíamos simplificar el formulario antes de lanzarlo. Voy a preparar una propuesta para el lunes."
+ },
+ {
+  "id": "A9-it-sur-clavier-fr",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "none",
+  "expectsGibberishSkip": true,
+  "note": "A language with no per-language polish prompt. It must NOT be elected, and it must not be polished into the keyboard language either — the gibberish gate is what stops that, and this case exists so the fix is checked against it rather than assumed safe.",
+  "raw": "Allora ho parlato con Marco ieri sera e mi ha detto che il progetto va bene. Dovremmo comunque rivedere i numeri del terzo trimestre prima della riunione di giovedì."
+ },
+ {
+  "id": "A10-fr-phrases-tres-courtes",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "The whole-string fallback. Every sentence is below the minimum length, so nothing is counted and the measurement must return the pre-#456 reading rather than nothing at all. A regression here would silently stop polishing short speech.",
+  "raw": "Oui. Non. Peut-être. Bof. Ah bon ? D'accord. On verra."
+ },
+ {
+  "id": "A11-en-fragment-court-fr-long",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "fr",
+  "expectsGibberishSkip": false,
+  "note": "The captured failure, sharper: a single short English fragment opening a long French dictation. By segment count that is one against two; by characters it is nowhere near a tie. This is what 'by character count, not by segment count' buys.",
+  "raw": "Okay so. Alors ce que je voulais dire c'est qu'on devrait reprendre entièrement la partie sur les animations du curseur, parce que le comportement actuel ne correspond pas du tout à ce qu'on avait décidé ensemble la semaine dernière avec l'équipe design. Il faudrait aussi qu'on revoie la vitesse de la transition, elle est beaucoup trop lente sur les petits écrans."
+ },
+ {
+  "id": "A12-fr-tete-en-corps",
+  "keyboardLanguage": "fr",
+  "expectedTarget": "en",
+  "expectsGibberishSkip": false,
+  "note": "The mirror of A1: Parakeet opens in French on a dictation that is English. The rule has to be symmetrical — the majority wins whichever side of the transcript it is on — otherwise this fix would only ever protect French.",
+  "raw": "Bon alors voilà. So the main thing I wanted to cover today is the migration plan, because we are running out of time on that one. The database part is mostly done but the client side still needs a fair amount of work before we can ship it. I would rather push the release by a week than rush the testing."
+ },
+ {
+  "id": "A13-en-avec-emprunts-francais",
+  "keyboardLanguage": "en",
+  "expectedTarget": "en",
+  "expectsGibberishSkip": false,
+  "note": "The A2 case with the languages swapped: English speech carrying French loanwords. It must stay English for the same reason A2 stays French.",
+  "raw": "I had a real sense of déjà vu walking into that meeting this morning. We set up a rendez-vous with the vendor for next Tuesday to go through the numbers. Their proposal is fine but the timeline is optimistic, to say the least."
+ }
+]
