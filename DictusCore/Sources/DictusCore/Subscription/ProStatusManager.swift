@@ -28,7 +28,9 @@ public final class ProStatusManager: ObservableObject {
         // seeding idempotent and always ahead of the first read.
         ProStatusManager.seedFeatureTogglesIfNeeded()
 
-        self.isProActive = AppGroup.defaults.bool(forKey: SharedKeys.proActive)
+        // Through the static rather than reading the key directly, so the app's own
+        // observed value and every `FeatureGate` answer come from one expression (#460).
+        self.isProActive = ProStatusManager.isProActiveStatic
     }
 
     /// Writes the per-feature Pro toggles into the App Group the first time, so that
@@ -76,7 +78,26 @@ public final class ProStatusManager: ObservableObject {
     public func setProActive(_ active: Bool) {
         AppGroup.defaults.set(active, forKey: SharedKeys.proActive)
         AppGroup.defaults.synchronize()
-        isProActive = active
+        // Re-read rather than assign `active` (#460 review). The stored value is what
+        // was just written; the *entitlement* is what `isProActiveStatic` answers, and
+        // since #460 those two can differ under the debug override. Assigning `active`
+        // here made `SubscriptionManager.updateProStatus()` — which runs at every
+        // launch and calls `setProActive(false)` with no subscription — publish false
+        // while `FeatureGate` and the keyboard both said true. One expression decides
+        // entitlement or the two processes disagree, which is the whole of #401.
+        refreshFromAppGroup()
+    }
+
+    /// Re-read entitlement from the shared state, without writing anything.
+    ///
+    /// The published property is a cache of `isProActiveStatic`, and a cache needs an
+    /// invalidation. Anything that changes an *input* to that answer without going
+    /// through `setProActive` calls this: today that is the debug override's switch
+    /// in Settings (#460), which must not write `SharedKeys.proActive` — a forced
+    /// entitlement that persisted into the real key would outlive the switch being
+    /// turned off, and would be indistinguishable from a genuine subscription.
+    public func refreshFromAppGroup() {
+        isProActive = ProStatusManager.isProActiveStatic
     }
 
     /// Lightweight static read for keyboard extension (no StoreKit, no ObservableObject).
@@ -84,7 +105,19 @@ public final class ProStatusManager: ObservableObject {
     /// WHY static: The keyboard extension doesn't need reactive updates --
     /// it reads Pro status once at viewDidLoad/viewWillAppear. A static method
     /// avoids instantiating an ObservableObject in the memory-constrained extension.
+    ///
+    /// **This is the one place entitlement is decided** (#460). `FeatureGate.isProActive`,
+    /// the keyboard's toolbar and this class's own published property all come through
+    /// here, which is what makes a single debug override possible instead of one force
+    /// path per surface.
     nonisolated public static var isProActiveStatic: Bool {
-        AppGroup.defaults.bool(forKey: SharedKeys.proActive)
+        #if DEBUG
+        // Compiled out of Release entirely, along with the flag and its key. See
+        // `PremiumFlags.debugProEntitlementForced` for why it has to exist at all: #460
+        // hides the Smart Mode surface from everyone, the maintainer included, and the
+        // feature is still being built.
+        if PremiumFlags.debugProEntitlementForced { return true }
+        #endif
+        return AppGroup.defaults.bool(forKey: SharedKeys.proActive)
     }
 }

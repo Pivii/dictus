@@ -129,6 +129,33 @@ struct ToolbarView: View {
     /// button action could run, whichever order SwiftUI delivers the two in.
     @State private var fanGestureDidOpen = false
 
+    /// Whether this press already asked for the fan and was **refused** (#460).
+    ///
+    /// `isSmartModeFanOpen` cannot answer that. It reports the *state*, so it stays
+    /// false after a refusal — and `onChanged` fires on every drag update, so a
+    /// refused press asked again dozens of times. Each ask reaches
+    /// `SmartModeAvailability.current`, and through it
+    /// `SystemLanguageModel.default.availability`, on the main thread inside a
+    /// gesture: the exact cost `open()`'s own "read once, at open" comment exists to
+    /// avoid. Rare while the only refusals were a dictation in flight and an empty
+    /// pinned list; every long press of every user once #460 hid the fan.
+    ///
+    /// **Only a refusal latches**, which is what keeps this from undoing the reason
+    /// `isSmartModeFanOpen` is the state rather than `fanGestureDidOpen`: a fan that
+    /// opened and was then closed by its own idle backstop must still reopen under a
+    /// continued drag. That press never sets this.
+    ///
+    /// **Reset when the press begins, not when it ends.** A cancelled touch delivers
+    /// no `onEnded` — that is why `KeyboardSmartModeState`'s idle backstop exists at
+    /// all — so a flag cleared on release would stick after one cancelled gesture and
+    /// leave every later long press inert. `.first(true)` is the finger landing, and
+    /// no press that reaches `.second` can have skipped it.
+    ///
+    /// `releaseSafetyNet` below is written for that same hazard and is **not attached
+    /// to anything** — it predates this branch and is left alone here. Do not read it
+    /// as cover for a release-time reset.
+    @State private var fanGestureWasRefused = false
+
     /// Drives the discovery hint's float: 0 at rest, 3 at the far end of the breath.
     /// One value for the offset and the opacity, so the two cannot drift apart.
     @State private var hintDrift: CGFloat = 0
@@ -346,9 +373,17 @@ struct ToolbarView: View {
                 // has *succeeded*, so this is the long press completing. The drag
                 // value is nil until the finger actually moves, which is what keeps
                 // the fan appearing under a stationary thumb.
-                guard case .second(true, let drag) = value else { return }
-                if !isSmartModeFanOpen {
+                guard case .second(true, let drag) = value else {
+                    // Everything that is not a completed long press. `.first(true)`
+                    // is the finger landing, and it is where a new press clears the
+                    // refusal latch — see `fanGestureWasRefused` for why the reset
+                    // lives here and not on the release.
+                    fanGestureWasRefused = false
+                    return
+                }
+                if !isSmartModeFanOpen, !fanGestureWasRefused {
                     fanGestureDidOpen = onSmartModeFanOpen?() ?? false
+                    fanGestureWasRefused = !fanGestureDidOpen
                 }
                 guard fanGestureDidOpen, let drag else { return }
                 onSmartModeFanDrag?(drag.location.y - Self.toolbarHeight)
