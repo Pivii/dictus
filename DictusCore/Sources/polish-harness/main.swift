@@ -54,7 +54,7 @@ func optionValue(_ name: String, in args: [String]) -> String? {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].contains(command), args.count >= 2 else {
+guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "target"].contains(command), args.count >= 2 else {
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
@@ -63,6 +63,7 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
       ab     <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>] [--mode <id>] [--mode-a <id>] [--mode-b <id>]
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>] [--mode <id>]
       guardrail <corpus.json> [<corpus.json> …] [--segments] [--sweep] [--anchors]
+      target    <corpus.json> [<corpus.json> …] [--sweep] [--floor N]
 
     --lang (#439) reroutes every fixture in the file — `--lang auto` runs a
     per-language set through the Auto-detect prompt, `--lang fr` pins an auto set
@@ -77,6 +78,11 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail"].co
     committed, hand-labelled outputs. It drives NO model and needs no Apple
     Intelligence, so the measurement behind their thresholds is re-runnable by
     anyone. Corpora live in docs/research/413-414-guardrail/.
+
+    target (#456) scores the polish TARGET election — which language the model is
+    told to write in — against committed, hand-labelled raw transcripts, and
+    --sweep sweeps the dominance floor it turns on. Also drives no model. Corpus
+    in docs/research/456-target-election/.
 
     --framing (#79) overrides the USER turn, which is otherwise hardcoded as
     "Polish this text…". `{{INPUT}}` marks where the text goes. Requires
@@ -118,10 +124,11 @@ let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 // MARK: - Load fixtures
 
 let fixtures: [Fixture]
-// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS, not fixtures of
-// raw inputs, so it is the one command with nothing to load here. `--lang` (#439)
-// reroutes what IS loaded, so it stays inside the loading branch.
-if command == "guardrail" {
+// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS and `target`
+// (#456) corpora of hand-labelled raw transcripts, neither of which is a fixture,
+// so those two have nothing to load here. `--lang` (#439) reroutes what IS loaded,
+// so it stays inside the loading branch.
+if ["guardrail", "target"].contains(command) {
     fixtures = []
 } else {
     do {
@@ -511,6 +518,32 @@ func runGuardrail() {
     GuardrailCorpus.report(grounding)
 }
 
+// #456. Scores the polish target election against committed raw transcripts. No
+// model runs: the election is `PolishLanguageMix.measure` plus a comparison, both
+// deterministic local calls, which is what makes the dominance floor a measurement
+// rather than a claim.
+func runTargetElection() {
+    // Same reasoning as `runGuardrail`: a flag-only invocation must error rather
+    // than report a clean 0/0 that reads like a result.
+    let corpusPaths = args.dropFirst().filter { !$0.hasPrefix("--") }
+    guard !corpusPaths.isEmpty else {
+        print("error: target needs at least one corpus file, e.g.\n"
+              + "  swift run polish-harness target ../docs/research/456-target-election/corpus.json")
+        exit(2)
+    }
+    let cases = TargetElectionCorpus.load(corpusPaths)
+    let floor = Double(optionValue("--floor", in: args) ?? "")
+        ?? TranscriptionLanguagePolicy.dominantLanguageShareFloor
+    print("corpus: \(cases.count) transcripts")
+    TargetElectionCorpus.table(cases, floor: floor)
+    if args.contains("--sweep") { TargetElectionCorpus.sweep(cases) }
+
+    let score = TargetElectionCorpus.score(cases, floor: floor)
+    print("\n── #456 target election, floor \(String(format: "%.2f", floor))")
+    print("   \(score.line)")
+    for wrong in score.wrong { print("   WRONG: \(wrong)") }
+}
+
 @available(macOS 26.0, *)
 func runHarness() async {
     switch command {
@@ -651,6 +684,10 @@ func runHarness() async {
     // the numbers behind their thresholds reproducible rather than a claim.
     case "guardrail":
         runGuardrail()
+
+    // #456. See `runTargetElection`.
+    case "target":
+        runTargetElection()
 
     default:
         break

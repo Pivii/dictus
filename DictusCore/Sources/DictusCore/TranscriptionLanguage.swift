@@ -329,18 +329,30 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable, Codable {
     /// keyboard language is then the only signal left that came from the user rather
     /// than from a classifier.
     ///
-    /// **Where 60 comes from.** It was a judgement call in the brief, declared as one,
-    /// and it was measured before it shipped. Scored over
-    /// `docs/research/456-target-election/corpus.json` with
-    /// `swift run polish-harness target … --sweep`, which drives no model: every floor
-    /// from 0.55 to 0.75 elects correctly on all 13 cases, and the band is bounded by
-    /// a real fixture on each side — a French dictation stuffed with English technical
-    /// vocabulary reads 0.77 French (so a floor above 0.75 loses it to the keyboard),
-    /// and a deliberately half-and-half bilingual dictation reads 0.54 (so a floor
-    /// below 0.55 crowns a leader on a coin flip). 0.60 sits inside that band, nearer
-    /// the bottom, because the two errors are not symmetrical: too high only sends a
-    /// decision to the keyboard, which in `.followKeyboard` is usually the same
-    /// language anyway, while too low is what translates a user's speech.
+    /// **Where 60 comes from, and why it stayed.** It was a judgement call in the
+    /// brief, declared as one, and it was measured before it shipped. Scored over the
+    /// 13 hand-labelled transcripts in `docs/research/456-target-election/corpus.json`
+    /// with `swift run polish-harness target … --sweep`, which drives no model. A real
+    /// fixture bounds it on each side:
+    ///
+    /// | | reads | so the floor must be |
+    /// |---|---|---|
+    /// | `A6` a deliberately half-and-half FR/EN dictation | **en 0.519** | above 0.519 |
+    /// | `A4` French speech quoting one English clause | **fr 0.710** | at most 0.710 |
+    ///
+    /// Below the lower bound the election crowns a winner on a coin flip — at 0.50 the
+    /// sweep elects English for `A6` and translates half a French dictation, the exact
+    /// failure this issue is about. Above the upper bound `A4` stops being decided by
+    /// its own content and starts depending on the keyboard being right, which is what
+    /// #332 was about. 0.60 sits inside `(0.519, 0.710]`, nearer the bottom, because
+    /// the two errors are not symmetrical: too high only defers to the keyboard, which
+    /// in `.followKeyboard` is usually the same language anyway, while too low is what
+    /// translates a user's speech.
+    ///
+    /// **The `correct` column alone does not bound this number** — every floor from
+    /// 0.55 to 0.90 scores 13/13, because a fallback to the keyboard usually lands on
+    /// the language the proportion would have elected. The `by keyboard` column is
+    /// what shows the floor going wrong.
     public static let dominantLanguageShareFloor: Double = 0.60
 
     /// Whether the STT engine actually honours `sttLanguageCode` (#332).

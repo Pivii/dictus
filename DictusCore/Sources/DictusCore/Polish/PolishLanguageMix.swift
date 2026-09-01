@@ -35,9 +35,12 @@ public struct PolishLanguageMixThresholds: Equatable, Sendable {
     /// output are; the 0.5 is `PolishPipeline.defaultConfidenceThreshold`, i.e. the
     /// same bar the transcript as a whole has to clear to be polished at all.
     ///
-    /// Measured, not asserted: `swift run polish-harness target
-    /// docs/research/456-target-election/corpus.json --sweep` scores the whole
-    /// election across both of these and the dominance floor, and drives no model.
+    /// Both were checked against the committed corpus rather than assumed: `swift run
+    /// polish-harness target docs/research/456-target-election/corpus.json` prints
+    /// what each transcript is measured as under them, including the two cases they
+    /// exist for — a transcript of one-word sentences, which counts nothing and takes
+    /// the whole-string fallback, and a run-on dictation with no sentence punctuation
+    /// at all, which counts as a single 201-character segment. It drives no model.
     public static let `default` = PolishLanguageMixThresholds(
         minimumSentenceCharacters: 12, confidenceFloor: PolishPipeline.defaultConfidenceThreshold
     )
