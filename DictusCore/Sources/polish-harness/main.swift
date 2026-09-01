@@ -678,23 +678,29 @@ func runHarness() async {
             }
         }
 
-    // #413, #414. Scores the per-segment language check and the grounding check
-    // against the committed corpus of hand-labelled outputs. No model runs: both
-    // checks are deterministic local NaturalLanguage calls, which is what makes
-    // the numbers behind their thresholds reproducible rather than a claim.
-    case "guardrail":
-        runGuardrail()
-
-    // #456. See `runTargetElection`.
-    case "target":
-        runTargetElection()
-
     default:
         break
     }
 }
 
-await runHarness()
+// `guardrail` (#413, #414) and `target` (#456) score committed corpora with
+// deterministic local `NaturalLanguage` calls and drive no model at all. They are
+// dispatched here rather than inside `runHarness` because they need neither its
+// macOS 26 availability nor Apple Intelligence — which is the whole point of them:
+// the numbers behind a shipped threshold have to be re-runnable by anyone.
+switch command {
+case "guardrail":
+    runGuardrail()
+case "target":
+    runTargetElection()
+default:
+    if #available(macOS 26.0, *) {
+        await runHarness()
+    } else {
+        print("error: this command drives Apple Foundation Models and needs macOS 26.")
+        exit(1)
+    }
+}
 
 #else
 

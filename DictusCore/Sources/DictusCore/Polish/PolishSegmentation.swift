@@ -54,7 +54,6 @@ public enum PolishSegmentation {
             .filter { !$0.isEmpty }
     }
 
-
     /// The text's sentences, trimmed, with blanks dropped.
     ///
     /// `NLTokenizer(unit: .sentence)` rather than a split on `.` — it is the same

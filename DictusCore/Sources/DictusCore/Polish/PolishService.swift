@@ -559,8 +559,7 @@ public final class PolishService {
         ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
-                outcome: .skippedShort, raw: raw, finalCount: preprocessed.count,
-                languagePolicy: languagePolicy, languageMix: request.languageMix,
+                outcome: .skippedShort, request: request, finalCount: preprocessed.count,
                 engineID: activeEngine.identifier,
                 detectedLanguage: request.detectedCode, latencyMs: detectMs,
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
@@ -579,8 +578,7 @@ public final class PolishService {
         ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
-                outcome: .skipped, raw: raw, finalCount: raw.count,
-                languagePolicy: languagePolicy, languageMix: request.languageMix,
+                outcome: .skipped, request: request, finalCount: raw.count,
                 engineID: activeEngine.identifier,
                 latencyMs: detectMs,
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
@@ -615,8 +613,7 @@ public final class PolishService {
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, job: job)
         let m = autoEventMetrics(
-            outcome: bundle.outcome, raw: raw, finalCount: returned?.count ?? 0,
-            languagePolicy: languagePolicy, languageMix: request.languageMix,
+            outcome: bundle.outcome, request: request, finalCount: returned?.count ?? 0,
             engineID: currentEngine.identifier,
             mode: job.task.identifier, detectedLanguage: request.detectedCode,
             latencyMs: totalMs,
@@ -642,11 +639,12 @@ public final class PolishService {
     /// French — a reader auditing that would conclude the #332 bug was live.
     /// The keyboard language is still on the event, under its own name, in
     /// `languageResolution`.
+    /// Takes the whole `Request` rather than the four values it needs off it: the
+    /// policy, the mix, the raw text and its length always describe the SAME dictation,
+    /// and passing them loose is how an event ends up describing two.
     private func autoEventMetrics(outcome: PolishMetrics.Outcome,
-                                  raw: String,
+                                  request: Request,
                                   finalCount: Int,
-                                  languagePolicy: TranscriptionLanguagePolicy,
-                                  languageMix: PolishLanguageMix,
                                   engineID: String,
                                   mode: String? = nil,
                                   detectedLanguage: String? = nil,
@@ -660,16 +658,16 @@ public final class PolishService {
             mode: mode,
             targetLanguage: nil,
             detectedLanguage: detectedLanguage,
-            rawCharCount: raw.count,
+            rawCharCount: request.raw.count,
             polishedCharCount: finalCount,
             latencyMs: latencyMs,
             outcome: outcome,
-            sttEngine: languagePolicy.engine.rawValue,
-            sttModelID: languagePolicy.modelIdentifier,
+            sttEngine: request.languagePolicy.engine.rawValue,
+            sttModelID: request.languagePolicy.modelIdentifier,
             timings: timings,
             failureReason: failureReason,
             languageResolution: PolishMetrics.LanguageResolution(
-                policy: languagePolicy, mix: languageMix
+                policy: request.languagePolicy, mix: request.languageMix
             )
         )
     }

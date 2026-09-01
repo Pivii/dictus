@@ -340,6 +340,52 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
                        "a dropped nil would read as 'not recorded'")
     }
 
+    /// Acceptance criterion 8 (#456): "detection was mixed" and "detection was
+    /// confident" must be distinguishable from the event alone. Every other field on
+    /// the captured event is identical in the two situations — same target, same
+    /// detected language, same outcome — so the shares are the only thing that
+    /// separates them.
+    func testTheTrailCarriesTheProportionsTheTargetWasElectedFrom() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        let mixedTrail = PolishMetrics.LanguageResolution(
+            policy: sut, mix: mixed(.french, 0.776, .english)
+        )
+        XCTAssertEqual(mixedTrail.languageMix, ["fr": 0.776, "en": 0.224])
+        XCTAssertEqual(mixedTrail.targetSource, "proportion")
+
+        let confidentTrail = PolishMetrics.LanguageResolution(policy: sut, mix: wholly(.french))
+        XCTAssertEqual(confidentTrail.languageMix, ["fr": 1.0])
+        XCTAssertEqual(confidentTrail.targetSource, "proportion")
+    }
+
+    /// Acceptance criterion 5, second half: below the floor the keyboard wins **and
+    /// the event records that it did** — otherwise a reader looking at a French target
+    /// cannot tell "the transcript was French" from "we gave up and used the keyboard,
+    /// which happened to be French too".
+    func testTheTrailNamesTheKeyboardWhenTheProportionElectedNothing() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        let trail = PolishMetrics.LanguageResolution(
+            policy: sut, mix: mixed(.english, 0.519, .french)
+        )
+        XCTAssertEqual(trail.targetSource, "keyboard")
+        XCTAssertEqual(trail.languageMix, ["en": 0.519, "fr": 0.481])
+    }
+
+    func testTheTrailNamesTheOtherTwoSourcesToo() {
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(
+                policy: policy(.explicit(.french), keyboard: .german, engine: .parakeet),
+                mix: mixed(.english, 0.9, .french)
+            ).targetSource, "explicit", "no proportion outranks a choice the user made"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(
+                policy: policy(.autoDetect, keyboard: .german, engine: .parakeet),
+                mix: wholly(.french)
+            ).targetSource, "none", "the auto path targets nothing at all"
+        )
+    }
+
     func testLanguageResolutionTrailCarriesEachFactApart() {
         // The export must let a reader separate the mode, the keyboard, and
         // what STT was handed — the failure that made three device re-tests
@@ -350,6 +396,8 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         XCTAssertEqual(trail.keyboardLanguage, "de")
         XCTAssertEqual(trail.sttLanguageCode, "de")
         XCTAssertFalse(trail.sttLanguageIsEffective)
+        XCTAssertNil(trail.languageMix, "no mix was supplied, so none is claimed")
+        XCTAssertNil(trail.targetSource)
     }
 }
 
@@ -433,6 +481,40 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.targetLanguage, .german)
         XCTAssertNil(decoded.languageResolution,
                      "no trail is what marks an auto event as predating the fix")
+    }
+
+    /// The proportions have to reach the JSON export, and adding them must not
+    /// invalidate the events already on disk (#456) — the same two obligations #332's
+    /// trail had, for the same seven-day ring.
+    func testTheProportionsSurviveTheMetricJSONRoundTrip() throws {
+        let sut = metric(resolution: PolishMetrics.LanguageResolution(
+            transcriptionMode: "followKeyboard", keyboardLanguage: "fr",
+            sttLanguageCode: "fr", sttLanguageIsEffective: false,
+            languageMix: ["fr": 0.776, "en": 0.224], targetSource: "proportion"
+        ))
+        let data = try JSONEncoder().encode(sut)
+        let decoded = try JSONDecoder().decode(PolishMetrics.self, from: data)
+        XCTAssertEqual(decoded.languageResolution?.languageMix, ["fr": 0.776, "en": 0.224])
+        XCTAssertEqual(decoded.languageResolution?.targetSource, "proportion")
+    }
+
+    /// A #332-era event carries a trail but no shares — including the captured #456
+    /// event itself. Absent must decode as "written before the proportions existed",
+    /// never as "the transcript was in no language".
+    func testATrailWrittenBeforeTheProportionsExistedStillDecodes() throws {
+        let shipped = """
+        {"engine":"apple-fm","mode":"natural","targetLanguage":"en","detectedLanguage":"en",\
+        "rawCharCount":471,"polishedCharCount":454,"latencyMs":3100,"outcome":"success",\
+        "sttEngine":"PK","sttModelID":"parakeet-tdt-0.6b-v3",\
+        "languageResolution":{"transcriptionMode":"followKeyboard","keyboardLanguage":"fr",\
+        "sttLanguageCode":"fr","sttLanguageIsEffective":false}}
+        """
+        let decoded = try JSONDecoder().decode(
+            PolishMetrics.self, from: XCTUnwrap(shipped.data(using: .utf8))
+        )
+        XCTAssertEqual(decoded.languageResolution?.transcriptionMode, "followKeyboard")
+        XCTAssertNil(decoded.languageResolution?.languageMix)
+        XCTAssertNil(decoded.languageResolution?.targetSource)
     }
 
     /// Backward compatibility: a payload shaped exactly like one written by
