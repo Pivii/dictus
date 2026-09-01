@@ -146,10 +146,14 @@ struct ToolbarView: View {
     /// continued drag. That press never sets this.
     ///
     /// **Reset when the press begins, not when it ends.** A cancelled touch delivers
-    /// no `onEnded` — that is why `releaseSafetyNet` and the fan's backstop both
-    /// exist — so a flag cleared on release would stick after one cancelled gesture
-    /// and leave every later long press inert. `.first(true)` is the finger landing,
-    /// and no press that reaches `.second` can have skipped it.
+    /// no `onEnded` — that is why `KeyboardSmartModeState`'s idle backstop exists at
+    /// all — so a flag cleared on release would stick after one cancelled gesture and
+    /// leave every later long press inert. `.first(true)` is the finger landing, and
+    /// no press that reaches `.second` can have skipped it.
+    ///
+    /// `releaseSafetyNet` below is written for that same hazard and is **not attached
+    /// to anything** — it predates this branch and is left alone here. Do not read it
+    /// as cover for a release-time reset.
     @State private var fanGestureWasRefused = false
 
     /// Drives the discovery hint's float: 0 at rest, 3 at the far end of the breath.
