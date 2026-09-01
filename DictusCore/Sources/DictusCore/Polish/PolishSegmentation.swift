@@ -1,6 +1,8 @@
 // DictusCore/Sources/DictusCore/Polish/PolishSegmentation.swift
-// Cutting an output into the units a guardrail can judge one at a time (#413, #414).
+// Cutting text into the units a language question can be asked about one at a time
+// (#413, #414 on an output; #456 on an input).
 import Foundation
+import NaturalLanguage
 
 /// Splits a polish output into the pieces a guardrail inspects individually.
 ///
@@ -21,12 +23,23 @@ import Foundation
 /// post-pass already produced and changes nothing about how breaks are encoded,
 /// decoded or emitted (#437 owns that).
 ///
-/// Sentence-level segmentation was considered and is not what ships. A sentence is
-/// short enough that the recogniser is unreliable on it, so the check would spend
-/// its confidence floor on noise; and the failure #413 measured is per *item*, not
-/// per sentence. Measured on the #393 corpus: lines clear every pre-registered bar
-/// with room, and sentences buy nothing — see
+/// Sentence-level segmentation was considered for that check and is not what ships
+/// there. A sentence is short enough that the recogniser is unreliable on it, so the
+/// check would spend its confidence floor on noise; and the failure #413 measured is
+/// per *item*, not per sentence. Measured on the #393 corpus: lines clear every
+/// pre-registered bar with room, and sentences buy nothing — see
 /// `docs/research/413-414-guardrail-resolution.md` §6.
+///
+/// ### An input is cut by sentence, and that is not a contradiction (#456)
+///
+/// `sentences(of:)` below exists because the *input* asks a different question. A raw
+/// STT transcript has no lines at all — Parakeet emits one continuous blob — so the
+/// line cut returns a single segment there and measures nothing. And the question is
+/// not "does any unit disagree", which is a refusal, but "how much of the text is in
+/// each language", which is a count: a sentence that reads weakly contributes nothing
+/// to the count instead of vetoing the whole text, so the unreliability that rules
+/// sentences out of a guardrail is affordable in a proportion. See
+/// `PolishLanguageMix`.
 public enum PolishSegmentation {
 
     /// The output's lines, trimmed, with any leading list marker removed and blanks
@@ -39,6 +52,27 @@ public enum PolishSegmentation {
         text.split(separator: "\n", omittingEmptySubsequences: true)
             .map { stripLeadingMarker(String($0)) }
             .filter { !$0.isEmpty }
+    }
+
+
+    /// The text's sentences, trimmed, with blanks dropped.
+    ///
+    /// `NLTokenizer(unit: .sentence)` rather than a split on `.` — it is the same
+    /// framework the recogniser comes from, it does not cut on the period of an
+    /// abbreviation or a decimal, and it handles scripts with no Western sentence
+    /// punctuation at all. The list marker is NOT stripped here: an input has no
+    /// markers to strip, and the tokenizer already leaves punctuation attached to the
+    /// sentence it belongs to.
+    public static func sentences(of text: String) -> [String] {
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
+        var result: [String] = []
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            let sentence = text[range].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sentence.isEmpty { result.append(sentence) }
+            return true
+        }
+        return result
     }
 
     /// Bullet, dash, asterisk or an ordinal like `1.` / `2)`, plus the whitespace

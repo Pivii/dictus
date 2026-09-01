@@ -261,8 +261,9 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable, Codable {
     /// which is why the order below is strict and the keyboard comes last:
     ///
     /// 1. an explicitly chosen transcription language, whenever one is set;
-    /// 2. otherwise the language detection found in the STT output;
-    /// 3. the keyboard language only as a last resort, never over either.
+    /// 2. otherwise the language that occupies most of the STT output (#456);
+    /// 3. the keyboard language only as a last resort — when nothing was read at
+    ///    all, or when no language holds enough of the transcript to be named.
     ///
     /// WHY the engine no longer splits case 1 (#332): until this fix, explicit
     /// mode resolved to `engine == .whisperKit ? language : keyboardLanguage`,
@@ -283,12 +284,25 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable, Codable {
     /// mode. This is a polish-stage decision only — `sttLanguageCode` keeps
     /// Parakeet's follow behavior because the engine ignores the parameter.
     ///
-    /// - Parameter detectedLanguage: what `NLLanguageRecognizer` read in the
-    ///   raw STT output, or `nil` when it was not confident or landed outside
-    ///   the four supported languages. Injected by the caller rather than
-    ///   detected here so this stays a pure, testable function.
+    /// WHY detection became a proportion (#456): case 2 above used to be a single
+    /// `NLLanguageRecognizer` verdict on the whole transcript, and that recogniser
+    /// weights the string's opening rather than its bulk. A captured French dictation
+    /// whose first two sentences Parakeet mistranscribed as English read `en` at
+    /// **0.9995** on a transcript that was 78 % French by character count, and Apple FM
+    /// duly translated the other three quarters into English. Nothing below detection
+    /// disagreed, because #332 had — correctly — put detection above the keyboard.
+    ///
+    /// The rule that replaces it is the maintainer's: **the target is the language
+    /// occupying the most of the transcript, measured as a proportion.** No confidence
+    /// floor could have caught the captured case (0.9995 is the ceiling), and no
+    /// second guardrail could either — the output was English and the target was
+    /// English, so every check downstream agreed with a target that was already wrong.
+    ///
+    /// - Parameter languageMix: what the raw STT output is made of, by language —
+    ///   see `PolishLanguageMix`. Injected by the caller rather than measured here so
+    ///   this stays a pure, testable function.
     public func polishPromptSelection(
-        detectedLanguage: SupportedLanguage?
+        languageMix: PolishLanguageMix
     ) -> PolishPromptSelection {
         switch mode {
         case .autoDetect:
@@ -296,13 +310,38 @@ public struct TranscriptionLanguagePolicy: Equatable, Sendable, Codable {
         case .explicit(let language):
             return .language(language)
         case .followKeyboard:
-            // No explicit choice to honour, so detection decides. Only when it
-            // has nothing to say does the keyboard language get used — and
-            // then it is a guess about the user's speech, not an instruction
-            // from them.
-            return .language(detectedLanguage ?? keyboardLanguage)
+            // No explicit choice to honour, so the transcript's own proportions
+            // decide. The keyboard language is used only when no language holds
+            // enough of the transcript to be named — and then it is a guess about
+            // the user's speech, not an instruction from them.
+            let elected = languageMix.electedLanguage(floor: Self.dominantLanguageShareFloor)
+            return .language(elected ?? keyboardLanguage)
         }
     }
+
+    /// Share of the transcript the leading language must hold for a polish target to
+    /// be elected from it in `.followKeyboard`. Below it, `keyboardLanguage` takes
+    /// over (#456).
+    ///
+    /// **Why fall back rather than crown the leader anyway.** On a genuinely bilingual
+    /// dictation no language legitimately wins, and the cost of guessing is the worst
+    /// outcome this pipeline can produce: half the user's words translated. The
+    /// keyboard language is then the only signal left that came from the user rather
+    /// than from a classifier.
+    ///
+    /// **Where 60 comes from.** It was a judgement call in the brief, declared as one,
+    /// and it was measured before it shipped. Scored over
+    /// `docs/research/456-target-election/corpus.json` with
+    /// `swift run polish-harness target … --sweep`, which drives no model: every floor
+    /// from 0.55 to 0.75 elects correctly on all 13 cases, and the band is bounded by
+    /// a real fixture on each side — a French dictation stuffed with English technical
+    /// vocabulary reads 0.77 French (so a floor above 0.75 loses it to the keyboard),
+    /// and a deliberately half-and-half bilingual dictation reads 0.54 (so a floor
+    /// below 0.55 crowns a leader on a coin flip). 0.60 sits inside that band, nearer
+    /// the bottom, because the two errors are not symmetrical: too high only sends a
+    /// decision to the keyboard, which in `.followKeyboard` is usually the same
+    /// language anyway, while too low is what translates a user's speech.
+    public static let dominantLanguageShareFloor: Double = 0.60
 
     /// Whether the STT engine actually honours `sttLanguageCode` (#332).
     ///
