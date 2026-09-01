@@ -100,23 +100,54 @@ final class ModelDownloadManifestTests: XCTestCase {
 
     func testFillsTheWindowFromTheResumePoint() {
         let subject = manifest(files: [entry("a", size: chunkSize * 10, appended: chunkSize * 3)])
-        XCTAssertEqual(subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], window: 2), [3, 4])
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], alreadyStored: [], window: 2),
+            [3, 4]
+        )
     }
 
     func testSkipsChunksAlreadyInFlightAndStopsAtTheWindow() {
         let subject = manifest(files: [entry("a", size: chunkSize * 10, appended: chunkSize * 3)])
-        XCTAssertEqual(subject.chunksToEnqueue(ofFileAt: 0, inFlight: [3], window: 2), [4])
-        XCTAssertEqual(subject.chunksToEnqueue(ofFileAt: 0, inFlight: [3, 4], window: 2), [])
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [3], alreadyStored: [], window: 2),
+            [4]
+        )
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [3, 4], alreadyStored: [], window: 2),
+            []
+        )
+    }
+
+    func testNeverAsksAgainForAChunkThatLandedOutOfOrder() {
+        // Simulator, 2026-09-01: chunk 13 of the encoder weights landed before chunk 12,
+        // and the next scan asked for it a second time — 32 MB for nothing. It is on
+        // disk, so it is stepped over, and the window stays full of real work.
+        let subject = manifest(files: [entry("a", size: chunkSize * 20, appended: chunkSize * 12)])
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [12], alreadyStored: [13], window: 2),
+            [14]
+        )
     }
 
     func testNeverEnqueuesPastTheEndOfTheFile() {
         let subject = manifest(files: [entry("a", size: chunkSize + 10, appended: chunkSize)])
-        XCTAssertEqual(subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], window: 4), [1])
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], alreadyStored: [], window: 4),
+            [1]
+        )
+        // And a stored last chunk leaves nothing at all to ask for.
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], alreadyStored: [1], window: 4),
+            []
+        )
     }
 
     func testEnqueuesNothingForACompletedFile() {
         let subject = manifest(files: [entry("a", size: chunkSize, completed: true)])
-        XCTAssertEqual(subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], window: 2), [])
+        XCTAssertEqual(
+            subject.chunksToEnqueue(ofFileAt: 0, inFlight: [], alreadyStored: [], window: 2),
+            []
+        )
     }
 
     // MARK: - Absorbing chunks

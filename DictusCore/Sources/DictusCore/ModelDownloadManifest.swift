@@ -204,16 +204,24 @@ public struct ModelDownloadManifest: Codable, Equatable, Sendable {
     }
 
     /// Chunk indices worth starting now for the file at `index`, given what is already
-    /// downloading and how many transfers may be in flight at once.
+    /// downloading, what has already landed, and how many transfers may be in flight.
     ///
     /// WHY a window rather than the whole file at once: every chunk that is in flight
     /// when the process dies is paid for again, and every chunk that is queued but not
     /// started still occupies the background session. Two in flight keeps the transfer
     /// moving across a suspension without putting a whole 445 MB file's worth of
     /// temporary storage at risk.
+    ///
+    /// WHY `alreadyStored` is not optional. With two transfers in flight the later one
+    /// can land first, and it then sits on disk waiting for its predecessor —
+    /// `appendedBytes` says nothing about it, because nothing contiguous has been folded
+    /// in yet. Without this set the very next call asks for it a second time. Observed on
+    /// the simulator, 2026-09-01: chunk 13 of `Encoder.mlmodelc/weights/weight.bin`
+    /// landed before chunk 12 and was downloaded again, 32 MB for nothing.
     public func chunksToEnqueue(
         ofFileAt index: Int,
         inFlight: Set<Int>,
+        alreadyStored: Set<Int>,
         window: Int
     ) -> [Int] {
         guard window > 0, files.indices.contains(index), !files[index].completed else { return [] }
@@ -225,7 +233,9 @@ public struct ModelDownloadManifest: Codable, Equatable, Sendable {
         var result: [Int] = []
         var candidate = start
         while candidate < total, inFlight.count + result.count < window {
-            if !inFlight.contains(candidate) {
+            // A chunk already on disk costs nothing and occupies no transfer slot; the
+            // scan steps over it and keeps the window full of real work.
+            if !inFlight.contains(candidate), !alreadyStored.contains(candidate) {
                 result.append(candidate)
             }
             candidate += 1

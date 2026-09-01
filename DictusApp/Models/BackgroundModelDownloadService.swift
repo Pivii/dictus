@@ -330,6 +330,10 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
             let next = run.manifest.chunksToEnqueue(
                 ofFileAt: fileIndex,
                 inFlight: run.inFlight,
+                alreadyStored: ManifestStore.storedChunkIndices(
+                    run.manifest.modelIdentifier,
+                    fileIndex: fileIndex
+                ),
                 window: Self.chunksInFlight
             )
             for chunkIndex in next {
@@ -385,7 +389,11 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
         run.tasks[chunkIndex] = task
         run.liveChunkBytes[chunkIndex] = 0
 
-        if span.start > 0, !run.hasLoggedResume(forFile: fileIndex) {
+        // A resume is the FIRST chunk this run asks for on a file starting anywhere but
+        // byte zero. Logging every non-zero offset instead called each ordinary step to
+        // the next chunk a resume, which made the line worthless for the one question it
+        // answers: did returning to Dictus cost the user their bytes.
+        if run.markFileStarted(fileIndex), span.start > 0 {
             PersistentLog.log(.modelDownloadResumed(
                 name: run.manifest.modelIdentifier,
                 path: file.path,
@@ -760,7 +768,7 @@ private final class DownloadRun {
     var continuations: [CheckedContinuation<Void, Error>] = []
     var observers: [@Sendable (ModelRepoDownloader.Progress) -> Void] = []
 
-    private var loggedResumeForFile: Set<Int> = []
+    private var startedFiles: Set<Int> = []
     private var lastReportedFraction: Double = -1
     private var lastReportDate = Date.distantPast
 
@@ -773,11 +781,11 @@ private final class DownloadRun {
         manifest.files.indices.contains(index) ? manifest.files[index].path : "?"
     }
 
-    /// One resume line per file, not one per chunk: after the first, every chunk of a
-    /// large file starts at a non-zero offset and the log would say so fourteen times.
-    func hasLoggedResume(forFile index: Int) -> Bool {
-        defer { loggedResumeForFile.insert(index) }
-        return loggedResumeForFile.contains(index)
+    /// Whether this is the first chunk this run has asked for on the given file.
+    /// Answers true exactly once per file, which is what makes the resume line one per
+    /// file rather than one per chunk.
+    func markFileStarted(_ index: Int) -> Bool {
+        startedFiles.insert(index).inserted
     }
 
     /// Stops every transfer of this run and remembers which tasks were stopped.

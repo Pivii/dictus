@@ -82,6 +82,7 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
     private var peerStateObserver: NSObjectProtocol?
+    private var becameActiveObserver: NSObjectProtocol?
 
     /// Identity of this instance, so a broadcast of its own writes is ignored.
     private let instanceID = UUID()
@@ -183,6 +184,9 @@ class ModelManager: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = peerStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = becameActiveObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -306,8 +310,18 @@ class ModelManager: ObservableObject {
             }
         }
 
-        guard !Self.hasResumedDownloadsThisProcess,
-              UIApplication.shared.applicationState != .background else { return }
+        guard !Self.hasResumedDownloadsThisProcess else { return }
+        guard UIApplication.shared.applicationState != .background else {
+            // Measured on the simulator, 2026-09-01: the relaunch that follows a kill
+            // evaluates `MainTabView`'s body while the app is still in the background,
+            // so this guard fired on the very launch it was written to protect and
+            // NOTHING adopted the transfer. It finished, published 445 MB, and no
+            // prewarm ever ran — the model was on disk and the app did not know.
+            // Deferring instead of dropping is the whole fix: the adoption happens the
+            // moment there is a foreground to run a compile in.
+            waitForForegroundToAdoptDownloads()
+            return
+        }
         Self.hasResumedDownloadsThisProcess = true
 
         for identifier in interrupted where ModelInfo.forIdentifier(identifier) != nil {
@@ -322,6 +336,31 @@ class ModelManager: ObservableObject {
                 // Errors land in `downloadModel`'s own catch, which sets `.error` and
                 // logs; there is no caller here to hand them to.
                 try? await self?.downloadModel(identifier)
+            }
+        }
+    }
+
+    /// Arms a one-shot retry of `adoptInterruptedDownloads` for the next time the app
+    /// reaches the foreground.
+    ///
+    /// One shot because the adoption itself is once per process, and because a second
+    /// observer would fire a second `downloadModel` for the same model. The observer
+    /// removes itself before doing anything, so an early return inside the adoption
+    /// cannot leave it armed.
+    private func waitForForegroundToAdoptDownloads() {
+        guard becameActiveObserver == nil else { return }
+        becameActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let observer = self.becameActiveObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.becameActiveObserver = nil
+                }
+                self.adoptInterruptedDownloads()
             }
         }
     }
@@ -691,8 +730,14 @@ class ModelManager: ObservableObject {
                 activeModel = identifier
             }
 
-            setState(.ready, for: identifier)
+            // Persist BEFORE announcing. `setState` tells the other `ModelManager` in
+            // this process that the model is ready, and that instance answers by
+            // re-reading the App Group — so announcing first handed it the state from
+            // before this download existed. Onboarding then sat on a finished model with
+            // no Continue button, because `isModelReady` was still false when it looked
+            // (observed on the simulator, 2026-09-01).
             persistState()
+            setState(.ready, for: identifier)
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
@@ -897,8 +942,14 @@ class ModelManager: ObservableObject {
                 activeModel = identifier
             }
 
-            setState(.ready, for: identifier)
+            // Persist BEFORE announcing. `setState` tells the other `ModelManager` in
+            // this process that the model is ready, and that instance answers by
+            // re-reading the App Group — so announcing first handed it the state from
+            // before this download existed. Onboarding then sat on a finished model with
+            // no Continue button, because `isModelReady` was still false when it looked
+            // (observed on the simulator, 2026-09-01).
             persistState()
+            setState(.ready, for: identifier)
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
