@@ -28,7 +28,9 @@ public final class ProStatusManager: ObservableObject {
         // seeding idempotent and always ahead of the first read.
         ProStatusManager.seedFeatureTogglesIfNeeded()
 
-        self.isProActive = AppGroup.defaults.bool(forKey: SharedKeys.proActive)
+        // Through the static rather than reading the key directly, so the app's own
+        // observed value and every `FeatureGate` answer come from one expression (#460).
+        self.isProActive = ProStatusManager.isProActiveStatic
     }
 
     /// Writes the per-feature Pro toggles into the App Group the first time, so that
@@ -84,7 +86,19 @@ public final class ProStatusManager: ObservableObject {
     /// WHY static: The keyboard extension doesn't need reactive updates --
     /// it reads Pro status once at viewDidLoad/viewWillAppear. A static method
     /// avoids instantiating an ObservableObject in the memory-constrained extension.
+    ///
+    /// **This is the one place entitlement is decided** (#460). `FeatureGate.isProActive`,
+    /// the keyboard's toolbar and this class's own published property all come through
+    /// here, which is what makes a single debug override possible instead of one force
+    /// path per surface.
     nonisolated public static var isProActiveStatic: Bool {
-        AppGroup.defaults.bool(forKey: SharedKeys.proActive)
+        #if DEBUG
+        // Compiled out of Release entirely, along with the flag and its key. See
+        // `PremiumFlags.debugProEntitlementForced` for why it has to exist at all: #460
+        // hides the Smart Mode surface from everyone, the maintainer included, and the
+        // feature is still being built.
+        if PremiumFlags.debugProEntitlementForced { return true }
+        #endif
+        return AppGroup.defaults.bool(forKey: SharedKeys.proActive)
     }
 }
