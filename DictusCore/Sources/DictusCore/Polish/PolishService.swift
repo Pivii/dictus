@@ -135,11 +135,11 @@ public final class PolishService {
         // session (the language argument is a placeholder the engine
         // normalizes). Prewarm has no dictation-scoped policy to receive (it
         // fires at app launch and ~1.5s into recording), so it snapshots on
-        // its own — and passes no detected language, since there is no
+        // its own — and passes an undetermined language mix, since there is no
         // transcript yet. A stale warm target is harmless: prewarm is
         // best-effort, and `polish()` resolves the real target from scratch.
         let selection = TranscriptionLanguagePolicy.snapshot()
-            .polishPromptSelection(detectedLanguage: nil)
+            .polishPromptSelection(languageMix: .undetermined)
         Task {
             switch selection {
             case .language(let target):
@@ -209,6 +209,14 @@ public final class PolishService {
         // punctuation words for marks, which can only remove language signal.
         // The auto path already detected on `raw` for the same reason.
         let detectedCode = PolishPipeline.detectLanguageCode(in: raw)
+        // …and the proportion measurement beside it (#456). The whole-blob code
+        // above is what the AUTO path reasons with — it keys the pre-pass and is
+        // the language the never-translate guardrail compares against, both of
+        // which have to stay one recogniser verdict on one string. The mix is
+        // what the PER-LANGUAGE path reasons with, because there the question is
+        // which language to instruct the model to write in, and a verdict that
+        // weights the opening of a Parakeet transcript answers it wrong.
+        let languageMix = PolishLanguageMix.measure(raw)
         // The per-language path only understands the four tested languages;
         // anything else is `nil` to it and falls through to its skip gate.
         let request = Request(
@@ -218,7 +226,8 @@ public final class PolishService {
             recordingDuration: recordingDuration,
             methodStart: methodStart,
             detectedCode: detectedCode,
-            detected: detectedCode.flatMap(SupportedLanguage.init(rawValue:))
+            languageMix: languageMix,
+            detected: languageMix.dominantSupportedLanguage
         )
 
         // Transcription language decoupling (#226/#239/#332): the prompt
@@ -231,7 +240,7 @@ public final class PolishService {
         // language is unknown (could be zh, it, pt, …), so the engine uses
         // the auto prompt; the verbal-punctuation pre-pass runs keyed on the
         // DETECTED language, and the typography post-pass stays off.
-        switch languagePolicy.polishPromptSelection(detectedLanguage: request.detected) {
+        switch languagePolicy.polishPromptSelection(languageMix: languageMix) {
         case .language(let target):
             return await polishTargeted(request, target: target, onEngineWillRun: onEngineWillRun)
         case .autoDetected:
@@ -255,11 +264,23 @@ public final class PolishService {
         /// Anchors the wall-clock the user waits for. Captured before
         /// detection so its cost lands in `preprocessMs` like everything else.
         let methodStart: Date
-        /// Raw `NLLanguage` code, the whole long tail ("it", "zh-Hans", …).
-        /// What the auto path gates and pre-processes on.
+        /// Raw `NLLanguage` code, the whole long tail ("it", "zh-Hans", …), read
+        /// off the transcript as one blob. What the auto path gates and
+        /// pre-processes on, and what the metric of the same name records.
         let detectedCode: String?
-        /// The same detection narrowed to the four languages the per-language
+        /// What the transcript is made of, by language (#456). The per-language
+        /// path's target is elected from this, not from `detectedCode` — see
+        /// `TranscriptionLanguagePolicy.polishPromptSelection(languageMix:)`.
+        let languageMix: PolishLanguageMix
+        /// The mix's leading language narrowed to the four the per-language
         /// prompts exist for, or `nil` — gibberish, or outside that set.
+        ///
+        /// Read off the proportion rather than off `detectedCode` since #456, and
+        /// deliberately WITHOUT the dominance floor: this answers "did we read a
+        /// language we can polish in", which is what the gibberish gate and the
+        /// natural-vs-repair choice ask. A bilingual transcript is not gibberish,
+        /// and a target it was too mixed to elect is still a transcript whose
+        /// leading language decides whether the polish has anything to repair.
         let detected: SupportedLanguage?
 
         /// The armed Smart Mode as a task, when there is one. Nil means the free
@@ -326,7 +347,11 @@ public final class PolishService {
         let methodStart = request.methodStart
         let sttEngine = languagePolicy.engine
         let sttModelID = languagePolicy.modelIdentifier
-        let resolution = PolishMetrics.LanguageResolution(policy: languagePolicy)
+        // The mix travels into the event beside the policy (#456): the two values
+        // the target was elected from are the two an export needs to explain it.
+        let resolution = PolishMetrics.LanguageResolution(
+            policy: languagePolicy, mix: request.languageMix
+        )
 
         // Pre-pass: deterministic regex substitution of verbal punctuation
         // commands. Round 3 testing showed Apple FM cannot be coaxed into
@@ -534,8 +559,8 @@ public final class PolishService {
         ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
-                outcome: .skippedShort, raw: raw, finalCount: preprocessed.count,
-                languagePolicy: languagePolicy, engineID: activeEngine.identifier,
+                outcome: .skippedShort, request: request, finalCount: preprocessed.count,
+                engineID: activeEngine.identifier,
                 detectedLanguage: request.detectedCode, latencyMs: detectMs,
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
@@ -553,8 +578,8 @@ public final class PolishService {
         ) {
             let detectMs = Int(Date().timeIntervalSince(methodStart) * 1000)
             let m = autoEventMetrics(
-                outcome: .skipped, raw: raw, finalCount: raw.count,
-                languagePolicy: languagePolicy, engineID: activeEngine.identifier,
+                outcome: .skipped, request: request, finalCount: raw.count,
+                engineID: activeEngine.identifier,
                 latencyMs: detectMs,
                 timings: PolishTimings(preprocessMs: detectMs, engineMs: 0, postprocessMs: 0)
             )
@@ -588,8 +613,8 @@ public final class PolishService {
         let totalMs = Int(Date().timeIntervalSince(methodStart) * 1000)
         let returned = PolishPipeline.resolvedOutput(bundle, preprocessed: preprocessed, job: job)
         let m = autoEventMetrics(
-            outcome: bundle.outcome, raw: raw, finalCount: returned?.count ?? 0,
-            languagePolicy: languagePolicy, engineID: currentEngine.identifier,
+            outcome: bundle.outcome, request: request, finalCount: returned?.count ?? 0,
+            engineID: currentEngine.identifier,
             mode: job.task.identifier, detectedLanguage: request.detectedCode,
             latencyMs: totalMs,
             timings: PolishTimings(
@@ -614,10 +639,12 @@ public final class PolishService {
     /// French — a reader auditing that would conclude the #332 bug was live.
     /// The keyboard language is still on the event, under its own name, in
     /// `languageResolution`.
+    /// Takes the whole `Request` rather than the four values it needs off it: the
+    /// policy, the mix, the raw text and its length always describe the SAME dictation,
+    /// and passing them loose is how an event ends up describing two.
     private func autoEventMetrics(outcome: PolishMetrics.Outcome,
-                                  raw: String,
+                                  request: Request,
                                   finalCount: Int,
-                                  languagePolicy: TranscriptionLanguagePolicy,
                                   engineID: String,
                                   mode: String? = nil,
                                   detectedLanguage: String? = nil,
@@ -631,15 +658,17 @@ public final class PolishService {
             mode: mode,
             targetLanguage: nil,
             detectedLanguage: detectedLanguage,
-            rawCharCount: raw.count,
+            rawCharCount: request.raw.count,
             polishedCharCount: finalCount,
             latencyMs: latencyMs,
             outcome: outcome,
-            sttEngine: languagePolicy.engine.rawValue,
-            sttModelID: languagePolicy.modelIdentifier,
+            sttEngine: request.languagePolicy.engine.rawValue,
+            sttModelID: request.languagePolicy.modelIdentifier,
             timings: timings,
             failureReason: failureReason,
-            languageResolution: PolishMetrics.LanguageResolution(policy: languagePolicy)
+            languageResolution: PolishMetrics.LanguageResolution(
+                policy: request.languagePolicy, mix: request.languageMix
+            )
         )
     }
 

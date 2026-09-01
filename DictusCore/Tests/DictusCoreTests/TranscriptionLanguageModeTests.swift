@@ -121,19 +121,38 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         )
     }
 
+    /// A mix in which one language holds the entire transcript — what every
+    /// assertion written before #456 meant when it passed a detected language.
+    private func wholly(_ language: SupportedLanguage) -> PolishLanguageMix {
+        PolishLanguageMix(
+            shares: [language.rawValue: 1], dominantCode: language.rawValue,
+            dominantShare: 1, countedCharacters: 200
+        )
+    }
+
+    /// A two-language mix, `leader` holding `share` of the counted characters.
+    private func mixed(_ leader: SupportedLanguage,
+                       _ share: Double,
+                       _ other: SupportedLanguage) -> PolishLanguageMix {
+        PolishLanguageMix(
+            shares: [leader.rawValue: share, other.rawValue: 1 - share],
+            dominantCode: leader.rawValue, dominantShare: share, countedCharacters: 200
+        )
+    }
+
     // MARK: - Whisper: the setting is effective
 
     func testWhisperFollowBehavesLikeToday() {
         let sut = policy(.followKeyboard, keyboard: .french, engine: .whisperKit)
         XCTAssertEqual(sut.sttLanguageCode, "fr")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .french), .language(.french))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french))
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
 
     func testWhisperAutoDetectUsesAutoPromptAndSkipsSeparator() {
         let sut = policy(.autoDetect, keyboard: .french, engine: .whisperKit)
         XCTAssertNil(sut.sttLanguageCode, "nil enables Whisper language detection")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .german), .autoDetected,
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.german)), .autoDetected,
                        "auto mode polishes with the language-agnostic prompt (#239)")
         XCTAssertTrue(sut.insertsTranscriptionAsIs)
     }
@@ -141,7 +160,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     func testWhisperExplicitIgnoresKeyboardLanguage() {
         let sut = policy(.explicit(.english), keyboard: .french, engine: .whisperKit)
         XCTAssertEqual(sut.sttLanguageCode, "en")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .english), .language(.english),
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.english)), .language(.english),
                        "polish must match the dictated language, not the keyboard")
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
@@ -151,7 +170,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     func testParakeetFollowUsesTheDetectedLanguage() {
         let sut = policy(.followKeyboard, keyboard: .spanish, engine: .parakeet)
         XCTAssertEqual(sut.sttLanguageCode, "es")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .spanish), .language(.spanish))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.spanish)), .language(.spanish))
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
 
@@ -163,7 +182,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         // behavior (the engine ignores the language parameter anyway).
         let sut = policy(.autoDetect, keyboard: .french, engine: .parakeet)
         XCTAssertEqual(sut.sttLanguageCode, "fr", "STT stage untouched by #239")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .french), .autoDetected)
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.french)), .autoDetected)
         XCTAssertFalse(sut.insertsTranscriptionAsIs,
                        "separator behavior is Whisper-auto-only, untouched by #239")
     }
@@ -181,7 +200,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
             for keyboard in [SupportedLanguage.german, .english, .spanish] {
                 let sut = policy(.explicit(.french), keyboard: keyboard, engine: engine)
                 XCTAssertEqual(
-                    sut.polishPromptSelection(detectedLanguage: .french), .language(.french),
+                    sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french),
                     "explicit fr must survive a \(keyboard.rawValue) keyboard on \(engine.rawValue)"
                 )
             }
@@ -192,8 +211,8 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     /// including when the detector disagrees.
     func testExplicitTargetOutranksDetection() {
         let sut = policy(.explicit(.french), keyboard: .german, engine: .parakeet)
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .german), .language(.french))
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: nil), .language(.french),
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.german)), .language(.french))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: .undetermined), .language(.french),
                        "an explicit choice does not need detection to back it up")
     }
 
@@ -204,18 +223,99 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         for engine in [SpeechEngine.whisperKit, .parakeet] {
             let sut = policy(.followKeyboard, keyboard: .german, engine: engine)
             XCTAssertEqual(
-                sut.polishPromptSelection(detectedLanguage: .french), .language(.french),
+                sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french),
                 "French transcript on a German keyboard must not be polished into German"
             )
         }
     }
 
     /// Rank 3: the keyboard is still the answer when nothing better exists —
-    /// detection was unconfident, or landed outside the four supported
-    /// languages. That is a guess, and it is the only case where one is made.
+    /// nothing was read at all, or what was read landed outside the four
+    /// supported languages. That is a guess, and it is the only case where one
+    /// is made.
     func testKeyboardLanguageIsTheLastResortOnly() {
         let sut = policy(.followKeyboard, keyboard: .german, engine: .parakeet)
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: nil), .language(.german))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: .undetermined), .language(.german))
+        let italian = PolishLanguageMix(
+            shares: ["it": 1], dominantCode: "it", dominantShare: 1, countedCharacters: 200
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: italian), .language(.german),
+            "a language with no per-language prompt cannot be a target; the gibberish "
+                + "gate is what stops the keyboard language from being polished into"
+        )
+    }
+
+    // MARK: - The target is a proportion, not a verdict (#456)
+
+    /// The captured event's shape, as proportions: an English opening Parakeet
+    /// mistranscribed, a French body, and a whole-blob recogniser reading `en`
+    /// at 0.9995 because it weights the opening. The proportion elects French.
+    func testTheLeadingLanguageByProportionIsTheTarget() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, 0.776, .english)),
+            .language(.french),
+            "78 % French must not be polished — and therefore translated — into English"
+        )
+    }
+
+    /// The point of the floor: at a near tie no language legitimately won, so
+    /// nothing is elected from the transcript and the one signal that came from
+    /// the user rather than from a classifier takes over.
+    func testANearTieFallsBackToTheKeyboardLanguage() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.54, .french)),
+            .language(.french),
+            "a 54/46 split elects nothing; the keyboard decides"
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.61, .french)),
+            .language(.english),
+            "just over the floor, English leads clearly enough to be named"
+        )
+    }
+
+    /// The floor is a number this file is allowed to read, so that moving it
+    /// moves the tests with it rather than leaving them asserting a stale one.
+    func testTheDominanceFloorIsExactlyWhatTheElectionUses() {
+        let sut = policy(.followKeyboard, keyboard: .german, engine: .parakeet)
+        let floor = TranscriptionLanguagePolicy.dominantLanguageShareFloor
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, floor, .english)),
+            .language(.french), "the floor is inclusive"
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, floor - 0.01, .english)),
+            .language(.german)
+        )
+    }
+
+    /// A mixed transcript does not weaken an explicit choice: the user named a
+    /// language, and no proportion of anything outranks that.
+    func testAMixedTranscriptDoesNotDisturbAnExplicitChoice() {
+        let sut = policy(.explicit(.french), keyboard: .german, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.9, .french)),
+            .language(.french)
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.5, .french)),
+            .language(.french)
+        )
+    }
+
+    /// Auto mode elects nothing, whatever the transcript is made of — its prompt
+    /// is language-agnostic and its contract is never to translate.
+    func testAutoModeIsUnaffectedByTheProportion() {
+        let sut = policy(.autoDetect, keyboard: .french, engine: .parakeet)
+        for share in [0.5, 0.6, 0.78, 1.0] {
+            XCTAssertEqual(
+                sut.polishPromptSelection(languageMix: mixed(.english, share, .french)),
+                .autoDetected
+            )
+        }
     }
 
     // MARK: - STT telemetry (#332)
@@ -240,6 +340,52 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
                        "a dropped nil would read as 'not recorded'")
     }
 
+    /// Acceptance criterion 8 (#456): "detection was mixed" and "detection was
+    /// confident" must be distinguishable from the event alone. Every other field on
+    /// the captured event is identical in the two situations — same target, same
+    /// detected language, same outcome — so the shares are the only thing that
+    /// separates them.
+    func testTheTrailCarriesTheProportionsTheTargetWasElectedFrom() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        let mixedTrail = PolishMetrics.LanguageResolution(
+            policy: sut, mix: mixed(.french, 0.776, .english)
+        )
+        XCTAssertEqual(mixedTrail.languageMix, ["fr": 0.776, "en": 0.224])
+        XCTAssertEqual(mixedTrail.targetSource, "proportion")
+
+        let confidentTrail = PolishMetrics.LanguageResolution(policy: sut, mix: wholly(.french))
+        XCTAssertEqual(confidentTrail.languageMix, ["fr": 1.0])
+        XCTAssertEqual(confidentTrail.targetSource, "proportion")
+    }
+
+    /// Acceptance criterion 5, second half: below the floor the keyboard wins **and
+    /// the event records that it did** — otherwise a reader looking at a French target
+    /// cannot tell "the transcript was French" from "we gave up and used the keyboard,
+    /// which happened to be French too".
+    func testTheTrailNamesTheKeyboardWhenTheProportionElectedNothing() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        let trail = PolishMetrics.LanguageResolution(
+            policy: sut, mix: mixed(.english, 0.519, .french)
+        )
+        XCTAssertEqual(trail.targetSource, "keyboard")
+        XCTAssertEqual(trail.languageMix, ["en": 0.519, "fr": 0.481])
+    }
+
+    func testTheTrailNamesTheOtherTwoSourcesToo() {
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(
+                policy: policy(.explicit(.french), keyboard: .german, engine: .parakeet),
+                mix: mixed(.english, 0.9, .french)
+            ).targetSource, "explicit", "no proportion outranks a choice the user made"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(
+                policy: policy(.autoDetect, keyboard: .german, engine: .parakeet),
+                mix: wholly(.french)
+            ).targetSource, "none", "the auto path targets nothing at all"
+        )
+    }
+
     func testLanguageResolutionTrailCarriesEachFactApart() {
         // The export must let a reader separate the mode, the keyboard, and
         // what STT was handed — the failure that made three device re-tests
@@ -250,6 +396,8 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         XCTAssertEqual(trail.keyboardLanguage, "de")
         XCTAssertEqual(trail.sttLanguageCode, "de")
         XCTAssertFalse(trail.sttLanguageIsEffective)
+        XCTAssertNil(trail.languageMix, "no mix was supplied, so none is claimed")
+        XCTAssertNil(trail.targetSource)
     }
 }
 
@@ -333,6 +481,40 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.targetLanguage, .german)
         XCTAssertNil(decoded.languageResolution,
                      "no trail is what marks an auto event as predating the fix")
+    }
+
+    /// The proportions have to reach the JSON export, and adding them must not
+    /// invalidate the events already on disk (#456) — the same two obligations #332's
+    /// trail had, for the same seven-day ring.
+    func testTheProportionsSurviveTheMetricJSONRoundTrip() throws {
+        let sut = metric(resolution: PolishMetrics.LanguageResolution(
+            transcriptionMode: "followKeyboard", keyboardLanguage: "fr",
+            sttLanguageCode: "fr", sttLanguageIsEffective: false,
+            languageMix: ["fr": 0.776, "en": 0.224], targetSource: "proportion"
+        ))
+        let data = try JSONEncoder().encode(sut)
+        let decoded = try JSONDecoder().decode(PolishMetrics.self, from: data)
+        XCTAssertEqual(decoded.languageResolution?.languageMix, ["fr": 0.776, "en": 0.224])
+        XCTAssertEqual(decoded.languageResolution?.targetSource, "proportion")
+    }
+
+    /// A #332-era event carries a trail but no shares — including the captured #456
+    /// event itself. Absent must decode as "written before the proportions existed",
+    /// never as "the transcript was in no language".
+    func testATrailWrittenBeforeTheProportionsExistedStillDecodes() throws {
+        let shipped = """
+        {"engine":"apple-fm","mode":"natural","targetLanguage":"en","detectedLanguage":"en",\
+        "rawCharCount":471,"polishedCharCount":454,"latencyMs":3100,"outcome":"success",\
+        "sttEngine":"PK","sttModelID":"parakeet-tdt-0.6b-v3",\
+        "languageResolution":{"transcriptionMode":"followKeyboard","keyboardLanguage":"fr",\
+        "sttLanguageCode":"fr","sttLanguageIsEffective":false}}
+        """
+        let decoded = try JSONDecoder().decode(
+            PolishMetrics.self, from: XCTUnwrap(shipped.data(using: .utf8))
+        )
+        XCTAssertEqual(decoded.languageResolution?.transcriptionMode, "followKeyboard")
+        XCTAssertNil(decoded.languageResolution?.languageMix)
+        XCTAssertNil(decoded.languageResolution?.targetSource)
     }
 
     /// Backward compatibility: a payload shaped exactly like one written by
