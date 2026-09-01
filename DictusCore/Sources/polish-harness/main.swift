@@ -53,6 +53,63 @@ func optionValue(_ name: String, in args: [String]) -> String? {
     return args[i + 1]
 }
 
+/// A numeric option that must be valid **when present**, and takes `fallback` only
+/// when the flag is absent entirely.
+///
+/// WHY this is not `Type(optionValue(…) ?? "") ?? fallback`, which is what the two
+/// call sites below used to be: that spelling cannot tell "you did not ask" from
+/// "you asked for something I could not read", and answers both with the default.
+/// `--floor 0.7O` (letter O) would have swept at 0.60 and printed `<-- shipping`
+/// against it, and `--runs five` would have run once. This harness is the instrument
+/// the shipped 0.60 floor was measured on, and an instrument that silently
+/// substitutes a value for the one you asked for produces a number you then believe.
+/// Refusing costs a re-run; being quietly wrong costs the measurement.
+///
+/// `isValid` is separate from parsing because the two rejections have different
+/// causes and the same cure — `--floor 1.5` parses perfectly and is still not a
+/// share of anything.
+func numericOption<T: LosslessStringConvertible>(
+    _ name: String,
+    in args: [String],
+    default fallback: T,
+    expected: String,
+    isValid: (T) -> Bool
+) -> T {
+    guard args.contains(name) else { return fallback }
+    guard let raw = optionValue(name, in: args), let value = T(raw), isValid(value) else {
+        print("error: \(name) \(expected)")
+        exit(2)
+    }
+    return value
+}
+
+/// The corpus paths in `args`: everything after the command that is neither a flag
+/// nor a flag's value.
+///
+/// WHY a flag's value has to be excluded explicitly. `--floor 0.75` puts `0.75` into
+/// the argument list as a bare token, so a filter that only drops `--`-prefixed
+/// tokens hands it straight to the corpus loader as a file path — which is exactly
+/// what happened: `target … --floor 0.75` failed with `cannot read corpus at 0.75`
+/// and no invocation had ever passed the flag until it was tested. `guardrail` never
+/// noticed because all three of its flags are boolean; `target` is the first command
+/// here to carry a valued one.
+func corpusPaths(in args: [String], valuedOptions: Set<String> = []) -> [String] {
+    var paths: [String] = []
+    var skipValue = false
+    for argument in args.dropFirst() {
+        if skipValue {
+            skipValue = false
+            continue
+        }
+        if argument.hasPrefix("--") {
+            skipValue = valuedOptions.contains(argument)
+            continue
+        }
+        paths.append(argument)
+    }
+    return paths
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "target"].contains(command), args.count >= 2 else {
     print("""
@@ -97,7 +154,8 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "t
 }
 
 let fixturesPath = args[1]
-let runs = Int(optionValue("--runs", in: args) ?? "1") ?? 1
+let runs = numericOption("--runs", in: args, default: 1,
+                         expected: "must be a whole number of 1 or more") { $0 >= 1 }
 let instructionsFile = optionValue("--instructions", in: args)
 let abA = optionValue("--a", in: args)
 let abB = optionValue("--b", in: args)
@@ -506,13 +564,13 @@ func runGuardrail() {
     // argument check, load nothing, and report a clean `0/0`. A measurement tool
     // that answers "no failures" to a malformed question is worse than one that
     // errors, because the zero reads like a result.
-    let corpusPaths = args.dropFirst().filter { !$0.hasPrefix("--") }
-    guard !corpusPaths.isEmpty else {
+    let paths = corpusPaths(in: args)
+    guard !paths.isEmpty else {
         print("error: guardrail needs at least one corpus file, e.g.\n"
               + "  swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json")
         exit(2)
     }
-    let cases = GuardrailCorpus.load(corpusPaths)
+    let cases = GuardrailCorpus.load(paths)
     print("corpus: \(cases.count) outputs from \(Set(cases.map(\.source)).count) sources")
     if args.contains("--segments") { GuardrailCorpus.segmentTable(cases) }
     if args.contains("--sweep") { GuardrailCorpus.sweep(cases) }
@@ -536,15 +594,18 @@ func runGuardrail() {
 func runTargetElection() {
     // Same reasoning as `runGuardrail`: a flag-only invocation must error rather
     // than report a clean 0/0 that reads like a result.
-    let corpusPaths = args.dropFirst().filter { !$0.hasPrefix("--") }
-    guard !corpusPaths.isEmpty else {
+    let paths = corpusPaths(in: args, valuedOptions: ["--floor"])
+    guard !paths.isEmpty else {
         print("error: target needs at least one corpus file, e.g.\n"
               + "  swift run polish-harness target ../docs/research/456-target-election/corpus.json")
         exit(2)
     }
-    let cases = TargetElectionCorpus.load(corpusPaths)
-    let floor = Double(optionValue("--floor", in: args) ?? "")
-        ?? TranscriptionLanguagePolicy.dominantLanguageShareFloor
+    let cases = TargetElectionCorpus.load(paths)
+    let floor = numericOption(
+        "--floor", in: args,
+        default: TranscriptionLanguagePolicy.dominantLanguageShareFloor,
+        expected: "must be a finite share from 0 to 1"
+    ) { $0.isFinite && (0...1).contains($0) }
     print("corpus: \(cases.count) transcripts")
     TargetElectionCorpus.table(cases, floor: floor)
     if args.contains("--sweep") { TargetElectionCorpus.sweep(cases) }
