@@ -28,7 +28,7 @@ public enum SmartModeDiscovery {
 
     /// Whether the hint should be offered the centre slot.
     ///
-    /// Two subtractions from "always":
+    /// Three subtractions from "always":
     ///
     /// - **Once the gesture has been used, the hint retires.** It taught what it had
     ///   to teach. Nothing brings it back, including unpinning every mode: the user
@@ -42,15 +42,24 @@ public enum SmartModeDiscovery {
     ///   that population is told the truth about the feature, which is the paywall
     ///   and the App Store listing, not the toolbar.
     ///
+    /// - **A gesture that opens nothing is not worth teaching.** `fanIsReachable` is
+    ///   `SmartModeSurface.fanEntryPoint != .hidden`: while the paywall is hidden, a
+    ///   non-subscriber's long press does not open the fan at all (#460), and a line
+    ///   inviting them to perform it would be an instruction with no outcome.
+    ///
+    /// That last one is **not** the subtraction #404 left open. That question — should
+    /// the hint point a non-subscriber at a fan whose only offer is an advertisement —
+    /// is about a fan they can still open, and it stays open. This one is about a
+    /// gesture that does nothing at all, which is not a question.
+    ///
     /// Deliberately NOT subtracted: whether the user is subscribed. A non-subscriber
     /// on a capable device is exactly who this feature is for sale to, and the fan
     /// is where they meet it. What the fan says to them is #392's.
-    public static func offersHint(deviceCanRunModes: Bool) -> Bool {
-        deviceCanRunModes && !hasUsedGesture
-    }
-
-    /// Convenience for a caller with no reason to resolve availability itself.
-    public static var offersHint: Bool {
-        offersHint(deviceCanRunModes: SmartModeAvailability.deviceCanRunModes)
+    ///
+    /// Neither parameter carries a default, and the zero-argument convenience that
+    /// used to sit below this was removed with the second one: a hint policy that
+    /// answers on one of its two inputs is what #460 found in the fan.
+    public static func offersHint(deviceCanRunModes: Bool, fanIsReachable: Bool) -> Bool {
+        deviceCanRunModes && fanIsReachable && !hasUsedGesture
     }
 }
