@@ -117,6 +117,17 @@
         }
       }
     },
+    "A model file arrived damaged. Dictus will download it again." : {
+      "comment" : "Model download error when an assembled file fails its size or SHA-256 check (issue #449).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un fichier du modèle est arrivé endommagé. Dictus va le télécharger à nouveau."
+          }
+        }
+      }
+    },
     "A model file could not be downloaded (error %lld)." : {
       "comment" : "Model download error for an unexpected HTTP status (issue #207). The argument is the HTTP status code.",
       "localizations" : {

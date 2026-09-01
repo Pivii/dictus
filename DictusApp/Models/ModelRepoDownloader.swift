@@ -22,6 +22,15 @@ import FluidAudio
 /// `Configuration.parakeet()` / `Configuration.whisperKit(variant:)`; the download
 /// machinery is shared.
 ///
+/// Issue #449 moved the bytes themselves out of this class. What is left here is what
+/// only this class knows — which repository, which files, which revision, and what a
+/// finished download has to look like — and the transfer belongs to
+/// `BackgroundModelDownloadService`, which owns one background `URLSession` for the
+/// whole app. The delegate-based `downloadTask` this file used to run was foreground
+/// only: leaving Dictus suspended it, the 30 s stall detector fired on the user's
+/// return, and the retry started the current file at byte zero. On a 445 MB weight blob
+/// that meant onboarding never finished unless the user stared at it.
+///
 /// Parity contracts to re-check on dependency bumps:
 /// - FluidAudio 0.12.4 `DownloadUtils.downloadRepo` (file selection + layout) so that
 ///   `AsrModels.load` finds the cached files and goes straight to CoreML compilation.
@@ -47,12 +56,12 @@ final class ModelRepoDownloader {
     }
 
     struct Configuration: Sendable {
-        /// Seconds without a single received byte before a file attempt is aborted.
-        /// Applied as `timeoutIntervalForRequest`, which for download tasks is an
-        /// IDLE timeout that resets whenever data arrives — a slow-but-alive
-        /// connection never trips it, only a genuine stall does.
-        var stallTimeout: TimeInterval = 30
-        /// Attempts per file before the whole download fails (backoff 2s/4s/8s).
+        /// Attempts per repository-listing request before the download fails
+        /// (backoff 2s/4s/8s).
+        ///
+        /// The transfer's own attempt budget and its stall timeout moved to
+        /// `BackgroundModelDownloadService` with the bytes (issue #449); this one
+        /// covers the tree API calls that still run here, in the foreground.
         var maxAttemptsPerFile: Int = 3
         /// HuggingFace repo id, e.g. "argmaxinc/whisperkit-coreml".
         let repoPath: String
@@ -63,7 +72,7 @@ final class ModelRepoDownloader {
         /// (FluidAudio parity — covers `parakeet_vocab.json` at the repo root).
         let includesRootMetadata: Bool
         /// Repo-relative paths that must exist on disk after the download —
-        /// the final-verification tripwire (see Phase 4 in `download`).
+        /// the final-verification tripwire (see Phase 5 in `download`).
         ///
         /// A function of the destination directory rather than a list fixed up
         /// front, since issue #433: a WhisperKit variant has to be checked against
@@ -134,6 +143,9 @@ final class ModelRepoDownloader {
         case httpError(path: String, statusCode: Int)
         case stalled(path: String, timeoutSeconds: Int)
         case missingRequiredFile(String)
+        /// An assembled file failed its size or SHA-256 check and was thrown away
+        /// (issue #449). Retryable: the next attempt downloads it from byte zero.
+        case integrityFailed(path: String)
 
         var errorDescription: String? {
             switch self {
@@ -147,6 +159,8 @@ final class ModelRepoDownloader {
                 return String(localized: "The download stalled. Check your internet connection and try again.")
             case .missingRequiredFile:
                 return String(localized: "The model download is incomplete. Please try again.")
+            case .integrityFailed:
+                return String(localized: "A model file arrived damaged. Dictus will download it again.")
             }
         }
     }
@@ -168,72 +182,68 @@ final class ModelRepoDownloader {
     /// - WhisperKit: `Documents/huggingface/models/argmaxinc/whisperkit-coreml`
     ///   (the variant folder lands inside it, matching HubApi's snapshot layout).
     ///
-    /// Files already present on disk are skipped, which makes a retry after a
-    /// failure resume where it left off (every file on disk is complete because
-    /// downloads land in a temp location and are moved atomically on completion).
+    /// Files already present on disk are skipped, and the file in flight resumes at the
+    /// byte it stopped on — across backgrounding, across a network change, and across
+    /// the process being killed (issue #449). What survives the process is the manifest
+    /// and the partials `BackgroundModelDownloadService` keeps; what survives inside one
+    /// process is the background `URLSession` itself.
     ///
     /// - Parameters:
     ///   - cacheDir: Destination repo directory.
-    ///   - modelName: Model identifier, used only for persistent logging.
-    ///   - onProgress: Throttled (~0.5% or 300ms) aggregate progress. May be
-    ///     called on a background queue — hop to the main actor before touching UI.
+    ///   - modelName: Model identifier, used for logging and to key the manifest.
+    ///   - onProgress: Throttled (~0.5% or 300ms) aggregate progress. Called on a
+    ///     background queue — hop to the main actor before touching UI.
     func download(
         to cacheDir: URL,
         modelName: String,
-        onProgress: @escaping @Sendable (Progress) -> Void
+        onProgress: @escaping @Sendable (ModelRepoDownloader.Progress) -> Void
     ) async throws {
-        // Phase 1: list the repo tree and select files (engine parity via Configuration).
-        let files = try await listRequiredFiles()
+        // Phase 1: pin the revision. Every URL from here on is the canonical
+        // `/resolve/<commit>/<path>` form, which is what makes a resume days later
+        // meaningful: `main` can move between the bytes on disk and the bytes about to
+        // arrive, and the redirected CDN URLs it lands on carry a short-lived signature
+        // that is worthless the moment it is written down (maintainer's note, #449).
+        let revision = await resolveRevision()
 
-        // Phase 2: byte-weighted totals. The HF tree API reports real LFS blob
+        // Phase 2: list the repo tree and select files (engine parity via Configuration).
+        let files = try await listRequiredFiles(revision: revision)
+
+        // Phase 3: byte-weighted totals. The HF tree API reports real LFS blob
         // sizes (verified: Encoder weight.bin = 445187200), so byte weighting is
         // accurate. Unknown sizes (-1) count as 0, same as FluidAudio.
         let totalBytes: Int64 = files.reduce(0) { $0 + Int64(max(0, $1.size)) }
         Self.logSizeMismatchIfAny(modelName: modelName, measuredBytes: totalBytes)
-        let reporter = ProgressReporter(
-            totalBytes: totalBytes,
-            totalFiles: files.count,
-            onProgress: onProgress
-        )
 
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        // Phase 3: sequential per-file download loop. Sequential matches FluidAudio
-        // and keeps progress monotonic; bandwidth is dominated by one huge weight
-        // file per repo, so parallelism would buy nothing.
-        for file in files {
-            try Task.checkCancellation()
-
-            let destination = cacheDir.appendingPathComponent(file.path)
-
-            // Skip complete files — this is what makes retry resumable.
-            if FileManager.default.fileExists(atPath: destination.path) {
-                reporter.fileCompleted(sizeBytes: Int64(max(0, file.size)))
-                continue
+        // Phase 4: hand the transfer to the background session, with what is already on
+        // disk marked complete. Sequential per file, as before: bandwidth is dominated
+        // by one huge weight file per repo, and parallelism across files would only make
+        // the aggregate percentage move backwards.
+        let manifest = ModelDownloadManifest(
+            modelIdentifier: modelName,
+            repositoryID: configuration.repoPath,
+            revision: revision,
+            chunkSize: BackgroundModelDownloadService.chunkSize,
+            files: files.map { file in
+                ModelDownloadManifest.FileEntry(
+                    path: file.path,
+                    size: Int64(file.size),
+                    sha256: file.sha256,
+                    completed: FileManager.default.fileExists(
+                        atPath: cacheDir.appendingPathComponent(file.path).path
+                    )
+                )
             }
+        )
 
-            try FileManager.default.createDirectory(
-                at: destination.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
+        try await BackgroundModelDownloadService.shared.run(
+            manifest: manifest,
+            destination: cacheDir,
+            onProgress: onProgress
+        )
 
-            // HuggingFace returns HTTP 500 for 0-byte files — create locally instead.
-            if file.size == 0 {
-                FileManager.default.createFile(atPath: destination.path, contents: Data())
-                reporter.fileCompleted(sizeBytes: 0)
-                continue
-            }
-
-            try await downloadFileWithRetry(
-                file,
-                to: destination,
-                modelName: modelName,
-                reporter: reporter
-            )
-            reporter.fileCompleted(sizeBytes: Int64(max(0, file.size)))
-        }
-
-        // Phase 4: parity tripwire — mirror each engine's own existence check
+        // Phase 5: parity tripwire — mirror each engine's own existence check
         // (AsrModels.modelsExist for Parakeet, the CoreML bundle set for WhisperKit)
         // so we fail loudly here (with a localized error) instead of silently
         // handing an incomplete cache to the engine. If the repo layout ever
@@ -243,6 +253,24 @@ final class ModelRepoDownloader {
             guard FileManager.default.fileExists(atPath: path.path) else {
                 throw DownloadError.missingRequiredFile(requiredPath)
             }
+        }
+    }
+
+    // MARK: - Destination directories
+
+    /// Where a model's repository files live on disk, resolved from the catalogue.
+    ///
+    /// WHY it is a function and not a stored path (issue #449): the background service
+    /// has to find this directory again in a process that was relaunched by iOS, and an
+    /// app container path is not stable across installs — persisting one would send a
+    /// resumed download into a directory that no longer exists. `ModelManager` calls the
+    /// same function so the two can never disagree about where a model went.
+    static func destinationDirectory(for identifier: String) -> URL? {
+        switch ModelInfo.forIdentifier(identifier)?.engine {
+        case .parakeet:
+            return AsrModels.defaultCacheDirectory(for: .v3)
+        case .whisperKit, nil:
+            return WhisperModelRepository.repositoryURL()
         }
     }
 
@@ -275,25 +303,56 @@ final class ModelRepoDownloader {
     struct RepoFile: Sendable {
         let path: String
         let size: Int
+        /// SHA-256 of the blob, for LFS entries only — the plain `oid` is a git blob
+        /// SHA-1 over a different preimage and would fail every comparison.
+        let sha256: String?
     }
 
     private struct TreeItem: Decodable {
         let path: String
         let type: String
         let size: Int?
+        let lfs: TreeLFSPointer?
     }
 
-    /// Recursively lists the repo tree and returns the files the engine would
-    /// download: everything under `configuration.directoryPatterns`, plus
+    private struct RepoInfo: Decodable {
+        let sha: String?
+    }
+
+    /// The commit the whole download is pinned to, or `main` when it cannot be resolved.
+    ///
+    /// A failure here is not fatal: `main` is what every previous build used, and the
+    /// only thing lost is the guarantee that a resume days later reads the same
+    /// revision. The `If-Range` validator still catches that case, at the cost of
+    /// restarting the file instead of appending to it.
+    private func resolveRevision() async -> String {
+        guard let url = URL(string: "https://huggingface.co/api/models/\(configuration.repoPath)") else {
+            return "main"
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return "main"
+            }
+            let info = try JSONDecoder().decode(RepoInfo.self, from: data)
+            guard let sha = info.sha, !sha.isEmpty else { return "main" }
+            return sha
+        } catch {
+            return "main"
+        }
+    }
+
+    /// Recursively lists the repo tree at `revision` and returns the files the engine
+    /// would download: everything under `configuration.directoryPatterns`, plus
     /// root-level `.json`/`.txt` files when `includesRootMetadata` is set.
-    private func listRequiredFiles() async throws -> [RepoFile] {
+    private func listRequiredFiles(revision: String) async throws -> [RepoFile] {
         let patterns = configuration.directoryPatterns
         var files: [RepoFile] = []
         var pendingDirectories = [""]
 
         while let directory = pendingDirectories.first {
             pendingDirectories.removeFirst()
-            let items = try await fetchTree(path: directory)
+            let items = try await fetchTree(path: directory, revision: revision)
 
             for item in items {
                 if item.type == "directory" {
@@ -307,7 +366,11 @@ final class ModelRepoDownloader {
                         patterns: patterns,
                         includesRootMetadata: configuration.includesRootMetadata
                     ) {
-                        files.append(RepoFile(path: item.path, size: item.size ?? -1))
+                        files.append(RepoFile(
+                            path: item.path,
+                            size: item.size ?? -1,
+                            sha256: item.lfs?.oid
+                        ))
                     }
                 }
             }
@@ -339,8 +402,8 @@ final class ModelRepoDownloader {
 
     /// Fetches one directory listing from the HF tree API, with retry/backoff
     /// (mirrors FluidAudio's `fetchHuggingFaceFile` retry envelope).
-    private func fetchTree(path: String) async throws -> [TreeItem] {
-        let apiPath = path.isEmpty ? "tree/main" : "tree/main/\(path)"
+    private func fetchTree(path: String, revision: String) async throws -> [TreeItem] {
+        let apiPath = path.isEmpty ? "tree/\(revision)" : "tree/\(revision)/\(path)"
         guard let url = URL(string: "https://huggingface.co/api/models/\(configuration.repoPath)/\(apiPath)") else {
             throw DownloadError.invalidResponse
         }
@@ -371,51 +434,15 @@ final class ModelRepoDownloader {
         throw lastError
     }
 
-    // MARK: - Single-file download with retry
-
-    private func downloadFileWithRetry(
-        _ file: RepoFile,
-        to destination: URL,
-        modelName: String,
-        reporter: ProgressReporter
-    ) async throws {
-        let encodedPath = file.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file.path
-        guard let url = URL(string: "https://huggingface.co/\(configuration.repoPath)/resolve/main/\(encodedPath)") else {
-            throw DownloadError.invalidResponse
-        }
-
-        var lastError: Error = DownloadError.invalidResponse
-        for attempt in 1...configuration.maxAttemptsPerFile {
-            do {
-                try await downloadFile(from: url, filePath: file.path, to: destination) { bytesWritten in
-                    reporter.currentFileBytes(bytesWritten)
-                }
-                return
-            } catch {
-                lastError = error
-                // A retry restarts the file from byte 0 (no resume-data complexity),
-                // so the aggregate bar can step back slightly after a mid-file retry.
-                reporter.currentFileBytes(0)
-                guard attempt < configuration.maxAttemptsPerFile, Self.isRetryable(error) else {
-                    throw error
-                }
-                PersistentLog.log(.modelDownloadStalled(
-                    name: modelName,
-                    path: file.path,
-                    timeoutSeconds: Int(configuration.stallTimeout),
-                    attempt: attempt
-                ))
-                try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt))) * 1_000_000_000)
-            }
-        }
-        throw lastError
-    }
-
     /// True for transient failures worth retrying (stall, connection loss, rate limit).
     static func isRetryable(_ error: Error) -> Bool {
         if let downloadError = error as? DownloadError {
             switch downloadError {
-            case .rateLimited, .stalled:
+            case .rateLimited, .stalled, .integrityFailed:
+                // An integrity failure is retryable on purpose: the file it refused has
+                // been thrown away, so the next attempt downloads it from byte zero. A
+                // resume that appended the wrong bytes is exactly the thing a second,
+                // clean download fixes.
                 return true
             case .invalidResponse, .httpError, .missingRequiredFile:
                 return false
@@ -435,245 +462,17 @@ final class ModelRepoDownloader {
             return false
         }
     }
-
-    /// Downloads one file using the classic delegate-based `URLSessionDownloadTask`
-    /// — the ONLY URLSession variant that delivers `didWriteData` byte callbacks
-    /// (the async `download(for:)` API silently drops them; see issue #207).
-    ///
-    /// SWIFT CONCEPT — bridging delegates to async/await:
-    /// `withCheckedThrowingContinuation` "parks" the current `await` and hands us a
-    /// one-shot `continuation` handle. The delegate resumes it exactly once (from
-    /// `didCompleteWithError`, which URLSession guarantees is called exactly once
-    /// per task), turning the callback-style API back into a plain `try await`.
-    private func downloadFile(
-        from url: URL,
-        filePath: String,
-        to destination: URL,
-        onBytes: @escaping @Sendable (Int64) -> Void
-    ) async throws {
-        let config = URLSessionConfiguration.ephemeral
-        // Idle-based stall detector — resets on every received byte. Deliberately
-        // NOT setting timeoutIntervalForResource (a 445 MB file on a slow link
-        // legitimately takes many minutes) and NOT setting a per-request
-        // timeoutInterval (it would override this value — that's exactly how
-        // FluidAudio ends up with an 1800s effective timeout).
-        config.timeoutIntervalForRequest = configuration.stallTimeout
-        // Fail fast into our retry path when there's no connectivity, instead of
-        // waiting silently for the network to come back.
-        config.waitsForConnectivity = false
-
-        let delegate = FileDownloadDelegate(
-            destination: destination,
-            filePath: filePath,
-            stallTimeoutSeconds: Int(configuration.stallTimeout),
-            onBytes: onBytes
-        )
-        // delegateQueue nil → URLSession creates a private SERIAL queue, so the
-        // delegate's download-state members need no locking.
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.finishTasksAndInvalidate() }
-
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let task = session.downloadTask(with: URLRequest(url: url))
-                delegate.start(task: task, continuation: continuation)
-            }
-        } onCancel: {
-            delegate.cancel()
-        }
-    }
 }
 
-// MARK: - Progress reporting
-
-/// Thread-safe aggregate progress accumulator with throttling.
+/// The `lfs` object a Hugging Face tree entry carries for a large blob.
 ///
-/// `didWriteData` can fire hundreds of times per second; forwarding every tick to
-/// a `@Published` property on the main actor would hammer SwiftUI. We only emit
-/// when the fraction advanced ≥ 0.5% or ≥ 300ms elapsed, plus on file completion.
+/// Declared at file scope rather than nested inside `TreeItem`: the repo's lint rule
+/// allows one level of nesting, and `TreeItem` already spends it.
 ///
-/// Marked `@unchecked Sendable` because Sendable conformance can't be proven for
-/// lock-guarded mutable state — every member below is only touched under `lock`.
-private final class ProgressReporter: @unchecked Sendable {
-    private let lock = NSLock()
-    private let totalBytes: Int64
-    private let totalFiles: Int
-    private let onProgress: @Sendable (ModelRepoDownloader.Progress) -> Void
-
-    private var completedBytes: Int64 = 0
-    private var completedFiles = 0
-    private var currentBytes: Int64 = 0
-    private var lastReportedFraction: Double = -1
-    private var lastReportDate = Date.distantPast
-
-    init(
-        totalBytes: Int64,
-        totalFiles: Int,
-        onProgress: @escaping @Sendable (ModelRepoDownloader.Progress) -> Void
-    ) {
-        self.totalBytes = totalBytes
-        self.totalFiles = totalFiles
-        self.onProgress = onProgress
-    }
-
-    /// Bytes received so far for the file currently downloading.
-    func currentFileBytes(_ bytes: Int64) {
-        lock.lock()
-        currentBytes = bytes
-        let progress = makeProgress()
-        let now = Date()
-        let shouldEmit = progress.fraction - lastReportedFraction >= 0.005
-            || now.timeIntervalSince(lastReportDate) >= 0.3
-        if shouldEmit {
-            lastReportedFraction = progress.fraction
-            lastReportDate = now
-        }
-        lock.unlock()
-        if shouldEmit { onProgress(progress) }
-    }
-
-    /// The current file finished (or was skipped); fold it into the completed base.
-    func fileCompleted(sizeBytes: Int64) {
-        lock.lock()
-        completedBytes += sizeBytes
-        completedFiles += 1
-        currentBytes = 0
-        let progress = makeProgress()
-        lastReportedFraction = progress.fraction
-        lastReportDate = Date()
-        lock.unlock()
-        onProgress(progress)
-    }
-
-    private func makeProgress() -> ModelRepoDownloader.Progress {
-        ModelRepoDownloader.Progress(
-            bytesDownloaded: completedBytes + currentBytes,
-            totalBytes: totalBytes,
-            completedFiles: completedFiles,
-            totalFiles: totalFiles
-        )
-    }
-}
-
-// MARK: - URLSession delegate
-
-/// Forwards byte-level progress and bridges completion back to a continuation.
-///
-/// Callback contract this relies on (verified against URLSession semantics):
-/// - `didWriteData` fires repeatedly as bytes arrive.
-/// - `didFinishDownloadingTo` fires on success; the temp file at `location` is
-///   deleted by the system the moment the callback returns, so the move to the
-///   destination MUST happen synchronously inside it.
-/// - `didCompleteWithError` fires exactly once per task (after
-///   `didFinishDownloadingTo` on success), making it the single safe place to
-///   resume the continuation — no double-resume possible.
-///
-/// `@unchecked Sendable`: `moveOrHTTPError` is only touched on the session's
-/// private serial delegate queue; `continuation`/`task` are cross-thread
-/// (set from the async caller, read from the delegate queue and cancellation
-/// handler) and are guarded by `lock`.
-private final class FileDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    private let destination: URL
-    private let filePath: String
-    private let stallTimeoutSeconds: Int
-    private let onBytes: @Sendable (Int64) -> Void
-
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Error>?
-    private var task: URLSessionDownloadTask?
-    // Delegate-queue-only state (serial queue — no locking needed).
-    private var moveOrHTTPError: Error?
-
-    init(
-        destination: URL,
-        filePath: String,
-        stallTimeoutSeconds: Int,
-        onBytes: @escaping @Sendable (Int64) -> Void
-    ) {
-        self.destination = destination
-        self.filePath = filePath
-        self.stallTimeoutSeconds = stallTimeoutSeconds
-        self.onBytes = onBytes
-    }
-
-    /// Stores the continuation before starting the task so no delegate callback
-    /// can observe a nil continuation.
-    func start(task: URLSessionDownloadTask, continuation: CheckedContinuation<Void, Error>) {
-        lock.lock()
-        self.task = task
-        self.continuation = continuation
-        lock.unlock()
-        task.resume()
-    }
-
-    /// Called from the structured-concurrency cancellation handler (any thread).
-    func cancel() {
-        lock.lock()
-        let task = self.task
-        lock.unlock()
-        task?.cancel()
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        onBytes(totalBytesWritten)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didFinishDownloadingTo location: URL
-    ) {
-        // Validate the HTTP status before accepting the payload — HuggingFace
-        // serves error bodies (429/503/500) that would otherwise be saved as
-        // corrupt model files.
-        if let response = downloadTask.response as? HTTPURLResponse,
-           !(200..<300).contains(response.statusCode) {
-            if response.statusCode == 429 || response.statusCode == 503 {
-                moveOrHTTPError = ModelRepoDownloader.DownloadError.rateLimited(statusCode: response.statusCode)
-            } else {
-                moveOrHTTPError = ModelRepoDownloader.DownloadError.httpError(
-                    path: filePath, statusCode: response.statusCode)
-            }
-            return
-        }
-        do {
-            // Remove any stale destination (e.g. leftover from a manual copy),
-            // then move — atomically publishing a complete file or nothing.
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: location, to: destination)
-        } catch {
-            moveOrHTTPError = error
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
-        guard let continuation else { return }
-
-        if let error {
-            let nsError = error as NSError
-            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut {
-                // timeoutIntervalForRequest tripped = no bytes for the stall window.
-                continuation.resume(throwing: ModelRepoDownloader.DownloadError.stalled(
-                    path: filePath, timeoutSeconds: stallTimeoutSeconds))
-            } else {
-                continuation.resume(throwing: error)
-            }
-        } else if let moveOrHTTPError {
-            continuation.resume(throwing: moveOrHTTPError)
-        } else {
-            continuation.resume(returning: ())
-        }
-    }
+/// `oid` is the blob's SHA-256, which is what `ModelFileIntegrity` verifies an assembled
+/// file against. Plain files have no `lfs` object at all, and their top-level `oid` is a
+/// git blob SHA-1 over a different preimage — comparable to nothing, which is why it is
+/// not read here.
+private struct TreeLFSPointer: Decodable {
+    let oid: String?
 }
