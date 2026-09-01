@@ -201,6 +201,14 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
             .sorted()
     }
 
+    /// Whether a transfer for this model is already under way — a manifest on disk that
+    /// has not finished. Read straight from the file system, so it answers in a process
+    /// that has done nothing yet.
+    static func hasUnfinishedTransfer(for identifier: String) -> Bool {
+        guard let manifest = ManifestStore.load(identifier) else { return false }
+        return !manifest.isTransferComplete
+    }
+
     /// Durable progress of an interrupted download, for a screen that has to show
     /// something before the first delegate callback of this process arrives.
     static func persistedProgress(for identifier: String) -> ModelRepoDownloader.Progress? {
@@ -606,6 +614,22 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
         }
     }
 
+    /// The assembled chunk is not the length the span asked for, or `nil` when it is.
+    ///
+    /// This is what validates a span the client resumed itself, where the response header
+    /// only describes the final leg. A short chunk appended into the partial would leave
+    /// a file of the wrong length made of misaligned bytes, and nothing downstream but
+    /// the SHA-256 would notice.
+    private static func lengthMismatch(at location: URL, span: ModelDownloadChunkSpan) -> String? {
+        guard let end = span.end else { return nil }
+        let expected = end - span.start + 1
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: location.path),
+              let actual = (attributes[.size] as? NSNumber)?.int64Value else {
+            return "chunk-length-unreadable"
+        }
+        return actual == expected ? nil : "chunk-length-\(actual)-expected-\(expected)"
+    }
+
     /// Turns a URLSession transport error into the vocabulary the model card speaks.
     private static func mapped(_ error: Error, path: String) -> Error {
         let nsError = error as NSError
@@ -674,13 +698,40 @@ extension BackgroundModelDownloadService: URLSessionDownloadDelegate {
             statusCode: status,
             contentRangeHeader: response.value(forHTTPHeaderField: "Content-Range"),
             expectedStart: span.start,
+            expectedEnd: span.end,
             expectedTotal: run.manifest.files[tag.fileIndex].size > 0
                 ? run.manifest.files[tag.fileIndex].size
                 : nil
         )
 
         switch decision {
-        case .appendFrom:
+        case .appendFrom, .appendResumedSpan:
+            // The header cannot vouch for a span the client resumed itself, and it is
+            // cheap to stop trusting it here for every chunk: a chunk is a known number
+            // of bytes, and a short one is the only shape that could corrupt the file.
+            if case .appendResumedSpan(let legStart) = decision {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelDownload",
+                    instanceID: run.manifest.modelIdentifier,
+                    action: "clientResumedChunk",
+                    details: "chunk=\(tag.chunkIndex) asked=\(span.start) lastLeg=\(legStart)"
+                ))
+            }
+            if let reason = Self.lengthMismatch(at: location, span: span) {
+                PersistentLog.log(.modelDownloadRangeRejected(
+                    name: run.manifest.modelIdentifier,
+                    path: path,
+                    statusCode: status,
+                    reason: reason
+                ))
+                record(
+                    outcome: .failed(
+                        ModelRepoDownloader.DownloadError.rangeRefused(path: path, reason: reason)
+                    ),
+                    for: downloadTask
+                )
+                return
+            }
             do {
                 try ManifestStore.store(
                     chunkAt: location,
@@ -720,9 +771,12 @@ extension BackgroundModelDownloadService: URLSessionDownloadDelegate {
                 statusCode: status,
                 reason: reason
             ))
+            // NOT `httpError`: 206 is a success, and reporting "erreur 206" to a user
+            // was both wrong and unactionable. A refused range is our own guard talking,
+            // and it is retryable — the bytes on disk are untouched.
             record(
                 outcome: .failed(
-                    ModelRepoDownloader.DownloadError.httpError(path: path, statusCode: status)
+                    ModelRepoDownloader.DownloadError.rangeRefused(path: path, reason: reason)
                 ),
                 for: downloadTask
             )

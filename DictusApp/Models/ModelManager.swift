@@ -491,8 +491,15 @@ class ModelManager: ObservableObject {
         setState(.downloading, for: identifier)
         seedDownloadProgress(for: identifier)
         lastLoggedDeciles[identifier] = -1
-        let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
-        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
+        // One "started" line per TRANSFER, not per attempt (#449). A resume after a
+        // relaunch re-enters this method, and so does a retry, so a single download was
+        // announcing itself three times — which made acceptance criterion 2 ("exactly
+        // one modelDownloadStarted line") unverifiable by its own method. A manifest
+        // already on disk means the transfer is under way and has been announced.
+        if !BackgroundModelDownloadService.hasUnfinishedTransfer(for: identifier) {
+            let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
+            PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
+        }
 
         // Tracks which phase a failure (if any) belongs to. Download-phase failures
         // keep files on disk (every file is complete thanks to atomic per-file
@@ -813,8 +820,15 @@ class ModelManager: ObservableObject {
         setState(.downloading, for: identifier)
         seedDownloadProgress(for: identifier)
         lastLoggedDeciles[identifier] = -1
-        let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
-        PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
+        // One "started" line per TRANSFER, not per attempt (#449). A resume after a
+        // relaunch re-enters this method, and so does a retry, so a single download was
+        // announcing itself three times — which made acceptance criterion 2 ("exactly
+        // one modelDownloadStarted line") unverifiable by its own method. A manifest
+        // already on disk means the transfer is under way and has been announced.
+        if !BackgroundModelDownloadService.hasUnfinishedTransfer(for: identifier) {
+            let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
+            PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
+        }
 
         do {
             // Step 1: Download all raw model files with REAL byte-level progress

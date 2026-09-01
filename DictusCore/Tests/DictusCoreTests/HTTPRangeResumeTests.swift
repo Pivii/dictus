@@ -70,6 +70,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: "bytes 33554432-67108863/445187200",
             expectedStart: 33_554_432,
+            expectedEnd: 67_108_863,
             expectedTotal: 445_187_200
         )
         XCTAssertEqual(decision, .appendFrom(33_554_432))
@@ -82,6 +83,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 200,
             contentRangeHeader: nil,
             expectedStart: 33_554_432,
+            expectedEnd: 67_108_863,
             expectedTotal: 445_187_200
         )
         XCTAssertEqual(decision, .restartFromZero(reason: "http200-range-ignored"))
@@ -94,6 +96,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: "bytes 0-33554431/445187200",
             expectedStart: 33_554_432,
+            expectedEnd: 67_108_863,
             expectedTotal: 445_187_200
         )
         XCTAssertEqual(decision, .reject(reason: "206-start-0-expected-33554432"))
@@ -104,6 +107,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: "bytes 100-199/999",
             expectedStart: 100,
+            expectedEnd: 199,
             expectedTotal: 445_187_200
         )
         XCTAssertEqual(decision, .restartFromZero(reason: "206-total-999-expected-445187200"))
@@ -114,6 +118,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: "bytes 100-199/999",
             expectedStart: 100,
+            expectedEnd: 199,
             expectedTotal: nil
         )
         XCTAssertEqual(decision, .appendFrom(100))
@@ -124,6 +129,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: nil,
             expectedStart: 0,
+            expectedEnd: 9,
             expectedTotal: 10
         )
         XCTAssertEqual(decision, .reject(reason: "206-without-content-range"))
@@ -134,6 +140,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 206,
             contentRangeHeader: "bytes */445187200",
             expectedStart: 0,
+            expectedEnd: 445_187_199,
             expectedTotal: 445_187_200
         )
         XCTAssertEqual(decision, .reject(reason: "206-unparsable-content-range"))
@@ -144,6 +151,7 @@ final class HTTPRangeResumeTests: XCTestCase {
             statusCode: 416,
             contentRangeHeader: "bytes */10",
             expectedStart: 1000,
+            expectedEnd: nil,
             expectedTotal: 10
         )
         XCTAssertEqual(decision, .restartFromZero(reason: "http416-range-not-satisfiable"))
@@ -155,9 +163,77 @@ final class HTTPRangeResumeTests: XCTestCase {
                 statusCode: 403,
                 contentRangeHeader: nil,
                 expectedStart: 0,
+                expectedEnd: nil,
                 expectedTotal: nil
             ),
             .reject(reason: "http403")
         )
+    }
+
+    // MARK: - A span the client resumed itself
+
+    func testAcceptsA206WhoseHeaderDescribesOnlyTheFinalLegOfTheSpan() {
+        // Device, 2026-09-01. The chunk was asked for at 201326592; iOS suspended the app
+        // 2 996 625 bytes in, the background session re-issued the request from 204323217
+        // by itself, and handed back the complete chunk with a Content-Range describing
+        // only that second leg. Reading it as the body's start refused a good chunk and
+        // put "erreur 206" on the model card.
+        let decision = HTTPRangeResume.decide(
+            statusCode: 206,
+            contentRangeHeader: "bytes 204323217-234881023/445187200",
+            expectedStart: 201_326_592,
+            expectedEnd: 234_881_023,
+            expectedTotal: 445_187_200
+        )
+        XCTAssertEqual(decision, .appendResumedSpan(lastLegStart: 204_323_217))
+    }
+
+    func testStillRefusesA206ThatStartsBeforeWhatWeHold() {
+        let decision = HTTPRangeResume.decide(
+            statusCode: 206,
+            contentRangeHeader: "bytes 0-33554431/445187200",
+            expectedStart: 201_326_592,
+            expectedEnd: 234_881_023,
+            expectedTotal: 445_187_200
+        )
+        XCTAssertEqual(decision, .reject(reason: "206-start-0-expected-201326592"))
+    }
+
+    func testStillRefusesA206ThatStartsPastTheSpanWeAskedFor() {
+        let decision = HTTPRangeResume.decide(
+            statusCode: 206,
+            contentRangeHeader: "bytes 300000000-400000000/445187200",
+            expectedStart: 201_326_592,
+            expectedEnd: 234_881_023,
+            expectedTotal: 445_187_200
+        )
+        XCTAssertEqual(decision, .reject(reason: "206-start-300000000-expected-201326592"))
+    }
+
+    func testAResumedLegOfAResourceThatChangedSizeStillRestarts() {
+        let decision = HTTPRangeResume.decide(
+            statusCode: 206,
+            // A total that still covers the span it describes, so the header parses —
+            // and disagrees with what the listing promised, which is the finding.
+            contentRangeHeader: "bytes 204323217-234881023/500000000",
+            expectedStart: 201_326_592,
+            expectedEnd: 234_881_023,
+            expectedTotal: 445_187_200
+        )
+        XCTAssertEqual(
+            decision,
+            .restartFromZero(reason: "206-total-500000000-expected-445187200")
+        )
+    }
+
+    func testAnOpenEndedRequestAcceptsAnyLaterLegStart() {
+        let decision = HTTPRangeResume.decide(
+            statusCode: 206,
+            contentRangeHeader: "bytes 5000-9999/10000",
+            expectedStart: 0,
+            expectedEnd: nil,
+            expectedTotal: 10_000
+        )
+        XCTAssertEqual(decision, .appendResumedSpan(lastLegStart: 5000))
     }
 }

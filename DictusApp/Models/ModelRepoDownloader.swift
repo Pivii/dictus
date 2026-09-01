@@ -146,6 +146,11 @@ final class ModelRepoDownloader {
         /// An assembled file failed its size or SHA-256 check and was thrown away
         /// (issue #449). Retryable: the next attempt downloads it from byte zero.
         case integrityFailed(path: String)
+        /// A ranged response could not be appended, and this guard said so. Deliberately
+        /// NOT an `httpError`: the status that reaches it is usually 206, which is a
+        /// success, and a device test read "erreur 206" on the model card for a download
+        /// that was working. Retryable — nothing on disk was touched.
+        case rangeRefused(path: String, reason: String)
 
         var errorDescription: String? {
             switch self {
@@ -161,6 +166,8 @@ final class ModelRepoDownloader {
                 return String(localized: "The model download is incomplete. Please try again.")
             case .integrityFailed:
                 return String(localized: "A model file arrived damaged. Dictus will download it again.")
+            case .rangeRefused:
+                return String(localized: "The download could not resume. Please try again.")
             }
         }
     }
@@ -438,7 +445,7 @@ final class ModelRepoDownloader {
     static func isRetryable(_ error: Error) -> Bool {
         if let downloadError = error as? DownloadError {
             switch downloadError {
-            case .rateLimited, .stalled, .integrityFailed:
+            case .rateLimited, .stalled, .integrityFailed, .rangeRefused:
                 // An integrity failure is retryable on purpose: the file it refused has
                 // been thrown away, so the next attempt downloads it from byte zero. A
                 // resume that appended the wrong bytes is exactly the thing a second,

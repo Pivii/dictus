@@ -29,6 +29,20 @@ public struct HTTPContentRange: Equatable, Sendable {
 public enum RangeResumeDecision: Equatable, Sendable {
     /// The server honoured the range: append the body at this offset.
     case appendFrom(Int64)
+    /// The body covers the whole requested span, but the response header describes only
+    /// its final leg, which began further in.
+    ///
+    /// This is what a background `URLSession` looks like when it resumes a task by
+    /// itself. Measured on device 2026-09-01: a chunk asked for at 201326592 was
+    /// interrupted 2 996 625 bytes in when iOS suspended the app; the system re-issued
+    /// the request from 204323217, stitched the two legs together, and handed
+    /// `didFinishDownloadingTo` the complete chunk — with a `Content-Range` describing
+    /// the second leg alone. Reading that header as the body's start refused a perfectly
+    /// good chunk, which was the one case this whole mechanism exists for.
+    ///
+    /// The header cannot vouch for the body here, so the caller must check the assembled
+    /// file's LENGTH against the span it asked for. Carries the leg's start, for the log.
+    case appendResumedSpan(lastLegStart: Int64)
     /// The server ignored the range and sent the whole resource (`200`). The partial
     /// on disk is worthless — drop it and write this body from byte 0. Carries the
     /// reason so the debug log can say why a resume did not happen.
@@ -109,12 +123,16 @@ public enum HTTPRangeResume {
     ///   - statusCode: HTTP status of the response the body came with.
     ///   - contentRangeHeader: raw `Content-Range` header, or nil when absent.
     ///   - expectedStart: the offset the caller asked for and holds on disk.
+    ///   - expectedEnd: the last byte the caller asked for, or nil for an open-ended
+    ///     request. A `Content-Range` starting anywhere inside this span belongs to a
+    ///     transfer the client resumed itself — see `appendResumedSpan`.
     ///   - expectedTotal: the file size the repository listing promised, or nil when
     ///     the listing did not know it.
     public static func decide(
         statusCode: Int,
         contentRangeHeader: String?,
         expectedStart: Int64,
+        expectedEnd: Int64?,
         expectedTotal: Int64?
     ) -> RangeResumeDecision {
         switch statusCode {
@@ -131,8 +149,21 @@ public enum HTTPRangeResume {
             guard let range = parseContentRange(contentRangeHeader) else {
                 return .reject(reason: "206-unparsable-content-range")
             }
-            guard range.start == expectedStart else {
-                return .reject(reason: "206-start-\(range.start)-expected-\(expectedStart)")
+            if range.start != expectedStart {
+                // Inside the span we asked for: the client resumed its own transfer and
+                // this header describes the tail of it. Outside it: the response has
+                // nothing to do with what was requested.
+                let withinRequestedSpan = range.start > expectedStart
+                    && (expectedEnd.map { range.start <= $0 } ?? true)
+                guard withinRequestedSpan else {
+                    return .reject(reason: "206-start-\(range.start)-expected-\(expectedStart)")
+                }
+                if let expectedTotal, let total = range.total, total != expectedTotal {
+                    return .restartFromZero(
+                        reason: "206-total-\(total)-expected-\(expectedTotal)"
+                    )
+                }
+                return .appendResumedSpan(lastLegStart: range.start)
             }
             if let expectedTotal, let total = range.total, total != expectedTotal {
                 // The resource changed size under us. Nothing on disk can be trusted,

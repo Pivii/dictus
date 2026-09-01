@@ -2520,6 +2520,17 @@
         }
       }
     },
+    "The download could not resume. Please try again." : {
+      "comment" : "Model download error when a ranged response could not be appended to the partial already on disk (issue #449).",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le téléchargement n'a pas pu reprendre. Réessayez."
+          }
+        }
+      }
+    },
     "The keyboard will be detected automatically" : {
       "localizations" : {
         "fr" : {
