@@ -110,10 +110,13 @@ final class KeyboardSmartModeState: ObservableObject {
     /// The fan, or nil when it is closed.
     @Published private(set) var fan: SmartModeFanState?
 
-    /// The armed Smart Mode, or nil for Normal.
+    /// The armed Smart Mode a surface may **name**, or nil when there is none to name.
     ///
     /// A published copy of `SmartModeStore.armedMode`, so the toolbar's centre slot,
-    /// the mic pill's badge and the recording overlay redraw when it changes.
+    /// the mic pill's badge and the recording overlay redraw when it changes — nil
+    /// while the Smart Mode surface is hidden, because a name in the bar is a surface
+    /// like any other (#460). It is not the store: `SmartModeStore.armedMode` still
+    /// holds the user's choice, and that is what comes back when the flag goes up.
     /// Refreshed by `refresh(status:)` rather than read per body evaluation:
     /// iOS keeps ~9 root views alive, and each would otherwise hit `UserDefaults` on
     /// every layout pass.
@@ -196,21 +199,31 @@ final class KeyboardSmartModeState: ObservableObject {
     /// user has since finished.
     func refresh(status: DictationStatus) {
         let armed = SmartModeStore.armedMode
-        armedMode = armed
         // One availability read per refresh, beside the one `offersHint` already
         // pays for, and for the same reason it is cached there: nine live root views
         // would otherwise hit `SystemLanguageModel.availability` on every layout pass.
         let dictation = SmartModeAvailability.forDictation
+        // Resolved from the read above rather than from a third availability check:
+        // the two differ only in the #315 latch, which cannot make a fan reachable or
+        // unreachable.
+        let fanIsReachable = SmartModeSurface.fanEntryPoint(
+            reason: dictation.reason, paywallVisible: PremiumFlags.paywallVisible
+        ) != .hidden
+        // **The armed mode is a Smart Mode surface too** (#460 review). The toolbar's
+        // centre slot draws this name, and left ungated it was the one piece of the
+        // feature that survived the hide: a greyed mode name in the bar, with no fan
+        // to open, no mode list in the app, and so nothing anywhere that could clear
+        // it. Nil here rather than disarming — `.notSubscribed` is recoverable and
+        // `resolveArmedMode()` deliberately keeps the value (#392, #423). The setting
+        // survives untouched and inert, and the day the flag goes up the fan comes
+        // back with the `Normal` row that clears it.
+        armedMode = fanIsReachable ? armed : nil
         effectiveMode = dictation.isArmable ? armed : nil
-        // The hint teaches the long press, so it goes when the long press stops opening
-        // anything (#460). Resolved from the read above rather than from a third
-        // availability check: the two differ only in the #315 latch, which cannot make a
-        // fan reachable or unreachable.
+        // The hint teaches the long press, so it goes when the long press stops
+        // opening anything (#460).
         offersHint = SmartModeDiscovery.offersHint(
             deviceCanRunModes: SmartModeAvailability.deviceCanRunModes,
-            fanIsReachable: SmartModeSurface.fanEntryPoint(
-                reason: dictation.reason, paywallVisible: PremiumFlags.paywallVisible
-            ) != .hidden
+            fanIsReachable: fanIsReachable
         )
         // Through `close()` rather than by clearing the value, so the backstop timer
         // goes with it. `presentAreaMode` refuses while a dictation owns the area,
