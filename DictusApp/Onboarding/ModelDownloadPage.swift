@@ -149,20 +149,8 @@ struct ModelDownloadPage: View {
             }
         }
         .onAppear {
-            // Check if model is already downloaded (user may have downloaded before).
-            //
-            // Issue #433: `downloadedModels.contains` on its own stopped meaning
-            // "onboarding got this far". The launch reconciliation now lists a model
-            // whose files are complete even when its compile was interrupted, and that
-            // model has never been selected — `activeModel` is still nil, and nothing
-            // has an engine to load. Letting onboarding move on would hand the user a
-            // keyboard whose mic answers "No model downloaded". `isModelReady` adds the
-            // missing half of the question: some model finished preparing. Tapping
-            // "Install model" instead resumes at the interrupted compile, because the
-            // downloader skips every file already on disk.
-            if modelManager.downloadedModels.contains(recommendedModel), modelManager.isModelReady {
-                downloadComplete = true
-            }
+            // Whether the model is already downloaded, and whether one is in flight.
+            syncWithPreparationState()
             // If the user backgrounded the app mid-prep, surface the overlay again.
             if preparingModelID == nil, let id = liveActivePrepModel {
                 preparingModelID = id
@@ -172,6 +160,13 @@ struct ModelDownloadPage: View {
             if let id = newValue, preparingModelID == nil {
                 preparingModelID = id
             }
+        }
+        // A download this page did not start can be in flight: a force quit during
+        // onboarding leaves a transfer that `ModelManager` picks up on the next launch
+        // from the OTHER instance (issue #449). Without this the screen would offer
+        // "Install model" over a download that is already running.
+        .onChange(of: modelManager.modelStates[recommendedModel]) { _, _ in
+            syncWithPreparationState()
         }
         .fullScreenCover(item: Binding<PreparingItem?>(
             get: { preparingModelID.map(PreparingItem.init) },
@@ -248,6 +243,33 @@ struct ModelDownloadPage: View {
 
     // MARK: - Private
 
+    /// Brings this page's local flags in line with the model's real lifecycle state.
+    ///
+    /// Issue #433: `downloadedModels.contains` on its own stopped meaning "onboarding got
+    /// this far". The launch reconciliation now lists a model whose files are complete
+    /// even when its compile was interrupted, and that model has never been selected —
+    /// `activeModel` is still nil, and nothing has an engine to load. Letting onboarding
+    /// move on would hand the user a keyboard whose mic answers "No model downloaded".
+    /// `isModelReady` adds the missing half of the question: some model finished
+    /// preparing. Tapping "Install model" instead resumes at the interrupted compile,
+    /// because the downloader skips every file already on disk.
+    private func syncWithPreparationState() {
+        if modelManager.downloadedModels.contains(recommendedModel), modelManager.isModelReady {
+            downloadComplete = true
+            isDownloading = false
+            return
+        }
+        switch modelManager.modelStates[recommendedModel] ?? .notDownloaded {
+        case .downloading, .prewarming:
+            isDownloading = true
+        case .error(let message):
+            isDownloading = false
+            errorMessage = message
+        case .notDownloaded, .ready:
+            break
+        }
+    }
+
     private func startDownload() {
         isDownloading = true
         errorMessage = nil
@@ -262,6 +284,9 @@ struct ModelDownloadPage: View {
                 isDownloading = false
                 // The overlay closes itself once preloadActiveModel reaches .ready;
                 // we don't flip preparingModelID here.
+            } catch is CancellationError {
+                // Superseded by another attempt at the same model, which owns the
+                // screen's state now (issue #449). Not a failure and not a success.
             } catch {
                 errorMessage = error.localizedDescription
                 isDownloading = false

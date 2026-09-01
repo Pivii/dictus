@@ -2,6 +2,7 @@
 // Manages the WhisperKit model lifecycle: download, select, delete, state tracking.
 import Foundation
 import Combine
+import UIKit
 import DictusCore
 import WhisperKit
 import FluidAudio
@@ -29,6 +30,13 @@ struct ModelDownloadBytes: Equatable {
     init(_ progress: ModelRepoDownloader.Progress) {
         downloadedMB = Int(progress.bytesDownloaded / 1_000_000)
         totalMB = Int(progress.totalBytes / 1_000_000)
+    }
+
+    /// Rebuilds the counter from a peer instance's broadcast (issue #449), which carries
+    /// the two whole megabyte numbers rather than the byte totals behind them.
+    init(downloadedMB: Int, totalMB: Int) {
+        self.downloadedMB = downloadedMB
+        self.totalMB = totalMB
     }
 }
 
@@ -73,11 +81,21 @@ class ModelManager: ObservableObject {
 
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
+    private var peerStateObserver: NSObjectProtocol?
+
+    /// Identity of this instance, so a broadcast of its own writes is ignored.
+    private let instanceID = UUID()
 
     /// Whether this process has already reconciled `downloadedModels` against the
     /// disk (issue #433). Static because the promise is per process, not per
     /// instance: onboarding builds a second `ModelManager` of its own.
     private static var hasReconciledThisProcess = false
+
+    /// Whether this process has already picked up the downloads a previous process left
+    /// unfinished (issue #449). Static for the same reason as above, and it matters more
+    /// here: two instances re-entering the same preparation would run two Core ML
+    /// compiles of the same model.
+    private static var hasResumedDownloadsThisProcess = false
 
     /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
     /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
@@ -142,10 +160,29 @@ class ModelManager: ObservableObject {
                   let state = ModelLoadState(rawValue: raw) else { return }
             self?.modelLoadState = state
         }
+        peerStateObserver = NotificationCenter.default.addObserver(
+            forName: .dictusModelPreparationChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            // The observer was registered with `queue: .main`, so this body genuinely
+            // runs on the main actor; `assumeIsolated` states that to the compiler
+            // instead of hopping through a Task, which would let two updates land out
+            // of the order they were posted in.
+            MainActor.assumeIsolated {
+                self?.applyPeerPreparationUpdate(note)
+            }
+        }
+        // What a previous process left mid-transfer (issue #449). Seeded on every
+        // instance so both screens agree; only ever driven from one.
+        adoptInterruptedDownloads()
     }
 
     deinit {
         if let observer = loadStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = peerStateObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -236,6 +273,136 @@ class ModelManager: ObservableObject {
         persistState()
     }
 
+    // MARK: - Interrupted downloads (issue #449)
+
+    /// Shows, and on the first instance resumes, a download a previous process left
+    /// mid-file.
+    ///
+    /// WHY SEEDING AND DRIVING ARE SEPARATE: both `ModelManager` instances have to SHOW
+    /// the download — `MainTabView` builds one and onboarding's `ModelDownloadPage`
+    /// builds another, and a first-run user who force-quits mid-download comes back to
+    /// the onboarding one. Only one of them may DRIVE it, because driving ends in a Core
+    /// ML compile and two compiles of the same model would queue on the Neural Engine for
+    /// no reason (issue #428). So every instance seeds its state from the manifest on
+    /// disk, and the first one in the process re-enters `downloadModel`. The peer
+    /// broadcast below keeps the other one's bar moving.
+    ///
+    /// WHY NEVER FROM THE BACKGROUND: iOS relaunches the app in the background to hand
+    /// back finished background transfers, and `MainTabView` may evaluate its body there.
+    /// Starting a preparation from that launch would run a Core ML compile in a process
+    /// the system is free to suspend or reclaim mid-way — which is exactly what #427
+    /// measured the cost of.
+    private func adoptInterruptedDownloads() {
+        let interrupted = BackgroundModelDownloadService.interruptedModelIdentifiers()
+        guard !interrupted.isEmpty else { return }
+
+        for identifier in interrupted where ModelInfo.forIdentifier(identifier) != nil {
+            guard modelStates[identifier] != .ready else { continue }
+            modelStates[identifier] = .downloading
+            lastLoggedDeciles[identifier] = -1
+            if let progress = BackgroundModelDownloadService.persistedProgress(for: identifier) {
+                downloadProgress[identifier] = Float(progress.fraction)
+                downloadByteInfo[identifier] = ModelDownloadBytes(progress)
+            }
+        }
+
+        guard !Self.hasResumedDownloadsThisProcess,
+              UIApplication.shared.applicationState != .background else { return }
+        Self.hasResumedDownloadsThisProcess = true
+
+        for identifier in interrupted where ModelInfo.forIdentifier(identifier) != nil {
+            guard modelStates[identifier] != .ready else { continue }
+            PersistentLog.log(.diagnosticProbe(
+                component: "ModelDownload",
+                instanceID: identifier,
+                action: "resumedAfterRelaunch",
+                details: "percent=\(Int((downloadProgress[identifier] ?? 0) * 100))"
+            ))
+            Task { [weak self] in
+                // Errors land in `downloadModel`'s own catch, which sets `.error` and
+                // logs; there is no caller here to hand them to.
+                try? await self?.downloadModel(identifier)
+            }
+        }
+    }
+
+    // MARK: - Cross-instance preparation state
+
+    /// Applies a preparation update published by the other `ModelManager` in this
+    /// process, so the onboarding page and the model manager never disagree about which
+    /// model is downloading or how far along it is.
+    ///
+    /// WHY this exists at all: the two instances have always been able to diverge — the
+    /// old fix was `loadState()` on `.onAppear`, which answers "is it downloaded" and
+    /// says nothing about a download in flight. That was survivable while a download only
+    /// ever started from the screen you were looking at, and stopped being survivable
+    /// when a download can be resumed by the OTHER instance after a relaunch (#449).
+    private func applyPeerPreparationUpdate(_ note: Notification) {
+        guard let info = note.userInfo,
+              let sender = info["sender"] as? String, sender != instanceID.uuidString,
+              let identifier = info["id"] as? String,
+              let rawState = info["state"] as? String else { return }
+
+        switch rawState {
+        case "downloading":
+            modelStates[identifier] = .downloading
+        case "prewarming":
+            modelStates[identifier] = .prewarming
+            downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
+        case "ready":
+            modelStates[identifier] = .ready
+            downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
+            loadState()
+        case "error":
+            modelStates[identifier] = .error(info["error"] as? String ?? "")
+            downloadProgress.removeValue(forKey: identifier)
+            downloadByteInfo.removeValue(forKey: identifier)
+        default:
+            break
+        }
+
+        if let fraction = info["progress"] as? Float {
+            downloadProgress[identifier] = fraction
+        }
+        if let downloadedMB = info["downloadedMB"] as? Int, let totalMB = info["totalMB"] as? Int {
+            downloadByteInfo[identifier] = ModelDownloadBytes(downloadedMB: downloadedMB, totalMB: totalMB)
+        }
+    }
+
+    /// Sets a model's lifecycle state and tells the other instance about it.
+    private func setState(_ state: ModelState, for identifier: String) {
+        modelStates[identifier] = state
+        var info: [String: Any] = ["sender": instanceID.uuidString, "id": identifier]
+        switch state {
+        case .notDownloaded: info["state"] = "notDownloaded"
+        case .downloading: info["state"] = "downloading"
+        case .prewarming: info["state"] = "prewarming"
+        case .ready: info["state"] = "ready"
+        case .error(let message):
+            info["state"] = "error"
+            info["error"] = message
+        }
+        NotificationCenter.default.post(
+            name: .dictusModelPreparationChanged,
+            object: nil,
+            userInfo: info
+        )
+    }
+
+    /// Starting point for a download's progress bar: whatever a previous process
+    /// durably received, so a resumed transfer does not flash back to 0%.
+    private func seedDownloadProgress(for identifier: String) {
+        guard let progress = BackgroundModelDownloadService.persistedProgress(for: identifier),
+              progress.totalBytes > 0 else {
+            downloadProgress[identifier] = 0.0
+            return
+        }
+        downloadProgress[identifier] = Float(progress.fraction)
+        downloadByteInfo[identifier] = ModelDownloadBytes(progress)
+    }
+
     /// Downloads a model variant, prewarms it, and updates state.
     ///
     /// WHY engine-aware download:
@@ -244,10 +411,15 @@ class ModelManager: ObservableObject {
     /// prewarm/compile pipelines differ (WhisperKitConfig vs FluidAudio's
     /// AsrModels). This method routes to the correct path based on the engine.
     ///
-    /// WHY foreground download (not background session):
-    /// Background URLSession adds significant complexity (delegate callbacks, session
-    /// restoration, app lifecycle handling). For v1, foreground download with visible
-    /// progress is simpler and sufficient. Users will have the app open during download.
+    /// WHY THE TRANSFER IS A BACKGROUND SESSION (issue #449): it was not, and the comment
+    /// that used to sit here said so — background `URLSession` was judged too complex for
+    /// v1, on the assumption that "users will have the app open during download". They do
+    /// not. A first-run user checks another app while half a gigabyte arrives, iOS
+    /// suspends the process, the transfer stops, and the 30 s stall detector meets them on
+    /// their return with the file restarted at byte zero.
+    /// `BackgroundModelDownloadService` owns the transfer now; this method still owns the
+    /// sequence around it, and in particular the Core ML prewarm, which never runs
+    /// anywhere but the foreground.
     func downloadModel(_ identifier: String) async throws {
         // Check if this is a Parakeet model and route accordingly
         let modelInfo = ModelInfo.forIdentifier(identifier)
@@ -277,8 +449,8 @@ class ModelManager: ObservableObject {
             throw ModelManagerError.noContainer
         }
 
-        modelStates[identifier] = .downloading
-        downloadProgress[identifier] = 0.0
+        setState(.downloading, for: identifier)
+        seedDownloadProgress(for: identifier)
         lastLoggedDeciles[identifier] = -1
         let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
         PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
@@ -319,7 +491,7 @@ class ModelManager: ObservableObject {
             // If we remove downloadProgress first while state is still .downloading,
             // ModelCardView's .downloading case reads progress ?? 0 = 0%, showing a
             // stuck-at-zero bar. Setting .prewarming first eliminates this gap.
-            modelStates[identifier] = .prewarming
+            setState(.prewarming, for: identifier)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
@@ -519,7 +691,7 @@ class ModelManager: ObservableObject {
                 activeModel = identifier
             }
 
-            modelStates[identifier] = .ready
+            setState(.ready, for: identifier)
             persistState()
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
@@ -543,8 +715,15 @@ class ModelManager: ObservableObject {
             if !userMovedOn {
                 DictationCoordinator.shared.preloadActiveModel()
             }
+        } catch is CancellationError {
+            // This attempt was superseded by another one for the same model — the only
+            // way that happens is a re-listing that found a different repository
+            // revision, which supersedes the transfer this call was waiting on. The
+            // attempt that replaced it owns the card now, so nothing here may write to
+            // it (issue #449).
+            throw CancellationError()
         } catch {
-            modelStates[identifier] = .error(error.localizedDescription)
+            setState(.error(error.localizedDescription), for: identifier)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
@@ -586,8 +765,8 @@ class ModelManager: ObservableObject {
     /// Since Dictus now targets iOS 17, no availability guard is needed.
     /// FluidAudio is always available.
     private func downloadParakeetModel(_ identifier: String) async throws {
-        modelStates[identifier] = .downloading
-        downloadProgress[identifier] = 0.0
+        setState(.downloading, for: identifier)
+        seedDownloadProgress(for: identifier)
         lastLoggedDeciles[identifier] = -1
         let catalogSizeMB = Int((ModelInfo.forIdentifier(identifier)?.sizeBytes ?? 0) / 1_000_000)
         PersistentLog.log(.modelDownloadStarted(name: identifier, sizeMB: catalogSizeMB))
@@ -617,7 +796,7 @@ class ModelManager: ObservableObject {
             // Taking the lock first left the card saying "Downloading" at 100% with no
             // progress for as long as another compile held the hardware — the download
             // has finished, and the screen should say what is actually happening.
-            modelStates[identifier] = .prewarming
+            setState(.prewarming, for: identifier)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
@@ -718,7 +897,7 @@ class ModelManager: ObservableObject {
                 activeModel = identifier
             }
 
-            modelStates[identifier] = .ready
+            setState(.ready, for: identifier)
             persistState()
 
             PersistentLog.log(.modelCompilationCompleted(name: identifier, durationMs: prewarmDurationMs))
@@ -734,8 +913,15 @@ class ModelManager: ObservableObject {
             if !userMovedOn {
                 DictationCoordinator.shared.preloadActiveModel()
             }
+        } catch is CancellationError {
+            // This attempt was superseded by another one for the same model — the only
+            // way that happens is a re-listing that found a different repository
+            // revision, which supersedes the transfer this call was waiting on. The
+            // attempt that replaced it owns the card now, so nothing here may write to
+            // it (issue #449).
+            throw CancellationError()
         } catch {
-            modelStates[identifier] = .error(error.localizedDescription)
+            setState(.error(error.localizedDescription), for: identifier)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
@@ -763,7 +949,21 @@ class ModelManager: ObservableObject {
     /// Shared by the WhisperKit and Parakeet download paths (issue #210).
     private func updateDownloadProgress(_ progress: ModelRepoDownloader.Progress, identifier: String) {
         downloadProgress[identifier] = Float(progress.fraction)
-        downloadByteInfo[identifier] = ModelDownloadBytes(progress)
+        let bytes = ModelDownloadBytes(progress)
+        downloadByteInfo[identifier] = bytes
+        // The other instance draws the same bar (issue #449) — see `setState`.
+        NotificationCenter.default.post(
+            name: .dictusModelPreparationChanged,
+            object: nil,
+            userInfo: [
+                "sender": instanceID.uuidString,
+                "id": identifier,
+                "state": "downloading",
+                "progress": Float(progress.fraction),
+                "downloadedMB": bytes.downloadedMB,
+                "totalMB": bytes.totalMB
+            ]
+        )
 
         let decile = Int(progress.fraction * 10)
         if decile > (lastLoggedDeciles[identifier] ?? -1) {
@@ -842,8 +1042,13 @@ class ModelManager: ObservableObject {
             }
         }
 
+        // And the staging area of any transfer still holding partial bytes for it
+        // (issue #449) — deleting a model has to free the disk it is actually using,
+        // and up to two 32 MB chunks plus a partial can be sitting outside the cache.
+        BackgroundModelDownloadService.shared.discardStaging(for: identifier)
+
         downloadedModels.removeAll { $0 == identifier }
-        modelStates[identifier] = .notDownloaded
+        setState(.notDownloaded, for: identifier)
 
         // If deleted model was active, switch to first remaining
         if activeModel == identifier {
@@ -869,7 +1074,7 @@ class ModelManager: ObservableObject {
     /// issue #235) when the user wants to free disk space instead of retrying.
     func cleanupFailedModel(_ identifier: String) {
         cleanupModelFiles(identifier)
-        modelStates[identifier] = .notDownloaded
+        setState(.notDownloaded, for: identifier)
     }
 
     /// Removes partially downloaded or corrupted model files from disk.
@@ -893,6 +1098,12 @@ class ModelManager: ObservableObject {
                 try? FileManager.default.removeItem(at: AsrModels.defaultCacheDirectory(for: version))
             }
         }
+
+        // The manifest, the partials and the chunks a resumable transfer keeps outside
+        // the cache directory (issue #449). "Delete partial download" has to mean the
+        // whole partial download, or the next attempt resumes onto bytes the user
+        // believed they had deleted.
+        BackgroundModelDownloadService.shared.discardStaging(for: identifier)
 
         PersistentLog.log(.modelCleanupPerformed(name: identifier, reason: "download-or-prewarm-failure"))
 

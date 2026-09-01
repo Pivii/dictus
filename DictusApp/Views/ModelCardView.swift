@@ -381,6 +381,10 @@ struct ModelCardView: View {
             Task {
                 do {
                     try await modelManager.downloadModel(model.identifier)
+                } catch is CancellationError {
+                    // Another attempt at the same model took this one's place and owns
+                    // the card's state now (issue #449). Nothing failed, so nothing is
+                    // reported.
                 } catch {
                     onDownloadError(error.localizedDescription)
                 }
