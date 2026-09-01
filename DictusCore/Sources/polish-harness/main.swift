@@ -358,12 +358,20 @@ func runOnce(_ fx: Fixture,
     }
     let smartTask = mode.map(PolishTask.smart)
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
-    // The raw NLLanguage code, kept for the route line even where the engine never
-    // runs, for the reason `PolishService` records it at its own skip exits: "we
-    // could not read it" and "you dictated Italian" are different events, and only
-    // the code tells them apart.
-    let detectedCode = PolishPipeline.detectLanguageCode(in: preprocessed)
-    let detected = detectedCode.flatMap(SupportedLanguage.init(rawValue:))
+    // What the transcript is made of, measured on the RAW rather than on the pre-pass
+    // output — the same input `PolishService` measures, for the same reason: the
+    // pre-pass only swaps spoken punctuation words for marks, which can only remove
+    // language signal (#456).
+    //
+    // The leading language of that mix, NOT the whole-blob reading, is what gates and
+    // what selects natural-vs-repair here, because it is what does both in the app.
+    // Measuring the repair prompt on an input the app would send to the natural one
+    // would make this harness measure a path no user takes — and on the #456 capture
+    // that is exactly the difference: whole-blob `en` against a French target selects
+    // repair, the proportion elects French and selects natural.
+    let mix = PolishLanguageMix.measure(fx.raw)
+    let detectedCode = mix.dominantCode
+    let detected = mix.dominantSupportedLanguage
     // Gibberish gate, off `PolishGatePolicy` so the harness skips exactly where the
     // app does. The free polish returns the deterministic floor (decoded pre-pass),
     // never the literal raw (#185). An armed mode does not skip at all: short
@@ -469,7 +477,10 @@ func promptResolution(_ fx: Fixture, mode: SmartMode?) -> PromptResolution {
         )
     }
     let preprocessed = VerbalPunctuationPrepass.apply(fx.raw, language: target)
-    guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
+    // Off the proportion, like `runOnce` and like the app (#456): this decides which
+    // prompt gets printed, so reading it differently here would print a prompt the
+    // pipeline would not have used.
+    guard let detected = PolishLanguageMix.measure(fx.raw).dominantSupportedLanguage else {
         print("error: [\(fx.id)] language detection returned nil — the pipeline "
               + "would skip the engine entirely, so there is no prompt to print")
         exit(1)
