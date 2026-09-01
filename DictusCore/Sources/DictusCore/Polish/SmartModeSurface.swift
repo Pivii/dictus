@@ -86,15 +86,10 @@ public enum SmartModeSurface {
         reason == .notSubscribed && paywallVisible
     }
 
-    /// The live answer for this process, for callers with no armability in hand.
-    ///
-    /// Reads `SmartModeAvailability.current`, which reaches Apple Intelligence — so a
-    /// caller that has already resolved an armability should call `fanEntryPoint(reason:
-    /// paywallVisible:)` with it rather than pay for a second read.
-    public static var fanEntryPoint: SmartModeFanEntryPoint {
-        fanEntryPoint(
-            reason: SmartModeAvailability.current.reason,
-            paywallVisible: PremiumFlags.paywallVisible
-        )
-    }
+    // There is deliberately **no** zero-argument convenience here (#460 review). One
+    // was written and removed unused: it would have resolved both inputs itself, which
+    // is the implicit default this issue took out of `SmartModeDiscovery.offersHint`
+    // one file over, and it would have hidden a `SystemLanguageModel` availability read
+    // behind a property that reads free. Both callers already hold an armability when
+    // they ask, and passing it is one line.
 }
