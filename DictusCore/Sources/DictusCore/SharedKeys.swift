@@ -96,6 +96,19 @@ public enum SharedKeys {
     /// active in Release builds (code is compile-time excluded via #if DEBUG).
     public static let autocorrectDebugLogging = "dictus.autocorrectDebugLogging"
 
+    #if DEBUG
+    // Forced Pro entitlement (DEBUG builds only - see PremiumFlags.debugProEntitlementForced).
+    /// Bool: when true, `ProStatusManager.isProActiveStatic` reports Pro active whatever
+    /// StoreKit says, so the Smart Mode surface #460 hides can still be tested on device.
+    ///
+    /// WHY the key itself is inside the conditional, unlike `autocorrectDebugLogging`
+    /// above: #460 asks for a Release binary in which *nothing* names the force path, and
+    /// a `static let` outside it would leave the string in the binary for a `strings` pass
+    /// to find. Every reader is `#if DEBUG` too, so the constant has no Release caller to
+    /// lose.
+    public static let debugProEntitlementForced = "dictus.debugProEntitlementForced"
+    #endif
+
     // Live Activity preference
     /// Whether Live Activity (Dynamic Island + Lock Screen) is enabled, default true
     public static let liveActivityEnabled = "dictus.liveActivityEnabled"
