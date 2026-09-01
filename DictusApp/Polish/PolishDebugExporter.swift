@@ -101,6 +101,15 @@ struct PolishDebugExport: Codable {
         /// auto-detects from audio — so `sttLanguageCode` there says what was
         /// passed, never what was transcribed.
         let sttLanguageIsEffective: Bool?
+        /// What the raw was made of, by language (#456): code → share of the
+        /// counted characters. `detectedLanguage` names one language and never
+        /// says how much of the transcript backed it, which is the distinction
+        /// the #456 event turns on — `{"en":1.0}` and `{"fr":0.776,"en":0.224}`
+        /// look identical everywhere else on this event.
+        let languageMix: [String: Double]?
+        /// Which input decided the target: `explicit`, `proportion`, `keyboard`
+        /// or `none` (auto path).
+        let targetSource: String?
 
         let outcome: String
         /// Why the engine failed (#315) — present on `engineFailed` events only.
@@ -177,6 +186,8 @@ enum PolishDebugExporter {
                 keyboardLanguage: entry.metrics.languageResolution?.keyboardLanguage,
                 sttLanguageCode: entry.metrics.languageResolution?.sttLanguageCode,
                 sttLanguageIsEffective: entry.metrics.languageResolution?.sttLanguageIsEffective,
+                languageMix: entry.metrics.languageResolution?.languageMix,
+                targetSource: entry.metrics.languageResolution?.targetSource,
                 outcome: entry.metrics.outcome.rawValue,
                 failureReason: entry.metrics.failureReason?.slug,
                 latencyMs: entry.metrics.latencyMs,

@@ -266,6 +266,15 @@ private struct EntryDetailView: View {
                             : "\(resolution.sttLanguageCode) (inert)"
                     )
                 }
+                // The proportions the target was elected from (#456). Reading
+                // "target=en" next to "detected=en" hid the captured bug
+                // completely; reading it next to "fr 0.78 / en 0.22" cannot.
+                if let mix = resolution.languageMix {
+                    HStack(spacing: 12) {
+                        LabeledValue("mix", Self.renderMix(mix))
+                        LabeledValue("target from", resolution.targetSource ?? "-")
+                    }
+                }
             }
             HStack(spacing: 12) {
                 LabeledValue("latency", "\(entry.metrics.latencyMs) ms")
@@ -275,6 +284,16 @@ private struct EntryDetailView: View {
                 LabeledValue("failure reason", reason.slug)
             }
         }
+    }
+
+    /// `fr 0.78 / en 0.22`, leader first. Sorted by share rather than by code so
+    /// the language the target was elected from is the one the eye lands on.
+    private static func renderMix(_ mix: [String: Double]) -> String {
+        mix.sorted { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+        }
+        .map { String(format: "%@ %.2f", $0.key, $0.value) }
+        .joined(separator: " / ")
     }
 
     private func section(_ title: String, text: String) -> some View {

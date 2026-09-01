@@ -121,19 +121,38 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         )
     }
 
+    /// A mix in which one language holds the entire transcript — what every
+    /// assertion written before #456 meant when it passed a detected language.
+    private func wholly(_ language: SupportedLanguage) -> PolishLanguageMix {
+        PolishLanguageMix(
+            shares: [language.rawValue: 1], dominantCode: language.rawValue,
+            dominantShare: 1, countedCharacters: 200
+        )
+    }
+
+    /// A two-language mix, `leader` holding `share` of the counted characters.
+    private func mixed(_ leader: SupportedLanguage,
+                       _ share: Double,
+                       _ other: SupportedLanguage) -> PolishLanguageMix {
+        PolishLanguageMix(
+            shares: [leader.rawValue: share, other.rawValue: 1 - share],
+            dominantCode: leader.rawValue, dominantShare: share, countedCharacters: 200
+        )
+    }
+
     // MARK: - Whisper: the setting is effective
 
     func testWhisperFollowBehavesLikeToday() {
         let sut = policy(.followKeyboard, keyboard: .french, engine: .whisperKit)
         XCTAssertEqual(sut.sttLanguageCode, "fr")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .french), .language(.french))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french))
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
 
     func testWhisperAutoDetectUsesAutoPromptAndSkipsSeparator() {
         let sut = policy(.autoDetect, keyboard: .french, engine: .whisperKit)
         XCTAssertNil(sut.sttLanguageCode, "nil enables Whisper language detection")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .german), .autoDetected,
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.german)), .autoDetected,
                        "auto mode polishes with the language-agnostic prompt (#239)")
         XCTAssertTrue(sut.insertsTranscriptionAsIs)
     }
@@ -141,7 +160,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     func testWhisperExplicitIgnoresKeyboardLanguage() {
         let sut = policy(.explicit(.english), keyboard: .french, engine: .whisperKit)
         XCTAssertEqual(sut.sttLanguageCode, "en")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .english), .language(.english),
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.english)), .language(.english),
                        "polish must match the dictated language, not the keyboard")
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
@@ -151,7 +170,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     func testParakeetFollowUsesTheDetectedLanguage() {
         let sut = policy(.followKeyboard, keyboard: .spanish, engine: .parakeet)
         XCTAssertEqual(sut.sttLanguageCode, "es")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .spanish), .language(.spanish))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.spanish)), .language(.spanish))
         XCTAssertFalse(sut.insertsTranscriptionAsIs)
     }
 
@@ -163,7 +182,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         // behavior (the engine ignores the language parameter anyway).
         let sut = policy(.autoDetect, keyboard: .french, engine: .parakeet)
         XCTAssertEqual(sut.sttLanguageCode, "fr", "STT stage untouched by #239")
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .french), .autoDetected)
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.french)), .autoDetected)
         XCTAssertFalse(sut.insertsTranscriptionAsIs,
                        "separator behavior is Whisper-auto-only, untouched by #239")
     }
@@ -181,7 +200,7 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
             for keyboard in [SupportedLanguage.german, .english, .spanish] {
                 let sut = policy(.explicit(.french), keyboard: keyboard, engine: engine)
                 XCTAssertEqual(
-                    sut.polishPromptSelection(detectedLanguage: .french), .language(.french),
+                    sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french),
                     "explicit fr must survive a \(keyboard.rawValue) keyboard on \(engine.rawValue)"
                 )
             }
@@ -192,8 +211,8 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
     /// including when the detector disagrees.
     func testExplicitTargetOutranksDetection() {
         let sut = policy(.explicit(.french), keyboard: .german, engine: .parakeet)
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: .german), .language(.french))
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: nil), .language(.french),
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: wholly(.german)), .language(.french))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: .undetermined), .language(.french),
                        "an explicit choice does not need detection to back it up")
     }
 
@@ -204,18 +223,99 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         for engine in [SpeechEngine.whisperKit, .parakeet] {
             let sut = policy(.followKeyboard, keyboard: .german, engine: engine)
             XCTAssertEqual(
-                sut.polishPromptSelection(detectedLanguage: .french), .language(.french),
+                sut.polishPromptSelection(languageMix: wholly(.french)), .language(.french),
                 "French transcript on a German keyboard must not be polished into German"
             )
         }
     }
 
     /// Rank 3: the keyboard is still the answer when nothing better exists —
-    /// detection was unconfident, or landed outside the four supported
-    /// languages. That is a guess, and it is the only case where one is made.
+    /// nothing was read at all, or what was read landed outside the four
+    /// supported languages. That is a guess, and it is the only case where one
+    /// is made.
     func testKeyboardLanguageIsTheLastResortOnly() {
         let sut = policy(.followKeyboard, keyboard: .german, engine: .parakeet)
-        XCTAssertEqual(sut.polishPromptSelection(detectedLanguage: nil), .language(.german))
+        XCTAssertEqual(sut.polishPromptSelection(languageMix: .undetermined), .language(.german))
+        let italian = PolishLanguageMix(
+            shares: ["it": 1], dominantCode: "it", dominantShare: 1, countedCharacters: 200
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: italian), .language(.german),
+            "a language with no per-language prompt cannot be a target; the gibberish "
+                + "gate is what stops the keyboard language from being polished into"
+        )
+    }
+
+    // MARK: - The target is a proportion, not a verdict (#456)
+
+    /// The captured event's shape, as proportions: an English opening Parakeet
+    /// mistranscribed, a French body, and a whole-blob recogniser reading `en`
+    /// at 0.9995 because it weights the opening. The proportion elects French.
+    func testTheLeadingLanguageByProportionIsTheTarget() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, 0.776, .english)),
+            .language(.french),
+            "78 % French must not be polished — and therefore translated — into English"
+        )
+    }
+
+    /// The point of the floor: at a near tie no language legitimately won, so
+    /// nothing is elected from the transcript and the one signal that came from
+    /// the user rather than from a classifier takes over.
+    func testANearTieFallsBackToTheKeyboardLanguage() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.54, .french)),
+            .language(.french),
+            "a 54/46 split elects nothing; the keyboard decides"
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.61, .french)),
+            .language(.english),
+            "just over the floor, English leads clearly enough to be named"
+        )
+    }
+
+    /// The floor is a number this file is allowed to read, so that moving it
+    /// moves the tests with it rather than leaving them asserting a stale one.
+    func testTheDominanceFloorIsExactlyWhatTheElectionUses() {
+        let sut = policy(.followKeyboard, keyboard: .german, engine: .parakeet)
+        let floor = TranscriptionLanguagePolicy.dominantLanguageShareFloor
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, floor, .english)),
+            .language(.french), "the floor is inclusive"
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.french, floor - 0.01, .english)),
+            .language(.german)
+        )
+    }
+
+    /// A mixed transcript does not weaken an explicit choice: the user named a
+    /// language, and no proportion of anything outranks that.
+    func testAMixedTranscriptDoesNotDisturbAnExplicitChoice() {
+        let sut = policy(.explicit(.french), keyboard: .german, engine: .parakeet)
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.9, .french)),
+            .language(.french)
+        )
+        XCTAssertEqual(
+            sut.polishPromptSelection(languageMix: mixed(.english, 0.5, .french)),
+            .language(.french)
+        )
+    }
+
+    /// Auto mode elects nothing, whatever the transcript is made of — its prompt
+    /// is language-agnostic and its contract is never to translate.
+    func testAutoModeIsUnaffectedByTheProportion() {
+        let sut = policy(.autoDetect, keyboard: .french, engine: .parakeet)
+        for share in [0.5, 0.6, 0.78, 1.0] {
+            XCTAssertEqual(
+                sut.polishPromptSelection(languageMix: mixed(.english, share, .french)),
+                .autoDetected
+            )
+        }
     }
 
     // MARK: - STT telemetry (#332)
