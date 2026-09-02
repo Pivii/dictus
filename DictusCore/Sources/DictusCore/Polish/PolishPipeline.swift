@@ -26,17 +26,30 @@ public enum PolishPipeline {
         /// reached the engine or came back from it normally. `nil` elsewhere,
         /// so a caller can key on the reason's presence.
         public let failureReason: PolishFailureReason?
+        /// Which guardrail refused this output (#466). Set on `.rejectedGuardrail`
+        /// and only there; `nil` on every other outcome, so a caller can key on its
+        /// presence exactly as it does on `failureReason`.
+        ///
+        /// The four values are `PolishGuardrail.Check`'s slugs. `outcome` alone says
+        /// a check failed and never which one, and the four have four different
+        /// answers — the band is mis-sized for the mode, the prompt drifted out of
+        /// the speaker's language, the model invented a name, or the model wrote
+        /// about its own task. Carrying the word makes the rate of each countable
+        /// from an export after the fact, which is what #466 asks for.
+        public let rejectedCheck: PolishGuardrail.Check?
 
         public init(engineOutput: String?,
                     outcome: PolishMetrics.Outcome,
                     engineMs: Int,
                     postprocessMs: Int,
-                    failureReason: PolishFailureReason? = nil) {
+                    failureReason: PolishFailureReason? = nil,
+                    rejectedCheck: PolishGuardrail.Check? = nil) {
             self.engineOutput = engineOutput
             self.outcome = outcome
             self.engineMs = engineMs
             self.postprocessMs = postprocessMs
             self.failureReason = failureReason
+            self.rejectedCheck = rejectedCheck
         }
     }
 
@@ -110,22 +123,29 @@ public enum PolishPipeline {
             }
             // Guardrail baseline is the preprocessed text — what the engine
             // actually saw (modulo the newline marker the post-pass undid).
-            guard PolishGuardrail.accepts(
+            // The four output checks, in the order they cost: a character ratio,
+            // then two `NaturalLanguage` passes, then a word-set comparison. Each
+            // names itself in the result so an export can count the four apart
+            // (#466) — `rejectedGuardrail` is one outcome for four questions.
+            let refused: PolishGuardrail.Check?
+            if !PolishGuardrail.accepts(
                 raw: preprocessed, polished: polished, contract: job.task.contract
-            ) else {
-                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                PolishMetrics.logGuardrailRejection(check: "length", task: job.task)
-                return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
+            ) {
+                refused = .length
+            } else if !languageGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) {
+                refused = .language
+            } else if !groundingGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) {
+                refused = .grounding
+            } else if !prefixGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) {
+                refused = .prefixAlignment
+            } else {
+                refused = nil
             }
-            guard languageGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
+            if let refused {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                PolishMetrics.logGuardrailRejection(check: "language", task: job.task)
-                return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
-            }
-            guard groundingGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
-                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
-                PolishMetrics.logGuardrailRejection(check: "grounding", task: job.task)
-                return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
+                PolishMetrics.logGuardrailRejection(check: refused, task: job.task)
+                return Result(engineOutput: polished, outcome: .rejectedGuardrail,
+                              engineMs: engineMs, postprocessMs: postMs, rejectedCheck: refused)
             }
             let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
             return Result(engineOutput: polished, outcome: .success, engineMs: engineMs, postprocessMs: postMs)
@@ -202,6 +222,24 @@ public enum PolishPipeline {
         return PolishGrounding.ungroundedAnchors(
             in: polished, input: preprocessed, languageCode: outputCode
         ).isEmpty
+    }
+
+    /// Prefix-alignment guardrail (#466, #349): the output has to open where the
+    /// input opens.
+    ///
+    /// Runs only where the task's contract says the transformation preserves order —
+    /// see `PolishAcceptanceContract.preservesOrder`, a field for the same reason
+    /// `requiresGroundedNames` is one. List restructures and Translate keeps no word
+    /// of the input, so neither has an opening to compare; the hole that leaves is
+    /// written down on `PolishPrefixAlignment`.
+    ///
+    /// The comparison baseline is `preprocessed`, not the literal raw, for the
+    /// reason the length band's is: that is the text the engine actually saw.
+    private static func prefixGuardrailPasses(polished: String,
+                                              preprocessed: String,
+                                              job: PolishJob) -> Bool {
+        guard job.task.contract.preservesOrder else { return true }
+        return PolishPrefixAlignment.accepts(polished: polished, raw: preprocessed)
     }
 
     /// The string the user actually receives, given a transform `Result` and the

@@ -505,6 +505,7 @@ public final class PolishService {
                 postprocessMs: bundle.postprocessMs
             ),
             failureReason: bundle.failureReason,
+            guardrailCheck: bundle.rejectedCheck,
             languageResolution: resolution
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
@@ -622,7 +623,8 @@ public final class PolishService {
                 engineMs: bundle.engineMs,
                 postprocessMs: bundle.postprocessMs
             ),
-            failureReason: bundle.failureReason
+            failureReason: bundle.failureReason,
+            guardrailCheck: bundle.rejectedCheck
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
         return finalOutcome(returned: returned, bundle: bundle, job: job, raw: raw)
@@ -651,7 +653,8 @@ public final class PolishService {
                                   latencyMs: Int = 0,
                                   timings: PolishTimings =
                                       PolishTimings(preprocessMs: 0, engineMs: 0, postprocessMs: 0),
-                                  failureReason: PolishFailureReason? = nil
+                                  failureReason: PolishFailureReason? = nil,
+                                  guardrailCheck: PolishGuardrail.Check? = nil
     ) -> PolishMetrics {
         PolishMetrics(
             engine: engineID,
@@ -666,6 +669,7 @@ public final class PolishService {
             sttModelID: request.languagePolicy.modelIdentifier,
             timings: timings,
             failureReason: failureReason,
+            guardrailCheck: guardrailCheck,
             languageResolution: PolishMetrics.LanguageResolution(
                 policy: request.languagePolicy, mix: request.languageMix
             )

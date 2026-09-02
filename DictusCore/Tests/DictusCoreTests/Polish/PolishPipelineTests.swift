@@ -466,6 +466,155 @@ final class PolishPipelineTests: XCTestCase {
         let out = PolishPipeline.resolvedOutput(result, preprocessed: "polished text", job: PolishJob(task: .auto, promptLanguage: .english, languageAgnosticPath: true))
         XCTAssertEqual(out, "Polished text.")
     }
+
+    // MARK: - The chat preamble and the refusal, end to end (#466, #349)
+
+    /// The device capture from #466, through the whole pipeline. Rejected, and the
+    /// free polish hands back the deterministic floor — the user keeps their words.
+    func testTheCapturedPreambleIsRejectedAndTheUserKeepsTheirRawText() async {
+        let raw = PolishPrefixAlignmentTests.preambleRaw
+        let job = PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.preamblePolished),
+            job: job
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertEqual(result.rejectedCheck, .prefixAlignment)
+        XCTAssertEqual(PolishPipeline.resolvedOutput(result, preprocessed: raw, job: job), raw)
+    }
+
+    /// #349's capture, absorbed into #466 and refused by the same code path. Its
+    /// mode is `repair`, whose wider `[0.3, 3.0]` band is what let the ratio through
+    /// at 2.93 on device.
+    func testTheCapturedRefusalIsRejectedInRepairByTheSameCheck() async {
+        let raw = PolishPrefixAlignmentTests.refusalRaw
+        let job = PolishJob(task: .repair, promptLanguage: .french, languageAgnosticPath: false)
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.refusalPolished),
+            job: job
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertEqual(result.rejectedCheck, .prefixAlignment)
+    }
+
+    /// The same preamble on the auto path (#239), which carries the same contract.
+    func testThePreambleIsRejectedOnTheAutoPathToo() async {
+        let result = await PolishPipeline.transform(
+            preprocessed: PolishPrefixAlignmentTests.preambleRaw,
+            engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.preamblePolished),
+            job: PolishJob(task: .auto, promptLanguage: .french, languageAgnosticPath: true)
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertEqual(result.rejectedCheck, .prefixAlignment)
+    }
+
+    /// **The check is inert for List**, proven rather than inspected. A faithful
+    /// three-bullet condensation shares almost nothing with its input's opening
+    /// words, so prefix alignment would refuse it — which is why the contract turns
+    /// the check off there.
+    func testThePrefixCheckIsInertForList() async {
+        let raw = "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc "
+            + "déjà faut que je récupère les chiffres de janvier auprès de Marion et puis il faut "
+            + "que j'appelle le prestataire et réserver la salle du deuxième étage"
+        let output = """
+        - Récupérer les chiffres de janvier auprès de Marion
+        - Appeler le prestataire
+        - Réserver la salle du deuxième étage
+        """
+        XCTAssertFalse(
+            PolishPrefixAlignment.accepts(polished: output, raw: raw),
+            "precondition: the check WOULD refuse this output if it ran"
+        )
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: output),
+            job: PolishJob(
+                task: .smart(SmartModeCatalogue.notes),
+                promptLanguage: .french,
+                languageAgnosticPath: false
+            )
+        )
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertNil(result.rejectedCheck)
+    }
+
+    /// **The check is inert for Translate**, same shape. A translation keeps none of
+    /// the input's words, so it aligns nowhere by construction.
+    func testThePrefixCheckIsInertForTranslate() async {
+        let raw = "il faut absolument qu'on livre cette fonctionnalité avant la fin du mois "
+            + "sinon on va perdre le client et ça serait vraiment dommage"
+        let output = "We absolutely have to ship this feature before the end of the month, "
+            + "otherwise we will lose the client and that would be a real shame."
+        XCTAssertFalse(
+            PolishPrefixAlignment.accepts(polished: output, raw: raw),
+            "precondition: the check WOULD refuse this translation if it ran"
+        )
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: output),
+            job: PolishJob(
+                task: .smart(SmartModeCatalogue.translate(to: .english)),
+                promptLanguage: .french,
+                languageAgnosticPath: false
+            )
+        )
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertNil(result.rejectedCheck)
+    }
+
+    /// The four checks name themselves apart (#466). One `rejectedGuardrail` outcome
+    /// covers four questions, and an export has to be able to count them separately.
+    func testEachGuardrailNamesItselfOnTheResult() async {
+        let raw = "bon alors il faut que je pense à rappeler le plombier avant vendredi "
+            + "et à préparer le dossier pour la réunion de lundi matin"
+        let job = PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
+
+        let tooLong = String(repeating: raw + " ", count: 4)
+        let length = await PolishPipeline.transform(
+            preprocessed: raw, engine: FixedOutputEngine(output: tooLong), job: job
+        )
+        XCTAssertEqual(length.rejectedCheck, .length)
+
+        let english = "I need to remember to call the plumber before Friday and to prepare "
+            + "the file for the meeting on Monday morning."
+        let language = await PolishPipeline.transform(
+            preprocessed: raw, engine: FixedOutputEngine(output: english), job: job
+        )
+        XCTAssertEqual(language.rejectedCheck, .language)
+
+        // Grounding runs on the free polish too, but `NLTagger`'s French recall is
+        // unreliable on a bare first name (documented on `PolishGrounding`), so the
+        // case that reliably carries a tagged name is the measured List one.
+        let sophie = await PolishPipeline.transform(
+            preprocessed: "bon alors je récapitule ce qu'il faut que je fasse avant la réunion "
+                + "donc récupérer les chiffres de janvier et appeler le prestataire",
+            engine: FixedOutputEngine(output: """
+            - Récupérer les chiffres de janvier
+            - Appeler le prestataire
+            - Appeler Sophie avant : elle a les données de décembre
+            """),
+            job: PolishJob(
+                task: .smart(SmartModeCatalogue.notes),
+                promptLanguage: .french,
+                languageAgnosticPath: false
+            )
+        )
+        XCTAssertEqual(sophie.rejectedCheck, .grounding)
+
+        let preamble = await PolishPipeline.transform(
+            preprocessed: PolishPrefixAlignmentTests.preambleRaw,
+            engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.preamblePolished),
+            job: job
+        )
+        XCTAssertEqual(preamble.rejectedCheck, .prefixAlignment)
+
+        let clean = await PolishPipeline.transform(
+            preprocessed: raw, engine: PassthroughPolishEngine(), job: job
+        )
+        XCTAssertNil(clean.rejectedCheck)
+    }
 }
 
 /// Returns a fixed string whatever it is handed, so a test can drive the guardrails

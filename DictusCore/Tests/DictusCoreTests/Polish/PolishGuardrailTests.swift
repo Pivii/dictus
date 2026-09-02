@@ -178,6 +178,51 @@ final class PolishGuardrailTests: XCTestCase {
         XCTAssertEqual(decoded.outcome, .skipped)
     }
 
+    /// The refusing check survives the ring (#466), and an event written before the
+    /// field existed still decodes — which is the whole reason it is optional. The
+    /// seven-day ring holds events from whatever build was installed at the time.
+    func testPolishMetricsCarriesTheRefusingCheckAndToleratesItsAbsence() throws {
+        let original = PolishMetrics(
+            engine: "apple-fm", mode: "natural", targetLanguage: .french,
+            detectedLanguage: "fr", rawCharCount: 177, polishedCharCount: 283,
+            latencyMs: 3900, outcome: .rejectedGuardrail, guardrailCheck: .prefixAlignment
+        )
+        let data = try JSONEncoder().encode(original)
+        XCTAssertEqual(
+            try JSONDecoder().decode(PolishMetrics.self, from: data).guardrailCheck,
+            .prefixAlignment
+        )
+        XCTAssertTrue(
+            String(data: data, encoding: .utf8)?.contains("\"prefixAlignment\"") == true,
+            "the slug is a wire value and must encode as a bare string"
+        )
+
+        let legacy = Data("""
+        {"engine":"apple-fm","mode":"natural","targetLanguage":"fr","detectedLanguage":"fr",
+         "rawCharCount":177,"polishedCharCount":283,"latencyMs":3900,"outcome":"rejectedGuardrail"}
+        """.utf8)
+        XCTAssertNil(try JSONDecoder().decode(PolishMetrics.self, from: legacy).guardrailCheck)
+    }
+
+    /// The contract answers the order question itself (#466), and a record written
+    /// by a build that predates the field decodes to the safe half — off, so one
+    /// dictation across one upgrade behaves exactly as it does today rather than
+    /// meeting a brand-new rejection nobody measured.
+    func testPreservesOrderIsAnsweredPerTaskAndDefaultsOffWhenAbsent() throws {
+        XCTAssertTrue(PolishAcceptanceContract.natural.preservesOrder)
+        XCTAssertTrue(PolishAcceptanceContract.auto.preservesOrder)
+        XCTAssertTrue(PolishAcceptanceContract.repair.preservesOrder)
+        XCTAssertFalse(SmartModeCatalogue.notes.contract.preservesOrder)
+        XCTAssertFalse(SmartModeCatalogue.translate(to: .english).contract.preservesOrder)
+
+        let legacy = Data("""
+        {"minimumLengthRatio":0.5,"maximumLengthRatio":2.0,"outputLanguage":"polishTarget"}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(PolishAcceptanceContract.self, from: legacy)
+        XCTAssertFalse(decoded.preservesOrder)
+        XCTAssertFalse(decoded.requiresGroundedNames)
+    }
+
     // MARK: - Per-mode acceptance contracts (#79)
 
     /// The reason the band had to stop being a table keyed by mode: a good
