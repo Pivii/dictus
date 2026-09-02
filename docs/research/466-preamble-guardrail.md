@@ -374,3 +374,134 @@ which admitted a 2.93 — not a relatedness primitive.
 one in a Repair output; all three are written into `PolishPrefixAlignment`'s doc comment. A model
 that talks about its task after the user's text, or in the middle of it, aligns at offset 0 and
 passes. This closes the measured shape, not the class.
+
+---
+
+## 8. Amendment — the device test falsified the first mechanism (2026-09-02)
+
+**Written after §6, and after a device test failed.** The first mechanism shipped in `27819c2`,
+was tested on device on that build, and **missed a preamble.** This section is what replaced it and
+what the replacement costs.
+
+### 8.1 What the device found
+
+10 dictations, one preamble, accepted. Event `FB137B5E-BC76-4C51-A9B3-572F13A15B72`, App 1.8.1
+(29), `mode=natural`, `outcome=success`, typed by the keyboard:
+
+```
+raw (174)  Okay donc là je refais les tests que je fais parce que j'ai été en détection de
+           langue. Là je repasse en français pour avoir des bons tests. Comme ça fera des
+           tests complets.
+out (208)  Bien sûr, voici la version polie :
+           Je vais donc refaire les tests que je fais parce que j'ai été en détection de
+           langue. Là, je repasse en français pour avoir des bons tests. Comme ça fera des
+           tests complets.
+```
+
+The export confirms the build was the right one — `guardrailChecks` was present, and empty.
+
+### 8.2 Why it missed, verified in the code rather than assumed
+
+The first mechanism took the input's first 12 words as a reference and slid a 12-word window along
+the output looking for them. Scored by hand on this pair, the reference has 10 distinct words and
+the floor of 0.40 asks for 4:
+
+| output offset | reference words found | |
+|---|---|---|
+| **0** | `donc, je, la, les, tests` — **5** | **≥ 4, so it aligned at 0 and passed** |
+| 3 | `donc, fais, je, la, les, que, tests` — 7 | |
+| 6 | 7 | |
+
+**The 12-word window at offset 0 straddles the six-word preamble and reaches into the real text
+behind it**, picking up five reference words from the part that was never in doubt. The preamble of
+the original capture was fifteen words — longer than the window — which is why the corpus could not
+reveal this. Taking the argmax instead of the first hit does not save it either: the maximum is
+first reached at offset 3, inside a `maximumOffsetWords` of 4.
+
+**A sliding-window overlap test cannot see a preamble substantially shorter than its window.** That
+is a property of the shape, not a mis-set number, and no cell of the sweep recovered it — the whole
+offset column reads `0c` at window 12.
+
+### 8.3 The replacement: judge the output's head, do not search for the input's
+
+The measurement is inverted. Instead of asking *where does the input's opening reappear in the
+output*, it asks **where does the output start being made of the user's words**: slide a short
+window along the output and find the earliest offset where `supportFloor` of it is vocabulary the
+input contains.
+
+It is still comparative, still between two texts the same dictation produced, still no lexical list
+of any kind. What changed is which side is scanned — the output's head is now the thing judged
+rather than the thing searched — and that is what makes a short preamble visible: six words of the
+model's own vocabulary in front of the user's are six unsupported words, whatever their length
+relative to the window.
+
+### 8.4 The separation is wider than the first mechanism's
+
+Measured over the corpus, at the shipping set — window 8, floor 0.70, offset 4:
+
+| | where the user's words start |
+|---|---|
+| all 102 legitimate free-polish outputs | **word 0**, except one at word 2 |
+| the short device preamble (6 words) | **word 6** |
+| the original capture's preamble (15 words) | **word 16** |
+| the three captured refusals | **never** |
+
+`maximumOffsetWords = 4` is the midpoint of an empty gap between 2 and 6, rather than a value with
+one clean neighbour.
+
+```
+── #466 prefix sweep, natural + auto — the modes the check ships on
+   window=8 words, minimum=8 words
+                0.50        0.60        0.70        0.75        0.80        0.90
+    0         4c/0fr      4c/1fr      4c/1fr      4c/1fr      4c/2fr      4c/8fr
+    2         4c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/2fr      4c/8fr
+    4         3c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/1fr      4c/7fr
+    6         3c/0fr      3c/0fr      3c/0fr      3c/0fr      4c/1fr      4c/6fr
+    8         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      4c/3fr
+  (c = caught out of 4; fr = falsely rejected out of 102)
+
+── #466 window sensitivity, natural + auto     (maxOffset=4, minimum=8)
+                0.50        0.60        0.70        0.75        0.80        0.90
+    6         3c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/4fr
+    8         3c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/1fr      4c/7fr
+   10         3c/0fr      3c/0fr      4c/0fr      4c/0fr      4c/0fr      4c/2fr
+   12         3c/0fr      3c/0fr      4c/1fr      4c/1fr      4c/1fr      4c/2fr
+   16         3c/0fr      3c/0fr      3c/1fr      3c/1fr      4c/3fr      4c/7fr
+```
+
+`(offset 4, floor 0.70)` sits inside a clean block spanning floors 0.60–0.75 at offsets 2 and 4,
+and the walls are the two failure directions: **above 0.80 the floor refuses good output**, and
+**below 0.60, or above offset 4, a catch is lost.** Window 8 is inside a clean run from 6 to 10; at
+12 the false rejections start, which is the same effect that produced the device miss showing up
+from the other side.
+
+**Restricting the support set to the input's first 18, 24 or 30 words was measured and scores
+identically**, so the whole input is used and the extra knob is not bought. What the narrower rule
+would additionally catch is reordering — the output opening with the user's own words taken from
+the end of their dictation — which ADR 0003 forbids and which nothing in the field has produced.
+
+### 8.5 The price, stated rather than paid in silence
+
+**A preamble of about four words or fewer is invisible.** `maximumOffsetWords` is 4 because the
+contract licenses deleting an opening filler run and the corpus holds a legitimate output whose own
+words start at word 2. A preamble that fits inside that tolerance is arithmetically the same event
+as a deleted filler run, so no setting separates them — closing this hole means refusing a polish
+that opened by dropping `euh alors donc en fait`. The measured example is `Voici le texte poli :`,
+four words, one of which (`le`) is the speaker's own, which lets the window reach supported text at
+word 1.
+
+This is a **third accepted hole**, alongside the Smart Modes and Repair. It is pinned by a test
+that asserts the miss on purpose, so a future change which closes it fails there and has to say
+what it cost.
+
+**Nothing else moved.** Repair is `1c/10fr` on every one of the 30 cells at every window — the
+§6.3 conclusion is mechanism-independent and stands. The #413 and #414 checks are unchanged.
+
+### 8.6 What this says about the first measurement
+
+§6 reported `3 caught / 0 false rejections out of 102` and the number was true. What it could not
+report is the shape the corpus did not contain: **every preamble in it was longer than the
+window.** One device session with ten dictations found the gap that 230 committed outputs could
+not. That is an argument for the device gate rather than against the corpus — but it is also why
+`P3-short-preamble` is now committed, so the next mechanism is scored against a short preamble from
+its first line of code.

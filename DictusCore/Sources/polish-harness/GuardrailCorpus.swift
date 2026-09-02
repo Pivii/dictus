@@ -243,8 +243,8 @@ enum GuardrailCorpus {
     /// for the modes the check ships on and for repair separately (#466).
     static func sweepPrefix(_ cases: [GuardrailCase]) {
         let defaults = PolishPrefixAlignmentThresholds.default
-        let offsets = [0, 2, 4, 6, 8, 10, 12]
-        let floors = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70]
+        let offsets = [0, 2, 4, 6, 8]
+        let floors = [0.50, 0.60, 0.70, 0.75, 0.80, 0.90]
         for (title, include) in [
             ("natural + auto — the modes the check ships on",
              { (item: GuardrailCase) in item.polishMode != "repair" }),
@@ -259,15 +259,15 @@ enum GuardrailCorpus {
                 var row = String(format: "  %3d   ", offset)
                 for floor in floors {
                     let score = scorePrefix(cases, thresholds: PolishPrefixAlignmentThresholds(
-                        windowWords: defaults.windowWords, overlapFloor: floor,
+                        windowWords: defaults.windowWords, supportFloor: floor,
                         maximumOffsetWords: offset, minimumWords: defaults.minimumWords
                     ), include: include)
                     row += cell("\(score.caught)c/\(score.falselyRejected)fr")
                 }
                 print(row)
             }
-            print("  (rows: words of output allowed before the input's opening reappears;"
-                  + " columns: share of the opening a window must carry)")
+            print("  (rows: words of output allowed before the user's own words start;"
+                  + " columns: share of a window that must be the user's own words)")
             print("  (c = caught out of \(scoped.filter(\.mustBeRejectedForPrefix).count);"
                   + " fr = falsely rejected out of \(scoped.filter { !$0.mustBeRejectedForPrefix }.count))")
         }
@@ -281,8 +281,8 @@ enum GuardrailCorpus {
     /// can see whether the shipping choice sits on a boundary.
     private static func sweepPrefixWindow(_ cases: [GuardrailCase]) {
         let defaults = PolishPrefixAlignmentThresholds.default
-        let windows = [6, 8, 10, 12, 16, 20]
-        let floors = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70]
+        let windows = [6, 8, 10, 12, 16]
+        let floors = [0.50, 0.60, 0.70, 0.75, 0.80, 0.90]
         print("\n── #466 window sensitivity, natural + auto")
         print("   maxOffset=\(defaults.maximumOffsetWords), minimum=\(defaults.minimumWords)")
         print("        " + floors.map { String(format: "%12.2f", $0) }.joined())
@@ -290,7 +290,7 @@ enum GuardrailCorpus {
             var row = String(format: "  %3d   ", window)
             for floor in floors {
                 let score = scorePrefix(cases, thresholds: PolishPrefixAlignmentThresholds(
-                    windowWords: window, overlapFloor: floor,
+                    windowWords: window, supportFloor: floor,
                     maximumOffsetWords: defaults.maximumOffsetWords,
                     minimumWords: defaults.minimumWords
                 ), include: { $0.polishMode != "repair" })
@@ -298,7 +298,7 @@ enum GuardrailCorpus {
             }
             print(row)
         }
-        print("  (rows: words of the input's opening used as the reference)")
+        print("  (rows: length of the window judged at once, in words)")
     }
 
     /// The anchors every case carries, grounded or not. What #414's precision rests

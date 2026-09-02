@@ -301,5 +301,21 @@
     "raw": "Chops chop cheats chop kickpapiti papu papati tsu pa t.",
     "output": "Je suis désolé, mais je ne peux pas fournir une sortie polie pour ce texte. Il semble contenir des mots ou une structure inappropriée pour une sortie acceptable.",
     "note": "#349, captured on device 2026-08-12, build 1.8.0 (26), export dictus-polish-debug-20260812-135525.json. Apple FM refused and the apology was inserted as the user's dictation with outcome=success. Ratio 2.93, inside Repair's wider band; the refusal is fluent French against a French target; it names nobody, which is the miss PolishGrounding declared in advance."
+  },
+  {
+    "source": "device-20260902-1632",
+    "fixture": "P3-short-preamble",
+    "run": 1,
+    "kind": "polished",
+    "task": "polish.natural",
+    "inputLang": "fr",
+    "expectedLang": "fr",
+    "language": "sameLanguage",
+    "grounding": "grounded",
+    "prefix": "displaced",
+    "wasAccepted": true,
+    "raw": "Okay donc là je refais les tests que je fais parce que j'ai été en détection de langue. Là je repasse en français pour avoir des bons tests. Comme ça fera des tests complets.",
+    "output": "Bien sûr, voici la version polie :\nJe vais donc refaire les tests que je fais parce que j'ai été en détection de langue. Là, je repasse en français pour avoir des bons tests. Comme ça fera des tests complets.",
+    "note": "#466, captured on device 2026-09-02 on rev 27819c2 -- the first version of this very check -- App 1.8.1 (29), event FB137B5E-BC76-4C51-A9B3-572F13A15B72, mode=natural, outcome=success, inserted by the keyboard. **A SIX-WORD preamble**, against the fifteen-word one of the P1 capture. It is the case that falsified the first mechanism: a 12-word window looking for the input's opening straddled this preamble and passed. Raw 174 chars, output 208, ratio 1.20 -- inside Natural's band, French against a French target, naming nobody, so the three older checks accept it and must keep accepting it."
   }
 ]

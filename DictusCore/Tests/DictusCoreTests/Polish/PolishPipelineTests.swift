@@ -559,18 +559,25 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(result.rejectedCheck, .prefixAlignment)
     }
 
-    /// **The check is inert for List**, proven rather than inspected. A faithful
-    /// three-bullet condensation shares almost nothing with its input's opening
-    /// words, so prefix alignment would refuse it — which is why the contract turns
-    /// the check off there.
+    /// **The check is inert for List**, proven rather than inspected.
+    ///
+    /// The output here is a *synthesis* — the shape the mode's prompt asks for, where
+    /// the bullets name the conclusions rather than reuse the sentences. Almost none
+    /// of its words are the speaker's, so prefix alignment refuses it, which is why
+    /// the contract turns the check off for this mode.
+    ///
+    /// Note the new mechanism accepts most faithful condensations, which reuse the
+    /// speaker's words and are supported from word 0. The inertness is therefore a
+    /// contract decision about what the mode is *licensed* to do, not a workaround
+    /// for a check that always fires.
     func testThePrefixCheckIsInertForList() async {
-        let raw = "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc "
-            + "déjà faut que je récupère les chiffres de janvier auprès de Marion et puis il faut "
-            + "que j'appelle le prestataire et réserver la salle du deuxième étage"
+        let raw = "alors voilà pour résumer on a beaucoup discuté hier soir et franchement "
+            + "je pense qu'on devrait avancer vite sur ce sujet là parce que sinon on va se "
+            + "faire dépasser"
         let output = """
-        - Récupérer les chiffres de janvier auprès de Marion
-        - Appeler le prestataire
-        - Réserver la salle du deuxième étage
+        - Décision : accélérer le projet
+        - Risque identifié : la concurrence
+        - Échéance retenue : cette semaine
         """
         XCTAssertFalse(
             PolishPrefixAlignment.accepts(polished: output, raw: raw),

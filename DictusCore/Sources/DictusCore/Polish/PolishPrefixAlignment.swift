@@ -6,40 +6,43 @@ import Foundation
 /// declines to read.
 ///
 /// They travel together because none of them means anything alone. The window
-/// decides how much of the input's opening is the reference; the floor decides how
-/// much of that reference a candidate window has to carry; the offset decides how
-/// far into the output the reference may legitimately have moved. Change one and
+/// decides how long a stretch of output is judged at once; the floor decides how
+/// much of that stretch has to be the speaker's own words; the offset decides how
+/// far into the output the speaker's words may legitimately start. Change one and
 /// the other two are measuring something else.
 ///
 /// Measured, not chosen. Scored over the committed corpus with
 /// `swift run polish-harness guardrail docs/research/413-414-guardrail/*.json --sweep`,
-/// which drives no model. The table it prints is in
-/// `docs/research/466-preamble-guardrail.md` §6.
+/// which drives no model. The tables it prints are in
+/// `docs/research/466-preamble-guardrail.md` §6 and §8.
+///
+/// **The separation these sit in is wide and empty.** Over the corpus: every one of
+/// the 102 legitimate free-polish outputs starts being supported at word 0, except
+/// one at word 2. The two captured preambles start at word 6 and word 16, and the
+/// three captured refusals never start at all. The offset threshold is the midpoint
+/// of that gap.
 public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 
-    /// How many of the input's opening words form the reference the output is
-    /// searched for.
+    /// How long a stretch of the output is examined at once, in words.
     ///
-    /// Long enough that a couple of substituted words cannot sink it — ADR 0003
-    /// licenses removing fillers and stutters and substituting spoken punctuation,
-    /// all of which land in the opening — and short enough to fit inside a short
-    /// dictation. It is clamped to the length of the shorter side, so a six-word
-    /// dictation compares six words.
+    /// About a clause. Short enough to sit inside a six-word preamble rather than
+    /// straddle it — **the first version of this check used a 12-word window and a
+    /// six-word preamble slipped past it on device**, because the window spanned the
+    /// preamble and reached into the real text behind it. Long enough that two or
+    /// three substituted words cannot swing it. Clamped to the output's length.
     public let windowWords: Int
 
-    /// Share of the reference's **distinct** words a window of the output has to
-    /// carry to count as the same passage. Rounded up, so a floor of 0.4 over a
-    /// 12-word reference asks for 5 words.
-    public let overlapFloor: Double
+    /// Share of that stretch which has to be words the speaker actually said.
+    /// Rounded up, so 0.70 over an 8-word window asks for 6 of them.
+    public let supportFloor: Double
 
-    /// How many words of the output may precede the reference. Above it the output
-    /// opens with something that is not the user's opening, which is the defect.
+    /// How many words of the output may precede the first supported stretch. Above
+    /// it, the output opens with something that is not the user's text, which is the
+    /// defect.
     ///
-    /// Not zero: the contract lets the model delete an opening filler run, and every
-    /// word it deletes from the input's head is a word of *input* the reference
-    /// window slides past, not a word of output — but a spoken-punctuation
-    /// substitution ("virgule" → ",") and a rule 8 repair both leave the output's
-    /// own head shifted. The sweep sizes the tolerance.
+    /// Not zero: ADR 0003 licenses deleting an opening filler run and substituting a
+    /// spoken punctuation command, and both leave the output's head shifted by a
+    /// word or two.
     public let maximumOffsetWords: Int
 
     /// Fewest words either side must carry for the question to be asked at all.
@@ -47,16 +50,16 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
     /// align, and guessing at one would refuse a good output for nothing.
     public let minimumWords: Int
 
-    public init(windowWords: Int, overlapFloor: Double, maximumOffsetWords: Int, minimumWords: Int) {
+    public init(windowWords: Int, supportFloor: Double, maximumOffsetWords: Int, minimumWords: Int) {
         self.windowWords = windowWords
-        self.overlapFloor = overlapFloor
+        self.supportFloor = supportFloor
         self.maximumOffsetWords = maximumOffsetWords
         self.minimumWords = minimumWords
     }
 
     /// The measured set. See the type's doc for where the numbers come from.
     public static let `default` = PolishPrefixAlignmentThresholds(
-        windowWords: 12, overlapFloor: 0.4, maximumOffsetWords: 4, minimumWords: 8
+        windowWords: 8, supportFloor: 0.70, maximumOffsetWords: 4, minimumWords: 8
     )
 }
 
@@ -85,6 +88,33 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 /// and the refusal being inserted as the user's dictation, also with
 /// `outcome = success`. Same engine, same blind spot, one detector: a preamble reads
 /// as alignment starting late, a refusal as no alignment anywhere.
+///
+/// ### What it measures
+///
+/// Not "does the input's opening reappear in the output" — that was the first
+/// version and **a device test falsified it**. It slid a 12-word window along the
+/// output looking for the input's opening words, which cannot see a preamble
+/// shorter than the window: a six-word one leaves the window straddling it, half in
+/// the junk and half in the real text, still carrying enough of the input's opening
+/// to pass. That is a limit of the shape, not a mis-set number, and no threshold in
+/// the sweep recovered it.
+///
+/// What it measures instead is **where the output starts being made of the user's
+/// words.** Slide a short window along the output and find the earliest position
+/// where `supportFloor` of it is vocabulary the speaker actually used. A faithful
+/// polish is supported from word 0; a preamble is a stretch of the model's own
+/// words in front of the user's, so support starts late; a refusal is never
+/// supported at all.
+///
+/// | | reads as |
+/// |---|---|
+/// | ordinary polish | supported from word 0 |
+/// | **#466**, a preamble | support starts late |
+/// | **#349**, a refusal | never supported |
+///
+/// The measurement is still comparative and still between two texts the same
+/// dictation produced. What changed is which side is scanned: the output's head is
+/// now the thing being judged, rather than the thing being searched.
 ///
 /// ### Why comparative, and not a list of phrases
 ///
@@ -138,9 +168,17 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 ///
 /// ### What it does not catch, stated plainly
 ///
-/// A model that talks about its own task *after* the user's text, or in the middle
-/// of it, aligns at offset 0 and passes. This closes the measured shape, not the
-/// class.
+/// **A preamble of about four words or fewer.** `maximumOffsetWords` is 4 because
+/// ADR 0003 licenses deleting an opening filler run, and the corpus holds a
+/// legitimate output whose own words start at word 2. A preamble that fits inside
+/// that tolerance is arithmetically the same event as a deleted filler run, so no
+/// setting separates them: closing this hole means refusing a polish that opened by
+/// dropping `euh alors donc en fait`. The two captured preambles are six and fifteen
+/// words. Pinned by a test that asserts the miss.
+///
+/// **A model that talks about its own task after the user's text, or in the middle
+/// of it.** It is supported from word 0 and passes. This closes the measured shape,
+/// not the class.
 public enum PolishPrefixAlignment {
 
     /// Where the input's opening reappears in the output.
@@ -176,11 +214,18 @@ public enum PolishPrefixAlignment {
     /// The measurement behind `accepts`, exposed for the harness's scoring command
     /// and for tests — a sweep needs the offset, not the verdict.
     ///
-    /// Takes the input's first `windowWords` words as a reference, slides a window
-    /// of the same size along the output, and returns the **earliest** offset whose
-    /// distinct words cover `overlapFloor` of the reference's. Earliest, because the
-    /// question is where the output *starts* tracking the input; a later, better
-    /// match says nothing about its head.
+    /// Slides a `windowWords` window along the output and returns the **earliest**
+    /// offset at which `supportFloor` of the window is vocabulary the input
+    /// contains. Earliest, because the question is where the output *starts* being
+    /// the user's text; a well-supported stretch further in says nothing about its
+    /// head.
+    ///
+    /// The support set is the whole input rather than its opening. Restricting it to
+    /// the input's first 18, 24 or 30 words was measured and scores identically on
+    /// this corpus, so the narrower rule would be a knob bought with no evidence.
+    /// What it would additionally catch — an output that opens with the user's own
+    /// words taken from the *end* of their dictation — is reordering, which ADR 0003
+    /// forbids but which nothing in the field has produced.
     public static func alignment(ofOutput output: String,
                                  against input: String,
                                  thresholds: PolishPrefixAlignmentThresholds = .default) -> Alignment {
@@ -190,19 +235,15 @@ public enum PolishPrefixAlignment {
               outputWords.count >= thresholds.minimumWords else {
             return .notApplicable
         }
-        // Clamped to the shorter side so a dictation shorter than the window is
-        // compared on all of itself rather than on a window padded with nothing.
-        let window = min(thresholds.windowWords, inputWords.count, outputWords.count)
-        let reference = Set(inputWords.prefix(window))
-        guard !reference.isEmpty else { return .notApplicable }
-        // Rounded up: a floor is a floor. Over a reference of 12 distinct words,
-        // 0.4 asks for 5 of them, not 4.
-        let required = Int((Double(reference.count) * thresholds.overlapFloor).rounded(.up))
+        // Clamped to the output so a dictation shorter than the window is judged on
+        // all of itself rather than on a window padded with nothing.
+        let window = min(thresholds.windowWords, outputWords.count)
+        let spoken = Set(inputWords)
+        // Rounded up: a floor is a floor. Over an 8-word window, 0.70 asks for 6.
+        let required = Int((Double(window) * thresholds.supportFloor).rounded(.up))
         for offset in 0...(outputWords.count - window) {
-            let candidate = Set(outputWords[offset..<(offset + window)])
-            if reference.intersection(candidate).count >= required {
-                return .aligned(offset: offset)
-            }
+            let supported = outputWords[offset..<(offset + window)].count { spoken.contains($0) }
+            if supported >= required { return .aligned(offset: offset) }
         }
         return .unaligned
     }
