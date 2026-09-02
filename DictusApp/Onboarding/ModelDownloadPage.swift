@@ -37,6 +37,15 @@ struct ModelDownloadPage: View {
     /// model manager.
     @State private var preparingModelID: String?
 
+    /// The same #458 gate `ModelManagerView` uses, for the same reactive pair below.
+    ///
+    /// Onboarding cannot overlap a dictation today — `OnboardingView` is a `switch` on
+    /// one page at a time and none of the pages before this one records. It is gated
+    /// anyway because the rule belongs to the screen, not to the flow that happens to
+    /// reach it, and because the comment on `liveActivePrepModel` promises this page
+    /// behaves identically to the model manager.
+    @State private var preparationGate = ModelPreparationGate()
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -152,14 +161,10 @@ struct ModelDownloadPage: View {
             // Whether the model is already downloaded, and whether one is in flight.
             syncWithPreparationState()
             // If the user backgrounded the app mid-prep, surface the overlay again.
-            if preparingModelID == nil, let id = liveActivePrepModel {
-                preparingModelID = id
-            }
+            raisePreparationIfAllowed(liveActivePrepModel)
         }
         .onChange(of: liveActivePrepModel) { _, newValue in
-            if let id = newValue, preparingModelID == nil {
-                preparingModelID = id
-            }
+            raisePreparationIfAllowed(newValue)
         }
         // A download this page did not start can be in flight: a force quit during
         // onboarding leaves a transfer that `ModelManager` picks up on the next launch
@@ -187,6 +192,19 @@ struct ModelDownloadPage: View {
     /// Wrapper so `.fullScreenCover(item:)` works with a plain String identifier.
     private struct PreparingItem: Identifiable {
         let id: String
+    }
+
+    /// Raise the preparation screen for `liveModel`, unless #458's rule refuses it.
+    /// Mirrors `ModelManagerView.raisePreparationIfAllowed`, including reading the
+    /// status at the instant of the decision rather than observing it.
+    private func raisePreparationIfAllowed(_ liveModel: String?) {
+        if let id = preparationGate.modelToPresent(
+            liveModel: liveModel,
+            dictationStatus: DictationCoordinator.shared.status,
+            isPresenting: preparingModelID != nil
+        ) {
+            preparingModelID = id
+        }
     }
 
     /// First identifier currently in a user-facing prep phase. Mirrors the same
