@@ -82,14 +82,38 @@ final class ModelRepoDownloader {
         /// declared its download verified at the one moment it most likely was not.
         let requiredPaths: @Sendable (URL) -> [String]
 
-        /// Parakeet v3 repo. Matches FluidAudio's `Repo.parakeet.remotePath`,
-        /// its file selection, and mirrors `AsrModels.modelsExist` verification.
+        /// Parakeet v3 repo. Matches FluidAudio's `Repo.parakeet.remotePath` and its
+        /// file selection.
+        ///
+        /// Required paths moved to `ParakeetModelRepository` for issue #438, and they
+        /// deliberately stop mirroring `AsrModels.modelsExist`. That function checks
+        /// `fileExists` on the four bundle DIRECTORY names, which this tripwire used to
+        /// copy — and a directory is not a file. The bundles are created here as soon as
+        /// their first small file is published, and because `listRequiredFiles` walks the
+        /// repository breadth first, every bundle's `coremldata.bin` and `model.mil` are
+        /// on disk before any bundle's `weights/`. A transfer stopped inside
+        /// `Encoder.mlmodelc/weights/weight.bin` — 445 MB of the 482 MB payload, so where
+        /// an interruption almost always lands — therefore left four bundle directories
+        /// standing, none of them holding a model, and the tripwire waved them through to
+        /// `AsrModels.load`. FluidAudio's own cache check has the same blind spot, so the
+        /// mirror was faithful and worthless; the leaf list is the deliberate divergence.
+        ///
+        /// The bundle set stays FluidAudio's `ModelNames.ASR.requiredModels` rather than a
+        /// reading of the cache directory (which is what the WhisperKit configuration
+        /// below does): that cache holds one directory per `AsrModelVersion`, shared by
+        /// every model of the version, so what is on disk is not the same question as
+        /// what this download owed.
         static func parakeet() -> Configuration {
             Configuration(
                 repoPath: Repo.parakeet.remotePath,
                 directoryPatterns: ModelNames.ASR.requiredModels.map { "\($0)/" }.sorted(),
                 includesRootMetadata: true,
-                requiredPaths: { _ in ModelNames.ASR.requiredModels + [ModelNames.ASR.vocabularyFile] }
+                requiredPaths: { _ in
+                    ParakeetModelRepository.requiredDownloadPaths(
+                        requiredModelBundles: ModelNames.ASR.requiredModels,
+                        vocabularyFileName: ModelNames.ASR.vocabularyFile
+                    )
+                }
             )
         }
 
@@ -250,14 +274,21 @@ final class ModelRepoDownloader {
             onProgress: onProgress
         )
 
-        // Phase 5: parity tripwire — mirror each engine's own existence check
-        // (AsrModels.modelsExist for Parakeet, the CoreML bundle set for WhisperKit)
-        // so we fail loudly here (with a localized error) instead of silently
-        // handing an incomplete cache to the engine. If the repo layout ever
-        // drifts, this is the signal.
+        // Phase 5: the tripwire — every leaf file a finished download of this engine
+        // owes has to be on disk, so we fail loudly here (with a localized error)
+        // instead of silently handing an incomplete cache to the engine. If the repo
+        // layout ever drifts, this is the signal.
+        //
+        // A directory is not a file, and both engines learned that the hard way
+        // (#433, #438): a required path that names a `.mlmodelc` bundle is satisfied
+        // by the empty shell an interrupted download leaves. Both lists name leaf
+        // files now, and this check refuses a directory whatever they name, so the
+        // hole cannot be reopened from the list alone.
         for requiredPath in configuration.requiredPaths(cacheDir) {
             let path = cacheDir.appendingPathComponent(requiredPath)
-            guard FileManager.default.fileExists(atPath: path.path) else {
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: path.path, isDirectory: &isDirectory)
+            guard exists, !isDirectory.boolValue else {
                 throw DownloadError.missingRequiredFile(requiredPath)
             }
         }
