@@ -36,8 +36,8 @@ public struct AnimatedMicButton: View {
     /// mode instead of merely saying that one exists.
     ///
     /// It never replaces anything the status owns. Recording stays red and the two
-    /// post-recording stages stay in their washed accent, because those describe what
-    /// the phone is doing right now and outrank a setting — a red mic must mean
+    /// post-recording stages stay in the accent, because those describe what the
+    /// phone is doing right now and outrank a setting — a red mic must mean
     /// recording on every screen of this product.
     public let badge: SmartModeBadge?
 
@@ -142,9 +142,9 @@ public struct AnimatedMicButton: View {
     /// The mode's glyph on a white disc, straddling the button's lower-right edge.
     ///
     /// White and not a tint of the button: the disc has to survive every fill the
-    /// status can put behind it — accent blue at rest, red while recording, a washed
-    /// highlight while transcribing — and white is the only value that reads on all
-    /// three without becoming a fourth colour in the product.
+    /// status can put behind it — accent blue at rest and while transcribing, red
+    /// while recording — and white is the only value that reads on both without
+    /// becoming a third colour in the product.
     ///
     /// It straddles the edge rather than sitting inside it so the silhouette itself
     /// changes. That is the whole point of the badge: the signal has to survive being
@@ -258,12 +258,30 @@ public struct AnimatedMicButton: View {
 
     // MARK: - Helpers
 
+    /// WHY the two post-recording stages are not washed any more (#396):
+    /// they used to fill with `.dictusAccentHighlight.opacity(0.5)`, which on a
+    /// light iOS keyboard composited to 1.51:1 against the glass ring around it
+    /// and put its white glyph at 1.63:1 — measured, not estimated, on an
+    /// iPhone 17 screenshot. That is the state the user looks at for the longest
+    /// wait in the product, and it is the state a frustrated user taps while
+    /// `isTappable` is false. The one moment the button most needs to say
+    /// "something is happening" is the moment it faded out.
+    ///
+    /// The wash is not what named the state — the shimmer sweep is, and it reads
+    /// *better* on the opaque fill (1.53:1 peak against it, versus 1.16:1 before,
+    /// on a light keyboard). Opaque accent takes the shape to 3.46:1 and the glyph
+    /// to 3.73:1, which is exactly where idle and recording already sit. So this
+    /// is not a new colour on the pill; it is the accent the pill already wears,
+    /// stopped from being diluted in the one state that diluted it.
     private var buttonFillColor: Color {
         switch status {
         case .recording:
             return .dictusRecording
         case .transcribing, .processing:
-            return .dictusAccentHighlight.opacity(0.5)
+            // Same value as `default` on purpose, and spelled out rather than
+            // folded into it: the next reader has to see that these two stages
+            // were considered and deliberately left un-washed.
+            return .dictusAccent
         default:
             return .dictusAccent
         }
@@ -357,5 +375,19 @@ public struct AnimatedMicButton: View {
     }
     .padding()
     .background(Color(hex: 0x0A1628))
+}
+
+/// The host #396 was reported against: a light iOS keyboard, whose toolbar backdrop
+/// measures #D2D2D8 on an iPhone 17 running iOS 26.5. The dark previews above cannot
+/// show the problem — it never existed there. Put the three states side by side here
+/// and the transcribing pill has to hold its edges against the two that already did.
+#Preview("Pill on a light keyboard") {
+    VStack(spacing: 40) {
+        AnimatedMicButton(status: .idle, isPill: true) {}
+        AnimatedMicButton(status: .transcribing, isPill: true) {}
+        AnimatedMicButton(status: .recording, isPill: true) {}
+    }
+    .padding()
+    .background(Color(hex: 0xD2D2D8))
 }
 #endif
