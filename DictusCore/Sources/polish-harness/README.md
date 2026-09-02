@@ -99,22 +99,24 @@ are written to put pressure on their mode — a field dictation that failed on
 device, rambles with no structure, input already partly in the target language,
 and input in a language outside the four.
 
-## Guardrail corpora (#413, #414)
+## Guardrail corpora (#413, #414, #466)
 
-`guardrail` scores the two output-inspection checks — the per-segment language
-check and the grounding check — against corpora of **hand-labelled outputs**,
-not fixtures of raw inputs. It drives **no model**, because both checks are
-deterministic local `NaturalLanguage` calls. That is the point: unlike every
-other command here, this measurement is re-runnable by anyone, with or without
-Apple Intelligence, so the numbers behind two shipped thresholds are
-reproducible rather than a claim.
+`guardrail` scores the three output-inspection checks — the per-segment language
+check, the grounding check and the prefix-alignment check — against corpora of
+**hand-labelled outputs**, not fixtures of raw inputs. It drives **no model**:
+two of the three are deterministic local `NaturalLanguage` calls and the third
+is a word-set comparison. That is the point: unlike every other command here,
+this measurement is re-runnable by anyone, with or without Apple Intelligence,
+so the numbers behind the shipped thresholds are reproducible rather than a
+claim.
 
 ```sh
 # The confusion matrix at the shipping thresholds.
 swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json \
-                                   ../docs/research/413-414-guardrail/adversarial.json
+                                   ../docs/research/413-414-guardrail/adversarial.json \
+                                   ../docs/research/413-414-guardrail/freepolish.json
 
-# --sweep    the threshold grid the #413 numbers were read off
+# --sweep    the threshold grids the #413 and #466 numbers were read off
 # --segments every segment with its language reading and confidence
 # --anchors  every name found per output, flagged when absent from the input
 ```
@@ -122,10 +124,21 @@ swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.jso
 Corpora live in `docs/research/413-414-guardrail/`: `corpus.json` is every
 output the #393 campaign committed, `adversarial.json` the cases it does not
 contain — a French list quoting English product names, a German list (where
-every noun is capitalised), bullets too short to read, bare proper nouns, and
-hand-built fabrications. Labels are in the JSON rather than in code because
-they are judgements, and a judgement that decides a threshold has to be
-disagreeable with in the open.
+every noun is capitalised), bullets too short to read, bare proper nouns,
+hand-built fabrications, and since #466 the two device captures of Apple FM
+writing about its own task. `freepolish.json` (#466) is the campaign's
+free-polish rounds harvested verbatim from `raw/`, because the prefix check runs
+**only** on the free polish and the other two files hold 14 such outputs between
+them. Labels are in the JSON rather than in code because they are judgements,
+and a judgement that decides a threshold has to be disagreeable with in the
+open.
+
+The prefix check is scored with `natural + auto` and `repair` split apart rather
+than totalled. Repair is selected exactly when the detected language differs
+from the target, so its output shares no vocabulary with its input and the check
+refuses all of it — 10 of 10, at every pair swept. That is why the mode's
+contract turns the check off, and the split is what keeps the fact visible
+instead of averaged away.
 
 ## Fixtures
 

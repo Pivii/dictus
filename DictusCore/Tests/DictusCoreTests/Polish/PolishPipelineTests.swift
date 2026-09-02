@@ -484,19 +484,68 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(PolishPipeline.resolvedOutput(result, preprocessed: raw, job: job), raw)
     }
 
-    /// #349's capture, absorbed into #466 and refused by the same code path. Its
-    /// mode is `repair`, whose wider `[0.3, 3.0]` band is what let the ratio through
-    /// at 2.93 on device.
-    func testTheCapturedRefusalIsRejectedInRepairByTheSameCheck() async {
+    /// #349's capture on the Natural path, where the prefix check does run — and
+    /// where the **length band gets there first**: 161 characters against 55 is a
+    /// ratio of 2.93 against a ceiling of 2.0.
+    ///
+    /// Worth pinning because it is the sharpest fact about #349 that this PR
+    /// established. The prefix check refuses that string on its own terms
+    /// (`PolishPrefixAlignmentTests.testCapturedRefusalIsRejectedByTheSameCheck`),
+    /// but the only mode whose band was wide enough to let it through in the first
+    /// place is `repair` — and repair is the one mode the check cannot run on.
+    func testTheCapturedRefusalIsRefusedOnTheNaturalPathByTheLengthBand() async {
+        let result = await PolishPipeline.transform(
+            preprocessed: PolishPrefixAlignmentTests.refusalRaw,
+            engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.refusalPolished),
+            job: PolishJob(task: .natural, promptLanguage: .french, languageAgnosticPath: false)
+        )
+        XCTAssertEqual(result.outcome, .rejectedGuardrail)
+        XCTAssertEqual(result.rejectedCheck, .length)
+    }
+
+    /// **And it is NOT refused in `repair`, which is the mode it was captured in.**
+    ///
+    /// An uncomfortable test, kept for that reason. `PolishPipeline.mode` selects
+    /// repair exactly when the detected language differs from the target, so every
+    /// repair output is a cross-lingual reconstruction sharing no vocabulary with
+    /// its input — indistinguishable, to any lexical measure, from a refusal.
+    /// Measured: 10 of 10 legitimate repair outputs in the corpus are refused by the
+    /// check, at every threshold pair swept
+    /// (`docs/research/466-preamble-guardrail.md` §6.3). So repair's contract
+    /// answers `requiresAlignedPrefix: false` and **#349 does not close on this
+    /// mode.** If someone flips that field, this test is what tells them the price.
+    func testTheCapturedRefusalStillReachesTheUserInRepair() async {
         let raw = PolishPrefixAlignmentTests.refusalRaw
-        let job = PolishJob(task: .repair, promptLanguage: .french, languageAgnosticPath: false)
         let result = await PolishPipeline.transform(
             preprocessed: raw,
             engine: FixedOutputEngine(output: PolishPrefixAlignmentTests.refusalPolished),
-            job: job
+            job: PolishJob(task: .repair, promptLanguage: .french, languageAgnosticPath: false)
         )
-        XCTAssertEqual(result.outcome, .rejectedGuardrail)
-        XCTAssertEqual(result.rejectedCheck, .prefixAlignment)
+        XCTAssertEqual(result.outcome, .success)
+        XCTAssertNil(result.rejectedCheck)
+    }
+
+    /// The other half of the same decision: a legitimate cross-lingual repair — a
+    /// French dictation reconstructed into Spanish, verbatim from
+    /// `docs/research/413-414-guardrail/raw/r3-freepolish-seed-5runs-after.txt` —
+    /// reaches the user untouched. It is what flipping the field would cost.
+    func testALegitimateCrossLingualRepairIsNotRefused() async {
+        let raw = "Salut, ça va ? J'espère que tu as passé un bon week-end. Moi de mon côté "
+            + "c'était tranquille, j'ai bossé sur le projet et franchement ça avance bien. "
+            + "On devrait être dans les temps."
+        let spanish = "Saludos, ¿cómo estás? Espero que hayas pasado un buen fin de semana. Yo, "
+            + "por mi parte, fue tranquilo, trabajé en el proyecto y, sinceramente, está "
+            + "avanzando bien. Creo que deberíamos estar en los plazos."
+        XCTAssertFalse(
+            PolishPrefixAlignment.accepts(polished: spanish, raw: raw),
+            "precondition: the check WOULD refuse this repair if it ran"
+        )
+        let result = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: spanish),
+            job: PolishJob(task: .repair, promptLanguage: .spanish, languageAgnosticPath: false)
+        )
+        XCTAssertEqual(result.outcome, .success)
     }
 
     /// The same preamble on the auto path (#239), which carries the same contract.

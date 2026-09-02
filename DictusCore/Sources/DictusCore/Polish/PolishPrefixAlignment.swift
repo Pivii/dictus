@@ -106,18 +106,35 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 ///
 /// ### Where this must NOT run
 ///
-/// Only where the transformation preserves order, which the task's contract answers
-/// with `PolishAcceptanceContract.preservesOrder`: Natural, Auto and Repair. It is
-/// inert for the Smart Modes — List restructures the dictation into bullets and
-/// Translate keeps none of its words, so "the output opens where the input opens" is
-/// not true of either by design.
+/// Only where the output is expected to reuse the input's own words in the input's
+/// own order, which the task's contract answers with
+/// `PolishAcceptanceContract.requiresAlignedPrefix`: **Natural and Auto**. Three
+/// tasks answer no, and the third was a measurement rather than a judgement:
 ///
-/// **The accepted hole, stated on purpose:** a chat preamble inside a List or a
-/// Translate output is therefore invisible here. It is seen only by
-/// `PolishGrounding`, and only if it invents a named entity — which a preamble
-/// about the act of polishing does not. #349's capture was recorded in `repair`,
-/// which is covered; nothing covers the modes. That is a known cost of running the
-/// check only where it is sound, taken deliberately in #466's scope decision.
+/// - **List restructures.** It condenses a rambling dictation into bullets that
+///   synthesise, so the first bullet need not come from the first sentence.
+/// - **Translation keeps no word of the input**, so there is nothing to align
+///   anywhere, let alone at the head.
+/// - **Repair reconstructs in a different language.** `PolishPipeline.mode` selects
+///   it precisely when the detected language differs from the target, so a repair
+///   output is a translation in all but name and shares no vocabulary with its
+///   input. #466's scope section put repair in scope; the corpus said otherwise —
+///   **10 of 10 legitimate repair outputs are refused, at every threshold pair in
+///   the sweep.** See `docs/research/466-preamble-guardrail.md` §6.3.
+///
+/// ### Two accepted holes, stated on purpose
+///
+/// **A preamble inside a List or a Translate output is invisible here.** It is seen
+/// only by `PolishGrounding`, and only if it invents a named entity — which a
+/// preamble about the act of polishing does not.
+///
+/// **And so is one inside a Repair output**, which is where #349's own capture was
+/// recorded. The same string IS refused when it arrives on the Natural or Auto path,
+/// and repair is the mode where nothing can look at it: no lexical measure separates
+/// a refusal from a legitimate cross-lingual reconstruction, because both share
+/// nothing with the input by construction. #349 therefore does not close on the
+/// strength of this type alone, and that is written here rather than discovered
+/// later.
 ///
 /// ### What it does not catch, stated plainly
 ///

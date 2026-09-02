@@ -208,18 +208,20 @@ final class PolishGuardrailTests: XCTestCase {
     /// by a build that predates the field decodes to the safe half — off, so one
     /// dictation across one upgrade behaves exactly as it does today rather than
     /// meeting a brand-new rejection nobody measured.
-    func testPreservesOrderIsAnsweredPerTaskAndDefaultsOffWhenAbsent() throws {
-        XCTAssertTrue(PolishAcceptanceContract.natural.preservesOrder)
-        XCTAssertTrue(PolishAcceptanceContract.auto.preservesOrder)
-        XCTAssertTrue(PolishAcceptanceContract.repair.preservesOrder)
-        XCTAssertFalse(SmartModeCatalogue.notes.contract.preservesOrder)
-        XCTAssertFalse(SmartModeCatalogue.translate(to: .english).contract.preservesOrder)
+    func testRequiresAlignedPrefixIsAnsweredPerTaskAndDefaultsOffWhenAbsent() throws {
+        XCTAssertTrue(PolishAcceptanceContract.natural.requiresAlignedPrefix)
+        XCTAssertTrue(PolishAcceptanceContract.auto.requiresAlignedPrefix)
+        // Repair reconstructs in another language, so its output shares no
+        // vocabulary with its input. Measured at 10/10 false rejections.
+        XCTAssertFalse(PolishAcceptanceContract.repair.requiresAlignedPrefix)
+        XCTAssertFalse(SmartModeCatalogue.notes.contract.requiresAlignedPrefix)
+        XCTAssertFalse(SmartModeCatalogue.translate(to: .english).contract.requiresAlignedPrefix)
 
         let legacy = Data("""
         {"minimumLengthRatio":0.5,"maximumLengthRatio":2.0,"outputLanguage":"polishTarget"}
         """.utf8)
         let decoded = try JSONDecoder().decode(PolishAcceptanceContract.self, from: legacy)
-        XCTAssertFalse(decoded.preservesOrder)
+        XCTAssertFalse(decoded.requiresAlignedPrefix)
         XCTAssertFalse(decoded.requiresGroundedNames)
     }
 

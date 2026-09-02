@@ -85,7 +85,7 @@ public enum SmartModeCatalogue {
             // dictation into bullets that synthesise, so the first bullet need not
             // come from the first sentence and the prefix check (#466) would be
             // measuring something the mode is licensed to break.
-            preservesOrder: false
+            requiresAlignedPrefix: false
         ),
         // The mode built for a long rambling dictation is the one that walks users
         // into the context ceiling, so a refusal there costs the whole text. The
@@ -129,7 +129,7 @@ public enum SmartModeCatalogue {
                 // Same reason, sharper: a translation keeps none of the input's
                 // words, so there is no lexical overlap to find at the head or
                 // anywhere else (#466).
-                preservesOrder: false
+                requiresAlignedPrefix: false
             ),
             // Translation cannot degrade: the floor is the input language, which is
             // the one thing this mode exists to change. Inserting it would be the

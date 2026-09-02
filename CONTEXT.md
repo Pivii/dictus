@@ -59,7 +59,16 @@ The polish prompt variant applied when raw STT output is in a different language
 Static, maintainer-curated list of ~20-30 domain terms (`Dictus`, `WhisperKit`, `Parakeet v3`, `GitHub`, `TestFlight`, `iOS`, …) injected into every polish prompt as context. Biases the LLM toward correct spellings of terms STT commonly massacres. Language-agnostic. Lives in `DictusCore/Polish/PolishGlossary.swift`. **Distinct from `LanguageProfile.overrides`** (keyboard autocorrect, offline trie) and from custom vocabulary (#80, premium, user-managed). Evolves by PR as failures appear in test logs.
 
 ### Polish guardrail
-Runtime sanity check applied to every polish output. Rejects the polished string and writes the raw text instead when the polished/raw character-length ratio falls outside `[0.5, 2.0]` in Light mode or `[0.3, 3.0]` in Repair mode. Logged as `outcome = rejected_guardrail`. Minimal by design — catches catastrophic divergence (empty output, runaway generation) but does not attempt content-word fidelity validation. Lives in `DictusCore/Polish/PolishGuardrail.swift`.
+Runtime sanity check applied to every polish output. Rejects the polished string and writes the deterministic floor instead — the user's own words, never the polish. **Four checks**, all recorded under `outcome = rejectedGuardrail` and told apart by the `guardrailCheck` field on the event (#466):
+
+1. **length** — the polished/raw character ratio against the band the task's `PolishAcceptanceContract` carries (`[0.5, 2.0]` for Natural and Auto, `[0.3, 3.0]` for Repair, per mode for a Smart Mode). Catches catastrophic divergence only: empty output, runaway generation.
+2. **language** — the output reads as the language it is required to, whole and **per segment** since #413. Catches Apple FM answering in the wrong language, and a list that drifts one bullet at a time.
+3. **grounding** — every person, place and organisation the output names appears in the input (#414). `PolishGrounding`.
+4. **prefixAlignment** — the output *opens* where the input opens (#466). Catches the chat reply that arrives in the *right* language, which check 2 cannot see: a preamble ("Bien sûr, voici la version polie :") or a refusal ("Je suis désolé, je ne peux pas…"). `PolishPrefixAlignment`.
+
+Which checks run is the task's answer, not a global rule: `requiresGroundedNames` and `requiresAlignedPrefix` are fields on `PolishAcceptanceContract` so a custom mode (#269) has to answer rather than inherit. Checks 3 and 4 are both off for Repair and Translate, for the same reason — those transformations do not reuse the input's words.
+
+Lives in `DictusCore/Polish/PolishGuardrail.swift` and the two types beside it.
 
 ### Polish engine
 A polish backend conforming to `PolishEngineProtocol` (in DictusCore). One implementation at round 1: `AppleFoundationModelsPolishEngine` (in DictusApp, requires iOS 26+ with Apple Intelligence enabled and A17 Pro / M-series hardware). Round 2 will evaluate an OSS fallback backend (llama.cpp via LocalLLMClient, MLX, or Core ML) for devices without Apple Foundation Models; the decision is data-driven based on round 1 measurements.

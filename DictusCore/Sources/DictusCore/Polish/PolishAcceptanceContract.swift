@@ -128,22 +128,25 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// someone had to write down.
     public let requiresGroundedNames: Bool
 
-    /// Whether this transformation is required to keep the input's order, so that
-    /// the output has to *open* where the input opens (#466).
+    /// Whether the output has to *open* where the input opens (#466).
     ///
     /// ### Why a mode has to answer this
     ///
-    /// The prefix-alignment check is only sound where the output follows the input's
-    /// sequence. It is not for either Smart Mode this build ships:
+    /// The prefix-alignment check is only sound where the output reuses the input's
+    /// own words, in the input's own order. Three tasks answer `false`:
     ///
     /// - **List restructures.** It condenses a rambling dictation into bullets that
     ///   synthesise, so the first bullet need not come from the first sentence.
     /// - **Translation keeps no word of the input.** There is no lexical overlap to
     ///   look for anywhere, let alone at the head.
+    /// - **Repair reconstructs in another language** (ADR 0002).
+    ///   `PolishPipeline.mode` selects it exactly when the detected language differs
+    ///   from the target, so its output shares no vocabulary with its input by
+    ///   construction. #466's scope put repair in scope and the corpus overruled it:
+    ///   **10 of 10 legitimate repair outputs refused, at every pair in the sweep.**
     ///
-    /// ADR 0003 puts reordering on Natural's forbidden list, `.auto` carries the
-    /// same light-corrections-only contract, and `.repair` substitutes words within
-    /// the sequence rather than moving them — so all three answer `true`.
+    /// ADR 0003 puts reordering on Natural's forbidden list and `.auto` carries the
+    /// same light-corrections-only contract, so those two answer `true`.
     ///
     /// ### Why a field rather than a derivation
     ///
@@ -152,18 +155,18 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// for an unrelated reason — and the property that would carry the derivation
     /// today, `outputLanguage`, gets List wrong: it says `.sameAsInput`, which is
     /// true and has nothing to do with order.
-    public let preservesOrder: Bool
+    public let requiresAlignedPrefix: Bool
 
     public init(minimumLengthRatio: Double,
                 maximumLengthRatio: Double,
                 outputLanguage: PolishOutputLanguage,
                 requiresGroundedNames: Bool,
-                preservesOrder: Bool) {
+                requiresAlignedPrefix: Bool) {
         self.minimumLengthRatio = minimumLengthRatio
         self.maximumLengthRatio = maximumLengthRatio
         self.outputLanguage = outputLanguage
         self.requiresGroundedNames = requiresGroundedNames
-        self.preservesOrder = preservesOrder
+        self.requiresAlignedPrefix = requiresAlignedPrefix
     }
 
     // MARK: - Decoding
@@ -188,8 +191,8 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
         self.requiresGroundedNames = try container.decodeIfPresent(
             Bool.self, forKey: .requiresGroundedNames
         ) ?? false
-        self.preservesOrder = try container.decodeIfPresent(
-            Bool.self, forKey: .preservesOrder
+        self.requiresAlignedPrefix = try container.decodeIfPresent(
+            Bool.self, forKey: .requiresAlignedPrefix
         ) ?? false
     }
 
@@ -211,7 +214,7 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// keeps their words and loses only the polish.
     public static let natural = PolishAcceptanceContract(
         minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
-        outputLanguage: .polishTarget, requiresGroundedNames: true, preservesOrder: true
+        outputLanguage: .polishTarget, requiresGroundedNames: true, requiresAlignedPrefix: true
     )
 
     /// Repair. Wider on both sides because reconstructing intent legitimately
@@ -224,9 +227,17 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// under this mode, and closing it needs the *other* query over
     /// `PolishGrounding` — how much of the output's vocabulary appears in the input
     /// at all — not this one.
+    ///
+    /// #466 wrote that query as `PolishPrefixAlignment` and measured it here too.
+    /// The answer is that repair cannot have it either, for the same reason and
+    /// harder: this mode is *selected* when the detected language differs from the
+    /// target, so every repair output is a cross-lingual reconstruction that shares
+    /// no vocabulary with its input. 10 of 10 legitimate repair outputs in the
+    /// corpus are refused by that check, at every threshold pair swept. **#349's
+    /// capture is a repair event, so #349 does not close on this mode.**
     public static let repair = PolishAcceptanceContract(
         minimumLengthRatio: 0.3, maximumLengthRatio: 3.0,
-        outputLanguage: .polishTarget, requiresGroundedNames: false, preservesOrder: true
+        outputLanguage: .polishTarget, requiresGroundedNames: false, requiresAlignedPrefix: false
     )
 
     /// Auto-detect polish (#239): the Natural band, and the never-translate check
@@ -234,6 +245,6 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// for the same reason — the auto prompt is light-corrections-only.
     public static let auto = PolishAcceptanceContract(
         minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
-        outputLanguage: .sameAsInput, requiresGroundedNames: true, preservesOrder: true
+        outputLanguage: .sameAsInput, requiresGroundedNames: true, requiresAlignedPrefix: true
     )
 }

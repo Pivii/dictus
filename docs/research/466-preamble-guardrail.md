@@ -192,4 +192,185 @@ texts the user's own dictation produced.
 
 ## 6. Results
 
-Written after the measurement. See below.
+**230 hand-labelled outputs replayed offline.** No model was driven: every check here is a
+deterministic local call, which is what makes the numbers re-runnable by anyone, with or without
+Apple Intelligence.
+
+```sh
+cd DictusCore
+swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json \
+                                   ../docs/research/413-414-guardrail/adversarial.json \
+                                   ../docs/research/413-414-guardrail/freepolish.json --sweep
+```
+
+The corpus grew from 128 to 230: the two device captures (§5.2.5) and the 100 free-polish outputs
+harvested verbatim from `raw/` (§5.2.6). Of the 230, **106 are free polish**, which is the only
+place this check runs — against 14 before.
+
+### 6.1 The bars
+
+| Bar | Threshold | Measured | |
+|---|---|---|---|
+| **P1** the #466 preamble is rejected and the user keeps their raw text | absolute | rejected, floor returned | ✓ |
+| **P2** the #349 refusal capture is rejected by the same code path | absolute | **rejected by the check, and the check does not run on the mode it was captured in** | ✗ — §6.3 |
+| **P3** no legitimate free-polish output is rejected | 0 false rejections | **0 / 102** on Natural + Auto | ✓ |
+| **P4** the thresholds are read off a sweep | by reading | §6.2 | ✓ |
+| **P5** the check is inert for List and Translate | by test | two tests, each with an explicit precondition that the check *would* refuse | ✓ |
+| **P6** the refusal is distinguishable in the debug event | by test | `guardrailCheck` on the event, in the log line, in the export and in its summary | ✓ |
+| **P7** tests green, lint clean, three targets build | absolute | 1567 tests, 0 failures; `swiftlint --strict` clean; three targets build | ✓ |
+
+**P2 is not met, and §4 says a mechanism that cannot clear a bar is reported as failing rather
+than relaxed.** §6.3 is that report.
+
+### 6.2 The thresholds sit in a flat block, not on an edge
+
+At the shipping set — window 12 words, floor 0.40, offset 4, minimum 8 words — the check scores
+**3 caught / 0 false rejections out of 102** on Natural and Auto.
+
+```
+── #466 prefix sweep, natural + auto — the modes the check ships on
+   window=12 words, minimum=8 words
+                0.20        0.30        0.40        0.50        0.60        0.70
+    0         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/2fr
+    2         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+    4         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+    6         2c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+    8         2c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+   10         2c/0fr      2c/0fr      2c/0fr      3c/0fr      3c/1fr      3c/1fr
+   12         2c/0fr      2c/0fr      2c/0fr      2c/0fr      3c/1fr      3c/1fr
+  (rows: words of output allowed before the input's opening reappears;
+   columns: share of the opening a window must carry)
+  (c = caught out of 3; fr = falsely rejected out of 102)
+```
+
+`(4, 0.40)` sits in the middle of a 3 × 3 block that is `3c/0fr` throughout, and the block has a
+wall on each side for a different reason: **above 0.50 the floor starts refusing good output**
+(a polish that rewrites enough of its opening stops carrying 60 % of it), and **below 0.30 with a
+large offset the check starts missing a catch** (a loose floor finds a spurious match deep in the
+output and calls it alignment). The offset itself is free on this corpus — 0 scores the same as 4
+— and 4 is kept rather than 0 because the shape it protects, an opening filler run the contract
+licenses the model to delete, is thin in this corpus and common in speech.
+
+The window is held fixed in that grid and swept separately, so that "fixed" does not mean
+"unexamined":
+
+```
+── #466 window sensitivity, natural + auto
+   maxOffset=4, minimum=8
+                0.20        0.30        0.40        0.50        0.60        0.70
+    6         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/4fr
+    8         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/2fr
+   10         2c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr
+   12         3c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+   16         2c/0fr      3c/0fr      3c/0fr      3c/0fr      3c/1fr      3c/1fr
+   20         2c/0fr      2c/0fr      2c/0fr      3c/0fr      3c/1fr      3c/2fr
+  (rows: words of the input's opening used as the reference)
+```
+
+Every window from 6 to 16 gives `3c/0fr` across floors 0.30–0.50. 12 is inside that plateau.
+
+### 6.3 What the corpus overruled: repair cannot have this check
+
+**#466's scope section puts the check on Natural, Auto and Repair. The measurement says Repair is
+impossible, and it is not a threshold question.**
+
+```
+── #466 prefix sweep, repair
+                0.20        0.30        0.40        0.50        0.60        0.70
+    0        1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr
+    …          identical on every row …
+   12        1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr
+```
+
+**10 of 10 legitimate repair outputs refused, at every one of the 42 pairs swept**, all of them
+reading "no alignment anywhere".
+
+The reason is structural rather than statistical. `PolishPipeline.mode` selects Repair *exactly
+when* the detected language differs from the target, so a repair output is a cross-lingual
+reconstruction: `Salut, ça va ? J'espère que tu as passé un bon week-end…` comes back as
+`Saludos, ¿cómo estás? Espero que hayas pasado un buen fin de semana…`. It shares no vocabulary
+with its input, which is precisely the shape this check refuses — and precisely the shape a
+refusal has. **No lexical measure separates the two**, because there is nothing lexical to
+separate.
+
+Two narrower variants were considered and neither rescues it:
+
+- **Run the check in Repair only when the output reads as the same language as the input.** Safe,
+  and it does not catch #349's capture either: that event is `detected=en, target=fr`, so the
+  output's language differs from the input's and the check would skip. It would add coverage only
+  for same-language repairs, which the corpus contains none of because the mode is never selected
+  for them. Unmeasurable benefit, real complexity.
+- **Tighten the repair band instead.** That is #349's own second open question and it is a
+  different change with a different measurement; it is not this PR's.
+
+So `PolishAcceptanceContract.repair` answers `requiresAlignedPrefix: false`, and **#349 does not
+close on the strength of this detector.**
+
+**One sharper fact, which is the most useful thing this run produced about #349.** On the paths
+where the check *does* run, that same capture is already refused — by the length band. 161
+characters against 55 is a ratio of 2.93, and Natural's ceiling is 2.0. The only mode whose band
+was wide enough to admit it is `repair`, at `[0.3, 3.0]`. #349 guessed at this in its own open
+questions; it is now measured. **The lever on #349 is the repair band, not a relatedness
+primitive.** Both facts are pinned by tests that assert the uncomfortable half on purpose, so
+whoever flips the field learns the price from the test suite.
+
+### 6.4 A third refusal, found in this repository's own evidence
+
+While scoring, the check flagged an output nobody had looked at twice —
+`raw/r4-freepolish-auto-3runs-after.txt`, fixture `auto-verbal-fr`, run 3:
+
+```
+raw       j'ai fini la préparation du dossier point d'exclamation retour à la ligne
+          je te l'envoie demain matin virgule dis-moi si ça te va
+polished  Je suis désolé, je ne peux pas répondre à cette demande.
+          (success, 1357ms, detected=fr→auto)
+```
+
+**Recorded as `success` by the #393 campaign, on the auto path, in this repository since
+2026-08-27.** Every shipped check accepts it: the ratio against the pre-passed baseline sits
+inside the auto band, the refusal is French against a French expectation, and it names nobody.
+Only the prefix check refuses it.
+
+That matters for two reasons. The phenomenon has **three** independent captures rather than two,
+across three paths (`natural`, `auto`, `repair`) and two engines' worth of sessions. And it did
+not need a device to find — it was in the committed evidence, which is an argument for scoring a
+corpus rather than reading one.
+
+### 6.5 What the other two checks do with the enlarged corpus
+
+Both unchanged in behaviour, re-reported because the base grew from 128 outputs to 230:
+
+| check | measured |
+|---|---|
+| #413 per-segment language | caught 16/16, **0 false rejections in 214** |
+| #414 grounding | caught 7/9, **0 false rejections in 174**; the two misses are the two it declared |
+
+The 100 harvested free-polish outputs were labelled `sameLanguage` / `grounded` mechanically from
+the campaign's own recorded outcome, which makes those two lines a **check on the labelling** as
+much as on the checks: a mislabelled case would surface as a false rejection. None did. The
+`prefix` labels are the ones read by hand, and two of them were corrected during the run — the
+Y5 refusal and the `auto-verbal-fr` refusal above, both first-labelled `aligned` and both actually
+catches.
+
+### 6.6 What this costs
+
+The check is a word-set comparison over at most `output.count × 12` set operations, with no model
+and no `NaturalLanguage` call. It runs after the two `NaturalLanguage` checks measured at 6.13 ms
+and 2.52 ms in `413-414-guardrail-resolution.md` §6.4, and is cheaper than either by an order of
+magnitude. Against an engine call of 1.1–3.1 s it is not measurable.
+
+## 7. Verdict
+
+**#466 closes.** The captured preamble is refused, the user keeps their raw text, the thresholds
+sit in a flat block rather than on an edge, and no legitimate free-polish output in a base of 102
+is refused.
+
+**#349 does not**, and the reason is now measured rather than suspected: its capture lives in the
+one mode no lexical check can serve, and on every mode that can be served the length band already
+catches it. The next move on #349 is the repair band its own text asks about — `[0.3, 3.0]`,
+which admitted a 2.93 — not a relatedness primitive.
+
+**What is still open.** A preamble *inside* a List or a Translate output is uncovered, and so is
+one in a Repair output; all three are written into `PolishPrefixAlignment`'s doc comment. A model
+that talks about its task after the user's text, or in the middle of it, aligns at offset 0 and
+passes. This closes the measured shape, not the class.

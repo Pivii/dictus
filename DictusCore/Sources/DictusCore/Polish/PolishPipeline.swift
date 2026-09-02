@@ -228,7 +228,7 @@ public enum PolishPipeline {
     /// input opens.
     ///
     /// Runs only where the task's contract says the transformation preserves order —
-    /// see `PolishAcceptanceContract.preservesOrder`, a field for the same reason
+    /// see `PolishAcceptanceContract.requiresAlignedPrefix`, a field for the same reason
     /// `requiresGroundedNames` is one. List restructures and Translate keeps no word
     /// of the input, so neither has an opening to compare; the hole that leaves is
     /// written down on `PolishPrefixAlignment`.
@@ -238,7 +238,7 @@ public enum PolishPipeline {
     private static func prefixGuardrailPasses(polished: String,
                                               preprocessed: String,
                                               job: PolishJob) -> Bool {
-        guard job.task.contract.preservesOrder else { return true }
+        guard job.task.contract.requiresAlignedPrefix else { return true }
         return PolishPrefixAlignment.accepts(polished: polished, raw: preprocessed)
     }
 

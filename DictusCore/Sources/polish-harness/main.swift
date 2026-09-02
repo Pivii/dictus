@@ -131,7 +131,7 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "t
     --mode-a / --mode-b arm one side each; a side with no mode is the free polish,
     so `ab --mode-b notes` is the mode against free polish.
 
-    guardrail (#413, #414) scores the two output-inspection checks against
+    guardrail (#413, #414, #466) scores the three output-inspection checks against
     committed, hand-labelled outputs. It drives NO model and needs no Apple
     Intelligence, so the measurement behind their thresholds is re-runnable by
     anyone. Corpora live in docs/research/413-414-guardrail/.
@@ -573,7 +573,10 @@ func runGuardrail() {
     let cases = GuardrailCorpus.load(paths)
     print("corpus: \(cases.count) outputs from \(Set(cases.map(\.source)).count) sources")
     if args.contains("--segments") { GuardrailCorpus.segmentTable(cases) }
-    if args.contains("--sweep") { GuardrailCorpus.sweep(cases) }
+    if args.contains("--sweep") {
+        GuardrailCorpus.sweep(cases)
+        GuardrailCorpus.sweepPrefix(cases)
+    }
     if args.contains("--anchors") { GuardrailCorpus.anchorTable(cases) }
 
     let thresholds = PolishLanguageSegmentThresholds.default
@@ -583,8 +586,24 @@ func runGuardrail() {
     GuardrailCorpus.report(language)
 
     let grounding = GuardrailCorpus.scoreGrounding(cases)
-    print("\n── #414 grounding check (translation cases skipped: the check is unsound there)")
+    print("\n── #414 grounding check (translation and repair skipped: the check is unsound there)")
     GuardrailCorpus.report(grounding)
+
+    // Split rather than totalled (#466). Repair's output legitimately shares no
+    // vocabulary with its input — it reconstructs intent in another language — so
+    // folding it into one number would hide the one shape this check cannot read.
+    let prefixDefaults = PolishPrefixAlignmentThresholds.default
+    print("\n── #466 prefix-alignment check, shipping thresholds "
+          + "(window=\(prefixDefaults.windowWords), floor=\(prefixDefaults.overlapFloor), "
+          + "maxOffset=\(prefixDefaults.maximumOffsetWords), minimum=\(prefixDefaults.minimumWords))")
+    print("   natural + auto — the modes it ships on:")
+    GuardrailCorpus.report(GuardrailCorpus.scorePrefix(cases, thresholds: prefixDefaults) {
+        $0.polishMode != "repair"
+    })
+    print("   repair — measured, not shipped on:")
+    GuardrailCorpus.report(GuardrailCorpus.scorePrefix(cases, thresholds: prefixDefaults) {
+        $0.polishMode == "repair"
+    })
 }
 
 // #456. Scores the polish target election against committed raw transcripts. No
