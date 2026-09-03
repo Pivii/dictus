@@ -153,6 +153,16 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 /// **A model that talks about its own task after the user's text, or in the middle
 /// of it.** The opening line is the speaker's, so it passes. This closes the
 /// measured shape, not the class.
+///
+/// ### Scripts that write no word separators are covered, and were not
+///
+/// Chinese, Japanese and Thai reached this check as a single token, because
+/// splitting on "not a letter or a digit" finds no boundary in them — so the
+/// word-count floor was never met and every output was accepted. Found by CodeRabbit
+/// reviewing PR #478 and measured at `caught 0/1` on an authentic Chinese preamble.
+/// `PolishLexicon` now refines a run the split could not break, and the fixture is
+/// committed as `P4-preamble-zh`. Auto mode (#239) is the language-agnostic route
+/// and real users reach it (#409).
 public enum PolishPrefixAlignment {
 
     /// What the output looks like against its input.

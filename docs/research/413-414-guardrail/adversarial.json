@@ -317,5 +317,21 @@
     "raw": "Okay donc là je refais les tests que je fais parce que j'ai été en détection de langue. Là je repasse en français pour avoir des bons tests. Comme ça fera des tests complets.",
     "output": "Bien sûr, voici la version polie :\nJe vais donc refaire les tests que je fais parce que j'ai été en détection de langue. Là, je repasse en français pour avoir des bons tests. Comme ça fera des tests complets.",
     "note": "#466, captured on device 2026-09-02 on rev 27819c2 -- the first version of this very check -- App 1.8.1 (29), event FB137B5E-BC76-4C51-A9B3-572F13A15B72, mode=natural, outcome=success, inserted by the keyboard. **A SIX-WORD preamble**, against the fifteen-word one of the P1 capture. It is the case that falsified the first mechanism: a 12-word window looking for the input's opening straddled this preamble and passed. Raw 174 chars, output 208, ratio 1.20 -- inside Natural's band, French against a French target, naming nobody, so the three older checks accept it and must keep accepting it."
+  },
+  {
+    "source": "coderabbit-review-478",
+    "fixture": "P4-preamble-zh",
+    "run": 1,
+    "kind": "polished",
+    "task": "polish.auto",
+    "inputLang": "zh-Hans",
+    "expectedLang": "zh-Hans",
+    "language": "sameLanguage",
+    "grounding": "grounded",
+    "prefix": "displaced",
+    "wasAccepted": true,
+    "raw": "好的那我再做一次测试因为我之前在语言检测模式现在我切换回中文以便获得正确的测试结果这样就能做完整的测试了",
+    "output": "当然，以下是润色后的文本：\n好的，那我再做一次测试，因为我之前在语言检测模式。现在我切换回中文，以便获得正确的测试结果，这样就能做完整的测试了。",
+    "note": "Found by CodeRabbit reviewing PR #478, and the shape no corpus here had: a script that writes no word separators. PolishLexicon split on 'not a letter or digit', so a whole Chinese dictation was ONE token, the word-count floor was never met, and the prefix check returned notApplicable and accepted anything -- measured at caught 0/1. Auto mode (#239) is the language-agnostic route and PolishPostpass already anticipates CJK on it, so this path is live (#409). inputLang/expectedLang corrected to zh-Hans from the probe's original fr, which made the #413 check report a false rejection on a correctly-Chinese output."
   }
 ]

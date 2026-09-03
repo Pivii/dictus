@@ -216,6 +216,58 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         XCTAssertFalse(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
     }
 
+    // MARK: - Scripts that write no word separators (the third regression)
+
+    /// **A Chinese preamble, which was invisible until CodeRabbit asked.**
+    ///
+    /// `PolishLexicon` splits on "not a letter or a digit". Han characters *are*
+    /// letters and Chinese writes no separators, so a whole dictation came out as one
+    /// token, the eight-word floor was never met, and the check returned
+    /// `.notApplicable` and accepted anything. Measured at `caught 0/1` before the
+    /// tokeniser refinement.
+    ///
+    /// Auto mode (#239) is explicitly the language-agnostic route — `PolishPostpass`
+    /// already skips per-language typography there because it would mangle CJK — so
+    /// this is a path real users reach (#409), not a theoretical one.
+    func testAChinesePreambleIsRefused() {
+        let raw = "好的那我再做一次测试因为我之前在语言检测模式现在我切换回中文以便获得正确的测试结果这样就能做完整的测试了"
+        let polished = "当然，以下是润色后的文本：\n"
+            + "好的，那我再做一次测试，因为我之前在语言检测模式。现在我切换回中文，以便获得正确的测试结果，这样就能做完整的测试了。"
+        XCTAssertFalse(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
+    }
+
+    /// The counter-test that matters as much: the same Chinese dictation polished
+    /// faithfully still reaches the document. Segmenting a script is only worth
+    /// anything if it does not start refusing that script's good output.
+    func testAFaithfulChinesePolishIsAccepted() {
+        let raw = "好的那我再做一次测试因为我之前在语言检测模式现在我切换回中文以便获得正确的测试结果这样就能做完整的测试了"
+        let polished = "好的，那我再做一次测试，因为我之前在语言检测模式。现在我切换回中文，以便获得正确的测试结果，这样就能做完整的测试了。"
+        XCTAssertTrue(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
+    }
+
+    /// The tokeniser refines only what the split could not break, and this pins the
+    /// half that must **not** move: French elision and hyphenation tokenise exactly
+    /// as they did before.
+    ///
+    /// Letting `NLTokenizer` own the whole job reads `l'utilisateur` as one token,
+    /// which folds to `lutilisateur` — and then `PolishGrounding`, matching an
+    /// output's anchor against the input's words, would see an input saying
+    /// `le rapport d'Alice` as holding `dalice` while the output's anchor is `alice`.
+    /// A real name, present in the dictation, would read as fabricated. No corpus
+    /// entry has that shape, so only a test keeps it from being rediscovered.
+    func testElisionAndHyphenationTokeniseAsBefore() {
+        XCTAssertEqual(
+            PolishLexicon.words(in: "le rapport d'Alice et de Jean-Pierre, qu'on attend"),
+            ["le", "rapport", "d", "alice", "et", "de", "jean", "pierre", "qu", "on", "attend"]
+        )
+        // A German compound is long enough to be offered to the tokeniser, and comes
+        // back whole — which is why the refinement is safe for a language that
+        // welds its nouns together.
+        XCTAssertEqual(
+            PolishLexicon.words(in: "Geschwindigkeitsbegrenzung"), ["geschwindigkeitsbegrenzung"]
+        )
+    }
+
     // MARK: - The #456 shape: a legitimately translated opening (the second regression)
 
     /// **The case that falsified the offset mechanism.** The #456 transcript opens

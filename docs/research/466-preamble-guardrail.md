@@ -653,3 +653,105 @@ not "measure more" — §6 measured 230 outputs — it is that **a corpus proves
 the shapes it contains**, and the shapes it lacks have to be enumerated as deliberately as the
 thresholds are. The corpus now carries 480 outputs across 15 sources, including both shapes that
 falsified a mechanism.
+
+---
+
+## 10. Amendment — a whole script class was invisible (2026-09-03)
+
+**Written after §9, from a review finding rather than a measurement.** CodeRabbit reviewed
+`8f9aeb0` and raised two points. One is dismissed with its reason; the other was real, was
+reproduced, and is fixed here.
+
+### 10.1 Dismissed: the debug label is not localised
+
+`PolishDebugView.swift` gained a `"guardrail check"` row whose label is an English literal. So are
+the **fourteen** rows around it — `engine`, `mode`, `target`, `detected`, `stt engine`, `stt model`,
+`tx mode`, `keyboard`, `mix`, `target from`, `latency`, `chars`, `failure reason`. The reader of
+this view is an agent triaging an export, not a user (#255). Localising only the new row would make
+it the intruder. Recorded here so the next reviewer does not raise it again.
+
+### 10.2 Real: a Chinese dictation was one token, so nothing was checked
+
+`PolishLexicon.words(in:)` split on "not a letter or a digit". That is every word boundary in a
+script that writes them — space, apostrophe, hyphen, punctuation — and **none** in Chinese,
+Japanese, Thai or Khmer. A whole Chinese dictation came out as a single token, `count >= 8` failed,
+`PolishPrefixAlignment` returned `.notApplicable`, and the output was accepted whatever it said.
+
+Reproduced on `5b2d578` with an authentic Chinese preamble (`当然，以下是润色后的文本：` on its own
+line, then the polished text):
+
+```
+── #466 prefix-alignment check, shipping thresholds (window=8, floor=0.7, minimum=8)
+   natural + auto: caught 0/1
+   missed: cr-review-probe:ZH-preamble#1
+```
+
+**This path is live.** Auto mode (#239) is explicitly the language-agnostic route, and
+`PolishPostpass` already carries the comment that per-language typography is skipped there because
+it would mangle CJK. The code anticipated CJK on this path; the guardrail did not. Dictus steers
+Chinese users toward a model (#409), so they are not hypothetical.
+
+### 10.3 The fix refines the split, and deliberately does not replace it
+
+The obvious repair — hand the whole job to `NLTokenizer` — was written, measured, and **rejected**.
+It scores identically on all 481 outputs and passes all 1 572 tests, and it is still wrong:
+
+```
+NLTokenizer alone   j'ai bossé sur le week-end d'aujourd'hui
+                    → [jai, bosse, sur, le, week, end, daujourdhui]
+```
+
+French elision collapses. Both sides of a comparison go through the same function so the corpus
+never notices — but `PolishGrounding` matches an output's **anchor** against the input's **words**,
+and an input saying `le rapport d'Alice` would hold `dalice` while the output's anchor is `alice`.
+**A real name, present in the dictation, would read as fabricated and cost the user their polish.**
+No corpus entry has that shape. It is precisely the class of silent regression §9.7 is about, so it
+is refused rather than shipped and re-measured later.
+
+What ships instead: the split stays authoritative, and the tokeniser is asked only about runs the
+split **could not break** — accepted only when it finds more than one word inside. By construction
+that can only happen where the run had no separators to begin with.
+
+| | before | after |
+|---|---|---|
+| `j'ai … week-end d'aujourd'hui` | `j, ai, week, end, d, aujourd, hui` | **identical** |
+| `Jean-Pierre`, `3,5` | `jean, pierre` / `3, 5` | **identical** |
+| `Geschwindigkeitsbegrenzung` | one token | **identical** — offered to the tokeniser, comes back whole |
+| `好的那我再做一次测试…` | **one token** | `好, 的, 那, 我, 再, 做, 一, 次, 测试, …` |
+| `これはテストです日本語のテキスト` | **one token** | `これ, は, テスト, です, 日本, 語, の, テキスト` |
+| `ผมกำลังทดสอบภาษาไทย` | **one token** | `ผม, กำลัง, ทดสอบ, ภาษาไทย` |
+
+Latin-script tokenisation is unchanged **by construction**, not by measurement — which is the point,
+since the corpus could not have told us either way.
+
+### 10.4 Rescored on everything
+
+```
+corpus: 481 outputs from 16 sources
+
+── #413 per-segment language check     caught 18/18   false rejections 0/463
+── #466 prefix-alignment check         caught 87/87   false rejections 0/269
+```
+
+**87 of 87, and the 269 legitimate outputs do not move.** The Chinese preamble is the 87th catch.
+`swift test` is 1 575 tests green — three new: the Chinese preamble refused, a *faithful* Chinese
+polish still accepted, and the French/German tokenisation pinned so the rejected variant cannot
+return by accident.
+
+The fixture is committed as `P4-preamble-zh` in `adversarial.json`, with its `inputLang` and
+`expectedLang` corrected to `zh-Hans` — the probe declared `fr`, which made the #413 check report a
+false rejection on an output that is correctly Chinese.
+
+### 10.5 What this says about the method, again
+
+§9.7 said the shapes a corpus **lacks** have to be enumerated as deliberately as the thresholds are.
+This is the third instance, and the first found by a **reader** rather than by a run: no amount of
+re-running the corpus would have surfaced it, because the corpus is 100 % space-separated scripts.
+The four shapes that have now falsified or holed a mechanism here:
+
+| shape | found by |
+|---|---|
+| a preamble shorter than the window | a device test |
+| an input whose opening is in another language | 50 real runs of a known transcript |
+| a script that writes no word separators | a code review |
+| a preamble that is not on its own line | still open, accepted, 0/81 observed |
