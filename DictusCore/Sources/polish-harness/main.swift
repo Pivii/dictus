@@ -595,7 +595,7 @@ func runGuardrail() {
     let prefixDefaults = PolishPrefixAlignmentThresholds.default
     print("\n── #466 prefix-alignment check, shipping thresholds "
           + "(window=\(prefixDefaults.windowWords), floor=\(prefixDefaults.supportFloor), "
-          + "maxOffset=\(prefixDefaults.maximumOffsetWords), minimum=\(prefixDefaults.minimumWords))")
+          + "minimum=\(prefixDefaults.minimumWords))")
     print("   natural + auto — the modes it ships on:")
     GuardrailCorpus.report(GuardrailCorpus.scorePrefix(cases, thresholds: prefixDefaults) {
         $0.polishMode != "repair"

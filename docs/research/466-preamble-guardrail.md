@@ -505,3 +505,151 @@ window.** One device session with ten dictations found the gap that 230 committe
 not. That is an argument for the device gate rather than against the corpus — but it is also why
 `P3-short-preamble` is now committed, so the next mechanism is scored against a short preamble from
 its first line of code.
+
+---
+
+## 9. Amendment — the offset mechanism false-rejected 14 faithful polishes (2026-09-02)
+
+**Written after §8, and after the two acceptance criteria nobody could run were finally run on a
+Mac.** The first passed handsomely. The second falsified the second mechanism. **This is the third
+mechanism**, and both earlier ones are kept in the record because the reason each failed is the
+reason this one is shaped as it is.
+
+### 9.1 Criterion 1 passes: 200 real Apple FM runs
+
+`swift run polish-harness show <#466 raw> --runs 50` × 4, on `8f9aeb0`.
+
+| | |
+|---|---|
+| runs | **200** |
+| preambles returned by Apple FM | **47 — 23.5 %**, in 24 distinct formulations |
+| caught | **47 / 47** |
+| false rejections on the 153 clean outputs | **0** |
+| refusals that returned the raw verbatim | **47 / 47** |
+| the same 200 outputs scored by the *first* mechanism | **13 / 47** |
+
+The rate is worth recording on its own: **this is not a rare event.** Nearly a quarter of runs on
+that dictation came back as a chat reply. Committed as `device-466-200runs.json`.
+
+### 9.2 Criterion 4 fails the second mechanism: 14 faithful polishes refused
+
+`swift run polish-harness show docs/research/456-target-election/capture-fixture.json --runs 50`.
+49 usable outputs (one `engineFailed`, unrelated), labelled by reading and re-checked here:
+
+| | |
+|---|---|
+| preambles | 34 — correct refusals |
+| a whole fabrication (run #17) | 1 — correct refusal, a #414-class catch |
+| **faithful polishes, refused in error** | **14** |
+
+The #456 transcript is the one whose opening Parakeet mistranscribes as English while three
+quarters of it is French. The target is elected French from the majority (PR #463), so ADR 0003
+rule 8 licenses the model to **reconstruct that opening in French** — and it does, on every run.
+The output's head is then legitimately none of the speaker's vocabulary, which is exactly what a
+preamble looks like to an offset test.
+
+**§5.3 pre-registered this risk** — *"a legitimately repaired head reads exactly like a preamble"* —
+and §6 then reported `0 false rejections` because the corpus contained no output whose input opened
+in another language. The risk was named and not pursued. That is the process failure here, not the
+mechanism.
+
+**And it is not a threshold.** The faithful heads run **21 to 41 words**; the preambles start being
+unsupported at word **5**. The two distributions are not merely adjacent, they are *inverted* — the
+legitimate outputs have the larger offsets. No value of `maximumOffsetWords` separates them, which
+is why the third mechanism has no offset threshold at all.
+
+Committed as `device-456-50runs.json`.
+
+### 9.3 The third mechanism: two questions, one floor
+
+```
+1. Is any of this the speaker's?   one window-long stretch of the output must be
+                                   ≥ supportFloor the speaker's vocabulary
+                                   → no  ⇒ refuse   (#349: a refusal, an invented answer)
+
+2. Does it OPEN as the speaker's?  when the output has more than one line, its first
+                                   line must be ≥ supportFloor the speaker's words
+                                   → no  ⇒ refuse   (#466: a preamble)
+```
+
+The line boundary is the separator the two shapes needed, and the issue named it on the first day:
+*"the preamble arrives as its own line, which is what makes it mechanically separable."* A
+translated opening is the **same line** as the body it belongs to; a preamble is a line of its own.
+An offset cannot tell them apart because an offset does not know where the lines are.
+
+### 9.4 The band is the widest of the three mechanisms
+
+```
+── #466 opening-line support share, multi-line outputs only
+   legitimate           n= 19   worst (lowest)  1.00
+   preamble/fabricated  n= 84   worst (highest) 0.38
+```
+
+**Every legitimate multi-line free-polish output is 100 % the speaker's words on its opening line.
+Every one of the 84 preambles and fabrications is at most 38 %.** The floor of 0.70 sits in an
+empty band 0.62 wide — against 0.42 for #413's confidence floor and a 2-to-6-word gap for the
+offset it replaces.
+
+```
+── #466 prefix sweep, natural + auto — the modes the check ships on   (minimum=8 words)
+                0.50        0.60        0.70        0.75        0.80        0.90
+    4        85c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr
+    6        86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/1fr
+    8        86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/1fr     86c/1fr
+   10        86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/2fr
+   12        86c/0fr     86c/0fr     86c/1fr     86c/1fr     86c/1fr     86c/2fr
+   16        86c/0fr     86c/0fr     86c/1fr     86c/1fr     86c/1fr     86c/3fr
+  (c = caught out of 86; fr = falsely rejected out of 269)
+```
+
+**86 caught out of 86, 0 false rejections out of 269**, on a base that now includes the 14 that
+falsified the previous mechanism and the 153 clean runs from the 200-run set. `(window 8, floor
+0.70)` is interior on both axes: windows 4–10 and floors 0.50–0.75 are clean throughout, and the
+first false rejection appears at window 12 — the same window length that produced the §8 device
+miss, showing up here from the other side.
+
+### 9.5 The price
+
+**A preamble that is not on its own line is invisible.** Question 2 is per-line, so
+`Voici la version polie : Okay donc là je refais…` on a single line passes. Measured at **0 of 81**
+captured preambles across 250 real Apple FM runs — the model puts the newline in — but that is an
+observed property of the output, not a law.
+
+This **replaces** §8.5's hole rather than adding to it: a four-word preamble on its own line is now
+caught, because length stopped mattering when the test became per-line. Net, the accepted holes are
+now: a single-line preamble; a preamble inside List, Translate or Repair; and a model that talks
+about its task after the user's text.
+
+### 9.6 Two label corrections, and two findings about the *other* checks
+
+Scoring the enlarged corpus turned up three things worth recording:
+
+- **Two outputs in the 200-run set are Polish, not French.** `R118` and `R190` announce it —
+  *"Bien sûr, voici le texte polonais:"* — and were labelled `sameLanguage`. Corrected to
+  `wrongLanguage`: the #413 per-segment check refuses them correctly, so they are catches. Same
+  Polish leak ADR 0002 records for cross-lingual reconstruction, reached from a new direction.
+- **The grounding check gains 2 false rejections in 423**, both on those same Polish outputs, where
+  `NLTagger` reads the adverb `Dobra` as a name. Reported rather than suppressed. It costs nothing
+  in production because the language check refuses those outputs first — the same argument
+  `413-414-guardrail-resolution.md` §6.2 makes about `February` / `March`.
+- **The grounding check gains a third declared miss**, `T017`, the whole-fabrication run of the
+  #456 set. F4 was pre-registered as reported and not gated.
+
+With the enlarged corpus, #413 scores **18/18 caught, 0 false rejections in 462**.
+
+### 9.7 What this says about the method
+
+Three mechanisms, two falsified, each by evidence the corpus of the moment did not contain:
+
+| mechanism | falsified by | the shape the corpus lacked |
+|---|---|---|
+| search the output for the input's opening | a device test | a preamble shorter than the window |
+| where support starts, with a tolerance | 50 real runs of a known transcript | an input whose *opening* is in another language |
+| the opening line must be the speaker's | — | — |
+
+Both gaps were findable in advance: the second was **written down in §5.3 before any code existed**
+and then not measured, because measuring it needed a corpus entry nobody had built. The lesson is
+not "measure more" — §6 measured 230 outputs — it is that **a corpus proves a mechanism only over
+the shapes it contains**, and the shapes it lacks have to be enumerated as deliberately as the
+thresholds are. The corpus now carries 480 outputs across 15 sources, including both shapes that
+falsified a mechanism.

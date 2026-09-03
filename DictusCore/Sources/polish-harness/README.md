@@ -111,10 +111,8 @@ so the numbers behind the shipped thresholds are reproducible rather than a
 claim.
 
 ```sh
-# The confusion matrix at the shipping thresholds.
-swift run polish-harness guardrail ../docs/research/413-414-guardrail/corpus.json \
-                                   ../docs/research/413-414-guardrail/adversarial.json \
-                                   ../docs/research/413-414-guardrail/freepolish.json
+# The confusion matrix at the shipping thresholds. Every corpus in the directory:
+swift run polish-harness guardrail ../docs/research/413-414-guardrail/*.json
 
 # --sweep    the threshold grids the #413 and #466 numbers were read off
 # --segments every segment with its language reading and confidence
@@ -129,7 +127,10 @@ hand-built fabrications, and since #466 the two device captures of Apple FM
 writing about its own task. `freepolish.json` (#466) is the campaign's
 free-polish rounds harvested verbatim from `raw/`, because the prefix check runs
 **only** on the free polish and the other two files hold 14 such outputs between
-them. Labels are in the JSON rather than in code because they are judgements,
+them. `device-466-200runs.json` and `device-456-50runs.json` (#466) are 249 real
+Apple FM outputs from the two device-criterion measurements — the second contains
+the shape that falsified an earlier mechanism, a dictation whose *opening* is in
+another language than the polish target. Labels are in the JSON rather than in code because they are judgements,
 and a judgement that decides a threshold has to be disagreeable with in the
 open.
 

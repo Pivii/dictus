@@ -38,13 +38,16 @@ final class PolishPrefixAlignmentTests: XCTestCase {
     /// The preamble's signature: the user's opening IS in the output, several words
     /// in. That is what tells it apart from a refusal, and what makes it a
     /// displacement rather than an unrelated answer.
-    func testCapturedPreambleAlignsLateRatherThanNotAtAll() {
-        guard case .aligned(let offset) = PolishPrefixAlignment.alignment(
+    /// The preamble's signature: the body IS the user's text, so the output is not
+    /// "unrelated" — it is an output whose **opening line** is not theirs. That is
+    /// what tells a preamble from a refusal, and both are refused.
+    func testCapturedPreambleIsRefusedOnItsOpeningLine() {
+        guard case .openingLineNotTheSpeakers(let share) = PolishPrefixAlignment.alignment(
             ofOutput: Self.preamblePolished, against: Self.preambleRaw
         ) else {
-            return XCTFail("the captured preamble should align late, not fail to align")
+            return XCTFail("the captured preamble should be refused on its opening line")
         }
-        XCTAssertGreaterThan(offset, PolishPrefixAlignmentThresholds.default.maximumOffsetWords)
+        XCTAssertLessThan(share, PolishPrefixAlignmentThresholds.default.supportFloor)
     }
 
     func testCapturedRefusalIsRejectedByTheSameCheck() {
@@ -59,7 +62,7 @@ final class PolishPrefixAlignmentTests: XCTestCase {
     func testCapturedRefusalDoesNotAlignAnywhere() {
         XCTAssertEqual(
             PolishPrefixAlignment.alignment(ofOutput: Self.refusalPolished, against: Self.refusalRaw),
-            .unaligned
+            .neverSupported
         )
     }
 
@@ -72,7 +75,7 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         let polished = "Salut, ça va ? J'espère que tu es passé un bon week-end. Moi de mon côté, "
             + "c'était tranquille, j'ai bossé sur le projet, et franchement, ça avance bien."
         XCTAssertEqual(
-            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned(offset: 0)
+            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned
         )
         XCTAssertTrue(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
     }
@@ -125,7 +128,7 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         let raw = "il faut absolument que je rappelle le plombier avant vendredi soir"
         let polished = "Il faut absolument que je rappelle le plombier avant vendredi soir."
         XCTAssertEqual(
-            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned(offset: 0)
+            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned
         )
     }
 
@@ -137,7 +140,7 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         let raw = "ecoute la reunion de demain est decalee a quinze heures pour tout le monde"
         let polished = "Écoute, la réunion de demain est décalée à 15 h pour tout le monde."
         XCTAssertEqual(
-            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned(offset: 0)
+            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned
         )
     }
 
@@ -145,7 +148,7 @@ final class PolishPrefixAlignmentTests: XCTestCase {
     /// is what a threshold sweep reads, and an off-by-one there moves every column.
     func testSupportFloorRoundsUp() {
         let thresholds = PolishPrefixAlignmentThresholds(
-            windowWords: 10, supportFloor: 0.7, maximumOffsetWords: 4, minimumWords: 8
+            windowWords: 10, supportFloor: 0.7, minimumWords: 8
         )
         // A 10-word window at 0.70 asks for 7 supported words, not 6.
         let raw = "alpha bravo charlie delta echo foxtrot golf hotel india juliett"
@@ -153,11 +156,11 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         let seven = "alpha bravo charlie delta echo foxtrot golf yankee xray whisky"
         XCTAssertEqual(
             PolishPrefixAlignment.alignment(ofOutput: six, against: raw, thresholds: thresholds),
-            .unaligned
+            .neverSupported
         )
         XCTAssertEqual(
             PolishPrefixAlignment.alignment(ofOutput: seven, against: raw, thresholds: thresholds),
-            .aligned(offset: 0)
+            .aligned
         )
     }
 
@@ -188,41 +191,75 @@ final class PolishPrefixAlignmentTests: XCTestCase {
         ))
     }
 
-    /// And it is rejected for the right reason: the user's own words start six words
-    /// in, not at the head. The worst legitimate output in the corpus starts at word
-    /// 2, so this sits on the far side of an empty gap rather than on a boundary.
-    func testTheSixWordPreambleSupportStartsAfterTheTolerance() {
-        XCTAssertEqual(
-            PolishPrefixAlignment.alignment(
-                ofOutput: Self.shortPreamblePolished, against: Self.shortPreambleRaw
-            ),
-            .aligned(offset: 6)
-        )
+    /// And it is rejected for the right reason: its opening line carries almost none
+    /// of the speaker's words. Measured over 480 outputs, every legitimate multi-line
+    /// free polish scores **1.00** here and every captured preamble **0.38 or less**,
+    /// so the floor of 0.70 sits in an empty band 0.62 wide.
+    func testTheSixWordPreambleIsRefusedOnItsOpeningLine() {
+        guard case .openingLineNotTheSpeakers(let share) = PolishPrefixAlignment.alignment(
+            ofOutput: Self.shortPreamblePolished, against: Self.shortPreambleRaw
+        ) else {
+            return XCTFail("the six-word preamble should be refused on its opening line")
+        }
+        XCTAssertLessThan(share, 0.4)
     }
 
-    /// **The third accepted hole, pinned on purpose: a preamble of about four words
-    /// or fewer is invisible, and cannot be made visible without cost.**
-    ///
-    /// `maximumOffsetWords` is 4 because ADR 0003 licenses the model to delete an
-    /// opening filler run, and the corpus has a legitimate output whose own words
-    /// start at word 2. A preamble that fits inside that tolerance therefore passes
-    /// — here `Voici le texte poli :`, four words, of which `le` is itself one of
-    /// the speaker's, so the window slides into supported text at word 1.
-    ///
-    /// The two are the same number and cannot be separated by tuning: closing this
-    /// would mean refusing a polish that opened by deleting `euh alors donc en
-    /// fait`. §8 of the research note has the measurement. Stated as a passing
-    /// assertion rather than a comment so that a future change which closes it
-    /// fails here and has to say what it cost.
-    func testAPreambleInsideTheOffsetToleranceIsAcceptedAndThatIsKnown() {
+    /// A **four-word** preamble on its own line, which the offset mechanism could
+    /// not see and this one does. Length stopped mattering when the test became
+    /// per-line: a preamble is a line, whatever its length.
+    func testAFourWordPreambleOnItsOwnLineIsRefused() {
         let raw = "il faut que je pense à rappeler le plombier avant vendredi soir "
             + "et à préparer le dossier pour la réunion de lundi matin"
         let polished = "Voici le texte poli :\n"
             + "Il faut que je pense à rappeler le plombier avant vendredi soir "
             + "et à préparer le dossier pour la réunion de lundi matin."
-        XCTAssertTrue(
-            PolishPrefixAlignment.accepts(polished: polished, raw: raw),
-            "known limit: a preamble inside maximumOffsetWords cannot be told from a deleted filler run"
+        XCTAssertFalse(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
+    }
+
+    // MARK: - The #456 shape: a legitimately translated opening (the second regression)
+
+    /// **The case that falsified the offset mechanism.** The #456 transcript opens
+    /// with speech Parakeet mistranscribed as English; the polish target is elected
+    /// French from the majority, so ADR 0003 rule 8 licenses the model to reconstruct
+    /// that opening in French. The output's head is then legitimately **none** of the
+    /// speaker's words — exactly what a preamble looks like to an offset test, which
+    /// refused 14 such polishes out of 14 on 50 real runs.
+    ///
+    /// Verbatim from run #5 of that measurement.
+    func testATranslatedOpeningIsNotAPreamble() {
+        let raw = "Okay, it's coming to approach to what I've got on the pencil to other "
+            + "children. It's completely different. In fact, when you have curseur, we have "
+            + "our héros qui est comme tel avec les animations qu'on connaît aujourd'hui "
+            + "quand le curseur apparaît en fait la cloche elle apparaît et elle suit le "
+            + "curseur donc ça veut dire que l'utilisateur va pouvoir jouer sur le héros "
+            + "directement avec son curseur."
+        let polished = "Okay, c'est en approche de ce que j'ai sur le crayon à partager avec "
+            + "d'autres enfants. C'est complètement différent. En fait, lorsque vous avez le "
+            + "curseur, nous avons notre héros tel qu'il est avec les animations que nous "
+            + "connaissons aujourd'hui. Quand le curseur apparaît, en fait, la cloche "
+            + "apparaît et elle suit le curseur, donc cela signifie que l'utilisateur pourra "
+            + "jouer sur le héros directement avec son curseur."
+        XCTAssertEqual(
+            PolishPrefixAlignment.alignment(ofOutput: polished, against: raw), .aligned
         )
+        XCTAssertTrue(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
+    }
+
+    /// The same transcript, the same translated opening, **with** a preamble line in
+    /// front. Verbatim from the same run set. The pair is the whole point: the two
+    /// differ by one line, and only the line boundary separates them.
+    func testTheSameTranslatedOpeningBehindAPreambleIsRefused() {
+        let raw = "Okay, it's coming to approach to what I've got on the pencil to other "
+            + "children. It's completely different. In fact, when you have curseur, we have "
+            + "our héros qui est comme tel avec les animations qu'on connaît aujourd'hui "
+            + "quand le curseur apparaît en fait la cloche elle apparaît et elle suit le "
+            + "curseur donc ça veut dire que l'utilisateur va pouvoir jouer sur le héros "
+            + "directement avec son curseur."
+        let polished = "Bien sûr, voici la version polie de votre texte :\n"
+            + "Okay, c'est en approche de ce que j'ai sur le crayon à partager avec "
+            + "d'autres enfants. C'est complètement différent. En fait, lorsque vous avez le "
+            + "curseur, nous avons notre héros tel qu'il est avec les animations que nous "
+            + "connaissons aujourd'hui."
+        XCTAssertFalse(PolishPrefixAlignment.accepts(polished: polished, raw: raw))
     }
 }

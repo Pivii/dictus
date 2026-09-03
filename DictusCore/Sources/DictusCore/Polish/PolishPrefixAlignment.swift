@@ -1,74 +1,59 @@
 // DictusCore/Sources/DictusCore/Polish/PolishPrefixAlignment.swift
-// Does the output START with the user's words? (issues #466, #349)
+// Is the output the user's own text, and does it OPEN as their own text? (#466, #349)
 import Foundation
 
-/// The three numbers the prefix-alignment check needs, and the size of the text it
-/// declines to read.
+/// The two numbers this check needs, and the size of the text it declines to read.
 ///
-/// They travel together because none of them means anything alone. The window
-/// decides how long a stretch of output is judged at once; the floor decides how
-/// much of that stretch has to be the speaker's own words; the offset decides how
-/// far into the output the speaker's words may legitimately start. Change one and
-/// the other two are measuring something else.
+/// They travel together because neither means anything alone. The window decides how
+/// long a stretch of output has to be before "there is some of the speaker in here"
+/// is worth believing; the floor decides what share of a stretch has to be the
+/// speaker's words for it to count as theirs. One floor serves both tests below,
+/// because both ask the same question — *what share of this text is the speaker's* —
+/// of two different stretches.
 ///
-/// Measured, not chosen. Scored over the committed corpus with
+/// Measured, not chosen. Scored over the committed corpora with
 /// `swift run polish-harness guardrail docs/research/413-414-guardrail/*.json --sweep`,
-/// which drives no model. The tables it prints are in
-/// `docs/research/466-preamble-guardrail.md` §6 and §8.
+/// which drives no model. Tables in `docs/research/466-preamble-guardrail.md` §6, §8
+/// and §9.
 ///
-/// **The separation these sit in is wide and empty.** Over the corpus: every one of
-/// the 102 legitimate free-polish outputs starts being supported at word 0, except
-/// one at word 2. The two captured preambles start at word 6 and word 16, and the
-/// three captured refusals never start at all. The offset threshold is the midpoint
-/// of that gap.
+/// **The separation is a 0.62-wide empty band.** Over 480 outputs: every legitimate
+/// multi-line free-polish output has an opening line that is **100 %** the speaker's
+/// words; every one of the 84 captured preambles and fabrications scores **0.38 or
+/// less**. Nothing lands between.
 public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 
-    /// How long a stretch of the output is examined at once, in words.
-    ///
-    /// About a clause. Short enough to sit inside a six-word preamble rather than
-    /// straddle it — **the first version of this check used a 12-word window and a
-    /// six-word preamble slipped past it on device**, because the window spanned the
-    /// preamble and reached into the real text behind it. Long enough that two or
-    /// three substituted words cannot swing it. Clamped to the output's length.
+    /// How long a stretch of the output is judged at once when asking whether *any*
+    /// of it is the speaker's, in words. About a clause.
     public let windowWords: Int
 
-    /// Share of that stretch which has to be words the speaker actually said.
-    /// Rounded up, so 0.70 over an 8-word window asks for 6 of them.
+    /// Share of a stretch that has to be words the speaker actually said. Rounded
+    /// up, so 0.70 over an 8-word window asks for 6 of them.
     public let supportFloor: Double
 
-    /// How many words of the output may precede the first supported stretch. Above
-    /// it, the output opens with something that is not the user's text, which is the
-    /// defect.
-    ///
-    /// Not zero: ADR 0003 licenses deleting an opening filler run and substituting a
-    /// spoken punctuation command, and both leave the output's head shifted by a
-    /// word or two.
-    public let maximumOffsetWords: Int
-
     /// Fewest words either side must carry for the question to be asked at all.
-    /// Below it the check passes untested: a five-word dictation has no prefix to
-    /// align, and guessing at one would refuse a good output for nothing.
+    /// Below it the check passes untested: a five-word dictation has no opening to
+    /// judge, and guessing at one would refuse a good output for nothing.
     public let minimumWords: Int
 
-    public init(windowWords: Int, supportFloor: Double, maximumOffsetWords: Int, minimumWords: Int) {
+    public init(windowWords: Int, supportFloor: Double, minimumWords: Int) {
         self.windowWords = windowWords
         self.supportFloor = supportFloor
-        self.maximumOffsetWords = maximumOffsetWords
         self.minimumWords = minimumWords
     }
 
     /// The measured set. See the type's doc for where the numbers come from.
     public static let `default` = PolishPrefixAlignmentThresholds(
-        windowWords: 8, supportFloor: 0.70, maximumOffsetWords: 4, minimumWords: 8
+        windowWords: 8, supportFloor: 0.70, minimumWords: 8
     )
 }
 
-/// Whether the output opens with the words the user actually dictated.
+/// Whether the output is the user's own text, and whether it *opens* as their own
+/// text.
 ///
 /// ### The hole this closes
 ///
-/// Apple FM answered the polish prompt like a chatbot and the keyboard typed the
-/// answer. Captured on device 2026-09-01 (#466), `natural` mode, target `fr`:
+/// Apple FM answers the polish prompt like a chatbot and the keyboard types the
+/// answer. Captured on device (#466), `natural` mode, target `fr`:
 ///
 /// ```
 /// raw       Okay donc là je refait les tests que j'ai fait parce que j'étais en…
@@ -76,45 +61,49 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 ///           Je vais donc faire de nouveau les tests que j'ai faits, car je suis en…
 /// ```
 ///
-/// Every guardrail passed it. The length ratio was 1.60, inside Natural's
-/// `[0.5, 2.0]`. `detectedLanguageMatches` passed whole and per segment, because a
+/// Every other guardrail passes it. The length ratio is 1.60, inside Natural's
+/// `[0.5, 2.0]`. `detectedLanguageMatches` passes whole and per segment, because a
 /// model instructed to write French writes its chat reply in French too.
-/// `PolishGrounding` passed because the preamble names no person, place or
-/// organisation. What was missing is any check that the output *starts where the
-/// input starts*.
+/// `PolishGrounding` passes because the preamble names no person, place or
+/// organisation. Measured on 200 real Apple FM runs of that dictation, **23.5 % came
+/// back with a preamble of this family**, in 24 distinct formulations.
 ///
 /// #349 is the same phenomenon from the other end — Apple FM refusing
 /// (*"Je suis désolé, mais je ne peux pas fournir une sortie polie pour ce texte…"*)
 /// and the refusal being inserted as the user's dictation, also with
-/// `outcome = success`. Same engine, same blind spot, one detector: a preamble reads
-/// as alignment starting late, a refusal as no alignment anywhere.
+/// `outcome = success`.
 ///
-/// ### What it measures
+/// ### What it measures: two questions, one floor
 ///
-/// Not "does the input's opening reappear in the output" — that was the first
-/// version and **a device test falsified it**. It slid a 12-word window along the
-/// output looking for the input's opening words, which cannot see a preamble
-/// shorter than the window: a six-word one leaves the window straddling it, half in
-/// the junk and half in the real text, still carrying enough of the input's opening
-/// to pass. That is a limit of the shape, not a mis-set number, and no threshold in
-/// the sweep recovered it.
+/// **1. Is any of this the speaker's?** Slide a short window along the output and
+/// look for one stretch where `supportFloor` of the words are vocabulary the input
+/// contains. None anywhere means the model wrote about something else entirely —
+/// #349's refusal, or an invented paragraph.
 ///
-/// What it measures instead is **where the output starts being made of the user's
-/// words.** Slide a short window along the output and find the earliest position
-/// where `supportFloor` of it is vocabulary the speaker actually used. A faithful
-/// polish is supported from word 0; a preamble is a stretch of the model's own
-/// words in front of the user's, so support starts late; a refusal is never
-/// supported at all.
+/// **2. Does it OPEN as the speaker's?** If the output has more than one line, its
+/// first line has to be the speaker's words by the same floor. A chat preamble
+/// arrives as its own line — measured on **81 of 81** captured preambles across two
+/// device corpora — which is what makes it separable without a lexical list.
 ///
-/// | | reads as |
-/// |---|---|
-/// | ordinary polish | supported from word 0 |
-/// | **#466**, a preamble | support starts late |
-/// | **#349**, a refusal | never supported |
+/// ### Two mechanisms were measured before this one, and both failed
 ///
-/// The measurement is still comparative and still between two texts the same
-/// dictation produced. What changed is which side is scanned: the output's head is
-/// now the thing being judged, rather than the thing being searched.
+/// **Searching the output for the input's opening** (the first version, shipped and
+/// device-tested). A sliding window looking for the input's opening words cannot see
+/// a preamble shorter than the window: a six-word one leaves the window straddling
+/// it, half in the junk and half in the real text, still carrying enough to pass.
+/// Falsified on device.
+///
+/// **Where support starts, measured as an offset with a tolerance** (the second).
+/// It reads a legitimately *translated* opening as a preamble, because both are an
+/// unsupported head. Measured on 50 real runs of the #456 transcript — a dictation
+/// whose opening is mistranscribed as English and polished into French — it refused
+/// **14 faithful polishes out of 14**. A tolerance wide enough to admit them is
+/// wider than the preambles it had to catch: the faithful heads ran 21 to 41 words,
+/// the preambles began at 5. **The offset is not a separator and no value of it is**,
+/// which is why this version has no offset threshold at all.
+///
+/// The line boundary is what separates them: a translated opening is the *same*
+/// line as the body, a preamble is a line of its own.
 ///
 /// ### Why comparative, and not a list of phrases
 ///
@@ -122,74 +111,63 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
 /// here's") was weighed and rejected. The test here is between two texts the same
 /// dictation produced, so nothing is maintained per language and nothing rots as
 /// Apple FM's phrasing changes. `PolishNaturalPromptFR.swift:24` already names five
-/// such formulas as forbidden and the captured output opens with two of them, which
-/// is the measured evidence that naming the words does not work.
+/// such formulas as forbidden, and the captured output opens with two of them — the
+/// measured evidence that naming the words does not work.
 ///
 /// ### It rejects, it never repairs
 ///
-/// The preamble arrives as its own line and is mechanically separable, and cutting
+/// The preamble is its own line and is therefore mechanically separable, and cutting
 /// it is still not what happens. A post-pass that cuts the head of an output can cut
 /// a real sentence of the user's — ADR 0003 forbids that and #441 banned it
 /// explicitly — and a wrong cut is permanent where a missing polish is not. The
-/// property `PolishGuardrail` already has, *when it refuses, the user keeps their
-/// own words*, is worth more than recovering a polish that was 90 % good.
+/// property `PolishGuardrail` already has, *when it refuses, the user keeps their own
+/// words*, is worth more than recovering a polish that was 90 % good.
 ///
 /// ### Where this must NOT run
 ///
-/// Only where the output is expected to reuse the input's own words in the input's
-/// own order, which the task's contract answers with
-/// `PolishAcceptanceContract.requiresAlignedPrefix`: **Natural and Auto**. Three
-/// tasks answer no, and the third was a measurement rather than a judgement:
+/// Only where the output is expected to reuse the input's own words, which the task's
+/// contract answers with `PolishAcceptanceContract.requiresAlignedPrefix`: **Natural
+/// and Auto**. Three tasks answer no:
 ///
-/// - **List restructures.** It condenses a rambling dictation into bullets that
-///   synthesise, so the first bullet need not come from the first sentence.
-/// - **Translation keeps no word of the input**, so there is nothing to align
-///   anywhere, let alone at the head.
-/// - **Repair reconstructs in a different language.** `PolishPipeline.mode` selects
-///   it precisely when the detected language differs from the target, so a repair
-///   output is a translation in all but name and shares no vocabulary with its
-///   input. #466's scope section put repair in scope; the corpus said otherwise —
-///   **10 of 10 legitimate repair outputs are refused, at every threshold pair in
-///   the sweep.** See `docs/research/466-preamble-guardrail.md` §6.3.
+/// - **List restructures**, and is licensed to synthesise bullets that name
+///   conclusions rather than reuse sentences.
+/// - **Translation keeps no word of the input**, so nothing is ever supported.
+/// - **Repair reconstructs in another language.** `PolishPipeline.mode` selects it
+///   exactly when the detected language differs from the target, so its output
+///   shares no vocabulary with its input: **10 of 10 legitimate repair outputs are
+///   refused, at every threshold pair swept, under all three mechanisms.** See
+///   `docs/research/466-preamble-guardrail.md` §6.3.
 ///
-/// ### Two accepted holes, stated on purpose
+/// ### Accepted holes, stated on purpose
 ///
-/// **A preamble inside a List or a Translate output is invisible here.** It is seen
-/// only by `PolishGrounding`, and only if it invents a named entity — which a
-/// preamble about the act of polishing does not.
+/// **A preamble that is not on its own line.** Question 2 is a per-line test, so a
+/// model that writes `Voici la version polie : Okay donc là je refais…` on one line
+/// is invisible. Measured at **0 of 81** captured preambles, across 250 real Apple FM
+/// runs — but it is a property of the output's shape and not a law, and it is the
+/// price of not refusing a legitimately translated opening.
 ///
-/// **And so is one inside a Repair output**, which is where #349's own capture was
-/// recorded. The same string IS refused when it arrives on the Natural or Auto path,
-/// and repair is the mode where nothing can look at it: no lexical measure separates
-/// a refusal from a legitimate cross-lingual reconstruction, because both share
-/// nothing with the input by construction. #349 therefore does not close on the
-/// strength of this type alone, and that is written here rather than discovered
-/// later.
-///
-/// ### What it does not catch, stated plainly
-///
-/// **A preamble of about four words or fewer.** `maximumOffsetWords` is 4 because
-/// ADR 0003 licenses deleting an opening filler run, and the corpus holds a
-/// legitimate output whose own words start at word 2. A preamble that fits inside
-/// that tolerance is arithmetically the same event as a deleted filler run, so no
-/// setting separates them: closing this hole means refusing a polish that opened by
-/// dropping `euh alors donc en fait`. The two captured preambles are six and fifteen
-/// words. Pinned by a test that asserts the miss.
+/// **A preamble inside a List, a Translate or a Repair output**, per the contract
+/// above. Those are seen only by `PolishGrounding`, and only if they invent a named
+/// entity — which a sentence about the act of polishing does not.
 ///
 /// **A model that talks about its own task after the user's text, or in the middle
-/// of it.** It is supported from word 0 and passes. This closes the measured shape,
-/// not the class.
+/// of it.** The opening line is the speaker's, so it passes. This closes the
+/// measured shape, not the class.
 public enum PolishPrefixAlignment {
 
-    /// Where the input's opening reappears in the output.
+    /// What the output looks like against its input.
     public enum Alignment: Equatable, Sendable {
-        /// One side was too short to carry a prefix. Passes untested.
+        /// One side was too short to judge. Passes untested.
         case notApplicable
-        /// The input's opening was found this many words into the output. Zero is
-        /// the ordinary case.
-        case aligned(offset: Int)
-        /// The input's opening appears nowhere in the output — #349's shape.
-        case unaligned
+        /// The output is the speaker's text and opens as their text.
+        case aligned
+        /// The output's first line carries almost none of the speaker's words while
+        /// more text follows it — a preamble (#466). Carries the share it measured,
+        /// so a rejection can be checked rather than trusted.
+        case openingLineNotTheSpeakers(supportedShare: Double)
+        /// No stretch of the output is the speaker's at all — a refusal, or an
+        /// invented answer (#349).
+        case neverSupported
     }
 
     /// `true` when the output may be shown to the user, as far as this check is
@@ -202,30 +180,19 @@ public enum PolishPrefixAlignment {
                                raw: String,
                                thresholds: PolishPrefixAlignmentThresholds = .default) -> Bool {
         switch alignment(ofOutput: polished, against: raw, thresholds: thresholds) {
-        case .notApplicable:
+        case .notApplicable, .aligned:
             return true
-        case .aligned(let offset):
-            return offset <= thresholds.maximumOffsetWords
-        case .unaligned:
+        case .openingLineNotTheSpeakers, .neverSupported:
             return false
         }
     }
 
     /// The measurement behind `accepts`, exposed for the harness's scoring command
-    /// and for tests — a sweep needs the offset, not the verdict.
-    ///
-    /// Slides a `windowWords` window along the output and returns the **earliest**
-    /// offset at which `supportFloor` of the window is vocabulary the input
-    /// contains. Earliest, because the question is where the output *starts* being
-    /// the user's text; a well-supported stretch further in says nothing about its
-    /// head.
+    /// and for tests — a sweep needs the reading, not the verdict.
     ///
     /// The support set is the whole input rather than its opening. Restricting it to
-    /// the input's first 18, 24 or 30 words was measured and scores identically on
-    /// this corpus, so the narrower rule would be a knob bought with no evidence.
-    /// What it would additionally catch — an output that opens with the user's own
-    /// words taken from the *end* of their dictation — is reordering, which ADR 0003
-    /// forbids but which nothing in the field has produced.
+    /// the input's first 18, 24 or 30 words was measured and scores identically, so
+    /// the narrower rule would be a knob bought with no evidence.
     public static func alignment(ofOutput output: String,
                                  against input: String,
                                  thresholds: PolishPrefixAlignmentThresholds = .default) -> Alignment {
@@ -235,16 +202,57 @@ public enum PolishPrefixAlignment {
               outputWords.count >= thresholds.minimumWords else {
             return .notApplicable
         }
-        // Clamped to the output so a dictation shorter than the window is judged on
-        // all of itself rather than on a window padded with nothing.
-        let window = min(thresholds.windowWords, outputWords.count)
         let spoken = Set(inputWords)
-        // Rounded up: a floor is a floor. Over an 8-word window, 0.70 asks for 6.
-        let required = Int((Double(window) * thresholds.supportFloor).rounded(.up))
-        for offset in 0...(outputWords.count - window) {
-            let supported = outputWords[offset..<(offset + window)].count { spoken.contains($0) }
-            if supported >= required { return .aligned(offset: offset) }
+        guard isAnythingSupported(outputWords, by: spoken, thresholds: thresholds) else {
+            return .neverSupported
         }
-        return .unaligned
+        // The opening line is only evidence when something follows it. A single-line
+        // output has no line that is *only* a preamble, and judging the whole output
+        // by this floor would refuse a polish that legitimately reconstructs a
+        // mistranscribed opening — 14 of 14 on the #456 transcript, measured.
+        let lines = PolishSegmentation.segments(of: output)
+            .map { PolishLexicon.words(in: $0) }
+            .filter { !$0.isEmpty }
+        guard lines.count > 1, let opening = lines.first else { return .aligned }
+        let share = Double(opening.count { spoken.contains($0) }) / Double(opening.count)
+        return share < thresholds.supportFloor
+            ? .openingLineNotTheSpeakers(supportedShare: share)
+            : .aligned
+    }
+
+    /// What share of the output's opening line is the speaker's own words, or `nil`
+    /// when the output is a single line and so has no opening line to judge apart
+    /// from its body.
+    ///
+    /// Exposed for the harness's scoring command, which prints the band the floor
+    /// sits in — the same reason `PolishGrounding.anchors` is public. The pipeline
+    /// only ever asks `accepts`.
+    public static func openingLineSupport(ofOutput output: String,
+                                          against input: String) -> Double? {
+        let lines = PolishSegmentation.segments(of: output)
+            .map { PolishLexicon.words(in: $0) }
+            .filter { !$0.isEmpty }
+        guard lines.count > 1, let opening = lines.first else { return nil }
+        let spoken = Set(PolishLexicon.words(in: input))
+        return Double(opening.count { spoken.contains($0) }) / Double(opening.count)
+    }
+
+    /// Whether any window-long stretch of the output is the speaker's words.
+    ///
+    /// A window rather than the whole output, because a faithful polish of a
+    /// bilingual dictation is only *partly* the speaker's vocabulary — the
+    /// mistranscribed part is reconstructed — and judging the whole blob by one
+    /// ratio would refuse it. One clause that is clearly theirs is enough to say the
+    /// model was working on their text.
+    private static func isAnythingSupported(_ outputWords: [String],
+                                            by spoken: Set<String>,
+                                            thresholds: PolishPrefixAlignmentThresholds) -> Bool {
+        let window = min(thresholds.windowWords, outputWords.count)
+        let required = Int((Double(window) * thresholds.supportFloor).rounded(.up))
+        for offset in 0...(outputWords.count - window)
+        where outputWords[offset..<(offset + window)].count(where: { spoken.contains($0) }) >= required {
+            return true
+        }
+        return false
     }
 }
