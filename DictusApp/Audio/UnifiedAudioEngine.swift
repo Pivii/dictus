@@ -411,6 +411,26 @@ class UnifiedAudioEngine: ObservableObject {
             //    observer calls warmUp.
             //  - if user taps the keyboard mic, the cold-start dictation path
             //    starts the engine fresh.
+            // The interruption is over, so the flag that says one is in flight must say
+            // so — that is its documented meaning, and until #459 nothing here cleared
+            // it. The only clear was at the end of a successful `startEngine`, which was
+            // harmless while nothing read the flag before a start could finish.
+            //
+            // WHY it stopped being harmless (#459 review): the call guard now reads this
+            // flag *before* the engine starts, and refuses the start when it is raised.
+            // A flag that only a successful start can clear, gating a start, is a latch:
+            // guard refuses → the start never reaches the clear → the next tap refuses
+            // again, with nothing the user can do about it. Today iOS drops the HFP route
+            // when the call ends, so the other half of the guard's conjunction falls and
+            // the latch never closes — but that is iOS saving us, not us being correct.
+            //
+            // Clearing here does NOT resume anything: the engine stays cold on purpose,
+            // for the reason above. It says the audio layer is no longer degraded, which
+            // is true, and lets the next mic tap try. The clear in `startEngine` stays —
+            // it answers a different question (this start succeeded, so we are healthy)
+            // and covers the interruptions that never deliver an `.ended` at all.
+            isInterrupted = false
+
             // Either way, the warm-state contract matches reality and the orange
             // mic only appears when the user actually wants to record (issue #106).
             PersistentLog.log(.audioInterruptionEnded(shouldResume: shouldResume, restored: false))
