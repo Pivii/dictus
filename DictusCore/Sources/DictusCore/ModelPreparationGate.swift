@@ -28,9 +28,18 @@ import Foundation
 /// string — so it lives where `swift test` can reach it.
 public struct ModelPreparationGate: Equatable, Sendable {
 
-    /// The preparation that was refused because a dictation held the display.
-    /// Cleared when that preparation ends, so the *next* one is judged on its own.
-    private var withheldModel: String?
+    /// Every preparation refused because a dictation held the display.
+    /// Emptied when preparation activity stops altogether, so the *next* one is judged
+    /// on its own.
+    ///
+    /// WHY A SET AND NOT ONE SLOT: `liveActivePrepModel` names a single model, but it can
+    /// name a different one from one moment to the next — a download of B while A is
+    /// prewarming makes it alternate. A single slot only remembered the last refusal, so
+    /// refusing A and then B left A unremembered, and A becoming the live preparation
+    /// again after the dictation ended would have been presented: the delayed pop this
+    /// type exists to prevent. Nothing distinguishes the two refusals, so nothing should
+    /// have to choose between them.
+    private var withheldModels: Set<String> = []
 
     public init() {}
 
@@ -61,18 +70,23 @@ public struct ModelPreparationGate: Equatable, Sendable {
         isPresenting: Bool
     ) -> String? {
         guard let liveModel else {
-            // No preparation in flight. Whatever was withheld is over, and a later
-            // preparation is a new event that gets judged on its own merits.
-            withheldModel = nil
+            // Nothing is preparing at all. Every refusal is over, and a later preparation
+            // is a new event that gets judged on its own merits.
+            //
+            // WHY this and not "forget a model once it stops being the live one": with
+            // two preparations in flight the live one alternates, so forgetting per model
+            // would clear a refusal while its load is still running. An empty
+            // `liveModel` is the one moment that says all of them are done.
+            withheldModels.removeAll()
             return nil
         }
         guard !Self.dictationOwnsTheDisplay(dictationStatus) else {
             // The load runs on regardless — it is only the screen that is refused.
-            withheldModel = liveModel
+            withheldModels.insert(liveModel)
             return nil
         }
-        // The dictation is over and this is still the load it started under.
-        guard withheldModel != liveModel else { return nil }
+        // The dictation is over and this is still a load it started under.
+        guard !withheldModels.contains(liveModel) else { return nil }
         guard !isPresenting else { return nil }
         return liveModel
     }

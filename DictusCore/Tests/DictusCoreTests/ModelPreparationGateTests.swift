@@ -112,6 +112,52 @@ final class ModelPreparationGateTests: XCTestCase {
         )
     }
 
+    // MARK: - Two preparations at once
+
+    /// The review finding on PR #477, and the reason the gate remembers a set rather than
+    /// the last refusal. `liveActivePrepModel` names one model but can alternate between
+    /// two in flight — a download of B while A prewarms. Refusing A and then B must not
+    /// forget A: A is still the load that started under the dictation.
+    func testAWithheldModelIsNotForgottenByASecondRefusal() {
+        var gate = ModelPreparationGate()
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: model, dictationStatus: .recording, isPresenting: false)
+        )
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: otherModel, dictationStatus: .recording, isPresenting: false)
+        )
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: model, dictationStatus: .idle, isPresenting: false),
+            "the first refusal must survive the second one"
+        )
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: otherModel, dictationStatus: .idle, isPresenting: false),
+            "and so must the second"
+        )
+    }
+
+    /// Both refusals are dropped together, and only when nothing is preparing any more.
+    /// Forgetting per model would clear a refusal whose load is still running, because
+    /// the live one alternates while two are in flight.
+    func testBothRefusalsAreClearedOnlyWhenNothingIsPreparing() {
+        var gate = ModelPreparationGate()
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: model, dictationStatus: .recording, isPresenting: false)
+        )
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: otherModel, dictationStatus: .recording, isPresenting: false)
+        )
+        // Both preparations end.
+        XCTAssertNil(
+            gate.modelToPresent(liveModel: nil, dictationStatus: .idle, isPresenting: false)
+        )
+        // Either one asked for afresh is a new event.
+        XCTAssertEqual(
+            gate.modelToPresent(liveModel: model, dictationStatus: .idle, isPresenting: false),
+            model
+        )
+    }
+
     /// The `.onAppear` case the latch exists for: the user switches to the Models tab
     /// after the dictation, which re-asks the question about the same still-running load.
     func testTabSwitchAfterTheDictationDoesNotRaiseTheWithheldLoad() {
