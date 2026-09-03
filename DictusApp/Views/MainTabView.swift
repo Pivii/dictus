@@ -32,6 +32,10 @@ struct MainTabView: View {
 
     /// Active model preparation requested by the keyboard without starting a
     /// recording. The overlay dismisses itself after its contextual ready state.
+    ///
+    /// Its three writers are all URL-driven, and the two that can fire while the process
+    /// is already alive are gated on #458's rule below. `init`'s launch-intent seed is
+    /// not: a process being launched has no dictation to interrupt.
     @State private var preparingModelID: String?
 
     /// The paywall, opened from the keyboard (#404).
@@ -167,6 +171,17 @@ struct MainTabView: View {
             guard let intent = KeyboardDictationURL.intent(from: url) else { return }
 
             if intent == .prepare {
+                // #458's rule applies here too. This overlay sits BELOW `RecordingView`
+                // in the ZStack above, so it could never be what replaced the recording
+                // screen — but raising it during a dictation would still leave the app
+                // showing a preparation screen the moment the dictation ended.
+                //
+                // A prepare URL arrives because the keyboard refused a mic tap while a
+                // load was in flight, so the app's own status is normally `.idle` here;
+                // this guard is about the case where it is not.
+                guard !ModelPreparationGate.dictationOwnsTheDisplay(coordinator.status) else {
+                    return
+                }
                 preparingModelID = activeModelIdentifier
                 return
             }
@@ -183,6 +198,13 @@ struct MainTabView: View {
             Self.hasHandledURL = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardPreparationRequested)) { _ in
+            // Gated for the same reason as the `.prepare` branch above, and gated with
+            // it rather than instead of it: `DictusApp.handleIncomingURL` posts this
+            // notification for the very same `dictate?…prepare` URL that handler sees,
+            // so the two are one event and must not disagree about whether to answer it.
+            guard !ModelPreparationGate.dictationOwnsTheDisplay(coordinator.status) else {
+                return
+            }
             preparingModelID = activeModelIdentifier
         }
         .onChange(of: scenePhase) { _, newPhase in
