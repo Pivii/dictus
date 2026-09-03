@@ -25,8 +25,10 @@ enum AudioEngineError: Error, DiagnosableError {
     case permissionUndetermined
 
     /// A call holds the microphone. The payload names which of the two signals said so —
-    /// the two sites disagree about the channel count, and a diagnostic that asserts the
-    /// wrong one is worse than one that asserts nothing (#313 review).
+    /// a telephony input route, or a bluetooth headset route during an interruption
+    /// (#459). Diagnostic only: a log that says nothing but "a call" cannot tell a
+    /// handset call from an AirPods one, and those are two different fixes if this
+    /// detection is ever wrong again.
     case phoneCallActive(evidence: String)
 
     /// The input node reported a format nothing can be recorded from, and it reported
@@ -409,6 +411,26 @@ class UnifiedAudioEngine: ObservableObject {
             //    observer calls warmUp.
             //  - if user taps the keyboard mic, the cold-start dictation path
             //    starts the engine fresh.
+            // The interruption is over, so the flag that says one is in flight must say
+            // so — that is its documented meaning, and until #459 nothing here cleared
+            // it. The only clear was at the end of a successful `startEngine`, which was
+            // harmless while nothing read the flag before a start could finish.
+            //
+            // WHY it stopped being harmless (#459 review): the call guard now reads this
+            // flag *before* the engine starts, and refuses the start when it is raised.
+            // A flag that only a successful start can clear, gating a start, is a latch:
+            // guard refuses → the start never reaches the clear → the next tap refuses
+            // again, with nothing the user can do about it. Today iOS drops the HFP route
+            // when the call ends, so the other half of the guard's conjunction falls and
+            // the latch never closes — but that is iOS saving us, not us being correct.
+            //
+            // Clearing here does NOT resume anything: the engine stays cold on purpose,
+            // for the reason above. It says the audio layer is no longer degraded, which
+            // is true, and lets the next mic tap try. The clear in `startEngine` stays —
+            // it answers a different question (this start succeeded, so we are healthy)
+            // and covers the interruptions that never deliver an `.ended` at all.
+            isInterrupted = false
+
             // Either way, the warm-state contract matches reality and the orange
             // mic only appears when the user actually wants to record (issue #106).
             PersistentLog.log(.audioInterruptionEnded(shouldResume: shouldResume, restored: false))
@@ -914,26 +936,20 @@ class UnifiedAudioEngine: ObservableObject {
         lastWaveformWrite = 0
         lastWaveformDiagnosticsWrite = 0
 
-        let (inputNode, hwFormat) = try resolveUsableInputFormat(context: context)
-
-        // Guard: detect telephony audio route (phone call in progress)
-        // WHY only check inputs for "telephony" (not builtInReceiver on outputs):
-        // Without .defaultToSpeaker, iOS routes output to builtInReceiver by default.
-        // That's normal operation, not a phone call indicator.
+        // WHY this runs BEFORE the format is resolved (issue #459):
+        // it used to run thirty lines below, and that is why the AirPods case never
+        // reached it. A call takes the input hardware away, so the input node reports a
+        // dead format, so `resolveUsableInputFormat` threw `audioHardwareUnavailable`
+        // and returned — the call guard was never evaluated at all. Measured on device
+        // 2026-08-31: `engineRebuiltOnDeadFormat … route=BluetoothHFP` then
+        // `invalid hwFormat after engine rebuild`, and no phone-call line anywhere.
         //
-        // Since #123 this is the ONLY site that produces the phone-call message. The
-        // zero-channel guard above used to throw it too, on the strength of a format
-        // that says nothing about telephony — see `resolveUsableInputFormat`.
-        let currentRoute = AVAudioSession.sharedInstance().currentRoute
-        let hasTelephony = currentRoute.inputs.contains {
-            $0.portType.rawValue.lowercased().contains("telephony")
-        }
-        if hasTelephony {
-            PersistentLog.log(.dictationFailed(
-                error: "telephony input route active — \(routeStateDescription())"
-            ))
-            throw AudioEngineError.phoneCallActive(evidence: "a telephony input route is active")
-        }
+        // Asking "is a call holding this?" first is also the cheaper order: rebuilding
+        // a whole AVAudioEngine to chase a format a call is holding cannot succeed.
+        // Nothing about the #457 rebuild itself changes — only when it is reached.
+        try refuseIfACallHoldsTheMicrophone()
+
+        let (inputNode, hwFormat) = try resolveUsableInputFormat(context: context)
 
         // Create converter from hardware format to 16kHz mono
         guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
@@ -1100,6 +1116,59 @@ class UnifiedAudioEngine: ObservableObject {
                 ))
                 throw AudioEngineError.audioHardwareUnavailable(reason: reason.rawValue)
             }
+        }
+    }
+
+    /// Refuse the start when a call holds the microphone, and say that it is a call.
+    ///
+    /// ### What was wrong (issue #459)
+    ///
+    /// The guard used to be one `contains("telephony")` on the input ports. **A call
+    /// carried over AirPods or any bluetooth headset does not present as `telephony`.
+    /// It presents as `BluetoothHFP`** — so for most people, on the majority of their
+    /// calls, the guard never fired. Until #457 that miss was hidden: a zero-channel
+    /// format threw `phoneCallActive` too, so the AirPods case reached the user with
+    /// the right message for the wrong reason. #457 corrected the mislabel, which left
+    /// this case telling the user the microphone is unavailable without saying that a
+    /// call is holding it — the one situation the user can actually act on.
+    ///
+    /// ### WHY only the inputs, and not `builtInReceiver` on the outputs
+    ///
+    /// Unchanged from the original guard: without `.defaultToSpeaker`, iOS routes
+    /// output to `builtInReceiver` by default. That is normal operation, not a call.
+    ///
+    /// The rule itself is `CallRoutePolicy` in DictusCore, because this method cannot
+    /// be tested — `@MainActor`, a live `AVAudioEngine`, and a simulator that has
+    /// neither a telephony route nor bluetooth audio. Since #123 this is the only site
+    /// in the file that produces the phone-call message.
+    private func refuseIfACallHoldsTheMicrophone() throws {
+        let session = AVAudioSession.sharedInstance()
+        let decision = CallRoutePolicy.decide(
+            inputPortTypes: session.currentRoute.inputs.map { $0.portType.rawValue },
+            isInterrupted: isInterrupted,
+            builtInMicrophoneIsAvailable: (session.availableInputs ?? [])
+                .contains { $0.portType == .builtInMic }
+        )
+
+        guard case .callHoldsMicrophone(let evidence) = decision else { return }
+
+        PersistentLog.log(.dictationFailed(
+            error: "a call holds the microphone: \(evidence.rawValue) — \(routeStateDescription())"
+        ))
+        throw AudioEngineError.phoneCallActive(evidence: Self.evidenceSentence(for: evidence))
+    }
+
+    /// The English fragment `AudioEngineError.phoneCallActive` carries into the log.
+    ///
+    /// Diagnostic only — never shown to anyone. It exists because the two signals are
+    /// indistinguishable in a log that only says "a call", and the reader of that log
+    /// is an agent (#255).
+    private static func evidenceSentence(for evidence: CallRouteEvidence) -> String {
+        switch evidence {
+        case .telephonyInputRoute:
+            return "a telephony input route is active"
+        case .headsetRouteDuringInterruption:
+            return "a bluetooth headset is the input route while the session is interrupted"
         }
     }
 
