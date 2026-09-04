@@ -28,6 +28,15 @@ struct GuardrailCase: Codable {
     let language: String
     /// `grounded` | `fabricated`, by reading.
     let grounding: String
+    /// `aligned` | `displaced` | `unrelated`, by reading (#466): does the output
+    /// open where the input opens, does the input's opening reappear late, or does
+    /// it not reappear at all.
+    ///
+    /// Optional because the 128 outputs committed for #413/#414 carry no such label
+    /// — they predate the question. Absent reads as `aligned`, which is what every
+    /// one of them is by construction: they are campaign outputs of ordinary shape,
+    /// and any of them the check refuses is a false rejection worth seeing.
+    let prefix: String?
     let wasAccepted: Bool
     let raw: String
     let output: String
@@ -44,11 +53,32 @@ struct GuardrailCase: Codable {
     }
 
     /// Whether the grounding check is sound for this case's task. It is not for a
-    /// translation, which localises names by design — see `PolishGrounding`.
-    var groundingApplies: Bool { !task.hasPrefix("smart.translate.") }
+    /// translation, which localises names by design, nor for repair, which
+    /// reconstructs words by design — see `PolishGrounding` and
+    /// `PolishAcceptanceContract.repair`.
+    ///
+    /// The repair exclusion only reaches cases that say which free-polish variant
+    /// they are. The 128 outputs committed for #413/#414 all say `polish`, so they
+    /// score exactly as they did.
+    var groundingApplies: Bool {
+        !task.hasPrefix("smart.translate.") && task != "polish.repair"
+    }
+
+    /// Whether the prefix-alignment check runs on this case's task in production —
+    /// the free polish only, per `PolishAcceptanceContract.requiresAlignedPrefix` (#466).
+    var prefixApplies: Bool { task == "polish" || task.hasPrefix("polish.") }
+
+    /// The free-polish variant, when the case names one: `natural`, `auto`,
+    /// `repair`. Nil on the cases committed before #466, which say only `polish`,
+    /// and on every Smart Mode.
+    var polishMode: String? {
+        guard task.hasPrefix("polish.") else { return nil }
+        return String(task.dropFirst("polish.".count))
+    }
 
     var mustBeRejectedForLanguage: Bool { language != "sameLanguage" }
     var mustBeRejectedForGrounding: Bool { grounding == "fabricated" }
+    var mustBeRejectedForPrefix: Bool { (prefix ?? "aligned") != "aligned" }
 }
 
 enum GuardrailCorpus {
@@ -121,6 +151,47 @@ enum GuardrailCorpus {
         return score
     }
 
+    /// Score the prefix-alignment check at one threshold set (#466).
+    ///
+    /// `include` is what makes the repair split visible rather than folded in: the
+    /// mode is measured on its own because its output legitimately shares no
+    /// vocabulary with its input, which is the one shape this check cannot read.
+    static func scorePrefix(_ cases: [GuardrailCase],
+                            thresholds: PolishPrefixAlignmentThresholds,
+                            include: (GuardrailCase) -> Bool = { _ in true }) -> Score {
+        var score = Score()
+        for item in cases where item.prefixApplies && include(item) {
+            let passes = PolishPrefixAlignment.accepts(
+                polished: item.output, raw: item.preprocessed, thresholds: thresholds
+            )
+            let label = "\(item.source):\(item.fixture)#\(item.run)"
+            switch (item.mustBeRejectedForPrefix, passes) {
+            case (true, false): score.caught += 1
+            case (true, true): score.missed += 1; score.misses.append(label)
+            case (false, false):
+                score.falselyRejected += 1
+                score.falseRejections.append("\(label) — \(offsetDescription(item, thresholds))")
+            case (false, true): score.correctlyAccepted += 1
+            }
+        }
+        return score
+    }
+
+    /// Where the input's opening reappeared in the output, in words, for a reader
+    /// checking a rejection rather than taking it on trust.
+    private static func offsetDescription(_ item: GuardrailCase,
+                                          _ thresholds: PolishPrefixAlignmentThresholds) -> String {
+        switch PolishPrefixAlignment.alignment(
+            ofOutput: item.output, against: item.preprocessed, thresholds: thresholds
+        ) {
+        case .notApplicable: return "not applicable"
+        case .aligned: return "the speaker's, from its first line"
+        case .openingLineNotTheSpeakers(let share):
+            return String(format: "opening line is %.0f%% the speaker's", share * 100)
+        case .neverSupported: return "no stretch is the speaker's"
+        }
+    }
+
     // MARK: - Reports
 
     /// One score, and every case behind it that a reader has to be able to check.
@@ -162,12 +233,70 @@ enum GuardrailCorpus {
                 let score = scoreLanguage(cases, thresholds: PolishLanguageSegmentThresholds(
                     minimumSegmentCharacters: length, confidenceFloor: floor
                 ))
-                row += String(format: "%12@", "\(score.caught)c/\(score.falselyRejected)fr" as NSString)
+                row += cell("\(score.caught)c/\(score.falselyRejected)fr")
             }
             print(row)
         }
         print("  (c = drifted outputs caught out of \(cases.filter(\.mustBeRejectedForLanguage).count);"
               + " fr = legitimate outputs falsely rejected out of \(cases.filter { !$0.mustBeRejectedForLanguage }.count))")
+    }
+
+    /// Sweep the two prefix thresholds and print the confusion matrix at each pair,
+    /// for the modes the check ships on and for repair separately (#466).
+    ///
+    /// The offset axis of the earlier sweeps is gone with the threshold it swept —
+    /// §8 of the research note measured that no value of it separates a preamble
+    /// from a legitimately translated opening.
+    static func sweepPrefix(_ cases: [GuardrailCase]) {
+        let defaults = PolishPrefixAlignmentThresholds.default
+        let windows = [4, 6, 8, 10, 12, 16]
+        let floors = [0.50, 0.60, 0.70, 0.75, 0.80, 0.90]
+        for (title, include) in [
+            ("natural + auto — the modes the check ships on",
+             { (item: GuardrailCase) in item.polishMode != "repair" }),
+            ("repair — measured separately, see docs/research/466-preamble-guardrail.md §6.3",
+             { (item: GuardrailCase) in item.polishMode == "repair" })
+        ] {
+            let scoped = cases.filter { $0.prefixApplies && include($0) }
+            print("\n── #466 prefix sweep, \(title)")
+            print("   minimum=\(defaults.minimumWords) words")
+            print("        " + floors.map { String(format: "%12.2f", $0) }.joined())
+            for window in windows {
+                var row = String(format: "  %3d   ", window)
+                for floor in floors {
+                    let score = scorePrefix(cases, thresholds: PolishPrefixAlignmentThresholds(
+                        windowWords: window, supportFloor: floor, minimumWords: defaults.minimumWords
+                    ), include: include)
+                    row += cell("\(score.caught)c/\(score.falselyRejected)fr")
+                }
+                print(row)
+            }
+            print("  (rows: window judged at once, in words; columns: share of a stretch"
+                  + " that must be the speaker's own words — one floor serves both tests)")
+            print("  (c = caught out of \(scoped.filter(\.mustBeRejectedForPrefix).count);"
+                  + " fr = falsely rejected out of \(scoped.filter { !$0.mustBeRejectedForPrefix }.count))")
+        }
+        openingLineTable(cases)
+    }
+
+    /// The opening-line support share of every multi-line output, which is the table
+    /// the floor is read off. A reader can see the band it sits in rather than take
+    /// it on trust.
+    private static func openingLineTable(_ cases: [GuardrailCase]) {
+        var legitimate: [Double] = []
+        var refused: [Double] = []
+        for item in cases where item.prefixApplies && item.polishMode != "repair" {
+            guard let share = PolishPrefixAlignment.openingLineSupport(
+                ofOutput: item.output, against: item.preprocessed
+            ) else { continue }
+            if item.mustBeRejectedForPrefix { refused.append(share) } else { legitimate.append(share) }
+        }
+        print("\n── #466 opening-line support share, multi-line outputs only")
+        print(String(format: "   legitimate           n=%3d   worst (lowest)  %.2f",
+                     legitimate.count, legitimate.min() ?? .nan))
+        print(String(format: "   preamble/fabricated  n=%3d   worst (highest) %.2f",
+                     refused.count, refused.max() ?? .nan))
+        print("   (the floor sits between those two numbers; a single-line output is not judged here)")
     }
 
     /// The anchors every case carries, grounded or not. What #414's precision rests
@@ -184,6 +313,16 @@ enum GuardrailCorpus {
             print("  [\(item.source):\(item.fixture)#\(item.run)] \(item.grounding): \(rendered.joined(separator: ", "))")
         }
         print("  (⚑ = present in the output, absent from the input)")
+    }
+
+    /// Right-align a cell in a fixed-width column.
+    ///
+    /// `String(format: "%12@", … as NSString)` does not pad on this platform — it
+    /// prints the string and ignores the width — so every sweep table this file has
+    /// ever printed came out as one run-on line. Found while adding the #466 sweep;
+    /// fixed for both.
+    private static func cell(_ text: String, width: Int = 12) -> String {
+        String(repeating: " ", count: max(0, width - text.count)) + text
     }
 
     private static func confidenceOfTopHypothesis(_ text: String) -> Double {

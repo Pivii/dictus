@@ -80,7 +80,12 @@ public enum SmartModeCatalogue {
             // reached an accepted output on a dictation naming neither Sophie nor
             // December. Every prompt in the repo carries examples, so this is the
             // mode where the check earns its keep first, not only.
-            requiresGroundedNames: true
+            requiresGroundedNames: true,
+            // This mode's whole job is to restructure. It condenses a rambling
+            // dictation into bullets that synthesise, so the first bullet need not
+            // come from the first sentence and the prefix check (#466) would be
+            // measuring something the mode is licensed to break.
+            requiresAlignedPrefix: false
         ),
         // The mode built for a long rambling dictation is the one that walks users
         // into the context ceiling, so a refusal there costs the whole text. The
@@ -120,7 +125,11 @@ public enum SmartModeCatalogue {
                 // `mars` becomes `March`. Surface identity between output and input
                 // is not expected here, so the grounding check would be measuring
                 // the wrong thing rather than measuring nothing.
-                requiresGroundedNames: false
+                requiresGroundedNames: false,
+                // Same reason, sharper: a translation keeps none of the input's
+                // words, so there is no lexical overlap to find at the head or
+                // anywhere else (#466).
+                requiresAlignedPrefix: false
             ),
             // Translation cannot degrade: the floor is the input language, which is
             // the one thing this mode exists to change. Inserting it would be the
