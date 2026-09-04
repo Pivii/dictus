@@ -39,6 +39,25 @@ final class LaunchPreloadOutcome {
 
 extension DictationCoordinator {
 
+    /// What an in-app record button should do with a tap, right now (#484).
+    ///
+    /// WHY the buttons ask this instead of calling and finding out: `startDictation` refuses a
+    /// start while a load is in flight and returns `Void`, so a caller cannot learn that it was
+    /// refused — on device that read as a button answering twelve taps with nothing at all.
+    /// The rule itself is `RecordTapRouting`, in DictusCore where it is tested; what belongs
+    /// here is only the reading of its three inputs, from the same places the guard reads them,
+    /// so the two buttons cannot drift from each other or from the guard.
+    ///
+    /// WHY in this file and not next to the guard it mirrors: `DictationCoordinator.swift` is
+    /// at the file-length budget #146 calibrated against it, and this is model-load state.
+    var recordTapDecision: RecordTapRouting.Decision {
+        RecordTapRouting.decide(
+            dictationStatus: status,
+            isModelDownloaded: defaults.bool(forKey: SharedKeys.modelReady),
+            loadState: modelLoadState
+        )
+    }
+
     /// Load the active model at launch, under a deadline the app actually honours.
     ///
     /// WHY a deadline at all (issue #428): this path used to `await ensureEngineReady()`

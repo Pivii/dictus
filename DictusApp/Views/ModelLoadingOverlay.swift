@@ -213,13 +213,31 @@ struct ModelLoadingOverlay: View {
                 .font(.dictusSubheading)
                 .foregroundStyle(.primary)
 
-            if activeContext.isPrepareOnly {
-                Text("Return to your app and tap the microphone again.")
+            if let completionInstruction {
+                Text(completionInstruction)
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
+        }
+    }
+
+    /// What the user does next, once the model is ready.
+    ///
+    /// Only the two prepare-only contexts have anything to say here: they are the ones reached
+    /// from a tap that deliberately does NOT become a recording, so the screen owes the user
+    /// the action that does. Which sentence is a question about where they came from, not
+    /// about the prepare-only rule — hence `startedFromAnotherApp` and not `isPrepareOnly`
+    /// (#484). Onboarding and model selection dismiss into the screen the user was already on.
+    private var completionInstruction: LocalizedStringKey? {
+        switch activeContext {
+        case .onboarding, .modelSelection:
+            return nil
+        case .keyboardColdStart:
+            return "Return to your app and tap the microphone again."
+        case .appRecordTap:
+            return "Tap again to start your dictation."
         }
     }
 
@@ -244,7 +262,13 @@ struct ModelLoadingOverlay: View {
             }
 
             if !(showCompletion && activeContext.isPrepareOnly) {
-                Text(activeContext.isPrepareOnly
+                // WHICH OF THE TWO, and why it is not `isPrepareOnly` (#484): "stay on this
+                // page" is only sayable to someone who is on it. The keyboard cold start
+                // brings a user whose next move is to leave, so it asks for patience instead.
+                // The in-app tap does not — and staying in the foreground is what keeps the
+                // compile off the system's background throttle (#472), so it is the stronger
+                // of the two sentences and the right one here.
+                Text(activeContext.startedFromAnotherApp
                      ? "Please wait for preparation to finish."
                      : "Please stay on this page and do not leave the app.")
                     .font(.dictusCaption)
@@ -267,6 +291,11 @@ struct ModelLoadingOverlay: View {
             return "Dictus is preparing this model for offline dictation."
         case .keyboardColdStart:
             return "Your model needs to be prepared before this dictation. This is usually an exceptional step."
+        case .appRecordTap:
+            // Says out loud why the tap did nothing, which is the whole of #484: the button
+            // used to swallow it in silence. The keyboard's wording cannot be reused as is —
+            // it is written for someone who arrived from another app.
+            return "Your dictation cannot start yet: Dictus is preparing your model. This is usually an exceptional step."
         }
     }
 

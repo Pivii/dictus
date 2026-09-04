@@ -14,6 +14,10 @@ struct HomeView: View {
     @EnvironmentObject var proStatus: ProStatusManager
     @EnvironmentObject var history: TranscriptionHistoryStore
     @ObservedObject var modelManager: ModelManager
+
+    /// Raises the model preparation screen when a tap arrives during a load (#484).
+    @Environment(\.presentModelPreparation) private var presentModelPreparation
+
     @State private var showCopiedFeedback = false
 
     /// Drives the history sheet (#70).
@@ -282,7 +286,16 @@ struct HomeView: View {
     /// A Button just starts dictation — the MainTabView overlay handles the full UI.
     private var testDictationLink: some View {
         Button {
-            coordinator.startDictation(origin: .app)
+            // A tap that lands during a model load gets the preparation screen instead of
+            // being swallowed by `startDictation`'s guard (#484). The button stays live and
+            // keeps its shape: `isModelReady` above says a model is on disk and elected, which
+            // is a different question from whether one is loading right now.
+            switch coordinator.recordTapDecision {
+            case .presentPreparation:
+                presentModelPreparation()
+            case .startDictation:
+                coordinator.startDictation(origin: .app)
+            }
         } label: {
             HStack {
                 Image(systemName: "waveform")
