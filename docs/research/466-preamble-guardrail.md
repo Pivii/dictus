@@ -227,7 +227,7 @@ than relaxed.** §6.3 is that report.
 At the shipping set — window 12 words, floor 0.40, offset 4, minimum 8 words — the check scores
 **3 caught / 0 false rejections out of 102** on Natural and Auto.
 
-```
+```text
 ── #466 prefix sweep, natural + auto — the modes the check ships on
    window=12 words, minimum=8 words
                 0.20        0.30        0.40        0.50        0.60        0.70
@@ -254,7 +254,7 @@ licenses the model to delete, is thin in this corpus and common in speech.
 The window is held fixed in that grid and swept separately, so that "fixed" does not mean
 "unexamined":
 
-```
+```text
 ── #466 window sensitivity, natural + auto
    maxOffset=4, minimum=8
                 0.20        0.30        0.40        0.50        0.60        0.70
@@ -274,7 +274,7 @@ Every window from 6 to 16 gives `3c/0fr` across floors 0.30–0.50. 12 is inside
 **#466's scope section puts the check on Natural, Auto and Repair. The measurement says Repair is
 impossible, and it is not a threshold question.**
 
-```
+```text
 ── #466 prefix sweep, repair
                 0.20        0.30        0.40        0.50        0.60        0.70
     0        1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr     1c/10fr
@@ -319,7 +319,7 @@ whoever flips the field learns the price from the test suite.
 While scoring, the check flagged an output nobody had looked at twice —
 `raw/r4-freepolish-auto-3runs-after.txt`, fixture `auto-verbal-fr`, run 3:
 
-```
+```text
 raw       j'ai fini la préparation du dossier point d'exclamation retour à la ligne
           je te l'envoie demain matin virgule dis-moi si ça te va
 polished  Je suis désolé, je ne peux pas répondre à cette demande.
@@ -388,7 +388,7 @@ what the replacement costs.
 10 dictations, one preamble, accepted. Event `FB137B5E-BC76-4C51-A9B3-572F13A15B72`, App 1.8.1
 (29), `mode=natural`, `outcome=success`, typed by the keyboard:
 
-```
+```text
 raw (174)  Okay donc là je refais les tests que je fais parce que j'ai été en détection de
            langue. Là je repasse en français pour avoir des bons tests. Comme ça fera des
            tests complets.
@@ -449,7 +449,7 @@ Measured over the corpus, at the shipping set — window 8, floor 0.70, offset 4
 `maximumOffsetWords = 4` is the midpoint of an empty gap between 2 and 6, rather than a value with
 one clean neighbour.
 
-```
+```text
 ── #466 prefix sweep, natural + auto — the modes the check ships on
    window=8 words, minimum=8 words
                 0.50        0.60        0.70        0.75        0.80        0.90
@@ -562,7 +562,7 @@ Committed as `device-456-50runs.json`.
 
 ### 9.3 The third mechanism: two questions, one floor
 
-```
+```text
 1. Is any of this the speaker's?   one window-long stretch of the output must be
                                    ≥ supportFloor the speaker's vocabulary
                                    → no  ⇒ refuse   (#349: a refusal, an invented answer)
@@ -579,7 +579,7 @@ An offset cannot tell them apart because an offset does not know where the lines
 
 ### 9.4 The band is the widest of the three mechanisms
 
-```
+```text
 ── #466 opening-line support share, multi-line outputs only
    legitimate           n= 19   worst (lowest)  1.00
    preamble/fabricated  n= 84   worst (highest) 0.38
@@ -590,7 +590,7 @@ Every one of the 84 preambles and fabrications is at most 38 %.** The floor of 0
 empty band 0.62 wide — against 0.42 for #413's confidence floor and a 2-to-6-word gap for the
 offset it replaces.
 
-```
+```text
 ── #466 prefix sweep, natural + auto — the modes the check ships on   (minimum=8 words)
                 0.50        0.60        0.70        0.75        0.80        0.90
     4        85c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr     86c/0fr
@@ -680,7 +680,7 @@ Japanese, Thai or Khmer. A whole Chinese dictation came out as a single token, `
 Reproduced on `5b2d578` with an authentic Chinese preamble (`当然，以下是润色后的文本：` on its own
 line, then the polished text):
 
-```
+```text
 ── #466 prefix-alignment check, shipping thresholds (window=8, floor=0.7, minimum=8)
    natural + auto: caught 0/1
    missed: cr-review-probe:ZH-preamble#1
@@ -696,7 +696,7 @@ Chinese users toward a model (#409), so they are not hypothetical.
 The obvious repair — hand the whole job to `NLTokenizer` — was written, measured, and **rejected**.
 It scores identically on all 481 outputs and passes all 1 572 tests, and it is still wrong:
 
-```
+```text
 NLTokenizer alone   j'ai bossé sur le week-end d'aujourd'hui
                     → [jai, bosse, sur, le, week, end, daujourdhui]
 ```
@@ -726,7 +726,7 @@ since the corpus could not have told us either way.
 
 ### 10.4 Rescored on everything
 
-```
+```text
 corpus: 481 outputs from 16 sources
 
 ── #413 per-segment language check     caught 18/18   false rejections 0/463
@@ -755,3 +755,56 @@ The four shapes that have now falsified or holed a mechanism here:
 | an input whose opening is in another language | 50 real runs of a known transcript |
 | a script that writes no word separators | a code review |
 | a preamble that is not on its own line | still open, accepted, 0/81 observed |
+
+---
+
+## 11. Amendment — the second review pass (2026-09-03)
+
+CodeRabbit's second review, over `8f9aeb0..dcced3d`. Two 🟡 Minor points. One applied, one
+answered with a different instrument than the one suggested.
+
+### 11.1 Applied: fenced blocks carry a language
+
+MD040. Every unlabelled fence in this file now says `text`, not only the six in the reviewed range —
+the earlier ones were equally unlabelled and would have been flagged on the next pass.
+
+### 11.2 Answered differently: `assert`, not `precondition`, and nothing clamped in the initialiser
+
+The review proposed `precondition` on all three thresholds. **The technical analysis is right** and
+the concern is real: a non-positive `windowWords` builds an invalid `Range`, and a non-finite
+`supportFloor` traps the `Int` conversion. Both would crash. The disagreement is about the
+instrument, and it turns on where this code runs.
+
+**`precondition` is the wrong tool here.** This type runs inside the keyboard extension (#361), and
+a `precondition` converts a doubtful number into a crash mid-dictation — the worst outcome
+available to a guardrail whose entire design rule is *every uncertainty resolves toward accepting,
+because a rejection costs the user words they said.* Nothing in the app can reach the failure: the
+only production value is `.default`, a compile-time constant, and the initialiser is public only
+because the harness's sweep needs it. It would trade a real user-facing risk for a hypothetical
+one. `DictusCore` contains no `precondition` at all, and this is not the place to introduce the
+first.
+
+**Clamping in the initialiser is also refused**, and for a sharper reason: the one caller that
+varies these numbers is the threshold sweep. A sweep that silently substituted 1.0 for a floor of
+1.5 would print a table it did not measure — the single failure this entire issue is organised
+against. The stored value stays exactly what the caller wrote.
+
+**What ships is both halves of the problem, separated:**
+
+| | |
+|---|---|
+| `assert` on the initialiser | Says so loudly in debug, which is where `swift run polish-harness` executes, so a bad sweep value is caught by the one program that can produce one. Inert in release. |
+| clamps at the point of use, in `isAnythingSupported` | Makes the arithmetic unable to trap in release, ever. Follows the precedent `PolishAcceptanceContract.lengthBand` already sets, which guards a contract authored with its bounds the wrong way round rather than trapping on it. |
+
+The assert is what stops the failure being silent; the clamps are what stop it being fatal. Neither
+alone is enough — a clamp without the assert degrades a measurement without saying so, and an
+assert without the clamp still crashes a release keyboard.
+
+Writing the clamps surfaced a third case neither the review nor the first draft had: clamping
+`window` **up** to 1 breaks the `window ≤ outputWords.count` invariant on a zero-word output, which
+a non-positive `minimumWords` can let through. The loop range is now guarded explicitly.
+
+### 11.3 Unchanged
+
+`caught 87/87, false rejections 0/269`; #413 `18/18, 0/463`; 1 575 tests green; `swiftlint
+--strict` clean; three targets building. Verified after the change, not assumed.

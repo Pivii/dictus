@@ -35,7 +35,38 @@ public struct PolishPrefixAlignmentThresholds: Equatable, Sendable {
     /// judge, and guessing at one would refuse a good output for nothing.
     public let minimumWords: Int
 
+    /// ### Why `assert` and not `precondition`, and why nothing is clamped here
+    ///
+    /// Raised in review of PR #478, which proposed `precondition` on all three.
+    /// The technical analysis behind it is right — a non-positive `windowWords`
+    /// makes an invalid `Range`, and a non-finite `supportFloor` traps the `Int`
+    /// conversion — but a `precondition` is the wrong instrument in **this** type.
+    ///
+    /// This code runs inside the keyboard extension (#361). A `precondition` turns
+    /// a doubtful number into a crash mid-dictation, which is the worst outcome
+    /// available to a guardrail whose whole design rule is *every uncertainty
+    /// resolves toward accepting, because a rejection costs the user words they
+    /// said.* Nothing in the app can reach it — the only production value is
+    /// `.default`, a compile-time constant — so it would trade a real user-facing
+    /// risk for a hypothetical one. `DictusCore` has no `precondition` anywhere,
+    /// and this is not the place to introduce the first.
+    ///
+    /// **Nor are the values clamped here**, which was the other suggestion. The one
+    /// caller that varies them is the harness's threshold sweep, and a sweep that
+    /// silently substituted 1.0 for a floor of 1.5 would print a table it did not
+    /// measure. A measurement that misreports itself is the single failure this
+    /// whole issue is organised against.
+    ///
+    /// So: the stored values are whatever the caller wrote, `assert` says so loudly
+    /// in debug — which is where the sweep runs — and `alignment(ofOutput:against:)`
+    /// makes the arithmetic unable to trap in release, following the precedent
+    /// `PolishAcceptanceContract.lengthBand` sets for a contract authored with its
+    /// bounds the wrong way round.
     public init(windowWords: Int, supportFloor: Double, minimumWords: Int) {
+        assert(windowWords > 0, "windowWords must be positive; got \(windowWords)")
+        assert(minimumWords > 0, "minimumWords must be positive; got \(minimumWords)")
+        assert(supportFloor.isFinite && supportFloor > 0 && supportFloor <= 1,
+               "supportFloor must be finite in (0, 1]; got \(supportFloor)")
         self.windowWords = windowWords
         self.supportFloor = supportFloor
         self.minimumWords = minimumWords
@@ -257,8 +288,19 @@ public enum PolishPrefixAlignment {
     private static func isAnythingSupported(_ outputWords: [String],
                                             by spoken: Set<String>,
                                             thresholds: PolishPrefixAlignmentThresholds) -> Bool {
-        let window = min(thresholds.windowWords, outputWords.count)
-        let required = Int((Double(window) * thresholds.supportFloor).rounded(.up))
+        // Both clamps guard a threshold set authored out of domain, the way
+        // `PolishAcceptanceContract.lengthBand` guards bounds written the wrong way
+        // round: without them a non-positive window builds an invalid `Range` and a
+        // non-finite floor traps the `Int` conversion — inside the keyboard
+        // extension. The `assert` on the initialiser is what stops this being
+        // silent; this is what stops it being fatal.
+        let window = max(1, min(thresholds.windowWords, outputWords.count))
+        let floor = thresholds.supportFloor.isFinite ? min(max(thresholds.supportFloor, 0), 1) : 1
+        let required = Int((Double(window) * floor).rounded(.up))
+        // `window` is clamped up to 1, so it can exceed a zero-length output — which
+        // only a non-positive `minimumWords` lets through the guard above. Reached
+        // only in release, where the `assert` is inert.
+        guard outputWords.count >= window else { return false }
         for offset in 0...(outputWords.count - window)
         where outputWords[offset..<(offset + window)].count(where: { spoken.contains($0) }) >= required {
             return true
