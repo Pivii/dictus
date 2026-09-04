@@ -15,9 +15,6 @@ struct PolishDebugView: View {
     @State private var exportURL: URL?
     @State private var exportError: String?
     @State private var isExporting = false
-    /// #357 spike, throwaway. Arms ONE Apple FM probe run inside the keyboard
-    /// extension; see `DictusKeyboard/AppleFMExtensionProbe.swift`.
-    @State private var probeArmed = false
 
     var body: some View {
         List {
@@ -50,24 +47,6 @@ struct PolishDebugView: View {
                             .onTapGesture { selectedEntry = entry }
                     }
                 }
-            }
-            // #357 spike, throwaway. Delete with the spike.
-            Section {
-                Toggle("Arm keyboard Apple FM probe", isOn: $probeArmed)
-                    .onChange(of: probeArmed) { _, armed in
-                        AppGroup.defaults.set(armed, forKey: SharedKeys.appleFMExtensionProbeArmed)
-                    }
-            } header: {
-                Text("#357 spike")
-            } footer: {
-                Text("Fires a burst of 10 Apple FM calls inside the keyboard "
-                     + "extension, the next time the keyboard appears, then "
-                     + "disarms itself. Takes about a minute, keyboard open. "
-                     + "Results land in the persistent log as diagnosticProbe / "
-                     + "AppleFMExtensionProbe. Arm this only once the app is "
-                     + "already being refused, otherwise the result proves nothing.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Polish debug")
@@ -138,10 +117,6 @@ struct PolishDebugView: View {
     private func refresh() async {
         entries = await PolishCoordinator.shared.metricsSnapshot()
         storedCount = await PolishCoordinator.shared.metricsStoredCount()
-        // #357 spike: read the flag back rather than trusting local state. The
-        // extension clears it when it fires, so a toggle that stays on would
-        // claim a run is still pending after it has already happened.
-        probeArmed = AppGroup.defaults.bool(forKey: SharedKeys.appleFMExtensionProbeArmed)
     }
 }
 
@@ -188,7 +163,7 @@ private struct EntryRow: View {
                         .foregroundStyle(entry.metrics.outcome.tintColor)
                         .lineLimit(1)
                 } else if let mode = entry.metrics.mode {
-                    Text(mode.rawValue).font(.caption2).foregroundStyle(.secondary)
+                    Text(mode).font(.caption2).foregroundStyle(.secondary)
                 }
                 // "—" on the auto path, which targets no language at all.
                 Text(entry.metrics.targetLanguage?.rawValue.uppercased() ?? "—")
@@ -204,6 +179,12 @@ private struct EntryRow: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
             HStack(spacing: 10) {
+                // Which process ran the engine (#361). First on the line because
+                // after polish moved into the keyboard it is the field that says
+                // whether an event describes the path the user actually takes.
+                if let writer = entry.writer {
+                    Text(writer)
+                }
                 Text(entry.metrics.engine)
                 if let stt = entry.metrics.sttModelID {
                     Text("stt=\(stt)")
@@ -262,7 +243,7 @@ private struct EntryDetailView: View {
             }
             HStack(spacing: 12) {
                 LabeledValue("engine", entry.metrics.engine)
-                LabeledValue("mode", entry.metrics.mode?.rawValue ?? "-")
+                LabeledValue("mode", entry.metrics.mode ?? "-")
                 LabeledValue("target", entry.metrics.targetLanguage?.rawValue ?? "none (auto)")
                 LabeledValue("detected", entry.metrics.detectedLanguage ?? "-")
             }

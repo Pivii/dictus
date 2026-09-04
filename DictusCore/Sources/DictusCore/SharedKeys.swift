@@ -96,6 +96,19 @@ public enum SharedKeys {
     /// active in Release builds (code is compile-time excluded via #if DEBUG).
     public static let autocorrectDebugLogging = "dictus.autocorrectDebugLogging"
 
+    #if DEBUG
+    // Forced Pro entitlement (DEBUG builds only - see PremiumFlags.debugProEntitlementForced).
+    /// Bool: when true, `ProStatusManager.isProActiveStatic` reports Pro active whatever
+    /// StoreKit says, so the Smart Mode surface #460 hides can still be tested on device.
+    ///
+    /// WHY the key itself is inside the conditional, unlike `autocorrectDebugLogging`
+    /// above: #460 asks for a Release binary in which *nothing* names the force path, and
+    /// a `static let` outside it would leave the string in the binary for a `strings` pass
+    /// to find. Every reader is `#if DEBUG` too, so the constant has no Release caller to
+    /// lose.
+    public static let debugProEntitlementForced = "dictus.debugProEntitlementForced"
+    #endif
+
     // Live Activity preference
     /// Whether Live Activity (Dynamic Island + Lock Screen) is enabled, default true
     public static let liveActivityEnabled = "dictus.liveActivityEnabled"
@@ -112,6 +125,102 @@ public enum SharedKeys {
     /// Read and written only through `PolishAvailabilityChannel`, which is where
     /// the rule about clearing it lives.
     public static let polishUnavailable = "dictus.polishUnavailable"
+
+    // Polish in the keyboard extension (issue #361)
+    /// Data: the JSON-encoded `TranscriptionLanguagePolicy` snapshot for the
+    /// transcription sitting in `lastTranscription`. Written by DictusApp beside the
+    /// raw text, read by the keyboard, which polishes with it instead of re-reading
+    /// the live settings — see `PendingDictation.policy` for why that distinction is
+    /// the whole point.
+    ///
+    /// **Its presence is also the marker that says the text is a hand-off.** DictusApp
+    /// posts `transcriptionReady` for its own dictations too, and has since long
+    /// before #361; those carry finished text and clear this key, so the keyboard
+    /// types them without running the pipeline a second time.
+    public static let lastTranscriptionPolicy = "dictus.lastTranscriptionPolicy"
+    /// Double: how many seconds of audio produced `lastTranscription`. The keyboard
+    /// cannot measure this — it never saw the audio — and the polish duration gate
+    /// (#141) is decided on it.
+    public static let lastTranscriptionDuration = "dictus.lastTranscriptionDuration"
+    /// Data: the JSON-encoded `PendingDictation` the keyboard has claimed and not
+    /// yet typed. Read and written only through `PendingDictationChannel`, which is
+    /// where the rule about who clears it lives.
+    public static let pendingDictation = "dictus.pendingDictation"
+    /// String: the final text the keyboard typed, written back just before the
+    /// insertion so DictusApp can show the polished version rather than the raw one
+    /// in its Live Activity preview and its last-transcription card (#361 decision 6).
+    public static let lastPolishedTranscription = "dictus.lastPolishedTranscription"
+    /// String: a fresh identifier DictusApp writes with each hand-off, which the
+    /// keyboard carries and echoes back on `polishDidFinish`.
+    ///
+    /// Darwin notifications carry no payload, so a bare post says only "some polish
+    /// finished". The keyboard is allowed to post more than once for one dictation —
+    /// early when the answer is known, again when the generation returns — and since
+    /// the app's watchdog started withdrawing dictations, accepting a post from the
+    /// wrong one can end a *live* dictation. The token is what makes the post name
+    /// which hand-off it belongs to.
+    public static let handoffToken = "dictus.handoffToken"
+    /// String: the token the keyboard echoes beside `lastPolishedTranscription`.
+    public static let lastPolishedHandoffToken = "dictus.lastPolishedHandoffToken"
+
+    // MARK: - Smart Modes (issue #79)
+    /// String: identifier of the armed Smart Mode, or absent for Normal. Sticky —
+    /// it survives keyboard and app restarts, like the keyboard language, and is
+    /// cleared by selecting Normal.
+    ///
+    /// An identifier rather than a record, so a built-in's prompt is never frozen at
+    /// the version that was current when the user armed it. Read and written only
+    /// through `SmartModeStore`, which is where the rule about when a read may
+    /// disarm lives.
+    ///
+    /// Distinct from `smartModeEnabled` below, which is the per-feature Pro toggle:
+    /// that one says whether the feature is switched on at all, this one says which
+    /// mode the next dictation runs.
+    public static let smartModeArmed = "dictus.smartModeArmed"
+    /// [String]: identifiers of the modes pinned to the keyboard's long-press fan,
+    /// in the user's own order. Absent means they have never chosen, which seeds
+    /// from `SmartModeCatalogue.defaultPinnedIdentifiers`; an empty array is a real
+    /// choice and is honoured.
+    public static let smartModePinned = "dictus.smartModePinned"
+    /// Bool: whether the user has ever completed the long-press fan gesture.
+    ///
+    /// The only thing it does is retire the discovery hint from the toolbar's centre
+    /// slot. Set once and never cleared — a user who has performed the gesture knows
+    /// it exists, and re-teaching them is what makes a hint into noise. See
+    /// `SmartModeDiscovery`.
+    public static let smartModeGestureUsed = "dictus.smartModeGestureUsed"
+    /// Data: the JSON-encoded `SmartMode` armed for the transcription sitting in
+    /// `lastTranscription`, or absent when the dictation runs Normal.
+    ///
+    /// Written by DictusApp beside the raw text and the language policy, read by the
+    /// keyboard, which applies it. The whole record travels rather than the
+    /// identifier for the same reason `lastTranscriptionPolicy` carries values
+    /// instead of keys: re-resolving on the far side would let a mode change made
+    /// while transcription was running reach a dictation that was started under a
+    /// different one — and the keyboard is exactly where the mode is armed.
+    public static let lastTranscriptionSmartMode = "dictus.lastTranscriptionSmartMode"
+    /// Data: the JSON-encoded `SmartModeSkipNotice` for a dictation whose armed mode
+    /// was resolved away, or absent when nothing was skipped (#423).
+    ///
+    /// The mirror image of the key above, and it exists because the two ends of the
+    /// fact are in different processes: DictusApp resolves the armed mode at
+    /// transcription start and decides it will not run; the toolbar that has to say
+    /// so belongs to the keyboard. Without this the fallback is silent — text is
+    /// inserted, the outcome is an ordinary success, and the only trace is a WARNING
+    /// in a log the user never reads.
+    ///
+    /// Written and cleared beside `lastTranscriptionSmartMode`, so the two can never
+    /// both be set: a mode that ran was not skipped.
+    public static let lastTranscriptionSmartModeSkipped = "dictus.lastTranscriptionSmartModeSkipped"
+    /// String: the `identifier|reason` of the last skip the user was actually told
+    /// about, or absent when there is nothing outstanding (#423).
+    ///
+    /// What makes the notice fire **once, the first time it happens after the state
+    /// changes** rather than on every dictation forever. Cleared by arming, by
+    /// disarming, and by any resolve that succeeds — each of those is the state
+    /// changing. Written only by the surface that showed the sentence, never by the
+    /// resolve, so an in-app dictation cannot burn the token with nobody told.
+    public static let smartModeSkipAnnounced = "dictus.smartModeSkipAnnounced"
 
     // Audio heartbeat (added for background waveform reliability)
     /// Double (timeIntervalSince1970): written directly from the audio thread at ~1Hz
@@ -155,24 +264,35 @@ public enum SharedKeys {
     /// Bool: true when the user has an active Pro subscription.
     /// Written by SubscriptionManager (DictusApp), read by the keyboard extension.
     public static let proActive = "dictus.proActive"
-    /// Bool: per-feature toggle for Smart Mode, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for Smart Mode. Seeded to true, once, by
+    /// `ProStatusManager.seedFeatureTogglesIfNeeded()`; written afterwards only by the
+    /// Settings toggle. Stored, never merely registered -- the keyboard extension reads
+    /// these and a registered default would not reach it (#401).
     public static let smartModeEnabled = "dictus.smartModeEnabled"
-    /// Bool: per-feature toggle for History, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for History. Seeded like `smartModeEnabled` above.
     public static let historyEnabled = "dictus.historyEnabled"
-    /// Bool: per-feature toggle for Vocabulary, default true (registered by ProStatusManager)
+    /// Bool: per-feature toggle for Vocabulary. Seeded like `smartModeEnabled` above.
     public static let vocabularyEnabled = "dictus.vocabularyEnabled"
 
-    // MARK: - #357 spike (throwaway)
-    /// Bool: arms exactly ONE Apple Foundation Models probe run inside the
-    /// keyboard extension. Written by the hidden polish debug screen, read and
-    /// immediately cleared by `AppleFMExtensionProbe` in DictusKeyboard.
+    // MARK: - Retired keys
+    /// The #357 probe's arming flag, removed with the probe in #361. Kept as a
+    /// literal, and only here, so DictusApp can delete it from the App Group on
+    /// devices that armed it once — the flag defaults to false, but a device where
+    /// the toggle was left on would carry a `true` no code reads any more.
     ///
-    /// WHY it lives here rather than next to the probe: the two processes that
-    /// have to agree on this string cannot see each other's targets, and a
-    /// literal duplicated across a process boundary is the kind of typo that
-    /// costs a device session to find. Absent — which is the shipped state —
-    /// it reads false and the probe never runs.
-    ///
-    /// Delete with the spike.
-    public static let appleFMExtensionProbeArmed = "dictus.debug.appleFMExtensionProbeArmed"
+    /// Drop this and its one caller once a release has shipped with the cleanup.
+    static let retiredAppleFMExtensionProbeArmed = "dictus.debug.appleFMExtensionProbeArmed"
+
+    /// Every key no live code reads, cleared once per app launch.
+    static let retiredKeys = [retiredAppleFMExtensionProbeArmed]
+
+    /// Remove the retired keys above. Called from DictusApp's launch, which is the
+    /// only process that owns hygiene over shared state.
+    public static func clearRetiredKeys() {
+        let defaults = AppGroup.defaults
+        for key in retiredKeys where defaults.object(forKey: key) != nil {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.synchronize()
+    }
 }

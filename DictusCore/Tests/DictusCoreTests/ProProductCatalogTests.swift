@@ -72,7 +72,7 @@ final class ProProductCatalogTests: XCTestCase {
 
     func testPricesMatchThePricingDecision() throws {
         // #54 revised 2026-08-14: 4,99 € monthly, 39,99 € yearly, 79,99 € lifetime
-        // during the founder window. The lifetime goes to 119,99 € afterwards,
+        // during the founder window. The lifetime goes to 149,99 € afterwards,
         // which is an App Store Connect change and never a change to this file.
         let config = try storeKitConfiguration()
         XCTAssertEqual(config.subscriptions[ProProductID.monthly]?["displayPrice"] as? String, "4.99")

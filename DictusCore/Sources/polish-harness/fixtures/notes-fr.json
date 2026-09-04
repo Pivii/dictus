@@ -1,0 +1,79 @@
+[
+  {
+    "id": "N1-field-commits",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "FIELD. The exact dictation that failed on device on 2026-08-24 (build 5215704), recorded in #393: French in, English bullets out, caught by the sameAsInput contract. Three properties in one input and the failure needs all three — it addresses the assistant, it carries STT garble ('commith', 'des de la fraise'), and it is a genuine ramble. The language rule is NOT checked here: it is the mode's own contract's job, which is the point of this run.",
+    "raw": "Okay, donc j'aimerais que tu notes ça s'il te plaît. au lieu de 4 on a fait 5 commith alors qu'on devait en faire 6 ensuite on a acheté des yaourts alors qu'on aurait pu acheter des de la fraise donc voilà ça fait vraiment on va dire 3 gros changements",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "regexAbsent": "(?i)^(voici|here is|here's|sure|bien sûr|d'accord|ok,)" },
+      { "contains": "yaourt" }
+    ]
+  },
+  {
+    "id": "N2-reunion-vrac",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "LONG RAMBLE, no structure. Meeting prep dictated in one breath: facts, dates and names buried in filler, one self-correction ('mardi enfin non mercredi'), no ordering the speaker ever states. This is the input Notes exists for.",
+    "raw": "bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "Marion" },
+      { "lengthRatioMax": 1.0 }
+    ]
+  },
+  {
+    "id": "N3-projet-fleuve",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "LONGEST, and deliberately several topics at once with no transitions. Pressure on the length floor (the 0.1 contract minimum was a judgement call, never a measurement) and on rule 2, keeping the speaker's order rather than reorganising into themes they never named.",
+    "raw": "alors euh je fais le point général parce que là ça part un peu dans tous les sens donc côté design c'est bon les maquettes ont été validées vendredi par contre le dev a pris deux semaines de retard à cause de l'API du prestataire qui renvoie n'importe quoi sur les dates et euh du coup on est en train de voir si on décale la livraison au 15 mars au lieu du premier ensuite sur le budget on est à peu près dans les clous il reste 8000 euros mais euh faut compter les licences qui tombent en février et ça c'est 3000 de plus donc en vrai on est juste et puis dernière chose Thomas part en congé trois semaines à partir du 20 donc si on veut qu'il finisse la partie paiement faut que ce soit bouclé avant sinon ça repousse encore et là franchement je sais pas comment on tient la date",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "Thomas" },
+      { "lengthRatioMax": 1.0 }
+    ]
+  },
+  {
+    "id": "N4-une-idee",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "SHORT, one idea. The mode's rule 11 says output one bullet and do not pad; a model asked to produce a list is most tempted to invent a second and a third item exactly here. No length floor is asserted, because a one-bullet answer to a one-clause input is correct.",
+    "raw": "faut que je rappelle le comptable avant vendredi pour la TVA du trimestre",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "TVA" },
+      { "lengthRatioMax": 1.6 }
+    ]
+  },
+  {
+    "id": "N5-en-ramble",
+    "lang": "en",
+    "sttEngine": "PK",
+    "_note": "CONTROL on the language rule, in the other direction. Notes is one English-written prompt for every input language (#239 pattern), so an English input must come back in English — the same contract that must keep N1 French. A mode that only ever answers in English would pass this fixture and fail N1, which is why both are in the set.",
+    "raw": "okay so quick brain dump before I forget the deploy is blocked because the certificate expired on the staging box and uh Sam said he'd rotate it tomorrow morning but we also need to bump the node version because the build image is on eighteen and the new package needs twenty and honestly I think we should just do both in the same window otherwise we're doing two freezes for nothing",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "contains": "Sam" },
+      { "lengthRatioMax": 1.0 }
+    ]
+  },
+  {
+    "id": "N6-ponctuation-dictee",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "The deterministic pre-pass still runs under a mode, keyed on the SPOKEN language, because the user still says 'virgule'. This fixture checks the pre-pass output survives the condensation: the command words must be gone whether the model obeys rule 9 or the regex got there first, and the <<NL>> marker the pre-pass produces must not reach the output as literal text.",
+    "raw": "note pour moi virgule il faut relancer l'agence virgule ils n'ont pas répondu depuis dix jours à la ligne et prévoir un plan B au cas où ça se confirme",
+    "expect": [
+      { "regexAbsent": "<<NL>>" },
+      { "regexAbsent": "\\[[^\\]]*\\]" },
+      { "regexAbsent": "(?i)\\b(virgule|à la ligne)\\b" }
+    ]
+  }
+]

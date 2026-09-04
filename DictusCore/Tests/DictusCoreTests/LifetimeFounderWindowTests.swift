@@ -1,7 +1,7 @@
 // DictusCore/Tests/DictusCoreTests/LifetimeFounderWindowTests.swift
 // The founder-window line must retire itself when the window closes (#350).
 //
-// The build outlives the window: App Store Connect moves the price to 79,99 €
+// The build outlives the window: App Store Connect moves the price to 149,99 €
 // on the announced day, but a user who has not updated keeps running the build
 // that announced it. A stale line contradicting the price above it is worse
 // than no line.

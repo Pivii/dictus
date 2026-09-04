@@ -28,6 +28,15 @@ public enum KeyboardAreaMode: String, Equatable, CaseIterable, Sendable {
     /// Reserved for the hamburger panel (#241). No view is attached yet — the
     /// layout contract exists so #241 adds a view rather than reopening #271.
     case panel
+    /// The long-press Smart Mode fan fills the area; the toolbar stays visible above
+    /// it, because the gesture that opened it is still live on the mic (#79).
+    ///
+    /// WHY it is a mode rather than a SwiftUI overlay on the toolbar: in `.keys` the
+    /// hosting view is 52 pt tall and SwiftUI cannot draw outside it. The fan deploys
+    /// *downward* over the keys, so it needs the area — the same contract the emoji
+    /// picker and the panel already have, reached the same way, touching nothing
+    /// else.
+    case smartModeFan
     /// The recording overlay fills the whole area, toolbar included.
     case recording
 

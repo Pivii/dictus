@@ -26,6 +26,15 @@ struct PolishDebugExport: Codable {
     /// open, so seeding it with every known slug would print noise on a healthy
     /// export.
     let failureReasons: [String: Int]
+    /// The same counts split by writing process, e.g.
+    /// `{"<KBD>": {"rateLimited": 0}, "<APP>": {"rateLimited": 21}}` (#361).
+    ///
+    /// WHY it is worth a second aggregate: what closes #361 is an export from a
+    /// dense working session showing **zero `rateLimited` marked `<KBD>`**, and the
+    /// flat `failureReasons` above cannot show that — a clean total could equally
+    /// mean the keyboard is not rate-limited or that nothing was dictated from it.
+    /// Absent writers are absent, not zero, for the same reason.
+    let failureReasonsByWriter: [String: [String: Int]]
     let events: [Event]
 
     struct DeviceInfo: Codable {
@@ -62,6 +71,10 @@ struct PolishDebugExport: Codable {
     struct Event: Codable {
         let id: String
         let timestamp: String
+        /// Which process produced the event: `"<KBD>"` or `"<APP>"` (#361).
+        /// Absent on events written before polish could run in the keyboard —
+        /// see `PolishDebugEntry.writer` for why those are not backfilled.
+        let writer: String?
         let engine: String
         let mode: String?
         /// The language the polish prompt told the model to write in.
@@ -142,10 +155,12 @@ enum PolishDebugExporter {
             "engineUnavailable": 0, "exceededContextBudget": 0
         ]
         var failureReasons: [String: Int] = [:]
+        var failureReasonsByWriter: [String: [String: Int]] = [:]
         for e in entries {
             outcomes[e.metrics.outcome.rawValue, default: 0] += 1
             if let reason = e.metrics.failureReason {
                 failureReasons[reason.slug, default: 0] += 1
+                failureReasonsByWriter[e.writer ?? "unrecorded", default: [:]][reason.slug, default: 0] += 1
             }
         }
 
@@ -153,8 +168,9 @@ enum PolishDebugExporter {
             PolishDebugExport.Event(
                 id: entry.id.uuidString,
                 timestamp: formatter.string(from: entry.timestamp),
+                writer: entry.writer,
                 engine: entry.metrics.engine,
-                mode: entry.metrics.mode?.rawValue,
+                mode: entry.metrics.mode,
                 targetLanguage: entry.metrics.targetLanguage?.rawValue,
                 detectedLanguage: entry.metrics.detectedLanguage,
                 transcriptionMode: entry.metrics.languageResolution?.transcriptionMode,
@@ -182,6 +198,7 @@ enum PolishDebugExporter {
             settings: settings,
             outcomes: outcomes,
             failureReasons: failureReasons,
+            failureReasonsByWriter: failureReasonsByWriter,
             events: events
         )
     }

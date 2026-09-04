@@ -57,6 +57,46 @@ public enum ProFeature: String, CaseIterable {
         case .vocabulary: return SharedKeys.vocabularyEnabled
         }
     }
+
+    // MARK: - Device capability (#79)
+
+    /// Whether this feature needs Apple Foundation Models, and therefore an
+    /// iPhone 15 Pro or later on iOS 26.
+    ///
+    /// Dictus supports iOS 17 and up, so **most of the installed base cannot run
+    /// Smart Mode**, and #268 closed the only alternative backend `wontfix`. Refusing
+    /// to sell Pro on those devices would amputate the market to protect one feature;
+    /// selling it while advertising that feature is worse than that — it is a
+    /// misleading-metadata rejection waiting to happen, and the App Review device on
+    /// #207 was an iPad Air.
+    ///
+    /// So Pro is sold to everyone and the paywall tells the truth per device.
+    public var requiresAppleIntelligence: Bool {
+        switch self {
+        case .smartMode: return true
+        case .history, .vocabulary: return false
+        }
+    }
+
+    /// Whether this iPhone could deliver the feature if the user configured it for
+    /// it — hardware and OS only, not whether Apple Intelligence is switched on.
+    ///
+    /// The distinction matters on a paywall: an iPhone 15 Pro with Apple Intelligence
+    /// off is a device where Smart Mode works after one trip to Settings, and saying
+    /// "your iPhone does not support this" to that user would be false.
+    public var isSupportedByThisDevice: Bool {
+        guard requiresAppleIntelligence else { return true }
+        return SmartModeAvailability.deviceIsCapable
+    }
+
+    /// The line a card carries when the device cannot deliver the feature, or nil
+    /// when it can.
+    ///
+    /// English, like every other string on this type, and for the same stated reason:
+    /// DictusCore ships no string catalog. The paywall owns its translation.
+    public var unsupportedNotice: String? {
+        isSupportedByThisDevice ? nil : "Requires Apple Intelligence (iPhone 15 Pro or later, iOS 26)"
+    }
 }
 
 /// Centralized feature gating -- checks Pro status + per-feature toggle.
@@ -70,7 +110,22 @@ public struct FeatureGate {
     /// Returns true only when Pro is active AND the feature is individually enabled.
     public static func isAvailable(_ feature: ProFeature) -> Bool {
         guard isProActive else { return false }
-        return AppGroup.defaults.bool(forKey: feature.settingsKey)
+        return isEnabled(feature)
+    }
+
+    /// The per-feature toggle alone, with no subscription check.
+    ///
+    /// WHY this is exposed separately from `isAvailable` (#423): the two halves of
+    /// that `&&` describe two different people. Someone without Pro is being sold
+    /// something; a subscriber who switched Smart Modes off in Settings has said
+    /// what they want, and telling them the feature "is part of Dictus Pro" is
+    /// false. `SmartModeEntitlement` is the type that keeps them apart, and this is
+    /// what it reads to do it.
+    ///
+    /// Seeded to `true` at first launch by `ProStatusManager.seedFeatureTogglesIfNeeded`,
+    /// so "never touched the toggle" reads as on rather than off.
+    public static func isEnabled(_ feature: ProFeature) -> Bool {
+        AppGroup.defaults.bool(forKey: feature.settingsKey)
     }
 
     /// Check if Pro subscription is active (beta OR paid).

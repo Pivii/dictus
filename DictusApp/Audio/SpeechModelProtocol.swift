@@ -30,6 +30,20 @@ protocol SpeechModelProtocol {
     ///     mode — Whisper's built-in language detection).
     /// - Returns: Transcribed text string.
     func transcribe(audioSamples: [Float], language: String?) async throws -> String
+
+    /// Run one inference on generated silence and throw the result away (issue #426).
+    ///
+    /// WHY every engine has to answer this: loading a model is not the same as being
+    /// ready to run one. The Neural Engine specializes per tensor shape at the FIRST
+    /// inference, so whichever call is first pays that cost — and until this existed
+    /// that call was always the user's first dictation, 4.1 s slower than the next one
+    /// on the same clip. The coordinator calls this inside the load, before the engine
+    /// is published, so the cost lands where the user is already watching a preparation
+    /// state.
+    ///
+    /// Distinct from `UnifiedAudioEngine.warmUp()` (#106), which warms the audio
+    /// engine. Different subsystem, similar name; hence "warm inference" throughout.
+    func runWarmInference() async throws
 }
 
 /// Failures raised while preparing a speech model for transcription.
@@ -41,13 +55,26 @@ protocol SpeechModelProtocol {
 /// and try again.") straight into the keyboard's error banner. These cases carry
 /// localised, user-actionable text instead, while `diagnosticDescription` keeps the
 /// English technical detail for `PersistentLog`.
-enum SpeechModelError: LocalizedError {
+///
+/// This shape is now named and shared: `DiagnosableError`, in
+/// `DictationFailureMessage.swift`, is #313's generalisation of this type.
+enum SpeechModelError: DiagnosableError {
     /// The selected variant is absent from the local model repository, or its
     /// folder holds no compiled Core ML bundle.
     case modelNotInstalled(identifier: String)
 
     /// The model files are present but the engine failed to load them.
     case engineLoadFailed(identifier: String, underlying: Error)
+
+    /// The load completed, but the app had already stopped waiting for it: the user
+    /// left the preparation screen, or the launch deadline expired (issue #428).
+    ///
+    /// WHY this is an error and not a silent success: the in-flight load is shared, and
+    /// every caller parked on it reads a plain `return` as "the engine is ready". One of
+    /// those callers is a cold-start dictation, which would then write `.ready` with no
+    /// engine behind it and call `transcribe` on nothing. An abandoned load has to fail
+    /// its awaiters so they can rethrow and start a load of their own.
+    case loadAbandoned(identifier: String)
 
     /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
     /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
@@ -57,7 +84,24 @@ enum SpeechModelError: LocalizedError {
             return String(localized: "This model is not installed. Open Dictus and download it in the Models tab.")
         case .engineLoadFailed:
             return String(localized: "The transcription model could not be loaded. Open Dictus and try again.")
+        case .loadAbandoned:
+            // A NOTICE, not a fault (#313). Nothing is broken: a load the app stopped
+            // waiting for is the expected outcome of a deadline expiring or of the user
+            // leaving the preparation screen, and tapping again starts or joins the next
+            // one. "Interrupted", which this said first, reads as damage and sends the
+            // user looking for something to fix. Same register as `noWordsDetected`:
+            // state the situation, name the one action that works, assign no blame.
+            return String(localized: "The model is still getting ready. Tap the microphone again.")
         }
+    }
+
+    /// Whether this is a load the app walked away from rather than a failure of the
+    /// model files. The wrapping in `ensureEngineReady` preserves it: a caller told
+    /// "preparation was interrupted, tap again" can act on that, where "the model could
+    /// not be loaded" would send them looking for a broken download (issue #428).
+    var isLoadAbandoned: Bool {
+        if case .loadAbandoned = self { return true }
+        return false
     }
 
     /// English technical detail for the log. Never shown to the user.
@@ -67,6 +111,8 @@ enum SpeechModelError: LocalizedError {
             return "model not installed locally: \(identifier)"
         case .engineLoadFailed(let identifier, let underlying):
             return "engine load failed for \(identifier): \(underlying)"
+        case .loadAbandoned(let identifier):
+            return "load abandoned before it completed: \(identifier)"
         }
     }
 }
@@ -100,6 +146,15 @@ class WhisperKitEngine: SpeechModelProtocol {
         self.whisperKit = kit
     }
 
+    /// Load a model from scratch into this engine.
+    ///
+    /// NOTHING CALLS THIS TODAY. The live load path is
+    /// `DictationCoordinator.ensureWhisperKitEngineReady`, which builds the `WhisperKit`
+    /// instance itself and hands it over through `setWhisperKit`. Whoever revives this
+    /// method has to call `runWarmInference()` after the load and before handing the
+    /// engine out, or they re-create issue #426: `prewarm: true, load: true` compiles
+    /// and loads the weights and runs no inference, so the Neural Engine's per-shape
+    /// specialization lands in the user's first dictation instead.
     func prepare(modelIdentifier: String) async throws {
         // Skip if same model is already loaded
         if loadedModelName == modelIdentifier, whisperKit != nil {
@@ -127,6 +182,52 @@ class WhisperKitEngine: SpeechModelProtocol {
         let kit = try await WhisperKit(config)
         self.whisperKit = kit
         self.loadedModelName = modelIdentifier
+    }
+
+    /// One discarded inference, with every knob that could make it silently useless
+    /// pinned down (issue #426).
+    ///
+    /// The options deliberately differ from `transcribe` above in exactly two places,
+    /// and neither changes a tensor shape — which is all that specialization depends on:
+    ///
+    /// - `temperatureFallbackCount: 0`. Silence trips `logProbThreshold` easily, and the
+    ///   production value of 5 would buy up to six full decode passes for a result that
+    ///   is about to be thrown away.
+    /// - `sampleLength: 16`. `TextDecoder.decodeText` loops
+    ///   `for tokenIndex in prefilledIndex..<min(sampleLength, 223)`, and `prefilledIndex`
+    ///   is the prefill cache length — 3 or 4 with `usePrefillPrompt: true`. A sample
+    ///   length at or below that runs the decoder ZERO times and specializes only the
+    ///   encoder. Sixteen leaves room above the prefill without letting the loop run on.
+    ///
+    /// `chunkingStrategy` is left off because it cannot apply: `WhisperKit.transcribe`
+    /// only consults it when the buffer exceeds one 30 s window, and this one is 2 s. It
+    /// therefore takes `runTranscribeTask` directly — the same path each VAD chunk of a
+    /// real recording takes, padded to the same 480 000-sample window.
+    ///
+    /// The language is fixed rather than read from the user's policy: the prefill token
+    /// differs, the shapes do not, and a load has no business reaching into the
+    /// dictation language snapshot.
+    func runWarmInference() async throws {
+        guard let whisperKit else {
+            throw TranscriptionError.notReady
+        }
+
+        let options = DecodingOptions(
+            task: .transcribe,
+            language: "en",
+            temperature: 0.0,
+            temperatureFallbackCount: 0,
+            sampleLength: 16,
+            usePrefillPrompt: true,
+            usePrefillCache: true,
+            detectLanguage: false,
+            skipSpecialTokens: true
+        )
+
+        _ = try await whisperKit.transcribe(
+            audioArray: WarmInferenceAudio.silence(),
+            decodeOptions: options
+        )
     }
 
     func transcribe(audioSamples: [Float], language: String?) async throws -> String {
@@ -200,7 +301,9 @@ class WhisperKitEngine: SpeechModelProtocol {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmed.isEmpty else {
-            throw TranscriptionError.transcriptionFailed("Empty transcription result")
+            // Nothing wrong happened: the model ran on a normal-length clip and heard
+            // no words. A notice, not a fault (#313).
+            throw TranscriptionError.noSpeechDetected(context: "empty WhisperKit transcription result")
         }
 
         return trimmed

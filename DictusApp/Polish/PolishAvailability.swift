@@ -1,73 +1,27 @@
 // DictusApp/Polish/PolishAvailability.swift
 import Foundation
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
+import DictusCore
 
-/// Specific reasons Apple Foundation Models may be unavailable.
+/// The Settings-facing half of Apple FM availability.
 ///
-/// Round 1 on-device testing surfaced a real UX gap: `appleFMAvailable: false`
-/// in the polish ring told us the polish layer fell back to Passthrough but gave
-/// no clue *why*. The most common cause is the Siri-vs-iPhone language mismatch
-/// (Apple Intelligence refuses to enable when they differ) and surfacing that
-/// explicitly is far better than a silent fallback.
-public enum PolishAvailabilityState: Equatable, Sendable {
-    case available
-    case appleIntelligenceNotEnabled
-    case modelNotReady
-    case deviceNotEligible
-    case osTooOld
-    case sdkMissing
-    case other(String)
-}
+/// The runtime question — can this process call the engine — moved to DictusCore
+/// with #361, because the keyboard extension now asks it too. What stays here is
+/// UI policy: whether the toggle row is drawn at all, and whether sending the user
+/// to iOS Settings would help. Both are app-only, and the first is gated by the app
+/// target's `DICTUS_POLISH_DEBUG_VISIBLE` build flag, which DictusCore cannot see.
+public extension PolishAvailability {
 
-/// Gates the Settings polish toggle and surfaces actionable guidance when
-/// Apple Foundation Models can't run.
-///
-/// The Debug build flag `DICTUS_POLISH_DEBUG_VISIBLE` forces the toggle visible
-/// regardless of state so development on incapable devices stays possible (the
-/// engine falls back to passthrough).
-public enum PolishAvailability {
-
-    /// Detailed availability state for the current device + OS + Apple
-    /// Intelligence configuration.
-    public static var state: PolishAvailabilityState {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
-            case .available:
-                return .available
-            case .unavailable(.appleIntelligenceNotEnabled):
-                return .appleIntelligenceNotEnabled
-            case .unavailable(.modelNotReady):
-                return .modelNotReady
-            case .unavailable(.deviceNotEligible):
-                return .deviceNotEligible
-            case .unavailable(let reason):
-                return .other(String(describing: reason))
-            @unknown default:
-                return .other("unknown")
-            }
-        } else {
-            return .osTooOld
-        }
-        #else
-        return .sdkMissing
-        #endif
-    }
-
-    /// True only when Apple Foundation Models is actually usable on this device.
-    public static var isAppleFMAvailable: Bool {
-        state == .available
-    }
-
-    /// True when the Settings toggle row should be rendered.
+    /// True when the Settings polish toggle row should be rendered.
     ///
     /// Visible on devices where Apple FM could become usable after a user fix
     /// (turn on Apple Intelligence, wait for model download). Hidden on devices
     /// where no setup can fix it (old hardware, pre-iOS 26, SDK-less build) so
     /// we don't show a useless toggle in production.
-    public static var isToggleVisible: Bool {
+    ///
+    /// The Debug build flag `DICTUS_POLISH_DEBUG_VISIBLE` forces it visible
+    /// regardless of state so development on incapable devices stays possible (the
+    /// engine falls back to passthrough).
+    static var isToggleVisible: Bool {
         #if DICTUS_POLISH_DEBUG_VISIBLE
         return true
         #else
@@ -82,7 +36,7 @@ public enum PolishAvailability {
 
     /// True when opening iOS Settings is a meaningful next step for the user
     /// to fix the unavailable state.
-    public static func canOpenSystemSettings(for state: PolishAvailabilityState) -> Bool {
+    static func canOpenSystemSettings(for state: PolishAvailabilityState) -> Bool {
         state == .appleIntelligenceNotEnabled
     }
 }

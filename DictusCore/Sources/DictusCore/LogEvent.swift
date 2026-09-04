@@ -98,12 +98,37 @@ public enum LogEvent: Sendable {
     case modelLoadStateChanged(from: String, to: String, reason: String)
     case modelDownloadProgress(name: String, percent: Int, mbDownloaded: Int, mbTotal: Int)
     case modelDownloadStalled(name: String, path: String, timeoutSeconds: Int, attempt: Int)
+    /// The catalogue promised one size and the repository serves another (issue #372).
+    /// Emitted once per download, only past the tolerance, so its presence in a log
+    /// is itself the signal that a hardcoded size has drifted.
+    case modelDownloadSizeMismatch(name: String, catalogMB: Int, actualMB: Int)
+    /// A model whose files were already complete on disk was added back to the
+    /// downloaded list at launch (issue #433). One line per model, and the
+    /// reconciliation runs once per process, so these lines appear only on the
+    /// launch that repairs the disagreement and never on a later one. A line here
+    /// means a preparation died between its download and its compile — never an
+    /// ordinary download in flight.
+    case modelReconciledFromDisk(name: String)
 
     // MARK: Keyboard
     case keyboardDidAppear
     case keyboardDidDisappear
     case keyboardMicTapped
     case keyboardTextInserted  // No content parameter -- privacy by design
+
+    // MARK: Key auto-repeat (#390)
+    // Neither case carries a key or a character. Only backspace auto-repeats, so
+    // naming the key would add nothing and would open the door `keyboardTextInserted`
+    // keeps shut.
+    /// The held-key auto-repeat engaged: the press outlasted the 0.5 s pause and the
+    /// first repeated deletion just fired. A plain tap schedules the same timer and
+    /// logs nothing, which is what keeps a 1 MB log readable while someone types.
+    case keyRepeatStarted
+    /// The auto-repeat ended. `ticks` is how many times it fired, `reason` names what
+    /// stopped it -- a finger lifting, the keyboard going off screen, the view being
+    /// torn down. A `keyRepeatStarted` with no matching stop is a repeat that outlived
+    /// its keyboard, which is the whole of #390 and was previously invisible.
+    case keyRepeatStopped(ticks: Int, reason: String)
 
     // MARK: Keyboard status message (#261)
     /// The toolbar message was assigned. `reason` names what asked for it.
@@ -260,6 +285,63 @@ public enum LogEvent: Sendable {
     /// was told and what the keyboard was showing at the time.
     case polishEngineUnavailable(engine: String, reason: String, consecutiveRefusals: Int)
 
+    /// Issue #361: one step of the raw-text hand-off between the two processes.
+    ///
+    /// The tail of a dictation now spans DictusApp and DictusKeyboard, and every
+    /// interesting failure of it is an *absence* — the keyboard never claimed the
+    /// raw, the app never heard that polish finished. An absence is only readable
+    /// against the steps that did happen, so each one says what it was and how big
+    /// the text was: `handedOff` (app wrote the raw), `claimed` (keyboard took it),
+    /// `finished` (keyboard is done, whatever the outcome), `watchdog` (the app gave
+    /// up waiting), `recovered` (a keyboard came back to an unclaimed record).
+    case polishHandoff(step: String, outcome: String, chars: Int)
+
+    /// Issue #361 decision 7: a finished generation was not typed, because the
+    /// keyboard is no longer looking at the field the dictation was claimed from.
+    ///
+    /// `reason` says which half of the identity test failed — the document changed,
+    /// or the host would not name one — and `ageMs` how long the generation took to
+    /// come back, which is the measurement that says whether this was routine
+    /// controller churn or the forty-four-minute resurrection #357 Q4 found.
+    case polishInsertionRefused(reason: String, ageMs: Int)
+
+    /// Issue #361 decisions 10 and 15: a new polish call cancelled one still in
+    /// flight and took its place.
+    ///
+    /// Logged because the serialisation is explicit rather than incidental, and
+    /// because a generation can sit suspended for tens of minutes — so "N+1
+    /// cancelled N" is a normal event with an abnormal-looking `inflightMs`, and a
+    /// reader needs to see both numbers to tell that from a stall.
+    case polishCallSuperseded(inflightMs: Int)
+
+    /// Issue #79: a Smart Mode's output was refused, so nothing was inserted.
+    ///
+    /// **Fail closed is the point of the line.** For the free polish, falling back to
+    /// the deterministic floor is invisible and harmless; for a mode it would mean
+    /// French sent to an American client, or two minutes of rambling pasted where
+    /// three bullets were expected. So a refused mode inserts nothing — and an
+    /// insertion that does not happen is an absence, which is only readable against
+    /// the reason it did not.
+    ///
+    /// `outcome` is the `PolishMetrics.Outcome` that refused it (the contract
+    /// rejected the output, the engine threw, the input did not fit); `reason` is the
+    /// engine's own name for what it threw, or "-".
+    case smartModeRefused(mode: String, outcome: String, reason: String)
+
+    /// Issue #79: a dictation that had a mode armed is running Normal instead.
+    ///
+    /// The armed mode describes a transformation this build on this device cannot
+    /// perform right now: the identifier belongs to no mode this build ships, or
+    /// Apple Foundation Models is unavailable. Falling back to Normal is the honest
+    /// degradation — failing closed here would leave the user with no text at all
+    /// for a setting they made weeks ago.
+    ///
+    /// `disarmed` says whether the setting itself was cleared. It is only cleared on
+    /// a condition that can never lift on its own (ineligible hardware, an OS too
+    /// old); a model still downloading is recoverable, and a mode disarmed over it
+    /// would be a setting silently lost to a temporary state.
+    case smartModeSkipped(mode: String, reason: String, disarmed: Bool)
+
     // MARK: - Computed Properties
 
     /// The subsystem this event belongs to, derived from the case.
@@ -280,9 +362,11 @@ public enum LogEvent: Sendable {
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelDeleteFailed, .modelPrewarmStarted, .modelCleanupPerformed,
              .modelPrewarmPeakMemory, .modelPrewarmTimeout, .modelLoadStateChanged,
-             .modelDownloadProgress, .modelDownloadStalled:
+             .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch,
+             .modelReconciledFromDisk:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
+             .keyRepeatStarted, .keyRepeatStopped,
              .overlayShown, .overlayHidden, .rapidTapRejected,
              .dictationMessageSet, .dictationMessageDisplayed, .dictationMessageCleared,
              .waveformAppeared, .waveformDisappeared, .waveformHeartbeat, .waveformStall,
@@ -319,7 +403,9 @@ public enum LogEvent: Sendable {
         // Polish is the stage after the STT result and before the App Group
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
-        case .polishEngineFailed, .polishEngineUnavailable:
+        case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
+             .polishInsertionRefused, .polishCallSuperseded,
+             .smartModeRefused, .smartModeSkipped:
             return .transcription
         }
     }
@@ -346,7 +432,8 @@ public enum LogEvent: Sendable {
              .waveformStall, .waveformTimelineNotFiring,
              .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
-             .modelDownloadStalled, .audioHapticsAllowanceFailed:
+             .modelDownloadStalled, .audioHapticsAllowanceFailed,
+             .modelDownloadSizeMismatch:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -359,6 +446,7 @@ public enum LogEvent: Sendable {
              .modelDownloadStarted, .modelDownloadCompleted, .modelDownloadProgress,
              .modelSelected, .modelCompilationStarted, .modelCompilationCompleted,
              .modelDeleted, .modelPrewarmStarted, .modelCleanupPerformed,
+             .modelReconciledFromDisk,
              .modelPrewarmPeakMemory, .modelLoadStateChanged, .transcriptionPerformance,
              .keyboardDidAppear, .keyboardMicTapped,
              .dictationMessageSet, .dictationMessageDisplayed,
@@ -382,6 +470,7 @@ public enum LogEvent: Sendable {
              .onboardingKeyboardRetry,
              .audioEngineStopped,
              .keyboardDidDisappear, .keyboardTextInserted,
+             .keyRepeatStarted, .keyRepeatStopped,
              .appDidBecomeActive, .appWillResignActive, .appDidEnterBackground,
              .rapidTapRejected,
              .engineWarmUpAttempt, .engineWarmUpSuccess,
@@ -403,6 +492,20 @@ public enum LogEvent: Sendable {
         // two — it holds for the rest of the process — but not an error either,
         // because nothing broke and no text was lost.
         case .polishEngineFailed, .polishEngineUnavailable:
+            return .warning
+
+        // Info: the hand-off steps describe a dictation working as designed, and
+        // the refusal is the guard doing its job rather than something going wrong.
+        // A superseded call is likewise the documented behaviour of decision 15.
+        case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded:
+            return .info
+
+        // Warning: a Smart Mode that refused its own output cost the user a
+        // dictation they asked to be transformed, and one that was skipped ran a
+        // dictation as Normal that the user had armed. Neither is an error -- both
+        // are the design holding -- but both are the kind of thing a reader scanning
+        // a capture for "why did nothing happen" needs to see.
+        case .smartModeRefused, .smartModeSkipped:
             return .warning
         }
     }
@@ -441,6 +544,7 @@ public enum LogEvent: Sendable {
         case .modelDeleteFailed: return "modelDeleteFailed"
         case .modelPrewarmStarted: return "modelPrewarmStarted"
         case .modelCleanupPerformed: return "modelCleanupPerformed"
+        case .modelReconciledFromDisk: return "modelReconciledFromDisk"
         case .keyboardDidAppear: return "keyboardDidAppear"
         case .keyboardDidDisappear: return "keyboardDidDisappear"
         case .keyboardMicTapped: return "keyboardMicTapped"
@@ -448,6 +552,8 @@ public enum LogEvent: Sendable {
         case .dictationMessageDisplayed: return "dictationMessageDisplayed"
         case .dictationMessageCleared: return "dictationMessageCleared"
         case .keyboardTextInserted: return "keyboardTextInserted"
+        case .keyRepeatStarted: return "keyRepeatStarted"
+        case .keyRepeatStopped: return "keyRepeatStopped"
         case .engineWarmUpAttempt: return "engineWarmUpAttempt"
         case .engineWarmUpSuccess: return "engineWarmUpSuccess"
         case .engineWarmUpFailed: return "engineWarmUpFailed"
@@ -505,8 +611,14 @@ public enum LogEvent: Sendable {
         case .modelLoadStateChanged: return "modelLoadStateChanged"
         case .modelDownloadProgress: return "modelDownloadProgress"
         case .modelDownloadStalled: return "modelDownloadStalled"
+        case .modelDownloadSizeMismatch: return "modelDownloadSizeMismatch"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
+        case .polishHandoff: return "polishHandoff"
+        case .polishInsertionRefused: return "polishInsertionRefused"
+        case .polishCallSuperseded: return "polishCallSuperseded"
+        case .smartModeRefused: return "smartModeRefused"
+        case .smartModeSkipped: return "smartModeSkipped"
         case .userDictionaryWordLearned: return "userDictionaryWordLearned"
         case .userDictionaryEvicted: return "userDictionaryEvicted"
         case .userDictionaryReset: return "userDictionaryReset"
@@ -587,17 +699,25 @@ public enum LogEvent: Sendable {
             return "name=\(name)"
         case .modelCleanupPerformed(let name, let reason):
             return "name=\(name) reason=\(reason)"
+        case .modelReconciledFromDisk(let name):
+            return "name=\(name)"
         case .modelLoadStateChanged(let from, let to, let reason):
             return "from=\(from) to=\(to) reason=\(reason)"
         case .modelDownloadProgress(let name, let percent, let mbDownloaded, let mbTotal):
             return "name=\(name) percent=\(percent) downloaded=\(mbDownloaded)MB total=\(mbTotal)MB"
         case .modelDownloadStalled(let name, let path, let timeoutSeconds, let attempt):
             return "name=\(name) path=\(path) timeout=\(timeoutSeconds)s attempt=\(attempt)"
+        case .modelDownloadSizeMismatch(let name, let catalogMB, let actualMB):
+            return "name=\(name) catalog=\(catalogMB)MB actual=\(actualMB)MB"
 
         // Keyboard (no content parameters -- privacy)
         case .keyboardDidAppear, .keyboardDidDisappear,
              .keyboardMicTapped, .keyboardTextInserted:
             return ""
+        case .keyRepeatStarted:
+            return ""
+        case .keyRepeatStopped(let ticks, let reason):
+            return "ticks=\(ticks) reason=\(reason)"
 
         // Engine Diagnostics
         case .engineWarmUpAttempt(let context):
@@ -744,6 +864,16 @@ public enum LogEvent: Sendable {
         // Polish (#315)
         case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
             return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
+        case .polishHandoff(let step, let outcome, let chars):
+            return "step=\(step) outcome=\(outcome) chars=\(chars)"
+        case .polishInsertionRefused(let reason, let ageMs):
+            return "reason=\(reason) ageMs=\(ageMs)"
+        case .polishCallSuperseded(let inflightMs):
+            return "inflightMs=\(inflightMs)"
+        case .smartModeRefused(let mode, let outcome, let reason):
+            return "mode=\(mode) outcome=\(outcome) reason=\(reason)"
+        case .smartModeSkipped(let mode, let reason, let disarmed):
+            return "mode=\(mode) reason=\(reason) disarmed=\(disarmed)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
         }

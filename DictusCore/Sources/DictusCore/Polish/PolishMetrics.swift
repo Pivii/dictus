@@ -113,7 +113,15 @@ public struct PolishMetrics: Sendable, Codable {
     }
 
     public let engine: String              // polish engine id, e.g. "apple-fm"
-    public let mode: PolishMode?           // nil when skipped (no mode chosen)
+
+    /// `PolishTask.identifier` — "natural", "repair", "auto", or "smart.<id>" for
+    /// an armed Smart Mode. Nil when the engine never ran, so no task was chosen.
+    ///
+    /// A `String` rather than a `PolishMode` since #79: a Smart Mode is a record and
+    /// has no enum case. The widening is backward-compatible with the seven-day
+    /// debug ring — `PolishMode` was string-raw, so every event ever persisted here
+    /// already holds a string and keeps decoding.
+    public let mode: String?
     /// The language the polish prompt instructs the model to write in — the
     /// resolved polish target, NOT the keyboard language. See
     /// `TranscriptionLanguagePolicy.polishPromptSelection(detectedLanguage:)`.
@@ -169,7 +177,7 @@ public struct PolishMetrics: Sendable, Codable {
     public let failureReason: PolishFailureReason?
 
     public init(engine: String,
-                mode: PolishMode?,
+                mode: String?,
                 targetLanguage: SupportedLanguage?,
                 detectedLanguage: String?,
                 rawCharCount: Int,
@@ -202,10 +210,31 @@ public struct PolishMetrics: Sendable, Codable {
     /// from "our safety margin is mis-tuned" when reading a debug log.
     public static func logContextOverflow(estimatedTokens: Int,
                                           budgetTokens: Int,
-                                          mode: PolishMode) {
+                                          task: PolishTask) {
         if #available(iOS 14.0, macOS 11.0, *) {
             PolishLog.logger.info(
-                "📊 polish context-overflow mode=\(mode.rawValue, privacy: .public) estimatedTokens=\(estimatedTokens, privacy: .public) budgetTokens=\(budgetTokens, privacy: .public) — engine not called"
+                "📊 polish context-overflow mode=\(task.identifier, privacy: .public) estimatedTokens=\(estimatedTokens, privacy: .public) budgetTokens=\(budgetTokens, privacy: .public) — engine not called"
+            )
+        }
+    }
+
+    /// Name which guardrail refused an engine output (#413, #414).
+    ///
+    /// `outcome = rejectedGuardrail` says a check failed and never which one, and
+    /// there are three now — length, language, grounding. The reader of this log is
+    /// an agent triaging a report of "the mode gave me nothing", and the three have
+    /// three different answers: the band is mis-sized for the mode, the prompt
+    /// drifted out of the speaker's language, or the model invented a name. One
+    /// word tells them apart.
+    ///
+    /// Deliberately not a new `Outcome` case. Splitting the outcome would ripple
+    /// into the debug exporter, the debug view's filter list and the availability
+    /// gate, for a distinction that belongs in the log line rather than in the
+    /// counter. #349 asks for a separate outcome and can still have one.
+    public static func logGuardrailRejection(check: String, task: PolishTask) {
+        if #available(iOS 14.0, macOS 11.0, *) {
+            PolishLog.logger.info(
+                "📊 polish guardrail-rejected check=\(check, privacy: .public) mode=\(task.identifier, privacy: .public)"
             )
         }
     }
@@ -230,7 +259,7 @@ public struct PolishMetrics: Sendable, Codable {
                     + "/stt:\(r.sttLanguageCode)\(inert)"
             } ?? ""
             PolishLog.logger.info(
-                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode?.rawValue ?? "-", privacy: .public) target=\(m.targetLanguage?.rawValue ?? "none", privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public)\(resolution, privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
+                "📊 polish outcome=\(m.outcome.rawValue, privacy: .public) engine=\(m.engine, privacy: .public) mode=\(m.mode ?? "-", privacy: .public) target=\(m.targetLanguage?.rawValue ?? "none", privacy: .public) detected=\(m.detectedLanguage ?? "-", privacy: .public)\(resolution, privacy: .public) stt=\(m.sttEngine ?? "-", privacy: .public)/\(m.sttModelID ?? "-", privacy: .public) chars=\(m.rawCharCount, privacy: .public)→\(m.polishedCharCount, privacy: .public) latencyMs=\(m.latencyMs, privacy: .public)\(breakdown, privacy: .public)\(reason, privacy: .public)"
             )
         }
     }

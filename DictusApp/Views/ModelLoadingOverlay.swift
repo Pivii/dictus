@@ -7,11 +7,23 @@ import DictusCore
 /// Full-screen cover that surfaces long-running model preparation work to the user.
 ///
 /// Why this exists:
-/// Whisper turbo (~954 MB) takes ~2 min of one-off Core ML compilation on a 15 Pro Max
-/// and a couple of seconds to load into RAM after each cold start. Without a blocking UI
-/// the user could mistake the wait for a frozen app, tap the keyboard mic mid-load,
-/// and trigger a `Swift.CancellationError` cascade (issue #144). The overlay refuses
-/// any further model interaction until `modelLoadState == .ready`.
+/// Whisper turbo (~645 MB) takes about three and a half minutes of one-off Core ML
+/// compilation on a 15 Pro Max, and a couple of seconds to load into RAM every time
+/// after that. The "~2 min" figure this comment used to quote was never measured on
+/// this variant at all — it described the ~954 MB one issue #408 replaced. Four cold
+/// readings of the current variant now live in `ModelInfo.firstPreparationSeconds`,
+/// which is where the number belongs. Without a blocking UI the user could mistake
+/// the wait for a frozen app, tap the keyboard mic mid-load, and trigger a
+/// `Swift.CancellationError` cascade (issue #144). The overlay refuses any further
+/// model interaction until `modelLoadState == .ready`.
+///
+/// Refusing to let the user act made it this screen's job to SAY how long the wait is
+/// (issue #432). The maintainer sat through a Turbo preparation and could not tell a
+/// normal wait from a stuck app, which is the correct reading of a screen that names
+/// no duration and looks identical for a model that is ready in thirty seconds.
+/// `firstPreparationNotice` is that sentence, and it stays a sentence: Core ML reports
+/// no progress for a compile, which is why there is a bar under the download and
+/// nothing under the compile.
 ///
 /// The overlay observes two signals to decide which copy to show:
 /// 1. `ModelManager.modelStates[id]` — `.downloading`, `.prewarming`, `.ready`
@@ -33,6 +45,16 @@ struct ModelLoadingOverlay: View {
 
     @State private var showCompletion = false
     @State private var activeContext: ModelPreparationContext
+
+    /// Set when the load ended because the app STOPPED WAITING for it, rather than
+    /// because it finished (third review, finding D).
+    ///
+    /// Both outcomes leave `modelLoadState == .idle`, and `rawPhase` maps a downloaded
+    /// model plus `.idle` to `.ready` — so a deadline expiring with this screen up, the
+    /// keyboard-cold-start case issue #428 exists for, showed the user the "Model ready"
+    /// checkmark while the compile was still running and no engine was loaded. The
+    /// reason travels on the notification that already drives this screen.
+    @State private var loadGaveUp = false
 
     /// Tracks whether we have ever observed an active prep phase (downloading,
     /// compiling, or loading). Without this, the overlay would auto-dismiss
@@ -108,7 +130,11 @@ struct ModelLoadingOverlay: View {
             }
         }
         .interactiveDismissDisabled(true)
-        .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .dictusModelLoadStateChanged)) { note in
+            if let reason = note.userInfo?["reason"] as? String,
+               ModelPreparationOutcome.reasonMeansGaveUp(reason) {
+                loadGaveUp = true
+            }
             checkForCompletion()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dictusKeyboardPreparationRequested)) { _ in
@@ -205,10 +231,22 @@ struct ModelLoadingOverlay: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
+            // The one line that answers "how long am I here for" (issue #432).
+            // Semibold rather than a colour or a larger size: it has to be the line
+            // the eye lands on among three captions, and this screen deliberately
+            // carries no alarm colour of any kind.
+            if let firstPreparationNotice {
+                Text(firstPreparationNotice)
+                    .font(.dictusCaption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
             if !(showCompletion && activeContext.isPrepareOnly) {
                 Text(activeContext.isPrepareOnly
                      ? "Please wait for preparation to finish."
-                     : "Please stay on this page — do not leave the app.")
+                     : "Please stay on this page and do not leave the app.")
                     .font(.dictusCaption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -222,9 +260,42 @@ struct ModelLoadingOverlay: View {
         case .onboarding:
             return "Dictus prepares your transcription model for offline dictation."
         case .modelSelection:
-            return "This preparation may take a moment and is usually not needed for every dictation."
+            // This used to read "This preparation may take a moment and is usually not
+            // needed for every dictation". `firstPreparationNotice` now says both
+            // halves better, and "a moment" was actively false for the model that made
+            // issue #432 necessary.
+            return "Dictus is preparing this model for offline dictation."
         case .keyboardColdStart:
             return "Your model needs to be prepared before this dictation. This is usually an exceptional step."
+        }
+    }
+
+    /// How long this model's first preparation takes, said out loud (issue #432).
+    ///
+    /// WHY only under the compile and the load, and never under the download:
+    /// those two phases are the ones with nothing moving on screen. The download has a
+    /// bar and a byte counter that already answer "is this stuck", and its duration
+    /// belongs to the network rather than to the model, so a sentence about the
+    /// model's preparation shown there would be read as a claim about the download.
+    ///
+    /// WHY both of the other two, which took reading `rawPhase` to see: a
+    /// download-then-prepare spends the compile in `.compiling`, but a launch that
+    /// finds the model already on disk spends it in `.loading` — and that second case
+    /// is the one issue #432 was filed from, an app opened after an install with Turbo
+    /// active. Wording it as a fact about the model rather than about this particular
+    /// wait keeps it true in the ordinary `.loading` case too, where the Core ML cache
+    /// exists and the screen is gone in three seconds.
+    private var firstPreparationNotice: String? {
+        guard currentPhase == .compiling || currentPhase == .loading else { return nil }
+        switch ModelPreparationWait.forModel(modelIdentifier) {
+        case .minutes(let minutes):
+            return String(localized: "The first preparation of this model takes about \(minutes) minutes. It happens only once, and later ones take a few seconds.")
+        case .brief:
+            return String(localized: "The first preparation of this model takes under a minute. It happens only once, and later ones take a few seconds.")
+        case .unmeasured:
+            // No number is invented for a model nobody has timed. The half of the
+            // message that matters most is true of every model and is still said.
+            return String(localized: "This preparation happens only once for this model. Later ones take a few seconds.")
         }
     }
 
@@ -288,29 +359,42 @@ struct ModelLoadingOverlay: View {
                 String(localized: "Finishing the download…")
             ]
         case .compiling:
-            // Turbo's compile takes ~2 minutes — needs enough variety so the
-            // copy doesn't visibly loop within that window.
+            // These change every 2.5s (`CyclingLoadingText.interval`), so eight of them
+            // come round about every 20s and a Turbo compile sees the list ten times
+            // over. The comment that used to sit here claimed twelve phrases were
+            // "enough variety so the copy doesn't visibly loop" within Turbo's window;
+            // twelve never were either, at 30s a cycle against a compile of minutes.
+            // Repetition is not the problem worth solving here. The duration is, and
+            // `firstPreparationNotice` is what answers it (issue #432).
+            //
+            // WHAT IS GONE and why: every phrase that promised imminence. "Almost
+            // ready…" and "A few more seconds…" arriving on a 2.5s loop for three and a
+            // half minutes are the copy version of the bug in issue #432 — they tell a
+            // waiting user the end is near, over and over, while it is not — and they
+            // would now contradict a line directly underneath naming four minutes.
             return [
                 String(localized: "Preparing the model…"),
                 String(localized: "Optimizing for your iPhone…"),
                 String(localized: "Setting up offline transcription…"),
                 String(localized: "Adapting the model to your iPhone…"),
                 String(localized: "Configuring voice transcription…"),
-                String(localized: "Preparing the final steps…"),
                 String(localized: "Getting Dictus ready…"),
                 String(localized: "Setting up the transcription engine…"),
-                String(localized: "Checking the model…"),
-                String(localized: "Almost ready…"),
-                String(localized: "A few more seconds…"),
-                String(localized: "Finishing the preparation…")
+                String(localized: "Checking the model…")
             ]
         case .loading:
+            // A load that finds the Core ML cache is over in seconds, so this list is
+            // short on purpose. It drops the same two imminence phrases ("Almost
+            // ready…", "One last step…") for a sharper reason than the compile list
+            // does: the first launch after any install has no cache, so this phase and
+            // not `.compiling` is where the maintainer's three and a half minutes were
+            // actually spent (issue #432). It borrows a compile phrase rather than
+            // inventing a new one.
             return [
                 String(localized: "Loading the model…"),
                 String(localized: "Preparing dictation…"),
                 String(localized: "Getting transcription ready…"),
-                String(localized: "Almost ready…"),
-                String(localized: "One last step…")
+                String(localized: "Setting up the transcription engine…")
             ]
         case .ready:
             return []
@@ -345,6 +429,13 @@ struct ModelLoadingOverlay: View {
         }
         guard !showCompletion else { return }
 
+        // Nothing to celebrate: the app gave up on this load, the compile is still
+        // running, and no engine arrived. Leave without the checkmark (finding D).
+        guard !loadGaveUp else {
+            isPresented = false
+            return
+        }
+
         withAnimation(.easeInOut(duration: 0.35)) {
             showCompletion = true
         }
@@ -363,11 +454,11 @@ struct ModelLoadingOverlay: View {
     ModelLoadingOverlay(
         modelManager: {
             let m = ModelManager()
-            m.modelStates["openai_whisper-large-v3_turbo_954MB"] = .downloading
-            m.downloadProgress["openai_whisper-large-v3_turbo_954MB"] = 0.42
+            m.modelStates["openai_whisper-large-v3-v20240930_turbo_632MB"] = .downloading
+            m.downloadProgress["openai_whisper-large-v3-v20240930_turbo_632MB"] = 0.42
             return m
         }(),
-        modelIdentifier: "openai_whisper-large-v3_turbo_954MB",
+        modelIdentifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
         isPresented: .constant(true)
     )
     .preferredColorScheme(.light)
@@ -377,10 +468,10 @@ struct ModelLoadingOverlay: View {
     ModelLoadingOverlay(
         modelManager: {
             let m = ModelManager()
-            m.modelStates["openai_whisper-large-v3_turbo_954MB"] = .prewarming
+            m.modelStates["openai_whisper-large-v3-v20240930_turbo_632MB"] = .prewarming
             return m
         }(),
-        modelIdentifier: "openai_whisper-large-v3_turbo_954MB",
+        modelIdentifier: "openai_whisper-large-v3-v20240930_turbo_632MB",
         isPresented: .constant(true)
     )
     .preferredColorScheme(.dark)

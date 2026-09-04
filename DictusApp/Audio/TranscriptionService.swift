@@ -5,19 +5,51 @@ import WhisperKit
 import DictusCore
 
 /// Errors that can occur during transcription.
-enum TranscriptionError: Error, LocalizedError {
+enum TranscriptionError: Error, DiagnosableError {
     case notReady
+
+    /// The recording held no samples at all.
     case emptyAudio
+
+    /// The engine ran and produced nothing usable: an empty result, or audio it refused
+    /// as too short to contain speech.
+    ///
+    /// WHY it is separate from `transcriptionFailed` (#313, 2026-08-25): this is a
+    /// **notice**, not a fault. Nothing is wrong with the app — the user stopped a beat
+    /// too early, or spoke into a silent room, or the model heard nothing it could turn
+    /// into words. The `context` is diagnostic only; every case says the same sentence.
+    case noSpeechDetected(context: String)
+
+    /// The engine failed for a reason of its own. The payload is the engine's English
+    /// text and is diagnostic only.
     case transcriptionFailed(String)
 
+    /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
+    /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
         switch self {
         case .notReady:
-            return "TranscriptionService is not ready — no engine initialized"
+            return String(localized: "The transcription engine is not ready. Open Dictus and try again.",
+                          comment: "Shown when a dictation reaches transcription with no engine initialized (issue #313).")
+        case .emptyAudio, .noSpeechDetected:
+            return DictationFailureMessage.noWordsDetected
+        case .transcriptionFailed:
+            return String(localized: "The transcription failed. Tap the microphone to try again.",
+                          comment: "Shown when the transcription engine fails for a reason the app cannot name. Deliberately names no cause (issues #313, #320).")
+        }
+    }
+
+    /// English technical detail for the log. Never shown to the user.
+    var diagnosticDescription: String {
+        switch self {
+        case .notReady:
+            return "transcription service is not ready — no engine initialized"
         case .emptyAudio:
-            return "No audio samples to transcribe"
+            return "no audio samples to transcribe"
+        case .noSpeechDetected(let context):
+            return "no speech detected: \(context)"
         case .transcriptionFailed(let message):
-            return "Transcription failed: \(message)"
+            return "transcription failed: \(message)"
         }
     }
 }
@@ -70,6 +102,14 @@ class TranscriptionService {
     /// WHY a separate prepare method for model paths:
     /// When the user switches models, we need to reinitialize WhisperKit with
     /// the new model. This method handles that switch transparently.
+    ///
+    /// NOTHING CALLS THIS TODAY — a model switch goes through
+    /// `DictationCoordinator.ensureWhisperKitEngineReady`, which builds the instance
+    /// and injects it through `prepare(whisperKit:)` and `prepare(engine:)`. Whoever
+    /// revives this method has to run a warm inference on the loaded kit before handing
+    /// it out, as that path does, or they re-create issue #426: `prewarm: true,
+    /// load: true` compiles and loads weights and runs no inference, so the Neural
+    /// Engine's per-shape specialization lands in the user's first dictation.
     func prepare(modelPath: String) async throws {
         // Skip reinitialization if same model is already loaded
         if loadedModelFolder == modelPath, whisperKit != nil {
@@ -146,7 +186,10 @@ class TranscriptionService {
                 logPerformance(modelName: modelName, audioSamples: audioSamples, transcriptionDurationMs: durationMs)
                 return result
             } catch {
-                PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))
+                // The diagnostic, not `localizedDescription`: since #313 the latter is the
+                // sentence written for the user, and a log line that carried it would say
+                // nothing about what actually failed.
+                PersistentLog.log(.transcriptionFailed(error: DictationFailureMessage.diagnostic(for: error)))
                 throw error
             }
         }
@@ -207,8 +250,7 @@ class TranscriptionService {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !trimmed.isEmpty else {
-                PersistentLog.log(.transcriptionFailed(error: "Empty transcription result"))
-                throw TranscriptionError.transcriptionFailed("Empty transcription result")
+                throw TranscriptionError.noSpeechDetected(context: "empty WhisperKit transcription result (legacy path)")
             }
 
             let durationMs = Int(Date().timeIntervalSince(transcriptionStart) * 1000)
@@ -217,7 +259,7 @@ class TranscriptionService {
             logPerformance(modelName: modelName, audioSamples: audioSamples, transcriptionDurationMs: durationMs)
             return trimmed
         } catch let error as TranscriptionError {
-            PersistentLog.log(.transcriptionFailed(error: error.localizedDescription ?? "unknown"))
+            PersistentLog.log(.transcriptionFailed(error: error.diagnosticDescription))
             throw error
         } catch {
             PersistentLog.log(.transcriptionFailed(error: error.localizedDescription))

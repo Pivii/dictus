@@ -1,0 +1,123 @@
+[
+  {
+    "id": "E1-relance-devis",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE. No greeting, no addressee, no sign-off in the spoken text. Chasing an unanswered quote — the archetypal 'this is an email' input, so the model is maximally tempted to bracket it with Bonjour/Cordialement.",
+    "raw": "alors euh je voulais revenir sur le devis que j'ai envoyé la semaine dernière j'ai toujours pas eu de retour et là ça commence à être un peu juste par rapport au planning donc si vous pouvez me dire où ça en est ça m'arrangerait",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E2-dispo",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE. Answering an availability question, familiar register, tutoiement. Pressure on both invention and register lift.",
+    "raw": "ouais alors moi je suis dispo mardi après-midi ou jeudi matin par contre le mercredi c'est mort j'ai un truc toute la journée dis moi ce qui t'arrange",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E3-court",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE and SHORT. One clause. The shortest input is the one a model is most tempted to pad into a full letter, and the one where padding blows the 2.0 length guardrail.",
+    "raw": "je confirme pour la réunion de lundi à 14h",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E4-reclamation",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE. Complaint to a provider. Irritated oral register — the case where an Email mode is most useful and most likely to invent a polite frame the speaker did not want.",
+    "raw": "donc en fait ça fait trois fois que j'appelle pour le même problème et à chaque fois on me dit que ça va être réglé sous 48h et ça fait deux semaines que ça dure là franchement j'en ai marre je veux qu'on me rappelle",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E5-long-projet",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE and LONG. Fillers, several topics, no structure. The fixture that carries the 'paragraph structure' half of the Email axis.",
+    "raw": "alors euh je fais le point sur le projet donc euh la partie design elle est finie on a validé les maquettes vendredi dernier par contre le dev il a pris du retard parce qu'on a eu un souci avec l'API du prestataire et euh du coup on est en train de voir si on peut décaler la livraison d'une semaine je sais pas si c'est jouable de ton côté et sinon faudrait qu'on en parle assez vite parce que là ça commence à presser",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E6-demande-fichier",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "BARE. Asking a colleague for a file. A request with no name attached — the exact shape that invites 'Bonjour <name>' and 'Merci d'avance'.",
+    "raw": "est-ce que tu pourrais me renvoyer le fichier des chiffres du dernier trimestre j'arrive pas à le retrouver dans mes mails et j'en ai besoin pour demain matin",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E7-controle-salutation-seule",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "CONTROL. The speaker dictates a greeting and no sign-off. Correct behaviour keeps 'bonjour' and completes NOTHING — no 'Madame, Monsieur', no closing formula. Catches a prompt that completes the pair.",
+    "raw": "bonjour alors je vous écris parce que j'ai besoin d'un renseignement sur ma facture du mois dernier il y a une ligne que je comprends pas",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E8-controle-signature-seule",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "CONTROL, mirror of E7. The speaker dictates a closing thanks and no greeting. Correct behaviour keeps 'merci d'avance' and invents no opener.",
+    "raw": "du coup je pense qu'on peut valider comme ça je te laisse me confirmer et on lance la prod merci d'avance",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E9-controle-prenom",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "CONTROL. The recipient is named mid-sentence, first name only. Correct behaviour may use 'Julien' and must invent neither a surname, nor a title, nor a signature carrying the SENDER's name — which the model cannot know.",
+    "raw": "écoute Julien j'ai regardé ce que tu m'as envoyé et globalement c'est bon il y a juste deux trois trucs à reprendre sur la partie budget je te fais un retour détaillé demain",
+    "expect": [
+      { "contains": "Julien" },
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  },
+  {
+    "id": "E10-controle-deja-formel",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "CONTROL for bar B, not bar A. The speaker already dictates in a formal written register. Email has nothing to lift here, so this is the fixture most likely to be indistinguishable from free polish — and that is informative rather than disqualifying on its own.",
+    "raw": "je vous prie de bien vouloir trouver ci-joint les documents demandés je reste à votre disposition pour toute information complémentaire",
+    "expect": [
+      { "regexAbsent": "(?i)\\b(bonjour|bonsoir|salut|coucou|cher|chère|chers|madame|monsieur|hello|hey)\\b" },
+      { "regexAbsent": "(?i)(cordialement|bien à vous|sincèrement|salutations|amicalement|bonne journée|bonne réception|à bientôt|dans l'attente|au plaisir|merci d'avance|en vous remerciant|respectueusement)" },
+      { "regexAbsent": "<<NL>>" }
+    ]
+  }
+]

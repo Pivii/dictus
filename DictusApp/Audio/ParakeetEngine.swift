@@ -100,6 +100,37 @@ class ParakeetEngine: SpeechModelProtocol {
         }
     }
 
+    /// One discarded inference on generated silence, so the first real one does not pay
+    /// the Neural Engine's per-shape specialization (issue #426).
+    ///
+    /// UNMEASURED ON PARAKEET, and deliberately done anyway. #426 measured the gap on
+    /// WhisperKit and flagged Parakeet as the same structural question without a number
+    /// behind it. What is known: FluidAudio's own `prewarm` only pre-allocates
+    /// `MLMultiArray`s in a cache and runs no inference, so nothing in the load path
+    /// specializes anything. What is not known is how much that costs here. The
+    /// `WarmInference` log line carries the duration so a device session answers it.
+    ///
+    /// Safe to run ahead of a real transcription because `AsrManager.transcribe` resets
+    /// its decoder state after every call — its own documented "stateless architecture"
+    /// — so a throwaway pass cannot leak into the dictation that follows.
+    ///
+    /// It goes through `transcribe` rather than the manager directly: warming the exact
+    /// path production uses is the whole point.
+    func runWarmInference() async throws {
+        do {
+            _ = try await transcribe(audioSamples: WarmInferenceAudio.silence(), language: nil)
+        } catch TranscriptionError.noSpeechDetected {
+            // The expected outcome, and a success for this purpose: the model ran on
+            // two seconds of silence and heard no words. `transcribe` refuses an empty
+            // result because a user is normally waiting for text; here nobody is. Left
+            // to propagate it would log every Parakeet warm inference as a failure.
+        }
+    }
+
+    /// Shortest clip FluidAudio accepts: one second at the 16 kHz the pipeline
+    /// already resamples to. Its own error message states the requirement.
+    private static let minimumSampleCount = 16_000
+
     /// Transcribe audio samples using Parakeet v3.
     ///
     /// - Parameters:
@@ -119,12 +150,26 @@ class ParakeetEngine: SpeechModelProtocol {
             throw TranscriptionError.emptyAudio
         }
 
+        // Parakeet's own one-second floor, declared here rather than discovered there.
+        //
+        // WHY (#313, field report 2026-08-08): below this, FluidAudio throws, and its
+        // sentence — "Parakeet: Invalid audio data provided. Must be at least 1 second of
+        // 16kHz audio." — reached the keyboard toolbar verbatim, naming an internal
+        // component and a sample rate to someone who had simply stopped the mic a beat
+        // early. It is reachable on any ordinary tap because the coordinator's floor is
+        // 0.5 s and this one is 1.0 s, so recordings in between pass ours and fail this.
+        // Refusing it ourselves is what lets the user read a notice instead.
+        guard audioSamples.count >= Self.minimumSampleCount else {
+            throw TranscriptionError.noSpeechDetected(
+                context: "\(audioSamples.count) samples, below Parakeet's \(Self.minimumSampleCount) floor")
+        }
+
         do {
             let result = try await asrManager.transcribe(audioSamples)
             let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !text.isEmpty else {
-                throw TranscriptionError.transcriptionFailed("Empty Parakeet transcription result")
+                throw TranscriptionError.noSpeechDetected(context: "empty Parakeet transcription result")
             }
 
             return text
@@ -137,10 +182,21 @@ class ParakeetEngine: SpeechModelProtocol {
 }
 
 /// Errors specific to ParakeetEngine.
-enum ParakeetEngineError: Error, LocalizedError {
+enum ParakeetEngineError: Error, DiagnosableError {
     case unavailable
 
+    /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
+    /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
     var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return String(localized: "This model needs a newer version of iOS. Open Dictus and choose another model.",
+                          comment: "Shown when the selected model requires an iOS version this device does not run (issue #313).")
+        }
+    }
+
+    /// English technical detail for the log. Never shown to the user.
+    var diagnosticDescription: String {
         switch self {
         case .unavailable:
             return "Parakeet engine is not available on this iOS version"

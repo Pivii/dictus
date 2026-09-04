@@ -149,8 +149,18 @@ struct ModelDownloadPage: View {
             }
         }
         .onAppear {
-            // Check if model is already downloaded (user may have downloaded before)
-            if modelManager.downloadedModels.contains(recommendedModel) {
+            // Check if model is already downloaded (user may have downloaded before).
+            //
+            // Issue #433: `downloadedModels.contains` on its own stopped meaning
+            // "onboarding got this far". The launch reconciliation now lists a model
+            // whose files are complete even when its compile was interrupted, and that
+            // model has never been selected — `activeModel` is still nil, and nothing
+            // has an engine to load. Letting onboarding move on would hand the user a
+            // keyboard whose mic answers "No model downloaded". `isModelReady` adds the
+            // missing half of the question: some model finished preparing. Tapping
+            // "Install model" instead resumes at the interrupted compile, because the
+            // downloader skips every file already on disk.
+            if modelManager.downloadedModels.contains(recommendedModel), modelManager.isModelReady {
                 downloadComplete = true
             }
             // If the user backgrounded the app mid-prep, surface the overlay again.
@@ -187,16 +197,22 @@ struct ModelDownloadPage: View {
     /// First identifier currently in a user-facing prep phase. Mirrors the same
     /// computation as `ModelManagerView` so the overlay behavior is identical.
     private var liveActivePrepModel: String? {
-        if modelManager.modelLoadState == .loading,
-           let active = modelManager.activeModel {
-            return active
-        }
+        // Same order as `ModelManagerView`, for the same reason (audit finding 3): a
+        // per-model state is evidence about a specific model, the global load flag is
+        // not, so the specific evidence is consulted first. Onboarding only ever has one
+        // model in flight, which makes this ordering invisible here — it is kept
+        // identical because the comment on this property promises it is.
         switch modelManager.modelStates[recommendedModel] ?? .notDownloaded {
         case .prewarming, .downloading:
             return recommendedModel
         default:
-            return nil
+            break
         }
+        if modelManager.modelLoadState == .loading,
+           let active = modelManager.activeModel {
+            return active
+        }
+        return nil
     }
 
     // MARK: - Model Card

@@ -64,7 +64,14 @@ final class ModelRepoDownloader {
         let includesRootMetadata: Bool
         /// Repo-relative paths that must exist on disk after the download —
         /// the final-verification tripwire (see Phase 4 in `download`).
-        let requiredPaths: [String]
+        ///
+        /// A function of the destination directory rather than a list fixed up
+        /// front, since issue #433: a WhisperKit variant has to be checked against
+        /// the bundles it actually shipped, and that is only knowable once the
+        /// files are there. The turbos add a fourth `.mlmodelc` whose weights are
+        /// the last bytes of the whole download, so a fixed three-bundle list
+        /// declared its download verified at the one moment it most likely was not.
+        let requiredPaths: @Sendable (URL) -> [String]
 
         /// Parakeet v3 repo. Matches FluidAudio's `Repo.parakeet.remotePath`,
         /// its file selection, and mirrors `AsrModels.modelsExist` verification.
@@ -73,7 +80,7 @@ final class ModelRepoDownloader {
                 repoPath: Repo.parakeet.remotePath,
                 directoryPatterns: ModelNames.ASR.requiredModels.map { "\($0)/" }.sorted(),
                 includesRootMetadata: true,
-                requiredPaths: ModelNames.ASR.requiredModels + [ModelNames.ASR.vocabularyFile]
+                requiredPaths: { _ in ModelNames.ASR.requiredModels + [ModelNames.ASR.vocabularyFile] }
             )
         }
 
@@ -85,21 +92,38 @@ final class ModelRepoDownloader {
         /// resolves to that folder and nothing else. Selecting `{variant}/` directly
         /// downloads the same file set into the same layout.
         ///
-        /// Required paths = the three CoreML bundles every variant ships plus
-        /// `config.json` (verified against the repo tree for Small, Small Quantized,
-        /// Medium, and Turbo `_954MB` — Turbo's extra `TextDecoderContextPrefill.mlmodelc`
-        /// is downloaded too but not universally required).
+        /// Required paths moved to `WhisperModelRepository` for issue #433, which
+        /// added a second reader: the launch reconciliation that decides whether the
+        /// files of an interrupted preparation amount to a finished download. That
+        /// decision is only defensible if it names the very paths this tripwire
+        /// guarantees, so the two are now literally the same list.
+        ///
+        /// Two things that list learned, both of them holes this tripwire had:
+        ///
+        /// - It names the leaf files inside a bundle, not the bundle directory.
+        ///   Phase 4 below checks with `FileManager.fileExists`, which answers true
+        ///   for a directory, and this downloader creates a file's parent directory
+        ///   before fetching the file — so a bundle-level list passed on an
+        ///   `AudioEncoder.mlmodelc/` that existed and was empty.
+        /// - It reads the bundles the variant actually shipped instead of assuming
+        ///   the three every variant has. The turbos ship a fourth,
+        ///   `TextDecoderContextPrefill.mlmodelc`, and because `listRequiredFiles`
+        ///   walks the repo breadth first, that bundle's `weights/weight.bin` is the
+        ///   last file of the entire download. A fixed three-bundle list therefore
+        ///   declared the download verified at precisely the moment it most likely
+        ///   was not.
+        ///
+        /// The `directoryPatterns` glob has always pulled the whole variant folder,
+        /// so nothing about what gets DOWNLOADED changes here — only what gets
+        /// checked afterwards.
         static func whisperKit(variant: String) -> Configuration {
             Configuration(
-                repoPath: "argmaxinc/whisperkit-coreml",
+                repoPath: WhisperModelRepository.repositoryID,
                 directoryPatterns: ["\(variant)/"],
                 includesRootMetadata: false,
-                requiredPaths: [
-                    "\(variant)/MelSpectrogram.mlmodelc",
-                    "\(variant)/AudioEncoder.mlmodelc",
-                    "\(variant)/TextDecoder.mlmodelc",
-                    "\(variant)/config.json"
-                ]
+                requiredPaths: { cacheDir in
+                    WhisperModelRepository.requiredDownloadPaths(forVariant: variant, in: cacheDir)
+                }
             )
         }
     }
@@ -165,6 +189,7 @@ final class ModelRepoDownloader {
         // sizes (verified: Encoder weight.bin = 445187200), so byte weighting is
         // accurate. Unknown sizes (-1) count as 0, same as FluidAudio.
         let totalBytes: Int64 = files.reduce(0) { $0 + Int64(max(0, $1.size)) }
+        Self.logSizeMismatchIfAny(modelName: modelName, measuredBytes: totalBytes)
         let reporter = ProgressReporter(
             totalBytes: totalBytes,
             totalFiles: files.count,
@@ -213,12 +238,36 @@ final class ModelRepoDownloader {
         // so we fail loudly here (with a localized error) instead of silently
         // handing an incomplete cache to the engine. If the repo layout ever
         // drifts, this is the signal.
-        for requiredPath in configuration.requiredPaths {
+        for requiredPath in configuration.requiredPaths(cacheDir) {
             let path = cacheDir.appendingPathComponent(requiredPath)
             guard FileManager.default.fileExists(atPath: path.path) else {
                 throw DownloadError.missingRequiredFile(requiredPath)
             }
         }
+    }
+
+    // MARK: - Catalogue size reconciliation (issue #372)
+
+    /// Compares the size `ModelInfo` promised on the model card against the total
+    /// the repository just told us, and logs the pair when they disagree.
+    ///
+    /// WHY here: this is the only moment in the app where both numbers exist. The
+    /// card cannot compute the real total (it would need this network round trip),
+    /// so the announced size has to stay a hand-written constant — and it will
+    /// drift again the next time a repository is repacked. One line at download
+    /// time turns that drift from silent into something a log reader catches for
+    /// free. `ModelInfo.sizeHasDrifted(fromMeasured:)` owns the threshold.
+    ///
+    /// Nothing downstream reads this: it is diagnostics only, the download proceeds
+    /// on the measured total exactly as before.
+    private static func logSizeMismatchIfAny(modelName: String, measuredBytes: Int64) {
+        guard let model = ModelInfo.forIdentifier(modelName),
+              model.sizeHasDrifted(fromMeasured: measuredBytes) else { return }
+        PersistentLog.log(.modelDownloadSizeMismatch(
+            name: modelName,
+            catalogMB: Int(model.sizeBytes / 1_000_000),
+            actualMB: Int(measuredBytes / 1_000_000)
+        ))
     }
 
     // MARK: - File listing (HuggingFace tree API)

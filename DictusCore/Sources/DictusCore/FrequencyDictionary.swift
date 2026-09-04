@@ -1,5 +1,5 @@
 // DictusCore/Sources/DictusCore/FrequencyDictionary.swift
-// Loads word frequency rankings from JSON and provides rank-based lookup.
+// Loads word frequency counts from JSON and provides count-based lookup.
 import Foundation
 
 /// A dictionary that maps words to frequency counts (higher count = more common).
@@ -29,8 +29,8 @@ public struct FrequencyDictionary {
         do {
             let decoded = try JSONDecoder().decode([String: Int].self, from: data)
             // Keep only the top N most frequent words to save memory.
-            // Words not in this dictionary get rank 0 (lowest priority in sorting),
-            // which is the correct behavior for rare words.
+            // Words not in this dictionary get a count of 0 (lowest priority in
+            // sorting), which is the correct behavior for rare words.
             if decoded.count > Self.maxWords {
                 let top = decoded.sorted { $0.value > $1.value }.prefix(Self.maxWords)
                 counts = [:]
@@ -68,8 +68,25 @@ public struct FrequencyDictionary {
     /// Returns the word frequency count (higher = more common).
     /// Returns 0 if the word is not in the dictionary.
     /// Lookup is case-insensitive.
-    public func rank(of word: String) -> Int {
+    ///
+    /// WHY not `frequency(of:)`: `FrequencyProvider.frequency(of:)` answers with
+    /// the AOSP trie's log-normalized `UInt16`, a different number from a
+    /// different source. Two names for one word would invite mixing them.
+    public func frequencyCount(of word: String) -> Int {
         return counts[word.lowercased()] ?? 0
+    }
+
+    /// Returns `words` ordered most common first.
+    ///
+    /// WHY the ordering lives here and not at the call site: the direction is the
+    /// whole contract, and it used to be a bare `>` in a closure sitting under a
+    /// comment that described it backwards (#365). Spelled out once, in a name
+    /// that says which way it goes, it can be read without reading the count's
+    /// documentation — and the only test suite the repo has can reach it.
+    ///
+    /// Words the dictionary does not know count 0 and therefore land last.
+    public func sortedMostCommonFirst(_ words: [String]) -> [String] {
+        return words.sorted { frequencyCount(of: $0) > frequencyCount(of: $1) }
     }
 
     /// Returns the top N most frequent words, sorted by count descending.

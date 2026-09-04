@@ -74,10 +74,17 @@ class ModelManager: ObservableObject {
     private let defaults = AppGroup.defaults
     private var loadStateObserver: NSObjectProtocol?
 
-    /// Serial prewarm lock — only one CoreML compilation at a time.
-    /// The Neural Engine cannot handle multiple models compiling simultaneously
-    /// (causes ANE "E5 bundle" errors). Downloads are parallel, prewarms are serial.
-    private var isPrewarming = false
+    /// Whether this process has already reconciled `downloadedModels` against the
+    /// disk (issue #433). Static because the promise is per process, not per
+    /// instance: onboarding builds a second `ModelManager` of its own.
+    private static var hasReconciledThisProcess = false
+
+    /// The serial prewarm lock used to live here, as `isPrewarming`. It now lives on
+    /// `DictationCoordinator` (issue #428, second review): the Neural Engine cannot
+    /// compile two models at once, and a lock owned by this class covered neither
+    /// `ensureEngineReady` — which compiles too and never consulted it — nor the second
+    /// `ModelManager` that onboarding builds. One piece of hardware, one lock, on the
+    /// singleton that both paths can reach.
 
     /// Directory inside the App Group container where model files are stored.
     /// Using the shared container means the keyboard extension could also access
@@ -106,6 +113,10 @@ class ModelManager: ObservableObject {
 
     init() {
         loadState()
+        // Believe the disk over the bookkeeping, before the states below are seeded
+        // from it (#433). Deliberately here and not inside `loadState`, which three
+        // views call on `.onAppear` — see `reconcileDownloadedModelsWithDisk`.
+        reconcileDownloadedModelsWithDisk()
         // Initialize states for all known models (including deprecated Tiny/Base so
         // already-downloaded deprecated models still get their state set to .ready).
         for model in ModelInfo.allIncludingDeprecated {
@@ -163,6 +174,68 @@ class ModelManager: ObservableObject {
         }
     }
 
+    /// Adds back any WhisperKit variant whose files are completely on disk while
+    /// `downloadedModels` says it is not there (issue #433).
+    ///
+    /// WHY the two can disagree: the identifier is appended only after the whole
+    /// download-and-prewarm sequence returns. A compile ended by a force quit or by
+    /// iOS reclaiming the process leaves every byte on disk and the list unaware, so
+    /// the model reappears under "Available" — where there is no delete affordance,
+    /// because the app does not believe you have it. The user is then paying 500 MB
+    /// to 1.5 GB for something they cannot see and cannot reclaim.
+    ///
+    /// WHY there is no third state for it: a model whose files are complete IS
+    /// downloaded. Selecting it runs the compile that was interrupted, which is the
+    /// ordinary preparation flow `ModelLoadingOverlay` already covers, so nothing new
+    /// needs presenting — and the delete entry in the card's overflow menu becomes
+    /// reachable, which is the whole point.
+    ///
+    /// WHAT IT MUST NEVER DO is touch `activeModel`. `persistState` derives
+    /// `SharedKeys.modelReady` from this pair, and every reader of that flag treats it
+    /// as "there is a model to load". Electing a model whose compile has never
+    /// succeeded would announce a working engine on a device that has none. Adding to
+    /// the list is a statement about disk; choosing what to load is the user's, or
+    /// that of the download that finishes.
+    ///
+    /// WHY WhisperKit only: Parakeet arrives through FluidAudio, whose cache is one
+    /// directory per `AsrModelVersion` shared by every model of that version — so
+    /// "are its files complete" and "which model do they belong to" are not the same
+    /// question there, and deleting one version's directory removes them all.
+    /// Reconciling it is a separate problem and is out of scope here.
+    ///
+    /// WHY once per process, and why this is not called from `loadState`: what it
+    /// repairs is the wreckage of a process that DIED between a finished download and
+    /// a finished compile, so the only honest moment to run it is before this process
+    /// has done anything of its own. `loadState` is called by `HomeView` and
+    /// `ModelManagerView` on `.onAppear` and again when onboarding completes, and a
+    /// perfectly ordinary download sits in exactly the repaired state — files
+    /// complete, identifier not yet appended — for the entire prewarm window, which
+    /// is 27 s for Small and about 3 min 30 for Turbo. Navigating between two tabs in
+    /// that window would have adopted the in-flight model early and written
+    /// `modelReconciledFromDisk` for a download nobody interrupted, which is both a
+    /// race against the prewarm's own bookkeeping and a lie in a log whose reader is
+    /// an agent. The flag rather than init alone: onboarding builds its own
+    /// `ModelManager`, so "once per instance" is not the same promise.
+    private func reconcileDownloadedModelsWithDisk() {
+        guard !Self.hasReconciledThisProcess else { return }
+        Self.hasReconciledThisProcess = true
+
+        let whisperIdentifiers = ModelInfo.allIncludingDeprecated
+            .filter { $0.engine == .whisperKit }
+            .map(\.identifier)
+        let recovered = WhisperModelRepository.unlistedCompleteDownloads(
+            among: whisperIdentifiers,
+            listedAsDownloaded: downloadedModels
+        )
+        guard !recovered.isEmpty else { return }
+
+        downloadedModels.append(contentsOf: recovered)
+        for identifier in recovered {
+            PersistentLog.log(.modelReconciledFromDisk(name: identifier))
+        }
+        persistState()
+    }
+
     /// Downloads a model variant, prewarms it, and updates state.
     ///
     /// WHY engine-aware download:
@@ -212,9 +285,11 @@ class ModelManager: ObservableObject {
 
         // Tracks which phase a failure (if any) belongs to. Download-phase failures
         // keep files on disk (every file is complete thanks to atomic per-file
-        // moves) so a retry resumes where it left off; prewarm-phase failures still
-        // clean up, because ANE compilation failures (E5 bundle errors) can leave
+        // moves) so a retry resumes where it left off; a prewarm failure keeps them
+        // too when it is the deadline guard firing (issue #405) and only cleans up
+        // otherwise, because ANE compilation failures (E5 bundle errors) can leave
         // behind unusable cached files that prevent retry from working.
+        // `ModelCleanupPolicy` owns the rule; this flag is one of its two inputs.
         var downloadPhaseCompleted = false
 
         do {
@@ -249,13 +324,39 @@ class ModelManager: ObservableObject {
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Wait for any other prewarm to finish (poll on MainActor is safe)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+            // Take the Neural Engine. This waits out any compile already running,
+            // including one started by `ensureEngineReady` on the dictation path, which
+            // the old instance-owned flag could not see (issue #428, second review).
+            // Captured BEFORE the wait for the Neural Engine, not after it (fourth
+            // review, finding 1). The wait is unbounded — it can last as long as another
+            // compile runs — and everything this guard exists to notice happens during
+            // it. Capturing on the far side made the guard blind to exactly the window
+            // it was written for.
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
+
+            let engineHolder = "prewarm:\(identifier)"
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+
+            // WHY A FLAG AND NOT A BARE `defer` (issue #427): the engine belongs to
+            // whoever is actually compiling on it, and after a deadline expiry that is
+            // no longer this scope. The compile carries on — nothing can stop it — so
+            // releasing here would let the next model start a second compile on top of
+            // it, which is precisely the E5-class failure `acquireNeuralEngine` spends
+            // a paragraph telling the next reader not to cause. On expiry the flag goes
+            // down and the abandoned compile hands the engine back itself, from
+            // `whenLateCompilationLands` below.
+            var engineIsOursToRelease = true
+            defer {
+                if engineIsOursToRelease {
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                }
             }
 
-            isPrewarming = true
-            defer { isPrewarming = false }
+            // This prewarm compiles its own throwaway WhisperKit outside the coordinator's
+            // init lock, so abandoning a load does not stop it — and #174 has it adopt the
+            // model as active when it finishes. Without the guard below, a user who moved
+            // to a different model mid-prewarm had their choice silently reverted, and the
+            // model they moved off loaded into RAM instead.
 
             PersistentLog.log(.modelCompilationStarted(name: identifier))
 
@@ -282,16 +383,109 @@ class ModelManager: ObservableObject {
             // Phase 37: guard the CoreML prewarm against indefinite hangs.
             // On iPhone ANE, some WhisperKit model variants fail to compile and the
             // async init never returns (E5 bundle load failure — issue #104,
-            // 2026-04-22 iPhone 15 Pro Max). 120s is well above the observed normal
-            // worst case (~17s for Parakeet Encoder on this device) so we don't
-            // false-positive on legitimately long prewarms.
-            let prewarmTimeoutSeconds = 120
+            // 2026-04-22 iPhone 15 Pro Max).
+            //
+            // WHY the number comes from the catalogue (issue #406):
+            // it used to be a flat 120 written here, justified by the ~17s a Parakeet
+            // Encoder compile took on a 15 Pro Max. That was a reading from a different
+            // engine, it was never revisited, and it ended up sitting almost exactly on
+            // Turbo's own compile time — so a TestFlight tester lost a completed Turbo
+            // download to it on 2026-08-25, and the maintainer reproduced it the same
+            // day on the smaller variant from issue #408. Raising the global instead
+            // would have punished the opposite case: Whisper Small on an unsupported
+            // A13 (issue #362) takes far longer than it has any business taking.
+            // `ModelInfo.prewarmTimeoutSeconds` lets the two models disagree.
+            //
+            // WHAT THIS GUARD DOES AND DOES NOT DO (issue #427): it bounds the WAIT,
+            // never the compile. Nothing can interrupt a Core ML compile — it checks no
+            // cancellation flag and offers no suspension point at which it could notice
+            // one — so on expiry the compile runs on, keeps the Neural Engine, and
+            // finishes on its own. What the budget buys is that the app stops waiting
+            // for it, at the deadline, and hands the user back a card they can act on.
+            //
+            // It did not always buy that. Until #427 this raced a sleep against the
+            // compile inside a task group, and a task group cannot return while a child
+            // runs: the error was thrown on time and then queued behind the very compile
+            // it was meant to bound. Measured 2026-08-26, a 5s budget reported failure
+            // after 212s, on a compile that had by then completed and warmed the cache.
+            // Any comment or issue reasoning from that behaviour is describing the old
+            // code.
+            //
+            // #362 — Whisper Small on an unsupported A13 — is the case this has to be
+            // right for, because there the compile may genuinely never return. It is now
+            // bounded, in the only sense available: the spinner ends at 120s even though
+            // the compile behind it does not.
+            //
+            // WHAT AN ABANDONED COMPILE DOES NOT SURVIVE: the app leaving the
+            // foreground. Nothing owns it — that is the whole point of abandoning it —
+            // so nothing holds the process up for it. iOS may suspend the process on
+            // backgrounding, in which case the compile simply stops running, and it may
+            // reclaim the process outright, in which case the compile dies with it. Both
+            // take with them the warm Core ML cache that abandoning was supposed to buy.
+            //
+            // Observed 2026-08-30 on an iPhone 15 Pro Max: a 5s deadline fired at
+            // 13:06:43, the app backgrounded at 13:07:09, and at 13:08:39 a NEW process
+            // logged `appLaunched`. No `abandonedCompileLanded` was ever written and the
+            // next attempt paid the full 3 min 46 s again. Whether that process was
+            // jetsammed or crashed is NOT established — a debug log cannot tell those
+            // apart, only a `.ips` can, and `thermal=serious` in the same snapshot means
+            // the memory-pressure reading is at least plausible. So nothing is fixed
+            // here on a cause nobody has localised.
+            //
+            // NOTHING IN THIS DESIGN CAN HOLD THAT WINDOW, and the options were checked
+            // rather than assumed. `beginBackgroundTask` has precedent in this app
+            // (#311, `coldStartAssertion`) but buys tens of seconds against a compile
+            // that runs for two hundred; it would move the kill, not prevent it.
+            // `UIBackgroundModes: audio` is already declared and only keeps the process
+            // alive while audio is actually capturing, which a prewarm is not. Refusing
+            // to abandon while backgrounded changes nothing either: abandoning decides
+            // who WAITS, not who runs, and there is no UI in the background to hand back.
+            //
+            // Say it plainly: the trade #427 made was accepted without this case in
+            // mind. Its argument was that the compile finishes anyway and the retry is
+            // cheap, which is measured and true with the app in front of the user
+            // (`abandonedCompileLanded`, 2026-08-30 12:26), and was never costed for an
+            // app the user has walked away from.
+            //
+            // What bounds the damage is that it is not a regression. When the process
+            // does die, the user pays one full compile on the retry — exactly what they
+            // paid before this branch existed, and before it they also waited out that
+            // compile and were then told it had failed. The failure mode is "abandoning
+            // bought nothing", not "abandoning broke something".
+            //
+            // Whatever this resolves to is the number that reaches the user: it is
+            // carried by the thrown `.prewarmTimeout(seconds:)` into both the
+            // `.modelPrewarmTimeout` log line and the error text on the model card, so
+            // the debug log always states the budget that was actually applied.
+            //
+            // The fallback covers an identifier the catalogue does not know, which this
+            // path should never see — `downloadModel` had to resolve the model to route
+            // it here by engine in the first place.
+            let prewarmTimeoutSeconds = ModelInfo.forIdentifier(identifier)?.prewarmTimeoutSeconds
+                ?? ModelInfo.defaultPrewarmTimeoutSeconds
             do {
                 _ = try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
                     try await WhisperKit(config)
+                } whenLateCompilationLands: { result in
+                    // The compile the app gave up on has landed. Two things follow.
+                    // The engine is free, and this is the only place that knows it.
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                    // And the debug log gets the line that closes the story it opened
+                    // with `.modelPrewarmTimeout` — without it, a reader sees a compile
+                    // start, a timeout, and no ending, which is the shape of a hang.
+                    let landedAfterMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
+                    PersistentLog.log(.diagnosticProbe(
+                        component: "ModelPrewarm",
+                        instanceID: identifier,
+                        action: "abandonedCompileLanded",
+                        details: "afterMs=\(landedAfterMs) budget=\(prewarmTimeoutSeconds)s "
+                            + "outcome=\(ModelManager.landingOutcome(of: result))"
+                    ))
                 }
             } catch let err as ModelManagerError {
                 if case .prewarmTimeout(let s) = err {
+                    // The compile is still on the Neural Engine; it releases it above.
+                    engineIsOursToRelease = false
                     PersistentLog.log(.modelPrewarmTimeout(name: identifier, timeoutSeconds: s))
                 }
                 throw err
@@ -306,10 +500,24 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one.
-            // The user explicitly chose it; without this they had to tap the card
-            // a second time, triggering a redundant second RAM load.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one. The user
+            // explicitly chose it; without this they had to tap the card a second time,
+            // triggering a redundant second RAM load.
+            //
+            // Unless they have since chosen otherwise. Escaping this preparation and
+            // picking another model is exactly that, and #174's convenience must not
+            // overrule it (finding B).
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -318,28 +526,50 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelPrewarmPeakMemory(modelName: identifier, peakMB: consumedMB))
             PersistentLog.log(.modelSelected(name: identifier))
 
+            // Hand the Neural Engine back BEFORE kicking off the eager load, not at the
+            // end of this scope where the `defer` would do it (audit finding 5). The
+            // load below would otherwise spend its first 500ms poll queued behind a lock
+            // this scope is about to drop anyway. The `defer` still runs and finds the
+            // holder changed, so it is a no-op — that identity check is what makes an
+            // early release safe.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+
             // Issue #144: eagerly load the now-active model into the coordinator's
             // RAM-resident WhisperKit instance. The compile above used a throwaway
             // WhisperKit just to populate the Core ML cache.
-            DictationCoordinator.shared.preloadActiveModel()
+            //
+            // Skipped when the user moved on: this would load the abandoned model into
+            // RAM and clear the memory that keeps it from being re-warmed (finding B).
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            if downloadPhaseCompleted {
-                // Prewarm failure: clean up. ANE compilation failures (E5 bundle
-                // errors) leave behind unusable cached files that prevent
-                // re-download from working correctly.
+            // Three failure kinds, one of which deletes anything — see
+            // ModelCleanupPolicy for the rule and its reasons:
+            //   • download failure → keep (issue #210, same policy as the Parakeet
+            //     path): every file on disk is complete, a retry resumes;
+            //   • prewarm timeout → keep (issue #405): the payload is intact and only
+            //     the Core ML compile ran out of clock, so a retry must resume at the
+            //     compile step instead of repaying a 1 GB download;
+            //   • any other prewarm failure → clean up: an E5 bundle error (issue
+            //     #104) leaves a corrupt Core ML cache that fails identically forever.
+            // Since issue #235, tapping the card's "Retry" affordance retries in
+            // place; the full reset stays in the overflow menu's "Delete partial
+            // download" entry (cleanupFailedModel). When nothing is deleted here the
+            // debug log shows .modelPrewarmTimeout with no .modelCleanupPerformed
+            // line after it — that pair is what says the bytes were kept.
+            let isPrewarmTimeout = (error as? ModelManagerError)?.isPrewarmTimeout ?? false
+            if ModelCleanupPolicy.shouldCleanUpFiles(
+                downloadPhaseCompleted: downloadPhaseCompleted,
+                isPrewarmTimeout: isPrewarmTimeout
+            ) {
                 cleanupModelFiles(identifier)
             }
-            // Download failure: deliberately NO cleanup (issue #210, same policy as
-            // the Parakeet path) — the downloader moves each file into place
-            // atomically, so anything on disk is a complete file and a retry skips
-            // it and resumes where it left off. Since issue #235, tapping the card's
-            // "Retry" affordance retries in place; the full reset lives in the
-            // overflow menu's "Delete partial download" entry (cleanupFailedModel).
 
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
@@ -379,24 +609,57 @@ class ModelManager: ObservableObject {
                 }
             }
 
-            // Step 2: Wait for any other prewarm to finish (ANE conflict avoidance)
-            while isPrewarming {
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
+            // Same guard as the WhisperKit path, captured before the wait (finding 1).
+            let prewarmEpoch = DictationCoordinator.shared.modelLoadEpoch
 
-            // Step 3: Switch to prewarming state — download is done, CoreML compilation starts.
-            isPrewarming = true
+            // Step 2: Switch to prewarming state BEFORE queueing for the Neural Engine,
+            // which is the order the WhisperKit path uses (fourth review, finding 3).
+            // Taking the lock first left the card saying "Downloading" at 100% with no
+            // progress for as long as another compile held the hardware — the download
+            // has finished, and the screen should say what is actually happening.
             modelStates[identifier] = .prewarming
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
             PersistentLog.log(.modelPrewarmStarted(name: identifier))
-            defer { isPrewarming = false }
 
-            // Step 4: Load and compile CoreML models.
+            // Step 3: take the Neural Engine, waiting out any compile already on it —
+            // this path's or the dictation path's (issue #428, second review).
+            let engineHolder = "prewarm:\(identifier)"
+            try await DictationCoordinator.shared.acquireNeuralEngine(for: engineHolder)
+
+            // Released by whoever is still compiling on the engine — see the WhisperKit
+            // path, which explains the flag at length. The two paths have to agree here:
+            // an abandoned Parakeet compile holds the same hardware a Whisper compile
+            // would.
+            var engineIsOursToRelease = true
+            defer {
+                if engineIsOursToRelease {
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                }
+            }
+
+            // Step 4: Load and compile CoreML models, under the catalogue's budget.
             // ParakeetEngine.prepare() loads the files step 1 just downloaded and compiles
             // them; it never downloads anything itself (issue #252). This method is the
             // only place a Parakeet download starts.
+            //
+            // WHY THIS IS GUARDED AT ALL, AND ONLY NOW (issue #422): it never was. The
+            // deadline was written for WhisperKit in Phase 37 and `prewarmTimeoutSeconds`
+            // sat on this entry declaring a budget nothing read, which is worse than no
+            // field — the next reader believes the protection exists. And the asymmetry
+            // pointed the wrong way: Parakeet v3 is the recommended model and the one a
+            // new user compiles during onboarding, so the unguarded path was the default
+            // path. A FluidAudio compile that never returned had no way out but killing
+            // the app. It was not fixed alongside #406 on purpose, because adding a new
+            // failure mode to the default onboarding model as a side effect of a Turbo
+            // fix is not a trade anyone chose; it waited for #427 to decide what a
+            // deadline expiring should mean, and now means what it means everywhere
+            // else: the app stops waiting, the compile carries on, the files stay.
+            //
+            // No hang has ever been observed here. This is the absence of a guard being
+            // closed, not a reported symptom being fixed, which is the whole argument
+            // for leaving the budget generous — see the catalogue entry.
             //
             // Phase 37 instrumentation mirrors the WhisperKit path: measure prewarm
             // duration + jetsam-headroom delta so both engines produce comparable
@@ -404,8 +667,33 @@ class ModelManager: ObservableObject {
             let prewarmStart = Date()
             let availableBeforeMB = DeviceCapabilities.current().availableMemoryMB
 
-            let parakeetEngine = ParakeetEngine()
-            try await parakeetEngine.prepare(modelIdentifier: identifier)
+            let prewarmTimeoutSeconds = ModelInfo.forIdentifier(identifier)?.prewarmTimeoutSeconds
+                ?? ModelInfo.defaultPrewarmTimeoutSeconds
+            do {
+                try await withPrewarmTimeout(seconds: prewarmTimeoutSeconds) {
+                    // Built inside the operation, not captured: the engine is this
+                    // compile's alone, and after a deadline expiry nothing out here is
+                    // entitled to touch it any more.
+                    let parakeetEngine = ParakeetEngine()
+                    try await parakeetEngine.prepare(modelIdentifier: identifier)
+                } whenLateCompilationLands: { result in
+                    DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+                    let landedAfterMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
+                    PersistentLog.log(.diagnosticProbe(
+                        component: "ModelPrewarm",
+                        instanceID: identifier,
+                        action: "abandonedCompileLanded",
+                        details: "afterMs=\(landedAfterMs) budget=\(prewarmTimeoutSeconds)s "
+                            + "outcome=\(ModelManager.landingOutcome(of: result))"
+                    ))
+                }
+            } catch let err as ModelManagerError {
+                if case .prewarmTimeout(let s) = err {
+                    engineIsOursToRelease = false
+                    PersistentLog.log(.modelPrewarmTimeout(name: identifier, timeoutSeconds: s))
+                }
+                throw err
+            }
 
             let prewarmDurationMs = Int(Date().timeIntervalSince(prewarmStart) * 1000)
             let availableAfterMB = DeviceCapabilities.current().availableMemoryMB
@@ -416,9 +704,19 @@ class ModelManager: ObservableObject {
                 downloadedModels.append(identifier)
             }
 
-            // Issue #174: a freshly downloaded model becomes the active one —
-            // see comment in the WhisperKit path.
-            activeModel = identifier
+            // Issue #174: a freshly downloaded model becomes the active one — see the
+            // comment in the WhisperKit path, including why the user's later choice wins.
+            let userMovedOn = DictationCoordinator.shared.loadWasAbandoned(since: prewarmEpoch)
+            if userMovedOn {
+                PersistentLog.log(.diagnosticProbe(
+                    component: "ModelPrewarm",
+                    instanceID: identifier,
+                    action: "notAdoptedAsActive",
+                    details: "reason=userChoseAnotherModelDuringPrewarm active=\(activeModel ?? "nil")"
+                ))
+            } else {
+                activeModel = identifier
+            }
 
             modelStates[identifier] = .ready
             persistState()
@@ -428,21 +726,33 @@ class ModelManager: ObservableObject {
             PersistentLog.log(.modelDownloadCompleted(name: identifier))
             PersistentLog.log(.modelSelected(name: identifier))
 
-            // Issue #144: same proactive load as the WhisperKit path — see comment there.
-            DictationCoordinator.shared.preloadActiveModel()
+            // Released early for the same reason as the WhisperKit path above.
+            DictationCoordinator.shared.releaseNeuralEngine(from: engineHolder)
+
+            // Issue #144: same proactive load as the WhisperKit path — see comment there,
+            // including why an abandoned preparation does not get one.
+            if !userMovedOn {
+                DictationCoordinator.shared.preloadActiveModel()
+            }
         } catch {
             modelStates[identifier] = .error(error.localizedDescription)
             downloadProgress.removeValue(forKey: identifier)
             downloadByteInfo.removeValue(forKey: identifier)
             lastLoggedDeciles.removeValue(forKey: identifier)
 
-            // Deliberately NO cleanupModelFiles here after a download failure:
+            // Deliberately NO cleanupModelFiles here, for any failure:
             // the downloader moves each file into place atomically, so anything on
             // disk is a complete file — leaving the cache intact lets a retry skip
             // already-downloaded files and resume where it left off. Since issue
             // #235, tapping the card's "Retry" affordance retries in place; the
             // full reset lives in the overflow menu's "Delete partial download"
             // entry (cleanupFailedModel).
+            //
+            // This is also what the prewarm deadline #422 added needs, and it needs
+            // nothing else: keeping the payload after a timeout is the policy the
+            // WhisperKit path had to be taught in #405, and this path has had it since
+            // #210. There is no `ModelCleanupPolicy` call to make here because there is
+            // no branch — nothing on this path deletes anything, ever.
             PersistentLog.log(.modelDownloadFailed(name: identifier, error: error.localizedDescription))
             throw error
         }
@@ -481,6 +791,7 @@ class ModelManager: ObservableObject {
     /// Dictus in a prepare-only flow; `ModelLoadingOverlay` surfaces the wait.
     func selectModel(_ identifier: String) {
         guard downloadedModels.contains(identifier) else { return }
+
         activeModel = identifier
         persistState()
         PersistentLog.log(.modelSelected(name: identifier))
@@ -600,6 +911,21 @@ class ModelManager: ObservableObject {
 
     // MARK: - Private
 
+    /// How a compile the app had already given up on eventually ended, for the debug
+    /// log (issue #427). Nothing branches on this: by the time it is known the download
+    /// has already reported its failure and the user has already been told to retry.
+    /// It exists so the log reader can tell "abandoned and finished" — the normal case,
+    /// and the one that leaves a warm cache — from "abandoned and never came back",
+    /// which is the only shape a true hang can now leave.
+    private static func landingOutcome<T>(of result: Result<T, Error>) -> String {
+        switch result {
+        case .success:
+            return "success"
+        case .failure(let error):
+            return "failure:\(error.localizedDescription)"
+        }
+    }
+
     /// Persists model state to App Group UserDefaults so the keyboard extension
     /// can read which model is active and whether transcription is available.
     private func persistState() {
@@ -607,7 +933,15 @@ class ModelManager: ObservableObject {
             defaults.set(data, forKey: SharedKeys.downloadedModels)
         }
         defaults.set(activeModel, forKey: SharedKeys.activeModel)
-        defaults.set(!downloadedModels.isEmpty, forKey: SharedKeys.modelReady)
+        // WHY `isModelReady` and not `!downloadedModels.isEmpty` (issue #433): the two
+        // could not disagree before, because the only writer of `downloadedModels` set
+        // `activeModel` in the same breath. The launch reconciliation adds a model
+        // without electing one, so a device whose first ever download was interrupted
+        // now reaches this line with a populated list and no active model. Every reader
+        // of this flag — the launch preload, `startDictation`, the foreground warm-up —
+        // takes it as "there is a model to load", and there is not one until something
+        // chooses it. The stricter definition is the one the flag has always claimed.
+        defaults.set(isModelReady, forKey: SharedKeys.modelReady)
         defaults.synchronize()
     }
 }
@@ -628,39 +962,65 @@ enum ModelManagerError: Error, LocalizedError {
         case .parakeetUnavailable:
             return "Parakeet requires iOS 17+ or FluidAudio is not linked"
         case .prewarmTimeout(let seconds):
-            return "Model optimization did not complete within \(seconds)s"
+            // WHY this no longer says the optimization "did not complete" (issue #427):
+            // it did, almost every time. The old guard could not interrupt the compile,
+            // so it announced a failure for work that finished moments later; and now
+            // that the app really does stop waiting at the deadline, the compile it
+            // stopped waiting for is still running as this sentence is written. Late is
+            // the true claim, failed is not. The compile also warms the Core ML cache on
+            // its way out, which is what makes retrying the useful next move rather than
+            // a second full wait.
+            //
+            // No promise about how fast the retry will be: it queues behind the compile
+            // still on the Neural Engine, so "in a moment" is as precise as we can
+            // honestly be.
+            return String(localized: "Optimization did not finish within \(seconds)s. It is still running, so try again in a moment.")
         }
+    }
+
+    /// Whether this is the prewarm deadline guard firing rather than a real
+    /// failure of the model files (issue #405). The one prewarm failure whose
+    /// downloaded payload is still worth keeping — see `ModelCleanupPolicy`.
+    var isPrewarmTimeout: Bool {
+        if case .prewarmTimeout = self { return true }
+        return false
     }
 }
 
-/// Races an async operation against a timeout. Cancels the operation and throws
-/// `.prewarmTimeout` if the deadline expires first.
+/// Runs a Core ML prewarm under the catalogue's budget, and stops waiting on it when
+/// the budget runs out.
 ///
-/// WHY: WhisperKit's async init for certain model variants on iPhone ANE can hang
-/// indefinitely when CoreML fails to compile the model (see issue #104,
+/// WHY THE GUARD EXISTS: WhisperKit's async init for certain model variants on iPhone
+/// ANE can hang indefinitely when Core ML fails to compile the model (issue #104,
 /// 2026-04-22 on-device test: `ANE model load has failed … Must re-compile the E5
-/// bundle` followed by `await WhisperKit(config)` never returning). Without a
-/// timeout, ModelManager stays stuck in `.prewarming` forever and the Settings
-/// UI shows the optimization spinner indefinitely, forcing the user to force-quit.
+/// bundle` followed by `await WhisperKit(config)` never returning). Without a deadline,
+/// `ModelManager` stays in `.prewarming` for the life of the process and the Settings
+/// spinner never stops.
+///
+/// WHY IT IS NOT A TASK GROUP ANY MORE (issue #427): it was, and that version bounded
+/// nothing — see `withDetachedDeadline`, which carries the measurement and the reason.
+/// This is now a thin translation of that primitive into `ModelManager`'s vocabulary:
+/// the same budget, the same `.prewarmTimeout`, and an expiry that actually returns at
+/// the deadline.
+///
+/// THE OPERATION IS ABANDONED, NOT STOPPED. Nothing can stop a Core ML compile. On
+/// expiry it keeps running, keeps the Neural Engine, and finishes on its own — which is
+/// why `whenLateCompilationLands` exists and why every caller has to use it to hand the
+/// engine back. Releasing at the throw instead would let a second compile start on top
+/// of the first, and `acquireNeuralEngine` documents at length what that costs.
 @MainActor
 func withPrewarmTimeout<T: Sendable>(
     seconds: Int,
-    _ operation: @escaping @Sendable () async throws -> T
+    operation: @escaping @Sendable () async throws -> T,
+    whenLateCompilationLands: @escaping @MainActor @Sendable (Result<T, Error>) -> Void
 ) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
-            throw ModelManagerError.prewarmTimeout(seconds: seconds)
-        }
-        // First to finish wins. Cancel the other before returning.
-        //
-        // WHY the force unwrap cannot trap: `next()` returns nil only when the
-        // group has no unfinished child tasks. Two were just added above and
-        // none has been awaited yet, so there is always one result to take.
-        // swiftlint:disable:next force_unwrapping
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
+    do {
+        return try await withDetachedDeadline(
+            seconds: seconds,
+            operation: operation,
+            onLateCompletion: whenLateCompilationLands
+        )
+    } catch let expiry as DeadlineExpired {
+        throw ModelManagerError.prewarmTimeout(seconds: expiry.seconds)
     }
 }

@@ -115,7 +115,7 @@ extension DictationCoordinator {
             // and that task releases it: `engine-started` once the engine is capturing
             // and `UIBackgroundModes: audio` takes over, or `failure-reported` once the
             // keyboard has been told. Its `defer` catches every other exit.
-            startDictation(fromURL: true, allowInactiveStart: true)
+            startDictation(fromURL: true, allowInactiveStart: true, origin: .keyboard)
 
             // Except when there is no task at all. `startDictation` can also fail
             // synchronously and return before creating one -- "no model downloaded" is

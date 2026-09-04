@@ -61,7 +61,7 @@ Pierre travaille sur cette machine : toute fenêtre qui s'ouvre lui vole le focu
 - La suite de tests n'a besoin d'aucun simulateur (`cd DictusCore && swift test`). Seuls les builds d'app en demandent un.
 - Ne jamais mettre une fenêtre Simulator au premier plan : `open -a Simulator` est interdit. `open -g -a Simulator` ne l'est pas, et il est requis pour piloter l'UI (`axe` ne peut taper que si Simulator.app est attaché au device booté). Mesuré : `-g` ne change pas l'app au premier plan.
 - Un agent ne peut pas valider sur device physique : ce qui l'exige part dans la liste de validation manuelle, avec les étapes exactes.
-- Le simulateur se pilote au tap, au clavier et par l'arbre d'accessibilité avec `axe`. Le clavier Dictus **peut** y être activé (via Réglages, au tap) ; ce qui reste non résolu, c'est son rendu à l'écran. La recette complète est dans `docs/agents/simulator.md`, qui fait autorité sur ce que le simulateur sait faire.
+- Le simulateur se pilote au tap, au clavier et par l'arbre d'accessibilité avec `axe`. Le clavier Dictus **s'y affiche**, y prend le Full Access et y déclenche toute la chaîne clavier → app. On l'atteint en **appuyant longuement** sur le globe puis en le choisissant dans le menu : un tap simple fait défiler les claviers et saute les claviers tiers. La recette complète est dans `docs/agents/simulator.md`, qui fait autorité sur ce que le simulateur sait faire.
 
 ## Contexte utilisateur
 

@@ -116,9 +116,7 @@ class KeyboardViewController: UIInputViewController {
     /// `UIInputViewController` extension so the probes that report them cannot
     /// drift from the predicate that acts on them; this line is the only place
     /// they are composed.
-    private var isOnScreen: Bool {
-        isViewInWindow || isInputViewInWindow
-    }
+    private var isOnScreen: Bool { isAttachedToWindow }
 
     /// Whether this instance was counted into `KeyboardLifecycleProbe`'s live
     /// census, so `deinit` decrements exactly once and only for instances that
@@ -388,11 +386,18 @@ class KeyboardViewController: UIInputViewController {
             details: "animated=\(animated) status=\(entryStatus) storedStatus=\(entryStoredStatus) coldStart=\(entryColdStart) inputBounds=\(Int(entryBounds.width))x\(Int(entryBounds.height)) hostingConst=\(hostingHeightConstraint?.constant ?? -1) heightConst=\(heightConstraint?.constant ?? -1) memMB=\(MemoryFootprint.residentMB())"
         ))
         PersistentLog.log(.keyboardDidAppear)
-        KeyboardState.shared.registerControllerAppearance(controllerID: controllerID)
         // Point KeyboardState's weak controller ref at the currently-visible controller
         // so call sites in KeyboardRootView and KeyboardState can access textDocumentProxy.
         // Previously set from KeyboardRootView.onAppear, which held a strong ref → #134.
+        //
+        // WHY before `registerControllerAppearance` since #361: that call refreshes from
+        // the App Group, and the refresh now has to be able to ask which document this
+        // keyboard is looking at — a polish still running for a field the user has left
+        // must not reopen its overlay here. The read goes through the proxy, so the ref
+        // has to be in place first. Nothing in the registration path reads it, so the
+        // swap is an ordering change and not a behavioural one.
         KeyboardState.shared.controller = self
+        KeyboardState.shared.registerControllerAppearance(controllerID: controllerID)
         hasAppeared = true
         isAttached = true
 
@@ -455,6 +460,16 @@ class KeyboardViewController: UIInputViewController {
         // returning to a keyboard should mean. The emoji picker deliberately keeps
         // the old restore behaviour: browsing emoji is a task worth resuming,
         // choosing a language is not.
+        // The Smart Mode fan does not survive either, and for a stronger reason than
+        // the panel's (#79): it is the visible half of a gesture, and the finger that
+        // opened it is long gone by the time a fresh controller mounts. Restoring it
+        // would present a menu that can only be dismissed by a release nobody is
+        // going to perform. `closeSmartModeFan` rather than `presentAreaMode` so the
+        // highlighted row goes with the presentation.
+        if KeyboardState.shared.areaMode == .smartModeFan {
+            KeyboardSmartModeState.shared.close()
+        }
+
         if KeyboardState.shared.areaMode == .panel {
             KeyboardState.shared.presentAreaMode(.keys)
         }
@@ -664,6 +679,10 @@ class KeyboardViewController: UIInputViewController {
         // (#260): a detached controller must not adopt an ownerless dictation.
         isAttached = false
 
+        // A finger held on backspace when iOS takes the keyboard away never produces a
+        // touchesEnded, and the repeat timer was cleared by nothing else (#390).
+        giellaKeyboard?.cancelKeyRepeat(reason: "viewDidDisappear")
+
         // Restore system gesture recognizer delay (be a good citizen)
         restoreWindowGestureDelay()
 
@@ -837,6 +856,7 @@ class KeyboardViewController: UIInputViewController {
         hostingController?.removeFromParent()
         hostingController = nil
 
+        giellaKeyboard?.cancelKeyRepeat(reason: "controllerDeinit")
         giellaKeyboard?.removeFromSuperview()
         giellaKeyboard = nil
 
@@ -1077,6 +1097,28 @@ class KeyboardViewController: UIInputViewController {
                 details: "old=\(oldHosting) new=\(fullHeight) status=\(status) mode=\(mode.rawValue)"
             ))
 
+        case .smartModeFan:
+            // Same geometry again, and deliberately so: the fan is the emoji picker's
+            // contract with different contents. What is new is that this branch runs
+            // *during a live gesture* — the finger is already down on the mic when the
+            // long-press fires — so the hosting height grows under a touch that is
+            // still being tracked. Nothing here is new machinery: the constant moves
+            // in the same synchronous turn it always has, and `heightConstraint` is
+            // untouched (#166).
+            giellaKeyboard?.isHidden = true
+            let fanHeight = computeKeyboardHeight()
+            hostingHeightConstraint?.constant = fanHeight
+            setHostingExpanded(true)
+            // The height the fan's rows actually divide, published to the gesture in
+            // the same turn as the constraint that creates it. See the property.
+            KeyboardSmartModeState.shared.areaHeight = max(0, fanHeight - toolbarHeight)
+            PersistentLog.log(.diagnosticProbe(
+                component: "KeyboardViewController",
+                instanceID: controllerID,
+                action: "hostingSet_smartModeFanOpen",
+                details: "old=\(oldHosting) new=\(fanHeight) status=\(status) mode=\(mode.rawValue)"
+            ))
+
         case .recording:
             giellaKeyboard?.isHidden = true
             let fullHeight = computeKeyboardHeight()
@@ -1238,7 +1280,10 @@ class KeyboardViewController: UIInputViewController {
             details: "status=\(KeyboardState.shared.dictationStatus.rawValue) oldHosting=\(hostingHeightConstraint?.constant ?? -1) oldHeight=\(heightConstraint?.constant ?? -1) inputBounds=\(Int(kbInputView.bounds.width))x\(Int(kbInputView.bounds.height))"
         ))
 
-        // Remove old keyboard
+        // Remove old keyboard. Stop its auto-repeat first: this controller and its
+        // bridge outlive the rebuild, so an outgoing view still holding a repeat would
+        // keep deleting into the live document from outside the hierarchy (#390).
+        giellaKeyboard?.cancelKeyRepeat(reason: "reloadLayout")
         giellaKeyboard?.removeFromSuperview()
 
         // Create new keyboard with updated definition

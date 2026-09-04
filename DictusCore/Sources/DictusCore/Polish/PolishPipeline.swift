@@ -41,25 +41,24 @@ public enum PolishPipeline {
     }
 
     /// Run the transform on `preprocessed` (already past the verbal-punctuation
-    /// pre-pass): encode newlines → `engine.polish` → decode + FR typography →
+    /// pre-pass): encode newlines → `engine.polish` → decode + typography →
     /// guardrails. Honours `Task.isCancelled` so a caller wrapping this in a
     /// cancellable `Task` gets `.cancelled` when a newer request supersedes it.
     ///
-    /// Auto mode (#239): when `mode == .auto` the input language is unknown, so
-    /// `target` is only the placeholder the engine API requires (the engine's
-    /// auto prompt ignores it) — it is NEVER used for typography or guardrails:
-    /// the decode restores newline markers only (no per-language typography;
-    /// CJK full-width punctuation must survive untouched), and the language
-    /// guardrail compares the output's detected language against the INPUT's
-    /// detected language instead of a target — the runtime never-translate check.
+    /// `job` says what is being asked and in which languages — see `PolishJob`. The
+    /// two languages on it are separate because they legitimately differ: the prompt
+    /// is resolved for one, and the typography post-pass keys on the output's, which
+    /// for a translation is the target rather than the input (#79). Where the output
+    /// language is genuinely unknown — the auto path (#239) — `typographyLanguage` is
+    /// nil, the decode restores newline markers only, and the language guardrail
+    /// compares against the INPUT's detected language instead of a target.
     ///
     /// `gate` (#315) is the caller's polish-availability state. It defaults to a
     /// fresh gate, which allows everything, so a caller with no such state — the
     /// off-device eval harness — is unaffected.
     public static func transform(preprocessed: String,
                                  engine: PolishEngineProtocol,
-                                 target: SupportedLanguage,
-                                 mode: PolishMode,
+                                 job: PolishJob,
                                  gate: PolishAvailabilityGate = PolishAvailabilityGate()) async -> Result {
         // Polish is in its unavailable state for this engine (#315): two
         // consecutive `rateLimited` refusals said this process is on the wrong
@@ -81,41 +80,51 @@ public enum PolishPipeline {
         // a single pass over the strings (tens of microseconds), and folding it
         // into `engineMs` would pollute the one number that measures the LLM.
         if case .exceeds(let estimated, let budget) = engine.contextFit(
-            input: engineInput, targetLanguage: target, mode: mode
+            input: engineInput, targetLanguage: job.promptLanguage, task: job.task
         ) {
-            // The engine is NOT called. `resolvedOutput` returns the
-            // deterministic floor for this outcome exactly as it does for an
-            // engine failure — the user's text is never at risk here, only
-            // the polish is.
-            PolishMetrics.logContextOverflow(estimatedTokens: estimated, budgetTokens: budget, mode: mode)
+            // The engine is NOT called. For the free polish `resolvedOutput` returns
+            // the deterministic floor exactly as it does for an engine failure — the
+            // user's text is never at risk here, only the polish is. For a Smart
+            // Mode it returns nothing, because the floor is not what was asked for.
+            PolishMetrics.logContextOverflow(
+                estimatedTokens: estimated, budgetTokens: budget, task: job.task
+            )
             return Result(engineOutput: nil, outcome: .exceededContextBudget, engineMs: 0, postprocessMs: 0)
         }
         let engineStart = Date()
         do {
             let polishedRaw = try await engine.polish(
-                raw: engineInput, targetLanguage: target, mode: mode
+                raw: engineInput, targetLanguage: job.promptLanguage, task: job.task
             )
             let engineMs = Int(Date().timeIntervalSince(engineStart) * 1000)
             let postStart = Date()
-            // Restore newlines (+ target typography outside auto mode) BEFORE
-            // the guardrail so the char-ratio compares apples to apples (both
-            // sides use `\n`).
-            let polished = mode == .auto
-                ? PolishPostpass.decodeNewlines(polishedRaw)
-                : PolishPostpass.decodeFromEngine(polishedRaw, language: target)
+            // Restore newlines (+ output-language typography, when there is an
+            // output language) BEFORE the guardrail so the char-ratio compares
+            // apples to apples (both sides use `\n`).
+            let polished = job.typographyLanguage.map {
+                PolishPostpass.decodeFromEngine(polishedRaw, language: $0)
+            } ?? PolishPostpass.decodeNewlines(polishedRaw)
             if Task.isCancelled {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
                 return Result(engineOutput: polished, outcome: .cancelled, engineMs: engineMs, postprocessMs: postMs)
             }
             // Guardrail baseline is the preprocessed text — what the engine
             // actually saw (modulo the newline marker the post-pass undid).
-            guard PolishGuardrail.accepts(raw: preprocessed, polished: polished, mode: mode) else {
+            guard PolishGuardrail.accepts(
+                raw: preprocessed, polished: polished, contract: job.task.contract
+            ) else {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "length", task: job.task)
                 return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
             }
-            guard languageGuardrailPasses(polished: polished, preprocessed: preprocessed,
-                                          target: target, mode: mode) else {
+            guard languageGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
                 let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "language", task: job.task)
+                return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
+            }
+            guard groundingGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) else {
+                let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
+                PolishMetrics.logGuardrailRejection(check: "grounding", task: job.task)
                 return Result(engineOutput: polished, outcome: .rejectedGuardrail, engineMs: engineMs, postprocessMs: postMs)
             }
             let postMs = Int(Date().timeIntervalSince(postStart) * 1000)
@@ -135,53 +144,129 @@ public enum PolishPipeline {
         }
     }
 
-    /// Language guardrail dispatch. Outside auto mode, the polished output must
-    /// read as `target` — catches Apple FM chat-reply contamination. In auto
-    /// mode (#239) there is no target: the output must read as the same
-    /// language the INPUT reads as — catches translation drift, which is the
-    /// worst failure of the auto prompt. When the input's own language cannot
-    /// be detected confidently, the check passes through (same philosophy as
-    /// the short/low-confidence pass-throughs inside the guardrail).
+    /// Language guardrail dispatch, off the task's contract (#79).
+    ///
+    /// - `.polishTarget` — the historical per-language check: the output must read
+    ///   as the language the prompt named, which catches Apple FM chat-reply
+    ///   contamination.
+    /// - `.sameAsInput` — the auto-mode check (#239): the output must read as the
+    ///   same language the INPUT reads as, which catches translation drift. When the
+    ///   input's own language cannot be detected confidently the check passes
+    ///   through, same philosophy as the short/low-confidence pass-throughs inside
+    ///   the guardrail.
+    /// - `.fixed` — translation. Same machinery as `.polishTarget`, pointed at the
+    ///   mode's target instead of the prompt's language, which is what turns this
+    ///   check from the obstacle it would have been into the one that catches the
+    ///   model forgetting to translate.
     private static func languageGuardrailPasses(polished: String,
                                                 preprocessed: String,
-                                                target: SupportedLanguage,
-                                                mode: PolishMode) -> Bool {
-        guard mode == .auto else {
-            return PolishGuardrail.detectedLanguageMatches(polished: polished, target: target)
+                                                job: PolishJob) -> Bool {
+        switch job.task.contract.outputLanguage {
+        case .polishTarget:
+            return PolishGuardrail.detectedLanguageMatches(
+                polished: polished, target: job.promptLanguage
+            )
+        case .fixed(let language):
+            return PolishGuardrail.detectedLanguageMatches(polished: polished, target: language)
+        case .sameAsInput:
+            guard let inputCode = detectLanguageCode(in: preprocessed) else { return true }
+            return PolishGuardrail.detectedLanguageMatches(
+                polished: polished, inputLanguageCode: inputCode
+            )
         }
-        guard let inputCode = detectLanguageCode(in: preprocessed) else { return true }
-        return PolishGuardrail.detectedLanguageMatches(polished: polished, inputLanguageCode: inputCode)
+    }
+
+    /// Grounding guardrail (#414): every person, place and organisation the output
+    /// names must already appear in the input.
+    ///
+    /// Runs only where the task's contract says it is sound — see
+    /// `PolishAcceptanceContract.requiresGroundedNames`, which is a field precisely
+    /// so a mode has to answer the question rather than have it derived here.
+    ///
+    /// The language handed to `NLTagger` is a hint, not a filter, and it is the one
+    /// the OUTPUT is expected to read as: the input's own for `.sameAsInput`, the
+    /// prompt's for `.polishTarget`. `.fixed` never reaches this function, because
+    /// a translation's contract answers `false` above — but it is handled rather
+    /// than trapped, since a custom mode (#269) could answer `true` on a contract
+    /// nobody here anticipated.
+    private static func groundingGuardrailPasses(polished: String,
+                                                 preprocessed: String,
+                                                 job: PolishJob) -> Bool {
+        guard job.task.contract.requiresGroundedNames else { return true }
+        let outputCode: String?
+        switch job.task.contract.outputLanguage {
+        case .polishTarget: outputCode = job.promptLanguage.rawValue
+        case .fixed(let language): outputCode = language.rawValue
+        case .sameAsInput: outputCode = detectLanguageCode(in: preprocessed)
+        }
+        return PolishGrounding.ungroundedAnchors(
+            in: polished, input: preprocessed, languageCode: outputCode
+        ).isEmpty
     }
 
     /// The string the user actually receives, given a transform `Result` and the
-    /// deterministic pre-pass output. On `.success` it's the accepted engine
-    /// output; on EVERY other outcome (gibberish-skip, engine failure, guardrail
-    /// rejection, cancellation, context overflow, polish unavailable) it's the
-    /// deterministic floor —
-    /// the pre-pass text with newline markers decoded and target-language
-    /// typography applied.
+    /// deterministic pre-pass output — or `nil` when nothing may be inserted.
     ///
-    /// Crucially it is NEVER the literal `raw`: a non-success must not throw away
-    /// the free, deterministic verbal-punctuation work (otherwise the user sees
-    /// the spoken command words "virgule" / "point" left in the text). This
-    /// matches what the coordinator's `< engineMinDuration` gate already returns.
-    /// (#185)
+    /// On `.success` it is the accepted engine output.
     ///
-    /// Auto mode (#239): the floor is `preprocessed` — the `autoPreprocess`
-    /// output, i.e. the input with verbal-punctuation commands already
-    /// converted when the detected language has rules, or the input unchanged
-    /// otherwise. No target typography is applied: `target` is the engine
-    /// placeholder and must not leak French NBSP (or any per-language rule)
-    /// onto a language chosen by detection.
+    /// ### The free polish falls back; a Smart Mode does not (#79)
+    ///
+    /// For polish, every other outcome (gibberish-skip, engine failure, guardrail
+    /// rejection, cancellation, context overflow, polish unavailable) returns the
+    /// deterministic floor — the pre-pass text with newline markers decoded and, when
+    /// there is an output language, its typography applied. Crucially it is NEVER
+    /// the literal `raw`: a non-success must not throw away the free, deterministic
+    /// verbal-punctuation work, otherwise the user sees the spoken command words
+    /// "virgule" / "point" left in the text (#185). On the auto path (#239) the floor
+    /// is `preprocessed` unchanged, because there is no output language whose
+    /// typography could be applied without leaking French NBSP onto a language
+    /// chosen by detection.
+    ///
+    /// For a Smart Mode the floor is not a degraded version of what was asked for —
+    /// it is the untransformed text, and inserting it is the worst outcome available:
+    /// French sent to an American client, or two minutes of rambling pasted where
+    /// three bullets were expected. So the answer is `nil`, and the caller inserts
+    /// nothing.
+    ///
+    /// ### With one exception, and only one: a context overflow on a mode that says
+    /// it may degrade
+    ///
+    /// `.exceededContextBudget` is decided *before* the engine is called, so no
+    /// transformation was attempted and the wrong-transformation risk the rule
+    /// guards against is absent by construction. Whether that licenses the floor is
+    /// the mode's own answer — see `SmartModeOverflowBehaviour`, which explains why
+    /// Notes says yes and Translate says no.
+    ///
+    /// **A caller cannot tell the two apart from this return value alone.** A
+    /// degraded output is a `String` exactly like a success, so `PolishService`
+    /// re-derives the distinction and packages it as `PolishOutcome.degraded`; the
+    /// user is told either way, because refusing in silence and degrading in silence
+    /// are the same failure.
     public static func resolvedOutput(_ result: Result,
                                       preprocessed: String,
-                                      target: SupportedLanguage,
-                                      mode: PolishMode) -> String {
+                                      job: PolishJob) -> String? {
         if result.outcome == .success, let output = result.engineOutput {
             return output
         }
-        guard mode != .auto else { return preprocessed }
-        return PolishPostpass.decodeFromEngine(preprocessed, language: target)
+        if let mode = job.task.smartMode, !degradesToFloor(mode, outcome: result.outcome) {
+            return nil
+        }
+        guard let typography = job.typographyLanguage else { return preprocessed }
+        return PolishPostpass.decodeFromEngine(preprocessed, language: typography)
+    }
+
+    /// Whether an armed mode accepts the deterministic floor for this outcome.
+    ///
+    /// The outcome test is as narrow as the argument that justifies it: only
+    /// `.exceededContextBudget` never reached the engine. `.engineFailed`,
+    /// `.rejectedGuardrail`, `.cancelled` and `.engineUnavailable` all stay
+    /// fail-closed for every mode, whatever it declares — the first three because a
+    /// transformation was attempted and may have half-happened, the last because it
+    /// describes a process that will not run the model again for its lifetime, which
+    /// is a different conversation to have with the user (#315).
+    public static func degradesToFloor(_ mode: SmartMode,
+                                       outcome: PolishMetrics.Outcome) -> Bool {
+        outcome == .exceededContextBudget && mode.overflowBehaviour == .insertRawText
     }
 
     /// Deterministic pre-pass for the auto path (#239 device-test fix).

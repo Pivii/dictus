@@ -47,6 +47,52 @@ xcrun simctl bootstatus <udid>
 
 On an already-booted device it prints `Device already booted, nothing to do.`
 
+### The device type decides the identifier, and the Mac decides the RAM
+
+Two things a simulator reports about "the device" behave in opposite ways, and getting them the wrong way round has cost this project two issues.
+
+**The model identifier is yours to choose.** A device type and a runtime are different things: `iPhone 11` is a stock *device type* that pairs with whatever runtime is installed, so an A13 device exists here even though no iOS 13 runtime does.
+
+```bash
+xcrun simctl create "Dictus A13 iPhone 11" \
+  com.apple.CoreSimulator.SimDeviceType.iPhone-11 \
+  com.apple.CoreSimulator.SimRuntime.iOS-26-5
+```
+
+The device type has to exist, and this one does:
+
+```bash
+xcrun simctl list devicetypes | grep -i "iPhone-11"
+```
+
+```
+iPhone 11 Pro (com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro)
+iPhone 11 Pro Max (com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max)
+iPhone 11 (com.apple.CoreSimulator.SimDeviceType.iPhone-11)
+```
+
+Once created and booted, the device names itself:
+
+```bash
+xcrun simctl getenv <udid> SIMULATOR_MODEL_IDENTIFIER
+```
+
+```
+iPhone12,1
+```
+
+The runtime sets that variable itself, which is why **overriding it does not work**: `SIMCTL_CHILD_SIMULATOR_MODEL_IDENTIFIER=iPhone12,1` loses to the value the runtime writes. Issue #362 concluded from that loss that the device tier was unreachable. It was reachable, one command away, by creating the device instead of arguing with it. Delete it when you are done — see section 7.
+
+**The RAM is the Mac's and cannot be moved.** `DeviceCapabilities.readPhysicalMemoryGB()` reads `ProcessInfo.processInfo.physicalMemory`, which inside a simulator returns the host's memory. On this machine every simulator claims 24 GB, whatever it says it is:
+
+```
+[…] INFO [lifecycle] <APP> deviceCapabilitySnapshot model=iPhone12,1 ramGB=24 availableMB=0 thermal=nominal
+```
+
+That snapshot is a simulated iPhone 11 — 4 GB in the real world — reporting 24.
+
+**So split any device-tier question in two before you answer it.** Anything keyed on the identifier (`isA12OrA13iPhone`, the incompatibility branches, per-model gating) renders here and an agent can settle it. Anything keyed on memory — the `>= 6 GB` Turbo gate, the `insufficientMemory` reason — never fires, and no amount of driving the UI will make it. Section 8 has the rest of that list.
+
 ## 2. Build for that simulator
 
 A fresh worktree resolves its packages from zero, so all three steps are needed the first time:
@@ -212,6 +258,61 @@ There is no dialog. The point-translation bridge is simply not connected. Measur
 | --- | --- |
 | `tap`, `touch`, `swipe`, `drag`, `describe-ui`, `slider` | `button`, `key`, `key-sequence`, `type`, `gesture`, `screenshot`, `record-video` |
 
+### `touch --up` does not end a SwiftUI gesture
+
+Measured 2026-08-24 while building the Smart Mode fan (#79). A batch of
+`touch --down` / `sleep` / `touch --up` at the same point delivers the press —
+a `LongPressGesture` fires — but the matching `DragGesture.onEnded` never
+does. The gesture stays open until something else ends it.
+
+So **a held press whose release matters cannot be tested with `touch` alone.**
+Use a `swipe` as the last step instead: it carries its own down-move-up and the
+release lands.
+
+```bash
+# The release never arrives:
+axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 2" --step "touch -x 357 -y 558 --up"
+
+# It does here — a two-point swipe is enough, the movement can be tiny:
+axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 1.2" \
+  --step "swipe --start-x 357 --start-y 558 --end-x 355 --end-y 550 --duration 0.5"
+```
+
+Do not read a product bug into the first form. It cost an hour here, and it is
+worth saying plainly: the code was correct and the harness was not — but the
+detour also found two real defects, so run the second form before concluding
+either way.
+
+### And when a gesture fails repeatedly, stop blaming the harness
+
+The same session then spent an hour on the opposite error. A drag that had armed
+a mode once stopped working, and every explanation tried was about `axe`:
+leftover touches, HID state, batch shape. The device was rebooted to clear it.
+None of it was true.
+
+The cause was in the code, and the simulator had been reporting it accurately all
+along: opening the fan changed which branch of a `switch` built the toolbar, so
+SwiftUI destroyed and rebuilt the view the gesture was attached to at the exact
+moment the gesture succeeded. Six consecutive runs opened the fan and highlighted
+no row.
+
+**The cheap diagnostic that settled it, and should have been step one:** screenshot
+*during* the drag rather than reading the log after it.
+
+```bash
+(axe batch --udid <udid> \
+  --step "touch -x 357 -y 558 --down" --step "sleep 1.5" \
+  --step "swipe --start-x 357 --start-y 558 --end-x 200 --end-y 764 --duration 2.5" &)
+sleep 3.2
+xcrun simctl io <udid> screenshot /scratch/mid-drag.png
+```
+
+No highlight under the finger means no drag events are arriving, which is a
+different question from "the release did not commit" — and it takes one command
+instead of an hour.
+
 Read the screen before you tap it. `describe-ui` returns the full accessibility tree as JSON, with an `AXFrame` per element in **points** (402×874 on an iPhone 17, not the 1206×2622 pixels a screenshot has):
 
 ```bash
@@ -242,6 +343,28 @@ axe tap -x 201 -y 815 --udid <udid>    # Models tab
 ```
 
 Verified end to end on 2026-08-22: installing DictusApp, tapping through the onboarding pages by label, and reaching the Models and Settings tabs by coordinate. The frontmost application stayed the terminal throughout.
+
+**A long press needs one HID session, which means `batch`.** A held press is what opens iOS's own menus — the globe key's keyboard picker above all — and `axe` holds the press only inside a single batch:
+
+```bash
+axe batch --udid <udid> \
+  --step "touch -x 42 -y 840 --down" \
+  --step "sleep 1.8" \
+  --step "touch -x 42 -y 840 --up"
+```
+
+Those coordinates are this device's globe key. Read the real one from `describe-ui` rather than trusting them: the globe is labelled `Clavier suivant`, and its `AXFrame` gives the centre to press.
+
+A menu opened that way **stays open after the release**, so there is no race — read it, then tap the row by label:
+
+```bash
+axe describe-ui --udid <udid>
+axe tap --label "Dictus, français" --udid <udid>
+```
+
+**Never tap the globe to change keyboard.** A tap cycles through the enabled keyboards and skips the third-party ones, so it never lands on Dictus. That single mistake is what produced the wrong conclusion this file carried until 2026-08-23 (section 8).
+
+**A control missing from the accessibility tree needs `--tap-style physical`.** With the default `automatic` style, `axe` falls back to a simulator tap and such a control does not react. Measured 2026-08-23 on the Full Access switch, which `describe-ui` does not report at all (section 8); expect the same wherever a control you can see in a screenshot has no element in the tree.
 
 Xcode 27 replaces this attachment dance with Device Hub and drops the Simulator.app requirement, per AXe's own compatibility notes. Until this machine moves to it, `open -g -a Simulator` is the price of a tap.
 
@@ -287,6 +410,12 @@ xcrun simctl boot <udid>
 
 Two traps here, both observed while writing this file. `defaults write` from the host against a plist inside a device's data directory silently does not stick — the host `cfprefsd` owns the write and it never reaches the file. `plutil -replace` fails on a key the file does not have yet. Editing the plist with `plistlib` while the device is shut down is what works.
 
+**`plutil -extract` rewrites the file it reads.** Reading one key out of a plist looks like a read and is not: `plutil -extract <keypath> json <file>` writes the extracted value back over `<file>` unless `-o -` sends it to stdout instead. Observed 2026-08-23, on a built `Info.plist` it destroyed; the keys that then appeared to be missing looked like a build bug and were not. Whatever you are inspecting, pass `-o -`:
+
+```bash
+plutil -extract <keypath> json -o - <file>
+```
+
 Put the device back the way you found it. This one is `fr_FR` with `AppleLanguages = (fr-FR, en-GB)`.
 
 ## 7. Clean up
@@ -311,9 +440,11 @@ xcrun simctl shutdown <udid>
 
 **Tapping and typing are no longer on this list.** They were, until 2026-08-22, on the grounds that `simctl` has no touch injection. That is still true of `simctl` and was never true of the machine: see section 5. Do not re-derive the old limit from the `simctl` man page.
 
-**The Dictus keyboard CAN be enabled in a simulator.** This file said the opposite until 2026-08-23. It was wrong. Enabling it takes taps, and section 5 taps: Settings → Général → Clavier → Claviers → Ajouter un clavier → Dictus. Read each screen with `describe-ui` and tap the row centre from the reported `AXFrame` — these rows carry labels but no identifiers, so coordinates are what work.
+**The Dictus keyboard renders in a simulator, takes Full Access, and drives the whole dictation chain.** This file said the rendering was unresolved until 2026-08-23. It was wrong, and the reason was in how the keyboard was being reached: the globe key was being *tapped*, and a tap cycles past the third-party keyboards. Long-press it and pick Dictus from the menu — section 5 has the sequence, `axe batch` included.
 
-The extension does register on install, which was never the question:
+Measured end to end on 2026-08-23. The keyboard draws its own AZERTY layout, with the `espace` bar, the hamburger panel button and the mic button.
+
+**Registering.** The extension registers on install, which was never the question:
 
 ```bash
 xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
@@ -323,28 +454,39 @@ xcrun simctl spawn <udid> pluginkit -m -v -p com.apple.keyboard-service
      com.pivi.dictus.keyboard(1.8.0)	657D5A4D-…	/Users/…/DictusApp.app/PlugIns/DictusKeyboard.appex
 ```
 
-After the taps, the device's own keyboard list carries it:
+`pkd` logs `Created plugin` for `com.pivi.dictus.keyboard(1.8.0)`, and SpringBoard lists it under `com.apple.keyboard-service`.
+
+**Enabling, without tapping through Settings.** The device's keyboard list is `AppleKeyboards` in its `.GlobalPreferences.plist`, and a third-party keyboard is a bare bundle identifier there, not the `locale@sw=` shape the built-ins use. Write it with `plistlib` while the device is shut down — section 6's technique:
+
+```python
+d['AppleKeyboards'] = [
+    'fr_FR@sw=AZERTY-French;hw=Automatic',
+    'en_US@sw=QWERTY;hw=Automatic',
+    'emoji@sw=Emoji',
+    'com.pivi.dictus.keyboard',
+]
+```
+
+Then boot, attach Simulator.app (section 5), install, and open any text field. Tapping through Settings → Général → Clavier → Claviers → Ajouter un clavier → Dictus reaches the same state and also works. `defaults write` from the host does not land, and neither does the `com.apple.Preferences` domain — `AppleKeyboards` does not live there; the version of this file before #378 made both mistakes at once and concluded from them that the keyboard could not be enabled at all.
+
+**Full Access.** Granted by tap, in Réglages → Général → Clavier → Claviers → Dictus. The switch is not in the accessibility tree, so `axe`'s default `automatic` style falls back to a simulator tap and the toggle does not move; `--tap-style physical` moves it:
 
 ```bash
-xcrun simctl spawn <udid> defaults read -g AppleKeyboards
+axe tap -x 337 -y 161 --tap-style physical --udid <udid>   # the Full Access switch
+axe tap --label "Autoriser" --udid <udid>                  # the confirmation alert
 ```
 
+The log then carries `fullAccess=true`.
+
+**What the extension then gives you.** It runs, and it writes: `<KBD> diagnosticProbe` lines carrying `inputBounds`, `keyboardFrame`, `hostingConst`, `heightConst`, `memMB`, `status`, `mode` and `coldStart`. Tapping the mic fires the whole keyboard → app dictation chain, which on a device with no model installed ends where it should:
+
 ```
-(
-    "fr_FR@sw=AZERTY-French;hw=Automatic",
-    "en_US@sw=QWERTY;hw=Automatic",
-    "emoji@sw=Emoji",
-    "com.pivi.dictus.keyboard"
-)
+dictationFailed error=No model downloaded
+statusChanged from=idle to=failed
+dictationMessageCleared reason=appError-timeout
 ```
 
-Note the format: a third-party keyboard is a bare bundle identifier, not the `locale@sw=` shape the built-ins use. That is the entry to write if you want to skip the tapping. `AppleKeyboards` lives in the device's `.GlobalPreferences.plist`, and editing it with `plistlib` while the device is shut down lands — section 6's technique. Writing it from the host with `defaults write` does not, and neither does the `com.apple.Preferences` domain; the previous version of this file made both mistakes at once and concluded from them that the keyboard could not be enabled.
-
-iOS loads the extension too. `pkd` logs `Created plugin` for `com.pivi.dictus.keyboard(1.8.0)`, and SpringBoard lists it under `com.apple.keyboard-service`.
-
-**What is not proven is the keyboard rendering.** With it enabled, tapping the globe key cycled French → English → French and never reached Dictus, and `dictus_debug.log` gained no `<KBD>` line, so the extension's own code never ran. Undiagnosed: it may want Full Access, it may need selecting from the globe long-press picker rather than the cycle, or it may be failing to launch. Start there, with the log open.
-
-Enabling is solved. Rendering is the open question. Neither is impossible.
+That is most of the keyboard surface this repo debugs, reachable without a device.
 
 **The software keyboard appears, and `Connect Hardware Keyboard` did not stop it.** A widely repeated claim says a connected hardware keyboard suppresses the on-screen one and that this is why keyboard testing fails in simulators. Measured here with `ConnectHardwareKeyboard = 1`: tapping Safari's address bar brought up the full AZERTY keyboard, globe key included. The setting is real and headless-controllable —
 
@@ -354,7 +496,9 @@ defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 
 — but on Xcode 26.4.1 / iOS 26.5 it is not what stands between an agent and a software keyboard. Check section 5's attachment first.
 
-**Even a rendering keyboard would not give you the numbers.** Memory and timing are device figures. Dead zones, the declared height constraint and the keyboard-to-app handoff still need a physical iPhone.
+**A device tier keyed on memory is unreachable, however the device is labelled.** Section 1 has the measurement: `physicalMemory` returns the Mac's RAM, so the `>= 6 GB` Turbo gate and the `insufficientMemory` incompatibility reason never fire here. The identifier half of the same feature does render, on a device you create.
+
+**The keyboard renders and still does not give you the numbers.** Memory and timing are device figures. `memMB=50` was observed for the extension in this run; simulator memory is not device memory and no verdict belongs in that number. Dead zones, the declared height constraint and the keyboard-to-app handoff still need a physical iPhone.
 
 **Custom-scheme URLs prompt.** `simctl openurl` raises a confirmation the user must accept — though section 5 can now accept it:
 
@@ -364,14 +508,14 @@ xcrun simctl openurl <udid> "dictus://dictate?source=keyboard"
 
 exits 0 and raises an `Ouvrir dans « Dictus » ?` confirmation alert, which needs a tap. It behaves the same whether Dictus is frontmost or the device is on the Home screen.
 
-**Microphone and dictation were not exercised, and the reason is structural.** The audio session does configure:
+**The dictation chain runs; the capture at the end of it does not.** Tapping the keyboard's mic reaches DictusApp and comes back with the `No model downloaded` failure quoted in the keyboard entry above. Past that point nothing was exercised, and the reason is structural. The audio session does configure:
 
 ```
 […] INFO    [audio] <APP> audioSessionConfigured category=playAndRecord
 […] WARNING [audio] <APP> engineWarmUpFailed context=didBecomeActive error=modelReady=false
 ```
 
-No transcription model is installed, and installing one means the Models tab — a tap — plus a download. Recording never starts, so nothing was proven about capture. `xcrun simctl privacy <udid> grant microphone com.pivi.dictus` exits 0, but it was never put to use.
+No transcription model is installed, and installing one means the Models tab — a tap — plus a download. Recording never starts, so nothing is proven about capture. `xcrun simctl privacy <udid> grant microphone com.pivi.dictus` exits 0, but it was never put to use.
 
 Two things to know before trying: the simulator captures the **Mac's** input device, so a recording started here records the room Pierre is sitting in; and transcription runs on Mac silicon, so any timing measured in a simulator says nothing about the phone.
 

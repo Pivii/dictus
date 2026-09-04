@@ -359,7 +359,7 @@ struct RecordingView: View {
         showCopiedFeedback = false
 
         HapticFeedback.recordingStarted()
-        coordinator.startDictation()
+        coordinator.startDictation(origin: .app)
     }
 
     private func stopRecording() {

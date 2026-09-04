@@ -1,0 +1,16 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.15s)
+✗ [N1-field-commits]  (rejectedGuardrail, 1667ms)
+    – the mode inserted nothing (rejectedGuardrail)
+    → <refused — a Smart Mode inserts nothing>
+    engineOut: - Committed 5 instead of 6
+- Purchased yogurt instead of strawberries
+- 3 major changes
+✓ [N2-reunion-vrac]  (success, 2175ms)
+✓ [N3-projet-fleuve]  (success, 2493ms)
+✓ [N4-une-idee]  (success, 1112ms)
+✓ [N5-en-ramble]  (success, 1733ms)
+✓ [N6-ponctuation-dictee]  (success, 1175ms)
+
+Summary: 5/6 fixtures passed all checks (LLM is non-deterministic — re-run to gauge variance)

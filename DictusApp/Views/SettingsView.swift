@@ -18,6 +18,9 @@ struct SettingsView: View {
 
     @EnvironmentObject var proStatus: ProStatusManager
 
+    /// The saved dictations, for the destructive row below (#70).
+    @EnvironmentObject var history: TranscriptionHistoryStore
+
     // MARK: - Preferences (App Group persisted)
 
     @AppStorage(SharedKeys.language, store: UserDefaults(suiteName: AppGroup.identifier))
@@ -113,9 +116,46 @@ struct SettingsView: View {
     /// Confirmation dialog for resetting the learned-words dictionary (#222).
     @State private var showResetDictionaryConfirmation = false
 
+    /// Confirmation dialog for emptying the transcription history (#70).
+    @State private var showClearHistoryConfirmation = false
+
     /// Drives the paywall cover. Shared by the Dictus Pro row and every locked
     /// feature row: they open the same screen, so one flag serves both.
     @State private var showPaywall = false
+
+    #if DEBUG
+    /// Redraw trigger for the forced-entitlement switch below, the same shape
+    /// `layoutRevision` uses above and for the same reason.
+    @State private var proEntitlementRevision = 0
+
+    /// The Developer section's forced-entitlement switch (#460).
+    ///
+    /// A `Binding` onto `PremiumFlags` rather than an `@AppStorage` on the same key:
+    /// #460 asks for **one** source of truth for entitlement, and a second property
+    /// wrapper reading the key directly would be a parallel force path — one this
+    /// screen could then diverge from without the compiler noticing.
+    ///
+    /// The setter also refreshes `proStatus` (#460 review). `proStatus.isProActive` is
+    /// a published cache of the same answer this switch changes, and every Pro row in
+    /// the app redraws off it — without the refresh the switch changed what
+    /// `FeatureGate` and the keyboard believed while every observing view kept
+    /// rendering the old answer until the next launch. `refreshFromAppGroup` and not
+    /// `setProActive`, deliberately: a forced entitlement must never be written into
+    /// `SharedKeys.proActive`, where it would outlive the switch.
+    private var proEntitlementForced: Binding<Bool> {
+        Binding(
+            get: {
+                _ = proEntitlementRevision
+                return PremiumFlags.debugProEntitlementForced
+            },
+            set: { forced in
+                PremiumFlags.debugProEntitlementForced = forced
+                proStatus.refreshFromAppGroup()
+                proEntitlementRevision += 1
+            }
+        )
+    }
+    #endif
 
     // MARK: - Body
 
@@ -176,6 +216,15 @@ struct SettingsView: View {
                 if PolishAvailability.isToggleVisible {
                     Toggle("Polish transcription", isOn: $polishEnabled)
                     polishStateFooter
+                }
+
+                // Visible for a subscriber, and for anyone who still has saved
+                // transcriptions after an entitlement went away (#70). See
+                // `HistoryAvailability.clearRowIsVisible`.
+                if HistoryAvailability.clearRowIsVisible(
+                    isEntitled: historyIsEntitled, hasSavedRecords: !history.isEmpty
+                ) {
+                    clearHistoryRow
                 }
             } header: {
                 Text("Transcription")
@@ -350,6 +399,27 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    // The fan's contents (#79). Subscribers only, and only when the
+                    // feature toggle above is on: a mode list under a switched-off
+                    // Smart Mode would arrange a fan the keyboard will not open.
+                    //
+                    // Deliberately NOT gated on device capability. The choice is
+                    // durable and the fan is the keyboard's, not this device's — a
+                    // user who arranges it here and changes phone next year should
+                    // find their arrangement waiting. `SmartModeListView` says so on
+                    // the screen instead of hiding the row.
+                    if proStatus.isProActive && FeatureGate.isAvailable(.smartMode) {
+                        NavigationLink {
+                            SmartModeListView()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "list.bullet.indent")
+                                    .foregroundColor(.dictusAccent)
+                                Text("Keyboard modes")
+                            }
+                        }
+                    }
                 }
             }
 
@@ -367,6 +437,21 @@ struct SettingsView: View {
                         .foregroundColor(.orange)
                 } else {
                     Text("Logs autocorrect decisions for debugging. Off by default.")
+                }
+            }
+
+            // The way back into a surface #460 hides from everyone, the maintainer
+            // included. Its own section rather than a row beside the autocorrect log:
+            // that one is about what gets written down, this one changes what the app
+            // and the keyboard both believe about the user.
+            Section {
+                Toggle("Force Pro entitlement", isOn: proEntitlementForced)
+            } footer: {
+                if proEntitlementForced.wrappedValue {
+                    Text("Smart Modes and every other Pro feature behave as if subscribed. The paywall stays hidden. Debug builds only.")
+                        .foregroundColor(.orange)
+                } else {
+                    Text("Grants Pro without a purchase, so hidden Pro features can be tested on device. Off by default.")
                 }
             }
             #endif
@@ -453,6 +538,55 @@ struct SettingsView: View {
     }
 
     // MARK: - Private
+
+    /// Whether the user is entitled to the history right now.
+    ///
+    /// Reads `proStatus.isProActive` so the row reacts: `FeatureGate` goes to the
+    /// App Group, which publishes nothing on its own.
+    private var historyIsEntitled: Bool {
+        _ = proStatus.isProActive
+        return HistoryAvailability.isEntitled
+    }
+
+    /// Empties the transcription history (#70, brief decision 3).
+    ///
+    /// WHY this row exists at all: the history is a local plaintext record of
+    /// everything the user has ever dictated. A store like that needs a visible
+    /// switch that removes it, both for the user and for what Dictus declares at
+    /// review time. Per-item delete stays where the issue put it, on the cards.
+    ///
+    /// WHY the count sits on the row and not in the confirmation sentence: a count
+    /// inside a sentence has to agree with it in both languages, and "1
+    /// transcriptions" is the bug that always ships. As a trailing detail it is a
+    /// number next to a label, which is also how iOS writes it.
+    private var clearHistoryRow: some View {
+        Button(role: .destructive) {
+            showClearHistoryConfirmation = true
+        } label: {
+            HStack {
+                Text("Clear history")
+                Spacer()
+                // `format:` rather than an interpolated literal: the latter would put
+                // a "%lld" key in the string catalogue for a number that has nothing
+                // to translate, and this way the digits group per the user's locale.
+                Text(history.count, format: .number)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .disabled(history.isEmpty)
+        .confirmationDialog(
+            "Clear history?",
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete all", role: .destructive) {
+                history.clear()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every transcription saved on this device will be deleted. This cannot be undone.")
+        }
+    }
 
     /// The chevron `NavigationLink` draws on a List row, for rows that open a
     /// cover instead and therefore have to draw it themselves.

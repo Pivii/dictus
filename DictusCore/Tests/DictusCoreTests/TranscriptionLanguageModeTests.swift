@@ -261,7 +261,7 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
 
     private func metric(resolution: PolishMetrics.LanguageResolution?) -> PolishMetrics {
         PolishMetrics(
-            engine: "apple-fm", mode: .repair, targetLanguage: .german,
+            engine: "apple-fm", mode: "repair", targetLanguage: .german,
             detectedLanguage: "fr", rawCharCount: 423, polishedCharCount: 342,
             latencyMs: 3203, outcome: .success,
             sttEngine: "PK", sttModelID: "parakeet-tdt-0.6b-v3",
@@ -298,7 +298,7 @@ final class PolishLanguageResolutionPersistenceTests: XCTestCase {
     /// `detected=fr, target=de` on a dictation that correctly came out French.
     func testAutoPathRecordsNoTargetAtAll() throws {
         let sut = PolishMetrics(
-            engine: "apple-fm", mode: .auto, targetLanguage: nil,
+            engine: "apple-fm", mode: "auto", targetLanguage: nil,
             detectedLanguage: "fr", rawCharCount: 200, polishedCharCount: 210,
             latencyMs: 2800, outcome: .success,
             sttEngine: "PK", sttModelID: "parakeet-tdt-0.6b-v3",

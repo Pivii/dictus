@@ -1,0 +1,163 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'polish-harness' complete! (0.14s)
+
+━━ [N1-field-commits] lang=fr stt=PK
+  raw:      Okay, donc j'aimerais que tu notes ça s'il te plaît. au lieu de 4 on a fait 5 commith alors qu'on devait en faire 6 ensuite on a acheté des yaourts alors qu'on aurait pu acheter des de la fraise donc voilà ça fait vraiment on va dire 3 gros changements
+  polished #1: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 1987ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #1: - Committed 5 instead of 6
+- Purchased yogurt instead of strawberries
+- Three major changes
+  polished #2: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 1354ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #2: - Commits: 4 -> 5, then 6
+- Yaourts: instead of strawberries
+  polished #3: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 1331ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #3: - Committed 5 instead of 6
+- Purchased yogurt instead of strawberries
+- Three significant changes
+  polished #4: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 1343ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #4: - Committed 5 instead of 6
+- Purchased yogurt instead of strawberries
+- Total: 3 major changes
+  polished #5: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 1313ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #5: - Committed 5 instead of 6
+- Purchased yogurt instead of strawberries
+- Total 3 major changes
+
+━━ [N2-reunion-vrac] lang=fr stt=PK
+  raw:      bon alors euh je récapitule ce qu'il faut que je fasse avant la réunion donc déjà faut que je récupère les chiffres de janvier auprès de Marion elle m'a dit qu'elle les aurait mardi enfin non mercredi et euh du coup faudra que je fasse le tableau comparatif avec ceux de l'année dernière et puis aussi tu vois il faut absolument que j'appelle le prestataire parce que leur devis il est encore passé de 12000 à 15000 euros et ça personne l'a validé et enfin bon voilà il faudrait aussi que je pense à réserver la salle du deuxième étage parce que l'autre elle est prise toute la semaine
+  polished #1: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire
+- Réserver la salle du deuxième étage
+- Valider le devis du prestataire
+            (success, 1831ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis
+- Réserver la salle du deuxième étage
+            (success, 1733ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #3: - Récupérer les chiffres de janvier auprès de Marion, mardi
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis de 15000 euros
+- Réserver la salle du deuxième étage, car l'autre est prise toute la semaine
+            (success, 2026ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis
+- Réserver la salle du deuxième étage
+            (success, 1752ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Récupérer les chiffres de janvier auprès de Marion
+- Faire le tableau comparatif avec ceux de l'année dernière
+- Appeler le prestataire pour valider le devis de 12000 euros à 15000 euros
+- Réserver la salle du deuxième étage
+- Appeler Sophie avant : elle a les données de décembre
+            (success, 2143ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+
+━━ [N3-projet-fleuve] lang=fr stt=PK
+  raw:      alors euh je fais le point général parce que là ça part un peu dans tous les sens donc côté design c'est bon les maquettes ont été validées vendredi par contre le dev a pris deux semaines de retard à cause de l'API du prestataire qui renvoie n'importe quoi sur les dates et euh du coup on est en train de voir si on décale la livraison au 15 mars au lieu du premier ensuite sur le budget on est à peu près dans les clous il reste 8000 euros mais euh faut compter les licences qui tombent en février et ça c'est 3000 de plus donc en vrai on est juste et puis dernière chose Thomas part en congé trois semaines à partir du 20 donc si on veut qu'il finisse la partie paiement faut que ce soit bouclé avant sinon ça repousse encore et là franchement je sais pas comment on tient la date
+  polished #1: - Point général : Côté design, maquettes validées vendredi.
+- Développement : Retard de 2 semaines dû à API du prestataire.
+- Livraison : Décale possible au 15 mars.
+- Budget : 8000 euros restants, 3000 euros supplémentaires pour licences en février.
+- Thomas : Congé de trois semaines à partir du 20.
+- Paiement : Finir avant le congé pour respecter la date.
+            (success, 2742ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: <refused — a Smart Mode inserts nothing>
+            (rejectedGuardrail, 2220ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  engineOut #2: - Design: maquettes validées vendredi
+- Development: two weeks delay due to API issues
+- Delivery: potential delay to March 15
+- Budget: 8000 euros remaining, 3000 euros due to licenses in February
+- Thomas: three weeks of vacation starting March 20
+  polished #3: - Design: maquettes validées vendredi
+- Development: two-week delay due to API issues
+- Delivery: potential delay to March 15
+- Budget: 8000 euros remaining, 3000 euros from February licenses
+- Thomas: three-week vacation starting March 20
+- Payment: need to be completed before March 20
+            (success, 2386ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Côté design, les maquettes ont été validées vendredi
+- Le dev a pris deux semaines de retard à cause de l'API du prestataire
+- On envisage de décaler la livraison au 15 mars
+- Le budget est à peu près dans les clous, il reste 8000 euros
+- Il faut compter les licences de février, ce qui ajoute 3000 euros
+- Thomas part en congé trois semaines à partir du 20
+- La partie paiement doit être bouclée avant le 20 pour respecter la date
+            (success, 3034ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Point général, le projet avance dans tous les sens
+- Design : maquettes validées le vendredi
+- Développement : retard de deux semaines dû à l'API du prestataire
+- Délais de livraison : possible décalage au 15 mars
+- Budget : 8000 euros restants, 3000 euros supplémentaires à compter en février
+- Thomas en congé trois semaines à partir du 20
+- Fin des paiements : besoin de closure avant le 20
+            (success, 2924ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+
+━━ [N4-une-idee] lang=fr stt=PK
+  raw:      faut que je rappelle le comptable avant vendredi pour la TVA du trimestre
+  polished #1: - Rappeler le comptable avant vendredi pour la TVA du trimestre
+            (success, 1093ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: - Rappeler le comptable avant vendredi pour la TVA du trimestre
+            (success, 1098ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #3: - Rappeler le comptable avant vendredi pour la TVA du trimestre
+            (success, 1087ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Rappeler le comptable avant vendredi pour la TVA du trimestre
+            (success, 1086ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Rappeler le comptable avant vendredi pour la TVA du trimestre
+            (success, 1097ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+
+━━ [N5-en-ramble] lang=en stt=PK
+  raw:      okay so quick brain dump before I forget the deploy is blocked because the certificate expired on the staging box and uh Sam said he'd rotate it tomorrow morning but we also need to bump the node version because the build image is on eighteen and the new package needs twenty and honestly I think we should just do both in the same window otherwise we're doing two freezes for nothing
+  polished #1: - Deploy blocked due to expired certificate on staging box
+- Sam will rotate certificate tomorrow morning
+- Node version needs to be bumped from 18 to 20
+- Consider deploying both updates in the same window to avoid freezes
+            (success, 1874ms, detected=en→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: - Deploy blocked due to expired certificate on staging box
+- Sam will rotate certificate tomorrow morning
+- Need to bump node version from 18 to 20
+- Consider doing both updates in one window to avoid two freezes
+            (success, 1776ms, detected=en→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #3: - Deploy blocked due to expired certificate on staging box
+- Sam will rotate certificate tomorrow morning
+- Node version needs to be bumped from 18 to 20
+- Consider deploying both updates in the same window to avoid freezes
+            (success, 1855ms, detected=en→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Deploy blocked due to expired certificate on staging box
+- Sam will rotate certificate tomorrow morning
+- Need to bump node version from 18 to 20
+- Suggest doing both updates in the same window to avoid two freezes
+            (success, 1814ms, detected=en→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Deploy blocked due to expired certificate on staging box
+- Sam plans to rotate certificate tomorrow morning
+- Node version needs to be bumped from 18 to 20
+- Both tasks should be done in the same window to avoid freezes
+            (success, 1855ms, detected=en→smart.notes, contract=0.10–2.00/sameAsInput)
+
+━━ [N6-ponctuation-dictee] lang=fr stt=PK
+  raw:      note pour moi virgule il faut relancer l'agence virgule ils n'ont pas répondu depuis dix jours à la ligne et prévoir un plan B au cas où ça se confirme
+  polished #1: - Relancer l'agence
+- Prévoir un plan B
+            (success, 1144ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #2: - Relancer l'agence
+- Prévoir un plan B
+            (success, 1134ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #3: - Relancer l'agence
+- Prévoir un plan B
+            (success, 1129ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #4: - Relancer l'agence
+- Prévoir un plan B
+- Réponse tardive depuis dix jours
+            (success, 1315ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+  polished #5: - Relancer l'agence
+- Prévoir un plan B
+            (success, 1122ms, detected=fr→smart.notes, contract=0.10–2.00/sameAsInput)
+
+── outcomes: 24/30 success
+   rejectedGuardrail: 6/30 — N1-field-commits×5, N3-projet-fleuve×1

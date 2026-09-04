@@ -7,19 +7,47 @@ final class KeyboardAreaModeTests: XCTestCase {
 
     // MARK: - Cases
 
-    func testEnumHasExactlyFourCases() {
-        XCTAssertEqual(KeyboardAreaMode.allCases.count, 4)
+    /// The count is the point, not the number: `KeyboardViewController.applyLayout`
+    /// switches exhaustively over this enum and every case has to set the hosting
+    /// height, the bottom anchor and the grid's visibility explicitly. A case added
+    /// without that is the #271 bug returning.
+    func testEnumHasExactlyFiveCases() {
+        XCTAssertEqual(KeyboardAreaMode.allCases.count, 5)
     }
 
     func testPanelCaseExistsForIssue241() {
         XCTAssertTrue(KeyboardAreaMode.allCases.contains(.panel))
     }
 
+    func testSmartModeFanCaseExistsForIssue79() {
+        XCTAssertTrue(KeyboardAreaMode.allCases.contains(.smartModeFan))
+    }
+
     func testRawValues() {
         XCTAssertEqual(KeyboardAreaMode.keys.rawValue, "keys")
         XCTAssertEqual(KeyboardAreaMode.emoji.rawValue, "emoji")
         XCTAssertEqual(KeyboardAreaMode.panel.rawValue, "panel")
+        XCTAssertEqual(KeyboardAreaMode.smartModeFan.rawValue, "smartModeFan")
         XCTAssertEqual(KeyboardAreaMode.recording.rawValue, "recording")
+    }
+
+    /// A dictation takes the area from the fan, exactly as it does from the pickers —
+    /// the fan is a menu, and the overlay owns the whole area while a dictation is in
+    /// flight (#79).
+    func testDictationTakesTheAreaFromTheFan() {
+        XCTAssertEqual(
+            KeyboardAreaMode.resolving(status: .recording, current: .smartModeFan),
+            .recording
+        )
+    }
+
+    /// And an idle status leaves it alone: the fan is dismissed by its own gesture
+    /// ending, not by a status write.
+    func testIdleStatusLeavesTheFanOpen() {
+        XCTAssertEqual(
+            KeyboardAreaMode.resolving(status: .idle, current: .smartModeFan),
+            .smartModeFan
+        )
     }
 
     // MARK: - Which statuses own the keyboard area
