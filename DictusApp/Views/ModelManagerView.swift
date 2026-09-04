@@ -50,6 +50,16 @@ struct ModelManagerView: View {
     /// "ready" celebration moment after the model state flips back to .ready.
     @State private var preparingModelID: String?
 
+    /// Decides whether the overlay above may be raised at all (#458).
+    ///
+    /// This view's cover is a `.fullScreenCover`, which iOS presents at window level —
+    /// above the `RecordingView` that `MainTabView` puts in its `ZStack`. Once the user
+    /// has visited the Models tab, this body stays alive for the life of the process and
+    /// its `.onChange` keeps firing from whichever tab is frontmost, so a load starting
+    /// during a dictation covered the recording screen mid-sentence. The gate carries the
+    /// rule and the memory of a preparation it refused; see `ModelPreparationGate`.
+    @State private var preparationGate = ModelPreparationGate()
+
     // MARK: - Device snapshot
 
     /// Read once and reused by the Available section (issue #369).
@@ -296,15 +306,15 @@ struct ModelManagerView: View {
         // Issue #144: full-screen overlay during model download / compile / RAM-load.
         // We watch the live computed property and lift it into a @State binding the
         // overlay can flip back to nil when it's ready to dismiss.
+        //
+        // Issue #458 put a gate in front of both entry points: a preparation that starts
+        // while a dictation is on screen is not allowed to take the display, and is not
+        // replayed afterwards either.
         .onChange(of: liveActivePrepModel) { _, newValue in
-            if let id = newValue, preparingModelID == nil {
-                preparingModelID = id
-            }
+            raisePreparationIfAllowed(newValue)
         }
         .onAppear {
-            if preparingModelID == nil, let id = liveActivePrepModel {
-                preparingModelID = id
-            }
+            raisePreparationIfAllowed(liveActivePrepModel)
         }
         .fullScreenCover(item: Binding<PreparingModelItem?>(
             get: { preparingModelID.map(PreparingModelItem.init) },
@@ -325,6 +335,22 @@ struct ModelManagerView: View {
     /// Wrapper so we can use `.fullScreenCover(item:)` with a plain String.
     private struct PreparingModelItem: Identifiable {
         let id: String
+    }
+
+    /// Raise the preparation screen for `liveModel`, unless #458's rule refuses it.
+    ///
+    /// WHY the status is read here rather than observed through an `@EnvironmentObject`:
+    /// the gate answers a question about *this instant*, and the two callers are already
+    /// events. Observing the coordinator would re-evaluate this decision when the
+    /// dictation ends, which is precisely the delayed pop the rule forbids.
+    private func raisePreparationIfAllowed(_ liveModel: String?) {
+        if let id = preparationGate.modelToPresent(
+            liveModel: liveModel,
+            dictationStatus: DictationCoordinator.shared.status,
+            isPresenting: preparingModelID != nil
+        ) {
+            preparingModelID = id
+        }
     }
 
     // MARK: - Engine descriptions

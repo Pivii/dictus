@@ -33,6 +33,10 @@ struct RecordingView: View {
 
     @EnvironmentObject var coordinator: DictationCoordinator
 
+    /// Raises the model preparation screen when a tap arrives during a load (#484).
+    /// A no-op outside `MainTabView`, which is the only view that owns that screen.
+    @Environment(\.presentModelPreparation) private var presentModelPreparation
+
     @State private var transcriptionResult: String?
     @State private var showResult = false
     @State private var showError = false
@@ -351,6 +355,14 @@ struct RecordingView: View {
     // MARK: - Actions
 
     private func startRecording() {
+        // Asked BEFORE the result state is cleared (#484): a tap that ends on the preparation
+        // screen has not started a dictation, and wiping the transcription the user is looking
+        // at on the way there would throw away a result for a recording that never happened.
+        guard case .startDictation = coordinator.recordTapDecision else {
+            presentModelPreparation()
+            return
+        }
+
         // Reset previous result state
         transcriptionResult = nil
         showResult = false

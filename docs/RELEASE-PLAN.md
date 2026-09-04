@@ -4,19 +4,21 @@ What ships next, and why. Complements [VERSIONING.md](VERSIONING.md), which says
 
 **Scope.** One page. It holds decisions that no issue owns and that the code cannot show. It does not list work — that is what the tracker is for. When a decision here is superseded, edit the line rather than appending, so the file never becomes a log. Git history keeps the record.
 
-Last reviewed: 2026-09-01.
+Last reviewed: 2026-09-04.
 
 ## Where things stand
 
 | | |
 | --- | --- |
 | App Store | **1.8.0 (build 27)**, live since 2026-08-28 |
-| Next App Store release | **1.8.1**, a PATCH: the Turbo model-preparation fix, and nothing else |
-| Cycle after that | **1.8.2**, a PATCH: the bug backlog |
+| Awaiting review | **1.8.1 (build 29)**, submitted 2026-09-04, release type MANUAL |
+| Next cycle | **1.8.2**, a PATCH: the bug backlog |
 | Then | **2.0.0**, the Dictus Pro launch |
 | `PremiumFlags.paywallVisible` | `false` |
 
-Build 28 was cut and archived, then abandoned: it still advertised Dictus Pro in the keyboard (#460). 1.8.1 ships as build 29 or later. Build numbers never repeat, so 28 is simply spent.
+Build 28 was cut and archived, then abandoned: it still advertised Dictus Pro in the keyboard (#460). 1.8.1 shipped as build 29. Build numbers never repeat, so 28 is simply spent.
+
+`MANUAL` release means Apple does not publish 1.8.1 on approval. Release it with `asc versions release --version-id 9b6f088c-3053-4065-8a0b-047882850b63 --confirm`.
 
 ## The two surfaces are not the same audience
 
@@ -28,7 +30,7 @@ This is the rule the rest of the plan follows from.
 
 `PremiumFlags.paywallVisible` is the valve between the two. One constant decides whether the product looks free or freemium, and it is the gate every Pro entry point must consult. #460 exists because the Smart Mode fan does not.
 
-## 1.8.1 — the Turbo cycle
+## 1.8.1 — the Turbo cycle (submitted, awaiting review)
 
 Reason to ship at all: 1.8.0 carries a model-preparation bug that a TestFlight tester hit and reported, and that the App Store build has too. Turbo aborted its optimisation at 120 s (#406), and the timeout then deleted the downloaded model so Retry re-fetched ~950 MB (#405).
 
@@ -49,6 +51,8 @@ It stays a PATCH because everything user-visible in it is a fix. Smart Modes and
 The release 1.8.1 deliberately does not carry. It exists because the open-bug count is high enough that holding those fixes until 2.0.0 would mean shipping the Pro launch on top of a year of unfixed reports.
 
 Fixes in flight when 1.8.1 was cut, in the order they are expected to land: **#456** (a French dictation polished into English), **#449** (the onboarding download restarts 445 MB after a backgrounding), **#438** (the download tripwire accepts an empty `.mlmodelc`). Then the triaged prod bugs: **#459**, **#458**, **#349** with **#455**, **#431**.
+
+It also carries the one thing that is not code: **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped fields, editable only while a version is in an editable state, so a copy correction can never ship on its own — it rides the next submission or it waits another cycle. This one already waited one.
 
 Still a PATCH: every line of it is a fix, and `paywallVisible` stays `false` throughout.
 

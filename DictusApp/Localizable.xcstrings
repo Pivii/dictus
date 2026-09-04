@@ -2380,6 +2380,17 @@
         }
       }
     },
+    "Tap again to start your dictation." : {
+      "comment" : "Completion line on the model preparation screen raised by an in-app record tap (issue #484). The keyboard's equivalent sends the user back to another app; this one never left Dictus.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appuyez à nouveau pour démarrer votre dictée."
+          }
+        }
+      }
+    },
     "Tap and hold \\(Image(systemName: \"globe\")), then" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2894,6 +2905,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "C'est prêt !"
+          }
+        }
+      }
+    },
+    "Your dictation cannot start yet: Dictus is preparing your model. This is usually an exceptional step." : {
+      "comment" : "Explanation on the model preparation screen raised by an in-app record tap (issue #484). Names why the tap did not start a recording.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre dictée ne peut pas encore démarrer : Dictus prépare votre modèle. Cette étape est normalement exceptionnelle."
           }
         }
       }

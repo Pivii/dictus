@@ -3,10 +3,35 @@ import XCTest
 
 final class ModelPreparationContextTests: XCTestCase {
 
-    func testOnlyKeyboardColdStartUsesPrepareOnlyFlow() {
+    func testOnlyTapDrivenContextsUsePrepareOnlyFlow() {
         XCTAssertFalse(ModelPreparationContext.onboarding.isPrepareOnly)
         XCTAssertFalse(ModelPreparationContext.modelSelection.isPrepareOnly)
         XCTAssertTrue(ModelPreparationContext.keyboardColdStart.isPrepareOnly)
+        XCTAssertTrue(ModelPreparationContext.appRecordTap.isPrepareOnly)
+    }
+
+    // MARK: - The two halves `isPrepareOnly` used to conflate (#484)
+
+    /// The in-app tap is the case that separates them: it must not auto-start a recording,
+    /// and the user never left Dictus. A `startedFromAnotherApp` that tracked `isPrepareOnly`
+    /// would put "Return to your app and tap the microphone again." in front of someone who
+    /// is looking at Dictus.
+    func testOnlyTheKeyboardBringsTheUserFromAnotherApp() {
+        XCTAssertTrue(ModelPreparationContext.keyboardColdStart.startedFromAnotherApp)
+        XCTAssertFalse(ModelPreparationContext.appRecordTap.startedFromAnotherApp)
+        XCTAssertFalse(ModelPreparationContext.onboarding.startedFromAnotherApp)
+        XCTAssertFalse(ModelPreparationContext.modelSelection.startedFromAnotherApp)
+    }
+
+    /// Whatever else changes, the two flags must not collapse back into one: at least one
+    /// context has to disagree with itself across them, or the split has been undone.
+    func testTheTwoFlagsAreNotTheSameQuestion() {
+        XCTAssertTrue(
+            ModelPreparationContext.allCases.contains {
+                $0.isPrepareOnly != $0.startedFromAnotherApp
+            },
+            "isPrepareOnly and startedFromAnotherApp agree on every context — the #484 split is gone"
+        )
     }
 
     // MARK: - Gave up vs finished (#428, third review finding D)
