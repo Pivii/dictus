@@ -146,10 +146,23 @@ public enum SharedKeys {
     /// yet typed. Read and written only through `PendingDictationChannel`, which is
     /// where the rule about who clears it lives.
     public static let pendingDictation = "dictus.pendingDictation"
-    /// String: the final text the keyboard typed, written back just before the
+    /// String: the final text the keyboard produced, written back just before the
     /// insertion so DictusApp can show the polished version rather than the raw one
     /// in its Live Activity preview and its last-transcription card (#361 decision 6).
+    ///
+    /// Since #495 its presence means the text *exists*, not that it was typed — a
+    /// refused insertion produces text too, and deleting it left the user's only copy
+    /// of that dictation on the raw. `lastPolishedWasInserted` below is what says where
+    /// it went. Read and written only through `PolishedTextChannel`, which is where the
+    /// rule about the two keys moving together lives.
     public static let lastPolishedTranscription = "dictus.lastPolishedTranscription"
+    /// Bool: whether the text in `lastPolishedTranscription` reached the user's
+    /// document, or was produced and refused (#391, #495).
+    ///
+    /// Never read on its own — a flag that outlived its text would claim an insertion
+    /// that did not happen, so `PolishedTextChannel.read` ignores it unless there is a
+    /// text beside it, and the two keys are only ever written and cleared together.
+    public static let lastPolishedWasInserted = "dictus.lastPolishedWasInserted"
     /// String: a fresh identifier DictusApp writes with each hand-off, which the
     /// keyboard carries and echoes back on `polishDidFinish`.
     ///
