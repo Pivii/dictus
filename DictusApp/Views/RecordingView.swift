@@ -194,6 +194,26 @@ struct RecordingView: View {
             handleStatusChange(newStatus)
             advanceDisplayedStatus(to: newStatus)
         }
+        // The result can change after the status that revealed it (#467). On the
+        // keyboard hand-off path `.ready` is published while `lastResult` still holds
+        // the raw, on purpose — it is what the card should show if the keyboard never
+        // reports back — and the polished text replaces it seconds later, with no
+        // status change to carry it. A card snapshotted once at `.ready` therefore
+        // kept the raw for as long as it was on screen.
+        //
+        // #467's actual fix is that a completed hand-off now returns the app to
+        // `.idle`, which takes this screen down before the polished text arrives. This
+        // is the belt: the card cannot go stale if the screen is up for any other
+        // reason, and it costs one observer.
+        //
+        // A nil is deliberately not adopted. `startDictation` nils `lastResult` on
+        // every entry path, and blanking a card the user is reading is not what that
+        // write means — `startRecording` below clears the card itself when the reset
+        // is this screen's own.
+        .onChange(of: coordinator.lastResult) { _, newResult in
+            guard showResult, let newResult, !newResult.isEmpty else { return }
+            transcriptionResult = newResult
+        }
         // A screen that appears mid-dictation adopts the stage in flight at once,
         // rather than starting from `.idle` and pretending to enter it.
         .onAppear {
