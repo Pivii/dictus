@@ -70,11 +70,15 @@ So the launch scope is not a question of how many features to build. It is one h
 
 ## Lane C — the keyboard session
 
-After the flip. Two reasons it is last: it is open-ended, and most of what Pierre wants from it is not written down anywhere, so it cannot be estimated yet.
+After the flip. **Its preparation step is done: the ideas are written down.** On 2026-09-05 Pierre listed what he wants improved, and it became eight new issues plus six existing ones, gathered in the `Keyboard session` milestone — 14 in total, reachable with `gh issue list --milestone "Keyboard session"`.
 
-**It has one step that starts before its turn, and should happen this week: write the ideas down.** A dictation session of half an hour, turned into issues. An idea that lives only in your head is not a deferred priority, it is a lost one, and it is also the thing that makes the tracker feel like it is choosing for you: it can only offer what has been written into it.
+Three themes came out of it, and they are not equal in size:
 
-The keyboard issues already in the tracker are reachable with `gh issue list --label keyboard --state open`, including the ones parked in Someday.
+1. **Typing quality** — #114 (the n-gram thinness underneath everything), #498 (a learned word never reaches autocorrect), #499 (glued words from missed spacebar taps), #500 (a register of corrections that do not fit their sentence), #501 (`a` vs `à`). #114 is the root: #499 and #500 both depend on the same data being better, so sequence it first or accept that the others are guesses.
+2. **Visual coherence** — #502, the suggestion bar pills. It is the step 2 that #224 wrote into its own acceptance criteria and never delivered.
+3. **Page and mode behaviour** — #503, #504, #505. Small, independent, and each one a place where Dictus departs from Apple's keyboard in a way users feel as a bug.
+
+Two things the lane must not re-litigate: **#138 is `wontfix`** — a keyboard extension cannot extend a key's hit area, it was measured, so the spacebar's touch target is not a lever. And **changing `KeyboardAreaMode` destroys SwiftUI gesture identity**, which #505 walks straight into.
 
 ## Someday
 
