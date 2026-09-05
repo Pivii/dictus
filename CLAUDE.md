@@ -43,7 +43,9 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 
 Les issues du milestone `Someday` sont hors de vue volontairement. Ne pas les remonter sans que Pierre le demande.
 
-**`docs/ROADMAP.md` et `docs/RELEASE-PLAN.md` se committent directement sur `develop`, sans PR.** Ce sont des fichiers de pilotage : ils ne compilent pas, ne cassent rien, et une PR sur eux n'a ni relecture indépendante utile ni test device — les deux seules choses qui valident une PR ici. Ils restent versionnés parce qu'un worktree ne voit que ce qui est dans git, et que `CLAUDE.md` pointe dessus.
+**`docs/ROADMAP.md` et `docs/RELEASE-PLAN.md` se committent directement sur `develop`.** Ce sont des fichiers de pilotage : ils ne compilent pas, ne cassent rien, et une PR sur eux n'a ni relecture indépendante utile ni test device — les deux seules choses qui valident une PR ici. Ils restent versionnés parce qu'un worktree ne voit que ce qui est dans git, et que ce fichier pointe dessus.
+
+`develop` est protégé (PR requise, 2 status checks) et le compte de Pierre a le droit de contournement, donc le push passe en affichant `Bypassed rule violations`. **C'est délibéré pour ces deux fichiers et pour eux seuls** : faire tourner deux builds iOS sur une modification de markdown coûte des minutes pour zéro information, et de toute façon — la CI ne teste rien. Tout le reste, y compris la moindre ligne de Swift, passe par une PR.
 
 ## Git et releases
 
