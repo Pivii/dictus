@@ -551,6 +551,26 @@ final internal class GiellaKeyboardView: UIView,
     var keyRepeatTimer: Timer?
     var dismissOverlayTimer: Timer?
 
+    /// How long the key popup stays up after the finger lifts.
+    ///
+    /// The vendored giellakbd code scheduled 0.1 s here and gave no reason for it. Measured
+    /// against Apple's keyboard on the same device, same host, same injected press, that put
+    /// our bubble on screen 33% longer than theirs -- and the whole gap was on the dismissal
+    /// side: our popup vanished 60-69 ms *after* the character was already in the field,
+    /// where Apple's vanished in the same frame as the character (#507).
+    ///
+    /// 0.04 rather than 0: the tail we measured was 127-139 ms against a *scheduled* 100 ms,
+    /// so the timer fire plus the layout and render pass costs ~30-40 ms on its own.
+    /// Scheduling 40 lands the visible tail at ~70-80 ms, which is Apple's measured 67-74 ms.
+    /// The target is to match the platform, not to beat it.
+    ///
+    /// WHY a timer at all, at 40 ms: its anti-flicker role during fast typing comes from its
+    /// existence, not its length. `activeKey.willSet` below invalidates it when the next key
+    /// goes down, and `showOverlay` calls `removeAllOverlays()` before drawing the new bubble,
+    /// so the hand-off from one key to the next stays a single redraw at any interval.
+    /// Removing the mechanism instead of shortening it would change that hand-off.
+    private static let overlayDismissDelay: TimeInterval = 0.04
+
     /// Tracks how many times the key repeat timer has fired during the current hold.
     /// Used to switch from character-level to word-level deletion after threshold.
     private var deleteRepeatCount: Int = 0
@@ -588,7 +608,7 @@ final internal class GiellaKeyboardView: UIView,
                 cell.keyView?.active = false
             }
             if newValue == nil, let activeKey = activeKey {
-                dismissOverlayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false, block: { [weak self] _ in
+                dismissOverlayTimer = Timer.scheduledTimer(withTimeInterval: Self.overlayDismissDelay, repeats: false, block: { [weak self] _ in
                     self?.removeOverlay(forKey: activeKey.key)
                 })
                 stopKeyRepeat(reason: "touch")
