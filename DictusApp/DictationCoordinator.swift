@@ -321,7 +321,10 @@ class DictationCoordinator: ObservableObject {
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionTimestamp)
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionPolicy)
             defaults.removeObject(forKey: SharedKeys.lastTranscriptionDuration)
-            defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
+            // Through the channel since #495: the polished text and the flag saying
+            // whether it was typed are one answer, and a sweep that took only half of
+            // it would leave the flag to describe the next dictation.
+            PolishedTextChannel.clear(in: defaults)
             defaults.synchronize()
         }
         if let pending = PendingDictationChannel.current, pending.isExpired() {

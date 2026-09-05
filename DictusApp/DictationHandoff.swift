@@ -247,9 +247,12 @@ extension DictationCoordinator {
         defaults.set(token, forKey: SharedKeys.handoffToken)
         defaults.set(Date().timeIntervalSince1970, forKey: SharedKeys.lastTranscriptionTimestamp)
         defaults.set(DictationStatus.ready.rawValue, forKey: SharedKeys.dictationStatus)
-        // The previous dictation's polished text, if the keyboard left one behind.
-        // Cleared here so `polishDidFinish` cannot be answered with a stale string.
-        defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
+        // The previous dictation's answer, if the keyboard left one behind. Cleared
+        // here so `polishDidFinish` cannot be answered with a stale string — and since
+        // #495 the "was it typed" flag goes with it, which is why this is one call and
+        // not two `removeObject`s: a flag outliving its text would claim an insertion
+        // for whatever landed next.
+        PolishedTextChannel.clear(in: defaults)
         defaults.synchronize()
 
         DarwinNotificationCenter.post(DarwinNotificationName.statusChanged)
@@ -330,33 +333,48 @@ extension DictationCoordinator {
             PersistentLog.log(.polishHandoff(step: "finished", outcome: "stale-token", chars: 0))
             return
         }
-        let typed = defaults.string(forKey: SharedKeys.lastPolishedTranscription)
+        // What the keyboard produced, and whether the document received it — two facts
+        // since #495, where they used to be one. A refused insertion produces text too,
+        // and reading only "was something typed" is what deleted it.
+        let ending = PolishedTextChannel.read(from: defaults)
         // Captured before `endPolishHandoff` clears it. On the early path there is no
-        // typed text and there never will be, so the raw this dictation handed over is
-        // the only honest preview.
+        // produced text and there never will be, so the raw this dictation handed over
+        // is the only honest preview.
         let raw = polishHandoffPreview
         // Captured for the same reason `raw` is: `endPolishHandoff` clears it.
         let historyID = polishHandoffHistoryID
         endPolishHandoff(abandonedAs: nil)
-        // `typed` is nil when the keyboard refused to insert (decision 7), or when it
-        // has not tried yet. The dictation still ended for display purposes, so the
-        // Island still comes home — on the raw, because nothing was typed to preview.
-        if let typed {
-            lastResult = typed
-            // The history card catches up with what was actually typed (#70). A
-            // refusal leaves the raw standing, which is the honest record: the
-            // dictation happened, and the history is where the user recovers text
-            // their document never received.
+        // Nil when the generation produced nothing — a mode that failed, a watchdog
+        // that cancelled one — or when the keyboard has not tried yet. The dictation
+        // still ended for display purposes, so the Island still comes home, on the raw,
+        // because there is nothing else to preview.
+        if let produced = ending.text {
+            // Whether or not it was typed (#495). On a refusal the document received
+            // nothing, which makes this card the dictation's only copy — showing the
+            // raw there told the user their armed Smart Mode had failed, when it had
+            // succeeded and the result had been thrown away.
+            lastResult = produced
+            // The history record catches up with the same text (#70).
+            //
+            // **This reverses what stood here.** The old rule left the raw on a
+            // refusal, on the argument that the raw was the honest record of a
+            // dictation the document never received. That was written when the raw was
+            // the only text the dictation had. It is not: the polish ran and succeeded,
+            // and the history is the same kind of recovery surface as the card — the
+            // place a user goes for text their document never got. Recording the
+            // version they did not ask for there is the same defect one surface over.
             if let historyID {
-                TranscriptionHistoryStore.shared.updateText(id: historyID, to: typed)
+                TranscriptionHistoryStore.shared.updateText(id: historyID, to: produced)
             }
         }
         PersistentLog.log(.polishHandoff(
             step: "finished",
-            outcome: typed == nil ? "not-inserted" : "inserted",
-            chars: typed?.count ?? 0
+            // Three-valued since #495. `inserted` still means the document received it
+            // and nothing else does — that field is the instrument that diagnosed #467.
+            outcome: ending.logOutcome,
+            chars: ending.text?.count ?? 0
         ))
-        LiveActivityManager.shared.endWithResult(preview: typed ?? raw ?? lastResult)
+        LiveActivityManager.shared.endWithResult(preview: ending.text ?? raw ?? lastResult)
         // And this process has nothing left to show (#467). The `.ready` written at
         // hand-off was true about the app and never taken back, so `MainTabView` —
         // which mounts `RecordingView` for every status but `.idle` — left the
@@ -373,9 +391,9 @@ extension DictationCoordinator {
         //
         // There is nothing to present instead: the text is in the user's document and
         // `HomeView`'s card, which re-reads `lastResult` in `body`, is the copy
-        // surface. A refusal takes this path too — `lastResult` is then the raw the
-        // hand-off wrote, and the honest record ends up on the home card rather than
-        // under a recording screen the user did not ask for.
+        // surface. A refusal takes this path too, and since #495 the card is the whole
+        // point there — the document received nothing, so that card is the only place
+        // the dictation still exists.
         if PolishHandoffConclusion.returnsToIdle(from: status) {
             updateStatus(.idle)
         }
