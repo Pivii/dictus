@@ -194,13 +194,17 @@ final class KeyboardPolishCoordinator {
         // whose transformation never ran: typing its raw here would insert French
         // under "→ EN", which is exactly what `PolishTask.isSmart` forbids — and this
         // is the path nobody watches, because it has never fired in any device
-        // session. The other two sites are `run(_:)` above and `finish(text:insert:)`.
+        // session. The other two sites are `run(_:)` above and
+        // `finish(reporting:inserting:)`.
         if let mode = pending.smartMode {
             PersistentLog.log(.smartModeRefused(
                 mode: mode.id, outcome: "recovered", reason: "no-generation"
             ))
             PersistentLog.log(.polishHandoff(step: "recovered", outcome: "smart-refused", chars: pending.raw.count))
-            finish(text: nil, insert: false)
+            // Nothing to report and nothing to type: no generation ever ran for this
+            // record, so the raw DictusApp already holds is all this dictation has
+            // (#495 changed only the branch where a result exists).
+            finish(reporting: nil, inserting: nil)
             announce(
                 SmartModeFailure(
                     modeIdentifier: mode.id,
@@ -214,7 +218,10 @@ final class KeyboardPolishCoordinator {
         }
 
         PersistentLog.log(.polishHandoff(step: "recovered", outcome: "raw", chars: pending.raw.count))
-        finish(text: DictationTail.apply(pending.raw, policy: pending.policy), insert: true)
+        // Typed, so the app is told the same string the document received — the tailed
+        // one, which is what `lastResult` has always carried on the inserted paths.
+        let recovered = DictationTail.apply(pending.raw, policy: pending.policy)
+        finish(reporting: recovered, inserting: recovered)
         // The dictation this record carries ran Normal because a mode was resolved
         // away, and it is still owed the sentence (#423). After `finish`, for the
         // same reason as in `run(_:)`.
@@ -273,7 +280,18 @@ final class KeyboardPolishCoordinator {
                 reason = current == nil ? "no-identifier" : "different-document"
             }
             PersistentLog.log(.polishInsertionRefused(reason: reason, ageMs: pending.ageMs))
-            finish(text: nil, insert: false)
+            // The refusal is about the document, not about the text (#495). This branch
+            // runs *after* the generation returned, so `outcome.text` is usually a
+            // finished polish — measured at 2,769 ms and 181 characters of English on
+            // the capture that filed the issue — and it used to be deleted here. The
+            // document received nothing, which is correct and stays; that makes
+            // DictusApp's card the dictation's only copy, and it was showing the raw.
+            //
+            // No `DictationTail`: the tail is a separator that keeps chained dictations
+            // from sticking together in a host field. Nothing was typed, so there is
+            // nothing to separate, and the card is a copy surface — a trailing `". "`
+            // would be pasted into wherever the user takes the text next.
+            finish(reporting: outcome.text, inserting: nil)
             return
         }
 
@@ -292,9 +310,14 @@ final class KeyboardPolishCoordinator {
         let degraded = outcome.isDegraded
 
         if let polished = outcome.text {
-            finish(text: DictationTail.apply(polished, policy: pending.policy), insert: true)
+            // The insertion was not refused above, so the app hears the same string the
+            // document receives, tail included.
+            let tailed = DictationTail.apply(polished, policy: pending.policy)
+            finish(reporting: tailed, inserting: tailed)
         } else {
-            finish(text: nil, insert: false)
+            // A mode that produced nothing insertable. There is no text to report
+            // either, so DictusApp stays on the raw — the honest outcome (#79).
+            finish(reporting: nil, inserting: nil)
         }
 
         // After `finish`, never before: a successful insertion clears the toolbar's
@@ -477,7 +500,9 @@ final class KeyboardPolishCoordinator {
         activePolish = nil
         stageWatchdog = nil
         PendingDictationChannel.clear()
-        finish(text: nil, insert: false)
+        // The generation was cancelled a line above, so there is nothing to report and
+        // nothing to type. DictusApp concludes on the raw it handed over.
+        finish(reporting: nil, inserting: nil)
     }
 
     /// Tell DictusApp the dictation is over for display purposes, without touching the
@@ -545,19 +570,36 @@ final class KeyboardPolishCoordinator {
     /// End the dictation: hand the final text back to DictusApp, tell it we are done,
     /// and type — in that order, so the app's Live Activity preview is the text the
     /// user is about to see rather than the raw it handed over.
-    private func finish(text: String?, insert: Bool) {
-        if let text, insert {
-            defaults.set(text, forKey: SharedKeys.lastPolishedTranscription)
+    ///
+    /// **Two decisions, two parameters (#495).** What DictusApp is told and what the
+    /// document receives used to travel on one `insert` flag, and that flag deleted the
+    /// text on its way past: a generation the user's document was refused was also a
+    /// generation the app never heard about, so the home card fell back to the raw and
+    /// the dictation's only surviving copy was the version the user had not asked for.
+    /// They are the same string on every path that types — the tailed text goes to both
+    /// — and they differ only where the insertion is refused with a result in hand.
+    ///
+    /// - Parameters:
+    ///   - reported: what this dictation produced, for DictusApp to show and store.
+    ///     Nil when the generation produced nothing, which leaves the app on the raw it
+    ///     already holds.
+    ///   - inserted: what to type into the host document, or nil to type nothing.
+    private func finish(reporting reported: String?, inserting inserted: String?) {
+        // Before `postDidFinish`, never after, for the reason `postDidFinish` gives
+        // about the token: a bare Darwin notification says only "some polish finished",
+        // and the app decides on what it reads next.
+        if let reported {
+            PolishedTextChannel.record(inserted == nil ? .refused(reported) : .inserted(reported))
         } else {
-            defaults.removeObject(forKey: SharedKeys.lastPolishedTranscription)
+            PolishedTextChannel.record(.nothing)
         }
         postDidFinish()
 
-        guard let text, insert else {
+        guard let inserted else {
             KeyboardState.shared.endLocalProcessingStage()
             return
         }
-        KeyboardState.shared.insertDictation(text)
+        KeyboardState.shared.insertDictation(inserted)
     }
 
     // MARK: - Reading what travelled
