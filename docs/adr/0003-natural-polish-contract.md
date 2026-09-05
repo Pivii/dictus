@@ -124,3 +124,51 @@ still carries no rule 8, and after this round that absence is a measured decisio
 than an oversight: the rule was written, shipped to the harness and scored over 60
 outputs before being rejected, so adding it to the auto prompt would ship a cost with no
 demonstrated benefit.
+
+## Amendment — 2026-09-02 (#466, #469)
+
+Three device captures taken while investigating #456 forced a question this contract had
+never answered: **when the user declares a transcription language, are they describing
+their speech or specifying their output?** The contract's Forbidden list says *"Do NOT
+translate"*, and its Preserve list says code-switched anglicisms stay. Read together they
+suggest the input's languages are sacred. A capture in `explicit(fr)` translated a
+genuinely-spoken English opening into French and nothing in this document says whether
+that was right.
+
+**`explicit(lang)` declares the language of the OUTPUT.** Decided by the maintainer on
+2026-09-02. It is the one mode where the user gave an instruction rather than leaving a
+classifier to guess, and honouring an instruction beats inferring intent. A user who
+selects French is asking for a French document, not merely reporting that they intend to
+speak French — which is also what makes the mode the repair path for Parakeet's known
+habit of opening a French dictation with an English hallucination.
+
+**So the translation ban means: never leave the target language, not never translate.**
+The two lists stand as written, and the boundary between them is now stated:
+
+- A **word or set phrase** the Preserve list protects — `today`, `ship`, `commit`, `PR`,
+  `merge` — stays in English inside a French output. These are the speaker's vocabulary,
+  not a language switch.
+- An **off-target clause or sentence** is brought back to the target language. Rule 8
+  already did this for a fragment that is incoherent; the amendment extends it to a
+  fragment that is perfectly coherent and simply not in the target. From the output's
+  point of view the two are the same event, and the pipeline cannot tell an hallucinated
+  English head from a deliberately-spoken one — a limit measured in #469, not a defect
+  this contract can resolve.
+
+The cost is stated rather than hidden: in `explicit`, a user who deliberately quotes a
+whole English sentence inside a French dictation gets it translated. That is the price of
+honouring the declaration, and it is the right side of the trade only because the other
+side — leaving an hallucinated English head untouched, or worse electing English from it
+and translating the whole dictation — is the worst output this pipeline produces.
+
+**`followKeyboard` and `autoDetect` are unchanged.** Neither carries a declaration from
+the user, so neither gains this licence. In `followKeyboard` the target is elected from
+the transcript's own proportions (#456), and #469 records that the election is still blind
+to a switch inside a single sentence.
+
+**Smart Modes that change language by definition are outside this contract**, and always
+were. Traduction's whole purpose is to leave the source language; it holds its own
+acceptance contract via `PolishAcceptanceContract`, and the Natural bans do not reach it.
+This is recorded because #466's guardrail is scoped by exactly that boundary: the
+prefix-alignment check runs on Natural, Auto and Repair, and is inert for Liste and
+Traduction, whose transformations legitimately destroy alignment.
