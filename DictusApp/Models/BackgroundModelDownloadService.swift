@@ -77,6 +77,11 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
     /// Attempts per file before the whole download fails (backoff 2s/4s/8s).
     static let maxAttemptsPerFile = 3
 
+    /// Seconds the app must be foregrounded, with no network path and no byte arriving,
+    /// before the transfer is reported as stalled (issue #492). Owned by
+    /// `DownloadStallPolicy`, which is also where the choice of value is argued.
+    static let offlineStallGrace = DownloadStallPolicy.offlineGrace
+
     // MARK: - Singleton
 
     static let shared = BackgroundModelDownloadService()
@@ -118,6 +123,17 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
     /// events. Must be called on the main thread once the events are drained.
     private var backgroundCompletionHandler: (@Sendable () -> Void)?
 
+    /// Watches the foreground and the network route while a transfer is live, and is the
+    /// only thing that can notice a transfer iOS has parked (issue #492): a background
+    /// session that loses connectivity delivers no callback at all, so the state machine
+    /// below is never told and never fails. Runs only while there is a run to watch.
+    private lazy var connectivity = DownloadConnectivityWatch { [weak self] snapshot in
+        guard let self else { return }
+        self.queue.addOperation { [weak self] in
+            self?.reportOfflineStalls(snapshot)
+        }
+    }
+
     // MARK: - Public API
 
     /// Runs (or joins) the transfer of one model and returns when every file is on disk.
@@ -141,7 +157,12 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
                 let run = adopt(manifest: manifest, destination: destination)
                 run.observers.append(onProgress)
                 run.continuations.append(continuation)
+                // A caller that has just joined gets the full offline grace period,
+                // whatever this run was doing before it arrived — a run rebuilt by
+                // `restore()` minutes ago must not be declared stalled on the first tick.
+                run.lastProgressDate = Date()
                 run.emitProgress(force: true)
+                connectivity.start()
                 pump(run)
             }
         }
@@ -491,11 +512,61 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Fails every live transfer that the device has no route to move, while somebody
+    /// is watching it (issue #492).
+    ///
+    /// WHY IT HAS TO BE US. A background `URLSession` waits for connectivity by
+    /// definition. Lose the network mid-download and iOS parks the tasks: no bytes, no
+    /// `didCompleteWithError`, nothing for the state machine above to act on. Measured on
+    /// device on 2026-09-05, airplane mode produced three minutes and twelve seconds of
+    /// complete silence under a frozen progress bar, and the only way out was a force
+    /// quit. `timeoutIntervalForRequest` does not cover it: that is an idle timeout on a
+    /// running task, and a parked task is not running.
+    ///
+    /// WHY `finish` AND NOT `retryOrFail`. The attempt budget exists for transient
+    /// transport failures, and this is not one — `DownloadStallPolicy` has already
+    /// established that the device has no route at all, so a retry two seconds later can
+    /// only park a second time and spend the user's remaining attempts saying nothing.
+    /// Nothing is lost by stopping: every chunk that landed is on disk and in the
+    /// manifest, so the Retry the user now has resumes at the byte the transfer reached.
+    ///
+    /// WHY ONLY RUNS WITH A CONTINUATION. A run nobody is awaiting is one `restore()`
+    /// rebuilt and no screen has claimed yet. There is nowhere to deliver an error, and
+    /// a stall the user cannot see is a stall not worth reporting.
+    private func reportOfflineStalls(_ snapshot: DownloadConnectivitySnapshot, now: Date = Date()) {
+        // A copy: `finish` mutates `runs`.
+        for run in Array(runs.values) where !run.isFinished && !run.continuations.isEmpty {
+            guard DownloadStallPolicy.hasStalled(
+                now: now,
+                lastProgressAt: run.lastProgressDate,
+                foregroundSince: snapshot.foregroundSince,
+                offlineSince: snapshot.offlineSince,
+                grace: Self.offlineStallGrace
+            ) else { continue }
+
+            let path = run.manifest.currentFileIndex.map { run.pathOfFile($0) } ?? "?"
+            PersistentLog.log(.modelDownloadOffline(
+                name: run.manifest.modelIdentifier,
+                path: path,
+                secondsWithoutProgress: Int(now.timeIntervalSince(run.lastProgressDate))
+            ))
+            // The parked tasks go with the run. Left alive they would deliver their
+            // chunks into a run that no longer exists, which drops them anyway, and the
+            // bytes would be paid for twice.
+            run.cancelAllTasks()
+            finish(run, error: ModelRepoDownloader.DownloadError.stalled(
+                path: path,
+                timeoutSeconds: Int(Self.offlineStallGrace)
+            ))
+        }
+    }
+
     /// Ends a run: everyone waiting is told, and the model is no longer in flight.
     private func finish(_ run: DownloadRun, error: Error?) {
         guard !run.isFinished else { return }
         run.isFinished = true
         runs.removeValue(forKey: run.manifest.modelIdentifier)
+        if runs.isEmpty { connectivity.stop() }
         let continuations = run.continuations
         run.continuations.removeAll()
         run.observers.removeAll()
@@ -669,6 +740,8 @@ extension BackgroundModelDownloadService: URLSessionDownloadDelegate {
         guard let tag = ModelDownloadTaskTag.decode(downloadTask.taskDescription),
               let run = run(for: tag) else { return }
         run.liveChunkBytes[tag.chunkIndex] = totalBytesWritten
+        // Every byte is proof the transfer is alive, whatever `NWPathMonitor` believes.
+        run.lastProgressDate = Date()
         run.emitProgress(force: false)
     }
 
@@ -817,6 +890,9 @@ private final class DownloadRun {
     var liveChunkBytes: [Int: Int64] = [:]
     /// Consecutive failures on the current file. Reset by any chunk that lands.
     var attempts = 0
+    /// When a byte last arrived, for the offline stall predicate (issue #492). Set at
+    /// creation so a run that has not received anything yet still gets a grace period.
+    var lastProgressDate = Date()
     var isFinished = false
 
     var continuations: [CheckedContinuation<Void, Error>] = []
