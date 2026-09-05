@@ -2,9 +2,9 @@
 
 What ships next, and why. Complements [VERSIONING.md](VERSIONING.md), which says *how* to number a release; this file says *what* the current and next cycles are.
 
-**Scope.** One page. It holds decisions that no issue owns and that the code cannot show. It does not list work — that is what the tracker is for. When a decision here is superseded, edit the line rather than appending, so the file never becomes a log. Git history keeps the record.
+**Scope.** One page. It holds decisions that no issue owns and that the code cannot show. It does not list work in order — that is [ROADMAP.md](ROADMAP.md), which holds the ordered queue and points back here for the reasoning. When a decision here is superseded, edit the line rather than appending, so the file never becomes a log. Git history keeps the record.
 
-Last reviewed: 2026-09-04.
+Last reviewed: 2026-09-05.
 
 ## Where things stand
 
@@ -50,13 +50,13 @@ It stays a PATCH because everything user-visible in it is a fix. Smart Modes and
 
 The release 1.8.1 deliberately does not carry. It exists because the open-bug count is high enough that holding those fixes until 2.0.0 would mean shipping the Pro launch on top of a year of unfixed reports.
 
-Fixes in flight when 1.8.1 was cut, in the order they are expected to land: **#456** (a French dictation polished into English), **#449** (the onboarding download restarts 445 MB after a backgrounding), **#438** (the download tripwire accepts an empty `.mlmodelc`). Then the triaged prod bugs: **#459**, **#458**, **#349** with **#455**, **#431**.
+**Its contents are a closed list of nine, ordered in [ROADMAP.md](ROADMAP.md) Lane A**, plus **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped fields, editable only while a version is in an editable state, so a copy correction can never ship on its own — it rides the next submission or it waits another cycle. This one already waited one.
 
-It also carries the one thing that is not code: **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped fields, editable only while a version is in an editable state, so a copy correction can never ship on its own — it rides the next submission or it waits another cycle. This one already waited one.
+The list being closed is the rule, not a preference: a fix that becomes ready mid-cycle joins 2.1, not this one. That is what kept 1.8.1 a one-fix release, and it is the only thing that stops a bug cycle from becoming a second campaign.
 
 Still a PATCH: every line of it is a fix, and `paywallVisible` stays `false` throughout.
 
-**#417** is not committed to this cycle either. It has no identified cause, only a rejected format the pre-flight guards accept. It joins 1.8.2 if a repro lands in time, and slips if it does not.
+**#417** is in the list but not committed to the cycle. It has no identified cause, only a rejected format the pre-flight guards accept. It ships if a repro lands in time, and slips if it does not.
 
 ## 2.0.0 — the Pro launch
 
@@ -70,6 +70,8 @@ How the campaign runs:
 - TestFlight builds go out as the work lands, not once at the end. Testers exercising a half-built paywall in sandbox is the cheapest bug-finding available.
 - `paywallVisible` flips to `true` in the PR that ships the first reachable Pro feature, which is also the PR that turns this cycle into a MAJOR.
 - A `#if DEBUG` entitlement override lets Smart Modes be tested on device while the flag is down (#460). It must not exist in a Release build.
+
+Its scope was fixed on 2026-09-05 and is the ordered list in [ROADMAP.md](ROADMAP.md) Lane B. The feature count was never open: `ProFeature` declares three cases, the paywall renders a card for each, and only `vocabulary` (#80) is unbuilt. **#450, the onboarding rebuild, was descoped out of the launch the same day** — it was written as a product gate, it is a month of work, and the install base that reaches Pro has already completed onboarding. Its one launch-relevant point is #494.
 
 Open, to settle before the flag flips: whether 2.0.0 or a later number is right if the scope grows, and the founder-window dates in #350, which depend on a release date that does not exist yet.
 
