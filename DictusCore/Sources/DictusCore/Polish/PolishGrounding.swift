@@ -224,14 +224,15 @@ public enum PolishGrounding {
     /// Lowercased, diacritic-folded words, **in order**. Both sides go through this,
     /// so `Müller` in the output is supported by `muller` in the input and `Léa` by
     /// `lea`. Order is kept because the match is a sequence, not a set.
+    ///
+    /// Shared with `PolishPrefixAlignment` since #466 — see `PolishLexicon` for why
+    /// two checks that compare an output to its input must not disagree about what
+    /// a word is.
     private static func normalisedWordList(in text: String) -> [String] {
-        normalise(text)
-            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            .map(String.init)
-            .filter { !$0.isEmpty }
+        PolishLexicon.words(in: text)
     }
 
     private static func normalise(_ text: String) -> String {
-        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+        PolishLexicon.fold(text)
     }
 }

@@ -128,26 +128,57 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// someone had to write down.
     public let requiresGroundedNames: Bool
 
+    /// Whether the output has to *open* where the input opens (#466).
+    ///
+    /// ### Why a mode has to answer this
+    ///
+    /// The prefix-alignment check is only sound where the output reuses the input's
+    /// own words, in the input's own order. Three tasks answer `false`:
+    ///
+    /// - **List restructures.** It condenses a rambling dictation into bullets that
+    ///   synthesise, so the first bullet need not come from the first sentence.
+    /// - **Translation keeps no word of the input.** There is no lexical overlap to
+    ///   look for anywhere, let alone at the head.
+    /// - **Repair reconstructs in another language** (ADR 0002).
+    ///   `PolishPipeline.mode` selects it exactly when the detected language differs
+    ///   from the target, so its output shares no vocabulary with its input by
+    ///   construction. #466's scope put repair in scope and the corpus overruled it:
+    ///   **10 of 10 legitimate repair outputs refused, at every pair in the sweep.**
+    ///
+    /// ADR 0003 puts reordering on Natural's forbidden list and `.auto` carries the
+    /// same light-corrections-only contract, so those two answer `true`.
+    ///
+    /// ### Why a field rather than a derivation
+    ///
+    /// The same argument `requiresGroundedNames` records. A custom mode (#269) must
+    /// *answer* the question rather than inherit an answer from a property chosen
+    /// for an unrelated reason — and the property that would carry the derivation
+    /// today, `outputLanguage`, gets List wrong: it says `.sameAsInput`, which is
+    /// true and has nothing to do with order.
+    public let requiresAlignedPrefix: Bool
+
     public init(minimumLengthRatio: Double,
                 maximumLengthRatio: Double,
                 outputLanguage: PolishOutputLanguage,
-                requiresGroundedNames: Bool) {
+                requiresGroundedNames: Bool,
+                requiresAlignedPrefix: Bool) {
         self.minimumLengthRatio = minimumLengthRatio
         self.maximumLengthRatio = maximumLengthRatio
         self.outputLanguage = outputLanguage
         self.requiresGroundedNames = requiresGroundedNames
+        self.requiresAlignedPrefix = requiresAlignedPrefix
     }
 
     // MARK: - Decoding
 
-    /// Hand-written so `requiresGroundedNames` can default rather than fail the
-    /// whole record, for the reason `SmartMode.init(from:)` is hand-written: a
-    /// contract crosses the App Group inside the per-dictation snapshot, and an app
-    /// update can land between the write and the read.
+    /// Hand-written so the two check flags can default rather than fail the whole
+    /// record, for the reason `SmartMode.init(from:)` is hand-written: a contract
+    /// crosses the App Group inside the per-dictation snapshot, and an app update
+    /// can land between the write and the read.
     ///
-    /// The default is **off**, which is the safe half here. A record written by a
-    /// build that did not know about this check gets exactly today's behaviour for
-    /// one dictation across one upgrade; the other default would turn a brand-new
+    /// Both default to **off**, which is the safe half here. A record written by a
+    /// build that did not know about a check gets exactly today's behaviour for one
+    /// dictation across one upgrade; the other default would turn a brand-new
     /// rejection on for a snapshot nobody measured, and a rejection on a Smart Mode
     /// costs the user everything they said.
     ///
@@ -159,6 +190,9 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
         self.outputLanguage = try container.decode(PolishOutputLanguage.self, forKey: .outputLanguage)
         self.requiresGroundedNames = try container.decodeIfPresent(
             Bool.self, forKey: .requiresGroundedNames
+        ) ?? false
+        self.requiresAlignedPrefix = try container.decodeIfPresent(
+            Bool.self, forKey: .requiresAlignedPrefix
         ) ?? false
     }
 
@@ -180,7 +214,7 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// keeps their words and loses only the polish.
     public static let natural = PolishAcceptanceContract(
         minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
-        outputLanguage: .polishTarget, requiresGroundedNames: true
+        outputLanguage: .polishTarget, requiresGroundedNames: true, requiresAlignedPrefix: true
     )
 
     /// Repair. Wider on both sides because reconstructing intent legitimately
@@ -193,9 +227,17 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// under this mode, and closing it needs the *other* query over
     /// `PolishGrounding` — how much of the output's vocabulary appears in the input
     /// at all — not this one.
+    ///
+    /// #466 wrote that query as `PolishPrefixAlignment` and measured it here too.
+    /// The answer is that repair cannot have it either, for the same reason and
+    /// harder: this mode is *selected* when the detected language differs from the
+    /// target, so every repair output is a cross-lingual reconstruction that shares
+    /// no vocabulary with its input. 10 of 10 legitimate repair outputs in the
+    /// corpus are refused by that check, at every threshold pair swept. **#349's
+    /// capture is a repair event, so #349 does not close on this mode.**
     public static let repair = PolishAcceptanceContract(
         minimumLengthRatio: 0.3, maximumLengthRatio: 3.0,
-        outputLanguage: .polishTarget, requiresGroundedNames: false
+        outputLanguage: .polishTarget, requiresGroundedNames: false, requiresAlignedPrefix: false
     )
 
     /// Auto-detect polish (#239): the Natural band, and the never-translate check
@@ -203,6 +245,6 @@ public struct PolishAcceptanceContract: Equatable, Sendable, Codable {
     /// for the same reason — the auto prompt is light-corrections-only.
     public static let auto = PolishAcceptanceContract(
         minimumLengthRatio: 0.5, maximumLengthRatio: 2.0,
-        outputLanguage: .sameAsInput, requiresGroundedNames: true
+        outputLanguage: .sameAsInput, requiresGroundedNames: true, requiresAlignedPrefix: true
     )
 }

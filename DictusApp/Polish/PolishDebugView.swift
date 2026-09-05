@@ -162,6 +162,13 @@ private struct EntryRow: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(entry.metrics.outcome.tintColor)
                         .lineLimit(1)
+                } else if let check = entry.metrics.guardrailCheck {
+                    // Same slot, same reasoning (#466): on a rejected event the
+                    // check that refused is what gets read, not the mode.
+                    Text(check.rawValue)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(entry.metrics.outcome.tintColor)
+                        .lineLimit(1)
                 } else if let mode = entry.metrics.mode {
                     Text(mode).font(.caption2).foregroundStyle(.secondary)
                 }
@@ -282,6 +289,12 @@ private struct EntryDetailView: View {
             }
             if let reason = entry.metrics.failureReason {
                 LabeledValue("failure reason", reason.slug)
+            }
+            // Which of the four output checks refused (#466). A rejection is the
+            // one outcome the user notices without being told why, so the detail
+            // sheet is where "why" has to be readable.
+            if let check = entry.metrics.guardrailCheck {
+                LabeledValue("guardrail check", check.rawValue)
             }
         }
     }

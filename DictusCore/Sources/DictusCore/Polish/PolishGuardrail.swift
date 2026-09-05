@@ -53,7 +53,7 @@ public struct PolishLanguageSegmentThresholds: Equatable, Sendable {
 
 /// Runtime sanity check on every polish output.
 ///
-/// Three complementary checks:
+/// Four complementary checks:
 /// 1. `accepts(raw:polished:mode:)` — character-length ratio. Catches catastrophic
 ///    over- or under-generation (empty output, runaway generation).
 /// 2. `detectedLanguageMatches(polished:target:)` — language detection on the
@@ -62,9 +62,35 @@ public struct PolishLanguageSegmentThresholds: Equatable, Sendable {
 ///    polish it for you" when the user dictated French), and since #413 also a list
 ///    that drifts one item at a time.
 /// 3. `PolishGrounding` — whether the output is *about* the input. Lives in its own
-///    type because it answers a different question with a different tool, and
-///    because #349 will ask that type a second question.
+///    type because it answers a different question with a different tool.
+/// 4. `PolishPrefixAlignment` — whether the output *opens* where the input opens.
+///    Catches the chat reply that arrives in the RIGHT language, which check 2
+///    cannot see by construction: a preamble (#466) and a refusal (#349), both of
+///    them the model writing about its own task in the language it was told to
+///    write in. Its own type for the same reason check 3 is.
 public enum PolishGuardrail {
+
+    /// Which of the four refused an output.
+    ///
+    /// One `PolishMetrics.Outcome.rejectedGuardrail` covers four questions with four
+    /// different answers — the band is mis-sized for the mode, the prompt drifted
+    /// out of the speaker's language, the model invented a name, or the model wrote
+    /// about its own task. Until #466 the word only reached the os_log line; it now
+    /// travels on the metrics event too, so the rate of each is countable from a
+    /// seven-day export instead of from a log a device may no longer hold.
+    ///
+    /// Raw values are **wire values**: they land in the debug export and in the
+    /// persistent log, and a report written against one build gets compared to the
+    /// next. Encoded as a bare string for the reason `PolishFailureReason` is —
+    /// a ring entry is read by a human as often as by the decoder.
+    public enum Check: String, Equatable, Sendable, Codable, CustomStringConvertible {
+        case length
+        case language
+        case grounding
+        case prefixAlignment
+
+        public var description: String { rawValue }
+    }
 
     /// Returns `true` when `polished` is within the length band `contract` allows.
     /// Empty raw → only empty polished accepted.

@@ -30,13 +30,26 @@ struct MainTabView: View {
     /// Tracks whether the app was opened from the keyboard for cold start dictation.
     @State private var isColdStartMode: Bool
 
-    /// Active model preparation requested by the keyboard without starting a
-    /// recording. The overlay dismisses itself after its contextual ready state.
+    /// Active model preparation shown without starting a recording. The overlay dismisses
+    /// itself after its contextual ready state.
     ///
-    /// Its three writers are all URL-driven, and the two that can fire while the process
-    /// is already alive are gated on #458's rule below. `init`'s launch-intent seed is
-    /// not: a process being launched has no dictation to interrupt.
-    @State private var preparingModelID: String?
+    /// Three of its four writers are URL-driven — the keyboard asking for `intent=prepare` —
+    /// and the two of those that can fire while the process is already alive are gated on
+    /// #458's rule below. `init`'s launch-intent seed is not: a process being launched has no
+    /// dictation to interrupt. The fourth is `presentModelPreparation`, an in-app record tap
+    /// that landed during a load (#484), which carries its own context and its own gate.
+    ///
+    /// WHY the model and the context travel together in one value: the overlay's copy is
+    /// chosen from the context and names the model, so a context left behind by a previous
+    /// presentation would put "Return to your app and tap the microphone again." in front of
+    /// a user who never left Dictus. Storing them apart makes that a two-line mistake.
+    @State private var preparation: PreparationPresentation?
+
+    /// A preparation screen to show: which model, and why it is up.
+    private struct PreparationPresentation: Equatable {
+        let modelIdentifier: String
+        let context: ModelPreparationContext
+    }
 
     /// The paywall, opened from the keyboard (#404).
     ///
@@ -61,8 +74,13 @@ struct MainTabView: View {
     init() {
         let launchIntent = ColdStartLaunch.intent
         _isColdStartMode = State(initialValue: launchIntent == .record)
-        _preparingModelID = State(
-            initialValue: launchIntent == .prepare ? Self.persistedActiveModelIdentifier : nil
+        _preparation = State(
+            initialValue: launchIntent == .prepare
+                ? PreparationPresentation(
+                    modelIdentifier: Self.persistedActiveModelIdentifier,
+                    context: .keyboardColdStart
+                )
+                : nil
         )
     }
 
@@ -79,14 +97,14 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
-            if let preparingModelID {
+            if let preparation {
                 ModelLoadingOverlay(
                     modelManager: modelManager,
-                    modelIdentifier: preparingModelID,
-                    context: .keyboardColdStart,
+                    modelIdentifier: preparation.modelIdentifier,
+                    context: preparation.context,
                     isPresented: Binding(
-                        get: { self.preparingModelID != nil },
-                        set: { if !$0 { self.preparingModelID = nil } }
+                        get: { self.preparation != nil },
+                        set: { if !$0 { self.preparation = nil } }
                     )
                 )
             } else if isColdStartMode {
@@ -182,7 +200,10 @@ struct MainTabView: View {
                 guard !ModelPreparationGate.dictationOwnsTheDisplay(coordinator.status) else {
                     return
                 }
-                preparingModelID = activeModelIdentifier
+                preparation = PreparationPresentation(
+                    modelIdentifier: activeModelIdentifier,
+                    context: .keyboardColdStart
+                )
                 return
             }
 
@@ -205,8 +226,22 @@ struct MainTabView: View {
             guard !ModelPreparationGate.dictationOwnsTheDisplay(coordinator.status) else {
                 return
             }
-            preparingModelID = activeModelIdentifier
+            preparation = PreparationPresentation(
+                modelIdentifier: activeModelIdentifier,
+                context: .keyboardColdStart
+            )
         }
+        // The fourth writer (#484): a record button inside the app, tapped while a model load
+        // was in flight. The decision to present rather than to call `startDictation` was
+        // already made at the button — `RecordTapRouting` in DictusCore, where it is tested —
+        // so this handler only presents. It is installed on the ZStack rather than on the
+        // TabView so `RecordingView`, a sibling and the second of the two buttons, sees it too.
+        .environment(\.presentModelPreparation, PresentModelPreparationAction {
+            preparation = PreparationPresentation(
+                modelIdentifier: activeModelIdentifier,
+                context: .appRecordTap
+            )
+        })
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
                 isColdStartMode = false
