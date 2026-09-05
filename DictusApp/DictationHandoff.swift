@@ -357,6 +357,28 @@ extension DictationCoordinator {
             chars: typed?.count ?? 0
         ))
         LiveActivityManager.shared.endWithResult(preview: typed ?? raw ?? lastResult)
+        // And this process has nothing left to show (#467). The `.ready` written at
+        // hand-off was true about the app and never taken back, so `MainTabView` —
+        // which mounts `RecordingView` for every status but `.idle` — left the
+        // recording overlay standing over the home screen. Every later visit to
+        // DictusApp landed on it, and its result card is a one-shot `@State` copy
+        // taken at `.ready`, which is the instant `lastResult` deliberately still
+        // holds the raw. The user's document had the polished text; the screen the
+        // app opened on had the raw.
+        //
+        // Returning here rather than leaving it to the watchdog, which is the only
+        // thing that ever cleared it: on the clean path the watchdog is cancelled two
+        // lines up, so the `.ready` used to survive until the *next* dictation reset
+        // it. Same write, same rule, on the ending that actually happens.
+        //
+        // There is nothing to present instead: the text is in the user's document and
+        // `HomeView`'s card, which re-reads `lastResult` in `body`, is the copy
+        // surface. A refusal takes this path too — `lastResult` is then the raw the
+        // hand-off wrote, and the honest record ends up on the home card rather than
+        // under a recording screen the user did not ask for.
+        if PolishHandoffConclusion.returnsToIdle(from: status) {
+            updateStatus(.idle)
+        }
     }
 
     /// The keyboard never got back to us.
@@ -389,7 +411,11 @@ extension DictationCoordinator {
         // `ready` nobody consumed is what the next keyboard appearance would restore
         // its state from, and this process has stopped believing anything is in
         // flight.
-        if status == .ready {
+        //
+        // Through the shared rule since #467, which gave the same write to the ending
+        // that normally happens. The two conclusions of one hand-off have to leave the
+        // same thing behind.
+        if PolishHandoffConclusion.returnsToIdle(from: status) {
             updateStatus(.idle)
         }
         // And it withdraws the dictation, which is the half that was missing. Telling
