@@ -41,7 +41,9 @@ Voir PRD.md pour les specs complètes et DEVELOPMENT.md pour le guide de dévelo
 
 `docs/ROADMAP.md` est la file ordonnée du projet : trois voies séquentielles (1.8.2 bugs → 2.0.0 Pro → session clavier) et, dans chacune, une liste numérotée. **Le lire avant de proposer du travail, et prendre le premier item non fait de la voie active.** Le tracker trie par qualité de rédaction, pas par importance — c'est ce fichier qui porte l'ordre. `docs/RELEASE-PLAN.md` dit pourquoi les cycles sont ce qu'ils sont ; `docs/VERSIONING.md` dit comment les numéroter.
 
-Les 29 issues du milestone `Someday` sont hors de vue volontairement. Ne pas les remonter sans que Pierre le demande.
+Les issues du milestone `Someday` sont hors de vue volontairement. Ne pas les remonter sans que Pierre le demande.
+
+**`docs/ROADMAP.md` et `docs/RELEASE-PLAN.md` se committent directement sur `develop`, sans PR.** Ce sont des fichiers de pilotage : ils ne compilent pas, ne cassent rien, et une PR sur eux n'a ni relecture indépendante utile ni test device — les deux seules choses qui valident une PR ici. Ils restent versionnés parce qu'un worktree ne voit que ce qui est dans git, et que `CLAUDE.md` pointe dessus.
 
 ## Git et releases
 
