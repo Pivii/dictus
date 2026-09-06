@@ -80,6 +80,8 @@ Open, to settle before the flag flips: whether 2.0.0 or a later number is right 
 
 ## Standing rules
 
+- **Every App Store release goes out phased.** Decided 2026-09-06, after 1.8.1 became the first one that did; 1.7.1, 1.7.2 and 1.8.0 all went to everyone at once. The reason is that Apple has no rollback — a shipped version cannot be withdrawn, and pausing a rollout only stops it spreading further, it takes nothing back from anyone who already has it. Limiting exposure is the only protection that exists. It costs no user the fix, because phasing governs *automatic* updates only: a manual update from the product page, and every new install, get the latest build on day one regardless. Create it before releasing (`asc versions phased-release create --version-id <id> --state INACTIVE`), then `--state COMPLETE` to finish early once the release looks safe.
 - Never cut a TestFlight build while an App Store version of the same marketing version is awaiting review. A rejection ships as the same version plus the next build.
+- Read the App Store product page *before* `review submit`, never after. A released version rejects an edit to its description or keywords at the API, so a wrong sentence cannot be corrected on its own schedule — it waits for a submission that exists for another reason. 1.8.1 shipped one for exactly this reason (#488).
 - The archive is pinned by `build/N`, never by a branch tip. `promote-to-appstore.sh N` enforces this; do not work around it.
 - The App Store screenshots are 1.7.2's and show neither the polish layer nor the number row. Known, accepted, deliberately deferred. Not a release blocker.
