@@ -30,12 +30,12 @@ Ordered by what a shipped user actually loses.
 
 1. **#417** — dictation fails outright with `Failed to create tap due to format mismatch`. A TestFlight tester reported it; no cause identified yet, so it starts diagnostic-only. If no repro lands, it slips and the cycle still cuts.
 2. **#362** — onboarding loops or crashes on iPhone 11. A new user on an older device never reaches a working app.
-3. **#492** — a download that loses the network stalls forever, with no error and no Retry.
+3. ~~**#492** — a download that loses the network stalls forever, with no error and no Retry.~~ Shipped 2026-09-06, PR #508.
 4. **#370** — WhisperKit is initialised with no `ModelComputeOptions`, so A12/A13 devices compile the wrong way.
 5. **#293** — Dictus silences keyboard haptics device-wide for ten minutes after every dictation.
 6. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. Briefed and `ready-for-agent` on 2026-09-05; #459 closes by hand when it merges.
 7. **#319** — Whisper medium returned `*voix off*` for 23.6 s of speech.
-8. **#438** — the Parakeet download tripwire accepts an empty `.mlmodelc` as complete.
+8. ~~**#438** — the Parakeet download tripwire accepts an empty `.mlmodelc` as complete.~~ Shipped 2026-09-05, PR #479.
 
 Also rides this submission: **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped, so a copy fix can only travel with a submission. It has already waited one cycle.
 
