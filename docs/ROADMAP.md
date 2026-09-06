@@ -28,14 +28,12 @@ A **closed list**. When these are done, cut. A fix that becomes ready mid-cycle 
 
 Ordered by what a shipped user actually loses.
 
-1. **#417** — dictation fails outright with `Failed to create tap due to format mismatch`. A TestFlight tester reported it; no cause identified yet, so it starts diagnostic-only. If no repro lands, it slips and the cycle still cuts.
-2. **#362** — onboarding loops or crashes on iPhone 11. A new user on an older device never reaches a working app.
-3. **#492** — a download that loses the network stalls forever, with no error and no Retry.
-4. **#370** — WhisperKit is initialised with no `ModelComputeOptions`, so A12/A13 devices compile the wrong way.
-5. **#293** — Dictus silences keyboard haptics device-wide for ten minutes after every dictation.
-6. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. Briefed and `ready-for-agent` on 2026-09-05; #459 closes by hand when it merges.
-7. **#319** — Whisper medium returned `*voix off*` for 23.6 s of speech.
-8. **#438** — the Parakeet download tripwire accepts an empty `.mlmodelc` as complete.
+1. **#417** — dictation fails outright with `Failed to create tap due to format mismatch`. No longer diagnostic-only. The #483 device captures name the cause: an active interruption, a call **or Siri**, renegotiates the input node between the format read and the tap install, and it is `installTap` that throws, not `engine.start` — which is the distinction the issue said everything turned on, and it means the scoped fix is sufficient. `ready-for-agent` on 2026-09-06.
+2. **#492** — a download that loses the network stalls forever, with no error and no Retry. Under device test.
+3. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. Briefed and `ready-for-agent` on 2026-09-05; #459 closes by hand when it merges. It does **not** subsume #417 — Siri throws the same exception and is not a call.
+4. **#319** — Whisper medium returned `*voix off*` for 23.6 s of speech, and three more artifacts in one noisy session on 2026-08-25. Waiting on a decision, not on code: demote Medium, or build the artifact check. The check needs the same "is the output about the input" primitive #414 wants and nobody has built, so demoting is the cheap answer.
+
+**Closed out of this lane on 2026-09-06.** #438 shipped in PR #479. #293 passed its device check — `audioHapticsAllowance allowed=true` on every active-session context, which is the line PR #367 added precisely so this could stop being a correlation. #362 and #370 are fixed and shipped in 1.8.0 (27); they were closed with the reporter contacted and unanswered, because their last criterion needs an iPhone 11 nobody here owns and that tier is not Dictus's target. They reopen on his word.
 
 Also rides this submission: **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped, so a copy fix can only travel with a submission. It has already waited one cycle.
 
