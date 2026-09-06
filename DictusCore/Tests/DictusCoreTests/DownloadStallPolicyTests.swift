@@ -176,4 +176,119 @@ final class DownloadStallPolicyTests: XCTestCase {
     func testShippedGracePeriodIsFifteenSeconds() {
         XCTAssertEqual(DownloadStallPolicy.offlineGrace, 15)
     }
+
+    // MARK: - A reading of the past never decides (the race CodeRabbit found on PR #508)
+
+    /// The shape of the bug, in one test: a reading taken while the app was foregrounded
+    /// and offline, judged later against a clock that has passed the grace period. Read on
+    /// its own — which is what the first version of this fix did — it says "report". It
+    /// must not, because by then the app is in the background.
+    func testAReadingIsRefusedWhenTheAppHasSinceBackgrounded() {
+        let observed = DownloadStallConditions(foregroundSince: at(0), offlineSince: at(0))
+        let current = DownloadStallConditions(foregroundSince: nil, offlineSince: at(0))
+
+        // What deciding from the reading alone would have answered.
+        XCTAssertTrue(DownloadStallPolicy.hasStalled(
+            now: at(20),
+            lastProgressAt: at(0),
+            foregroundSince: observed.foregroundSince,
+            offlineSince: observed.offlineSince,
+            grace: grace
+        ))
+        // What the decision answers.
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(0),
+            observed: observed,
+            current: current,
+            grace: grace
+        ))
+    }
+
+    /// The same, for the clause that costs the most: the network came back between the
+    /// reading and the decision. Cancelling here would show an error to a user whose
+    /// connection is working — and this is the likeliest case of the two, because every
+    /// parked task resumes at once and floods the queue the decision is waiting on.
+    func testAReadingIsRefusedWhenTheNetworkHasSinceReturned() {
+        let observed = DownloadStallConditions(foregroundSince: at(0), offlineSince: at(0))
+        let current = DownloadStallConditions(foregroundSince: at(0), offlineSince: nil)
+
+        XCTAssertTrue(DownloadStallPolicy.hasStalled(
+            now: at(20),
+            lastProgressAt: at(0),
+            foregroundSince: observed.foregroundSince,
+            offlineSince: observed.offlineSince,
+            grace: grace
+        ))
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(0),
+            observed: observed,
+            current: current,
+            grace: grace
+        ))
+    }
+
+    /// An outage that ended and began again is a new outage, and gets a new grace period.
+    /// The onsets are what say so: same field, different instant.
+    func testAReadingIsRefusedWhenTheOutageStoppedAndStartedAgain() {
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(0),
+            observed: DownloadStallConditions(foregroundSince: at(0), offlineSince: at(0)),
+            current: DownloadStallConditions(foregroundSince: at(0), offlineSince: at(18)),
+            grace: grace
+        ))
+    }
+
+    /// Conditions that only started holding after the reading are refused as well: the
+    /// tick that carries them saw nothing. The next one, two seconds later, sees them.
+    func testAReadingThatSawNothingCannotReportOnLaterConditions() {
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(0),
+            observed: .unknown,
+            current: DownloadStallConditions(foregroundSince: at(0), offlineSince: at(0)),
+            grace: grace
+        ))
+    }
+
+    /// Nothing changed between the reading and the decision, and the grace period has run
+    /// out: this is the airplane-mode case, and it still reports.
+    func testAnUnchangedReadingStillReports() {
+        let conditions = DownloadStallConditions(foregroundSince: at(0), offlineSince: at(2))
+        XCTAssertTrue(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(0),
+            observed: conditions,
+            current: conditions,
+            grace: grace
+        ))
+    }
+
+    /// Unchanged, but the grace period has not run out yet. The revalidation must not
+    /// become a way around the clock.
+    func testAnUnchangedReadingStillWaitsForTheGracePeriod() {
+        let conditions = DownloadStallConditions(foregroundSince: at(0), offlineSince: at(2))
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(16),
+            lastProgressAt: at(0),
+            observed: conditions,
+            current: conditions,
+            grace: grace
+        ))
+    }
+
+    /// And a byte that landed while the tick was queued disarms it, whatever both
+    /// readings say about the route.
+    func testProgressWhileTheTickWasQueuedDisarmsIt() {
+        let conditions = DownloadStallConditions(foregroundSince: at(0), offlineSince: at(2))
+        XCTAssertFalse(DownloadStallPolicy.shouldReportStall(
+            now: at(20),
+            lastProgressAt: at(19),
+            observed: conditions,
+            current: conditions,
+            grace: grace
+        ))
+    }
 }

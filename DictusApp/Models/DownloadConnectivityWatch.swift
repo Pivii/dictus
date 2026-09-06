@@ -5,18 +5,6 @@ import Network
 import UIKit
 import DictusCore
 
-/// What the world outside the transfer looked like at one instant.
-///
-/// Both values are `nil` until something real has been observed. That is deliberate:
-/// "not read yet" must never look like "the user is watching" or "the network is gone",
-/// because either mistake is a false alarm on the very screen this exists to protect.
-struct DownloadConnectivitySnapshot: Sendable {
-    /// When the app last reached the foreground, or `nil` when it is backgrounded.
-    let foregroundSince: Date?
-    /// When the device last lost every network path, or `nil` when it has one.
-    let offlineSince: Date?
-}
-
 /// Watches the two conditions `DownloadStallPolicy` needs — is the user looking, and is
 /// there a route — and ticks a callback while a download is running.
 ///
@@ -32,6 +20,11 @@ struct DownloadConnectivitySnapshot: Sendable {
 /// `BackgroundModelDownloadService` starts this when a run begins and stops it when the
 /// last one ends.
 ///
+/// WHY THE TICK IS ONLY A QUESTION. A tick is raised here and acted on elsewhere, later,
+/// so what it carries is a reading of the past by the time anyone reads it. `conditions`
+/// is the present, readable from any thread, and it is what the decision is taken on —
+/// see `DownloadStallPolicy.conditionsHeldContinuously` for what goes wrong otherwise.
+///
 /// WHY `NWPathMonitor` IS RECREATED ON EVERY START. A cancelled monitor cannot be
 /// restarted, and the alternative — keeping one alive for the whole process — would run
 /// a system observer for the great majority of sessions that download nothing.
@@ -45,7 +38,7 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
     static let tickInterval: TimeInterval = 2
 
     private let interval: TimeInterval
-    private let onTick: @Sendable (DownloadConnectivitySnapshot) -> Void
+    private let onTick: @Sendable (DownloadStallConditions) -> Void
 
     /// Serialises every member below, and is the queue the monitor, the timer and the
     /// lifecycle handlers all report on. One thread of control, which is what makes
@@ -56,8 +49,12 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
-    private var foregroundSince: Date?
-    private var offlineSince: Date?
+    /// The two conditions as they stand. Written on `queue` like everything else, but read
+    /// from anywhere — which is the whole point of it, and why it is the one member that
+    /// needs a lock rather than a queue.
+    private var conditionsStorage = DownloadStallConditions.unknown
+    private let conditionsLock = NSLock()
+
     /// Whether a lifecycle notification has been handled yet. The initial reading of
     /// `UIApplication.applicationState` needs a hop to the main thread, and a transition
     /// can land first; when it has, the reading is stale before it arrives and is dropped.
@@ -65,10 +62,28 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
 
     init(
         interval: TimeInterval = DownloadConnectivityWatch.tickInterval,
-        onTick: @escaping @Sendable (DownloadConnectivitySnapshot) -> Void
+        onTick: @escaping @Sendable (DownloadStallConditions) -> Void
     ) {
         self.interval = interval
         self.onTick = onTick
+    }
+
+    /// The conditions right now, for a caller about to act on a tick it was handed
+    /// earlier. Safe to call from any thread.
+    var conditions: DownloadStallConditions {
+        conditionsLock.lock()
+        defer { conditionsLock.unlock() }
+        return conditionsStorage
+    }
+
+    /// Applies a change to the conditions. Called on `queue`, which is what serialises
+    /// the read-modify-write; the lock is there for the readers on other threads.
+    private func updateConditions(
+        _ body: (DownloadStallConditions) -> DownloadStallConditions
+    ) {
+        conditionsLock.lock()
+        defer { conditionsLock.unlock() }
+        conditionsStorage = body(conditionsStorage)
     }
 
     deinit {
@@ -104,8 +119,7 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
                 NotificationCenter.default.removeObserver(observer)
             }
             lifecycleObservers.removeAll()
-            foregroundSince = nil
-            offlineSince = nil
+            updateConditions { _ in .unknown }
             hasObservedLifecycle = false
         }
     }
@@ -140,7 +154,12 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
             let isForegrounded = UIApplication.shared.applicationState != .background
             self?.queue.async { [weak self] in
                 guard let self, !hasObservedLifecycle else { return }
-                foregroundSince = isForegrounded ? Date() : nil
+                updateConditions {
+                    DownloadStallConditions(
+                        foregroundSince: isForegrounded ? Date() : nil,
+                        offlineSince: $0.offlineSince
+                    )
+                }
             }
         }
     }
@@ -148,12 +167,14 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
     private func setForegrounded(_ isForegrounded: Bool) {
         queue.async { [self] in
             hasObservedLifecycle = true
-            if isForegrounded {
+            updateConditions { conditions in
                 // Only the transition sets the onset — a duplicate notification must not
                 // push the deadline back and hand the user another 15 s of frozen bar.
-                if foregroundSince == nil { foregroundSince = Date() }
-            } else {
-                foregroundSince = nil
+                let onset = isForegrounded ? (conditions.foregroundSince ?? Date()) : nil
+                return DownloadStallConditions(
+                    foregroundSince: onset,
+                    offlineSince: conditions.offlineSince
+                )
             }
         }
     }
@@ -167,10 +188,12 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
             // be brought up, so the transfer is not necessarily dead and this is not the
             // moment to tell the user their connection is gone.
             let isOffline = path.status == .unsatisfied
-            if isOffline {
-                if offlineSince == nil { offlineSince = Date() }
-            } else {
-                offlineSince = nil
+            updateConditions { conditions in
+                let onset = isOffline ? (conditions.offlineSince ?? Date()) : nil
+                return DownloadStallConditions(
+                    foregroundSince: conditions.foregroundSince,
+                    offlineSince: onset
+                )
             }
         }
         monitor.start(queue: queue)
@@ -182,10 +205,7 @@ final class DownloadConnectivityWatch: @unchecked Sendable {
         timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(500))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            onTick(DownloadConnectivitySnapshot(
-                foregroundSince: foregroundSince,
-                offlineSince: offlineSince
-            ))
+            onTick(conditions)
         }
         timer.resume()
         self.timer = timer

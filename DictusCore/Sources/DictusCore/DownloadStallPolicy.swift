@@ -39,6 +39,26 @@ import Foundation
 /// screen, having never been given the grace period while they could see it. The rule is
 /// that all three must hold *continuously* for the whole grace period, and the maximum
 /// of the three onsets is where that window can first have started.
+/// The two conditions outside a transfer that `DownloadStallPolicy` reads, as one value.
+///
+/// Each field is the instant its condition started holding, and `nil` means it does not
+/// hold — or has not been observed yet, which must answer the same way: an unread network
+/// monitor may never look like an outage.
+public struct DownloadStallConditions: Sendable, Equatable {
+    /// When the app last reached the foreground, `nil` when it is backgrounded.
+    public let foregroundSince: Date?
+    /// When the device last lost every network path, `nil` when it has one.
+    public let offlineSince: Date?
+
+    public init(foregroundSince: Date?, offlineSince: Date?) {
+        self.foregroundSince = foregroundSince
+        self.offlineSince = offlineSince
+    }
+
+    /// Nothing observed yet — the state a watcher starts in and returns to when it stops.
+    public static let unknown = DownloadStallConditions(foregroundSince: nil, offlineSince: nil)
+}
+
 public enum DownloadStallPolicy {
 
     /// Seconds all three clauses must hold before a parked transfer is reported.
@@ -94,5 +114,63 @@ public enum DownloadStallPolicy {
             return false
         }
         return now >= deadline
+    }
+
+    /// Whether the two conditions a watcher reported are still the ones holding now.
+    ///
+    /// WHY THIS EXISTS. A watcher reads the conditions on its own queue and whatever acts
+    /// on that reading runs somewhere else, later — so the decision is always taken on a
+    /// reading of the past. That gap is not theoretical here: the queue the decision runs
+    /// on is the download session's delegate queue, and the moment the network comes back
+    /// is exactly the moment it fills up, because every parked task resumes at once and
+    /// starts delivering bytes. A reading taken while the device was offline can therefore
+    /// arrive for judgement after the device is online again, and be judged against a
+    /// clock that has meanwhile passed the grace period. Acting on it would cancel a
+    /// download that is, at that instant, working — the false alarm issue #449 removed,
+    /// reached through another door.
+    ///
+    /// WHY IDENTITY OF THE ONSETS AND NOT A TIME COMPARISON. Both fields are the instant
+    /// a condition started holding, written once per transition and never edited. So the
+    /// same value in both readings means the condition was never interrupted between
+    /// them, and a different one means it stopped and started again — which restarts the
+    /// grace period, whatever the two instants happen to be. `nil` in `current` means it
+    /// simply stopped. All three are refused.
+    ///
+    /// Conditions that started holding only *after* the reading are refused too: `current`
+    /// then carries an onset `observed` never had. Nothing is lost by that — the next tick
+    /// reports them, two seconds later, on a reading of their own.
+    public static func conditionsHeldContinuously(
+        observed: DownloadStallConditions,
+        current: DownloadStallConditions
+    ) -> Bool {
+        observed.foregroundSince != nil
+            && observed.offlineSince != nil
+            && observed == current
+    }
+
+    /// The whole decision one watcher tick makes: whether a transfer that has stopped
+    /// moving should be reported to the user.
+    ///
+    /// The only entry point a caller acting on a tick should use. `observed` is what the
+    /// watcher read when it raised the tick; `current` is what it says at the moment the
+    /// decision is being taken, which is the one that governs — a reading of the past may
+    /// raise the question but never answers it.
+    public static func shouldReportStall(
+        now: Date,
+        lastProgressAt: Date,
+        observed: DownloadStallConditions,
+        current: DownloadStallConditions,
+        grace: TimeInterval = offlineGrace
+    ) -> Bool {
+        guard conditionsHeldContinuously(observed: observed, current: current) else {
+            return false
+        }
+        return hasStalled(
+            now: now,
+            lastProgressAt: lastProgressAt,
+            foregroundSince: current.foregroundSince,
+            offlineSince: current.offlineSince,
+            grace: grace
+        )
     }
 }

@@ -127,10 +127,10 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
     /// only thing that can notice a transfer iOS has parked (issue #492): a background
     /// session that loses connectivity delivers no callback at all, so the state machine
     /// below is never told and never fails. Runs only while there is a run to watch.
-    private lazy var connectivity = DownloadConnectivityWatch { [weak self] snapshot in
+    private lazy var connectivity = DownloadConnectivityWatch { [weak self] observed in
         guard let self else { return }
         self.queue.addOperation { [weak self] in
-            self?.reportOfflineStalls(snapshot)
+            self?.reportOfflineStalls(observed: observed)
         }
     }
 
@@ -533,14 +533,25 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
     /// WHY ONLY RUNS WITH A CONTINUATION. A run nobody is awaiting is one `restore()`
     /// rebuilt and no screen has claimed yet. There is nowhere to deliver an error, and
     /// a stall the user cannot see is a stall not worth reporting.
-    private func reportOfflineStalls(_ snapshot: DownloadConnectivitySnapshot, now: Date = Date()) {
+    ///
+    /// WHY THE READING IS RE-ASKED HERE. `observed` was taken on the watcher's queue and
+    /// this runs on the session's delegate queue, behind whatever that queue was already
+    /// doing — a 32 MB append, a burst of `didWriteData`. The gap matters because the
+    /// moment connectivity returns is exactly the moment this queue fills up: every parked
+    /// task resumes at once. A reading taken while the device was offline can therefore
+    /// arrive here after it is online again, and `now` — sampled when this runs, not when
+    /// the tick was raised — can meanwhile have passed the grace period. Judged on its own
+    /// it would cancel a download that is working. `conditions` is asked again, one line
+    /// before the decision, and it governs.
+    private func reportOfflineStalls(observed: DownloadStallConditions, now: Date = Date()) {
+        let current = connectivity.conditions
         // A copy: `finish` mutates `runs`.
         for run in Array(runs.values) where !run.isFinished && !run.continuations.isEmpty {
-            guard DownloadStallPolicy.hasStalled(
+            guard DownloadStallPolicy.shouldReportStall(
                 now: now,
                 lastProgressAt: run.lastProgressDate,
-                foregroundSince: snapshot.foregroundSince,
-                offlineSince: snapshot.offlineSince,
+                observed: observed,
+                current: current,
                 grace: Self.offlineStallGrace
             ) else { continue }
 
