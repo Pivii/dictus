@@ -21,7 +21,8 @@ public enum AudioInputFormatFailure: String, Equatable, Sendable {
 
 /// What a caller should do with the format its audio input node just reported.
 public enum AudioInputFormatDecision: Equatable, Sendable {
-    /// The format is usable. Build the converter and install the tap on it.
+    /// The format is usable. Install the tap on that node — since #417 the tap takes the
+    /// bus's own format rather than this one, which is kept as the converter's first guess.
     case proceed
     /// The format is dead. Throw the whole engine away, build a new one, and read the
     /// format again from the new node. Returned at most once per start attempt — see
