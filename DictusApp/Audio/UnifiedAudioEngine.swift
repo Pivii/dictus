@@ -24,11 +24,11 @@ enum AudioEngineError: Error, DiagnosableError {
     case permissionDenied
     case permissionUndetermined
 
-    /// A call holds the microphone. The payload names which of the two signals said so —
-    /// a telephony input route, or a bluetooth headset route during an interruption
-    /// (#459). Diagnostic only: a log that says nothing but "a call" cannot tell a
-    /// handset call from an AirPods one, and those are two different fixes if this
-    /// detection is ever wrong again.
+    /// A call holds the microphone, as CallKit reports it (#483). The payload names which
+    /// state said so — a connected call, or one still ringing or connecting. Diagnostic
+    /// only: a log that says nothing but "a call" cannot tell a refusal during a
+    /// conversation from a refusal while the phone was merely ringing, and those are two
+    /// different conversations if this detection is ever wrong again.
     case phoneCallActive(evidence: String)
 
     /// The input node reported a format nothing can be recorded from, and it reported
@@ -184,6 +184,15 @@ class UnifiedAudioEngine: ObservableObject {
     /// (Live Activity, transitionToRecording guard) need a fast in-process flag to
     /// know the audio layer is degraded (issue #106).
     private var isInterrupted = false
+
+    /// CallKit's view of the system's calls, retained for the life of the engine (#483).
+    ///
+    /// WHY it is built here and not at the guard that reads it: `CXCallObserver` has to be
+    /// retained, and its `calls` array is not guaranteed populated the instant after
+    /// `init()`. An observer created at start-attempt time would answer "no call" during a
+    /// real call, intermittently. `UnifiedAudioEngine` is created once at app launch and
+    /// lives as long as the process, so the connection is up long before anyone asks.
+    private let callObserver = SystemCallObserver()
 
     /// Re-entry guard for the interruption handler. Prevents a second `.began` /
     /// `.ended` arriving while we're still mutating engine state from a previous
@@ -1121,39 +1130,38 @@ class UnifiedAudioEngine: ObservableObject {
 
     /// Refuse the start when a call holds the microphone, and say that it is a call.
     ///
-    /// ### What was wrong (issue #459)
+    /// ### What was wrong (issues #459, #483)
     ///
-    /// The guard used to be one `contains("telephony")` on the input ports. **A call
-    /// carried over AirPods or any bluetooth headset does not present as `telephony`.
-    /// It presents as `BluetoothHFP`** — so for most people, on the majority of their
-    /// calls, the guard never fired. Until #457 that miss was hidden: a zero-channel
-    /// format threw `phoneCallActive` too, so the AirPods case reached the user with
-    /// the right message for the wrong reason. #457 corrected the mislabel, which left
-    /// this case telling the user the microphone is unavailable without saying that a
-    /// call is holding it — the one situation the user can actually act on.
+    /// This guard asked the audio session, and the audio session cannot answer. The
+    /// predicate it started with — one `contains("telephony")` on the input ports — never
+    /// fired at all: a native call on the iPhone's own earpiece routes through
+    /// `MicrophoneBuiltIn`. #476 widened it to catch a call on a bluetooth headset
+    /// (`BluetoothHFP` + an interruption + the built-in mic available, measured 4/4), which
+    /// is real and cannot reach the earpiece case. And nothing at that layer can: **Siri
+    /// produces exactly the same three signals as a call**, and
+    /// `AVAudioSession.InterruptionReason` exposes neither `.phoneCall` nor `.siri`.
     ///
-    /// ### WHY only the inputs, and not `builtInReceiver` on the outputs
+    /// `CXCallObserver` answers the question directly, so the heuristic was deleted rather
+    /// than kept as a fallback — CallKit says "no call" while Siri listens, so a fallback
+    /// underneath it would fire on Siri every time (#483, Decision 1).
     ///
-    /// Unchanged from the original guard: without `.defaultToSpeaker`, iOS routes
-    /// output to `builtInReceiver` by default. That is normal operation, not a call.
+    /// ### What is unchanged
     ///
-    /// The rule itself is `CallRoutePolicy` in DictusCore, because this method cannot
-    /// be tested — `@MainActor`, a live `AVAudioEngine`, and a simulator that has
-    /// neither a telephony route nor bluetooth audio. Since #123 this is the only site
-    /// in the file that produces the phone-call message.
+    /// The position: this still runs **before** `resolveUsableInputFormat`, because a call
+    /// takes the input hardware away, so the format guard would otherwise throw
+    /// `audioHardwareUnavailable` first and this would never be evaluated (#459). And the
+    /// route state is still written into the log line — it is no longer the evidence, but it
+    /// is the context that made three of these captures readable.
+    ///
+    /// The rule itself is `ActiveCallPolicy` in DictusCore, because this method cannot be
+    /// tested — `@MainActor`, a live `AVAudioEngine`, and a simulator with no telephony at
+    /// all. Since #123 this is the only site in the file that produces the phone-call message.
     private func refuseIfACallHoldsTheMicrophone() throws {
-        let session = AVAudioSession.sharedInstance()
-        let decision = CallRoutePolicy.decide(
-            inputPortTypes: session.currentRoute.inputs.map { $0.portType.rawValue },
-            isInterrupted: isInterrupted,
-            builtInMicrophoneIsAvailable: (session.availableInputs ?? [])
-                .contains { $0.portType == .builtInMic }
-        )
-
-        guard case .callHoldsMicrophone(let evidence) = decision else { return }
+        guard case .callHoldsMicrophone(let evidence) = callObserver.decide() else { return }
 
         PersistentLog.log(.dictationFailed(
-            error: "a call holds the microphone: \(evidence.rawValue) — \(routeStateDescription())"
+            error: "a call holds the microphone: \(evidence.rawValue)"
+                + " — \(callObserver.snapshot()) \(routeStateDescription())"
         ))
         throw AudioEngineError.phoneCallActive(evidence: Self.evidenceSentence(for: evidence))
     }
@@ -1163,12 +1171,12 @@ class UnifiedAudioEngine: ObservableObject {
     /// Diagnostic only — never shown to anyone. It exists because the two signals are
     /// indistinguishable in a log that only says "a call", and the reader of that log
     /// is an agent (#255).
-    private static func evidenceSentence(for evidence: CallRouteEvidence) -> String {
+    private static func evidenceSentence(for evidence: ActiveCallEvidence) -> String {
         switch evidence {
-        case .telephonyInputRoute:
-            return "a telephony input route is active"
-        case .headsetRouteDuringInterruption:
-            return "a bluetooth headset is the input route while the session is interrupted"
+        case .connectedCall:
+            return "CallKit reports a connected call"
+        case .pendingCall:
+            return "CallKit reports a call that is ringing or connecting"
         }
     }
 
