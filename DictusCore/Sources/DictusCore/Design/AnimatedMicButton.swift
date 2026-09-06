@@ -41,15 +41,38 @@ public struct AnimatedMicButton: View {
     /// recording on every screen of this product.
     public let badge: SmartModeBadge?
 
+    /// Whether the resting glow breathes, or simply sits at a fixed opacity.
+    ///
+    /// `true` — the default, and the app's behaviour — is the 2 s `repeatForever`
+    /// this button was written for: the recording screen is large, it is the thing
+    /// the user is looking at, and the breathing is what says the mic is live.
+    ///
+    /// `false` exists for the keyboard extension (#510). The glow's `repeatForever`
+    /// is the *only* reason the keyboard never stops compositing: measured on an
+    /// iPhone 17 Pro simulator, idle with nothing being touched, Dictus redrew at
+    /// 66 fps with no gap longer than 35 ms, against 18.8 fps and half-second gaps
+    /// for Apple's keyboard in the same field. Disabling this one line dropped it to
+    /// 10.5 fps, twice in a row, with nothing else changed. The maintainer's call is
+    /// that a 56×36 pill is too small for the effect to be perceptible anyway, so a
+    /// keyboard extension under a ~50 MB ceiling should not hold a compositing loop
+    /// open for its whole lifetime to draw it.
+    ///
+    /// It gates the idle glow only. `startRecordingAnimation` and
+    /// `startTranscribingAnimation` are untouched in both modes: those run during a
+    /// dictation, where the motion carries state the user needs.
+    public let animatesIdleGlow: Bool
+
     public let onTap: () -> Void
 
     public init(status: DictationStatus,
                 isPill: Bool = false,
                 badge: SmartModeBadge? = nil,
+                animatesIdleGlow: Bool = true,
                 onTap: @escaping () -> Void) {
         self.status = status
         self.isPill = isPill
         self.badge = badge
+        self.animatesIdleGlow = animatesIdleGlow
         self.onTap = onTap
     }
 
@@ -315,6 +338,17 @@ public struct AnimatedMicButton: View {
 
     private func startIdleAnimation() {
         pulseScale = 1.0
+
+        guard animatesIdleGlow else {
+            // 0.45 is the midpoint of the 0.3-0.6 range the animation sweeps, so the
+            // static ring reads as the average of what was breathing there rather than
+            // as either extreme -- neither a glow that looks extinguished nor one stuck
+            // at its peak. Assigned outside `withAnimation` on purpose: the whole point
+            // is that Core Animation is left with nothing live to composite (#510).
+            glowOpacity = 0.45
+            return
+        }
+
         withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
             glowOpacity = 0.6
         }

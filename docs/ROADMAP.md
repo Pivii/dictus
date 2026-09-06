@@ -6,7 +6,7 @@ The ordered queue. One list, one order, and the first unfinished item is what ha
 
 **How to use it.** Start a session by reading this file and taking the first unfinished item of the active lane. Do not re-derive the order from the tracker: the tracker sorts by how well an issue is written, not by how much it matters. When an item ships, tick it here. Revise the lanes at a version cut, not more often.
 
-Last reviewed: 2026-09-05.
+Last reviewed: 2026-09-06.
 
 ## The three lanes, in order
 
@@ -33,7 +33,7 @@ Ordered by what a shipped user actually loses.
 3. **#492** — a download that loses the network stalls forever, with no error and no Retry.
 4. **#370** — WhisperKit is initialised with no `ModelComputeOptions`, so A12/A13 devices compile the wrong way.
 5. **#293** — Dictus silences keyboard haptics device-wide for ten minutes after every dictation.
-6. **#483 + #459** — a phone call is not detected. Same subsystem, one piece of work, and #459 (AirPods) is the case the route predicate misses.
+6. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. Briefed and `ready-for-agent` on 2026-09-05; #459 closes by hand when it merges.
 7. **#319** — Whisper medium returned `*voix off*` for 23.6 s of speech.
 8. **#438** — the Parakeet download tripwire accepts an empty `.mlmodelc` as complete.
 

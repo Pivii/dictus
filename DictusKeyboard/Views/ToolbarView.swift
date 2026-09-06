@@ -324,6 +324,7 @@ struct ToolbarView: View {
             status: dictationStatus,
             isPill: true,
             badge: effectiveSmartMode?.badge,
+            animatesIdleGlow: false,
             onTap: {
                 guard !fanGestureDidOpen else {
                     fanGestureDidOpen = false
@@ -529,9 +530,14 @@ struct ToolbarView: View {
     /// effect — the group is not sliding, it is *reaching* — and it is why this is
     /// two amplitudes on one animation rather than one `offset` on the `HStack`.
     ///
-    /// It repeats forever in a keyboard extension, which is the cost. It is the cost
-    /// the idle mic glow already pays in the same view, and this one stops existing
-    /// the moment the user performs the gesture once.
+    /// It repeats forever in a keyboard extension, which is the cost — and since #510
+    /// it is the only thing in this bar still paying it: the mic's idle glow used to
+    /// repeat here too and no longer does, so whenever this hint is on screen it holds
+    /// the compositing loop open by itself. What keeps it affordable is that it stops
+    /// existing the moment the user performs the gesture once.
+    ///
+    /// The curve is still described above as the mic's own. That is now a statement
+    /// about the app's recording screen, which is where the breathing survives.
     private var discoveryHint: some View {
         HStack(spacing: 6) {
             Text(
@@ -603,7 +609,7 @@ struct ToolbarView: View {
             HStack {
                 Spacer()
 
-                AnimatedMicButton(status: .idle, isPill: true, onTap: {})
+                AnimatedMicButton(status: .idle, isPill: true, animatesIdleGlow: false, onTap: {})
                     .disabled(true)
                     .opacity(0.4)
             }
