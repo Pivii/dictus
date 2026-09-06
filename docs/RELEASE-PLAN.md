@@ -4,21 +4,20 @@ What ships next, and why. Complements [VERSIONING.md](VERSIONING.md), which says
 
 **Scope.** One page. It holds decisions that no issue owns and that the code cannot show. It does not list work in order — that is [ROADMAP.md](ROADMAP.md), which holds the ordered queue and points back here for the reasoning. When a decision here is superseded, edit the line rather than appending, so the file never becomes a log. Git history keeps the record.
 
-Last reviewed: 2026-09-05.
+Last reviewed: 2026-09-06.
 
 ## Where things stand
 
 | | |
 | --- | --- |
-| App Store | **1.8.0 (build 27)**, live since 2026-08-28 |
-| Awaiting review | **1.8.1 (build 29)**, submitted 2026-09-04, release type MANUAL |
-| Next cycle | **1.8.2**, a PATCH: the bug backlog |
+| App Store | **1.8.1 (build 29)**, released 2026-09-06, phased rollout day 1 of 7 |
+| Next cycle | **1.8.2**, a PATCH: the bug backlog. Its App Store version record already exists, staged with corrected copy |
 | Then | **2.0.0**, the Dictus Pro launch |
 | `PremiumFlags.paywallVisible` | `false` |
 
 Build 28 was cut and archived, then abandoned: it still advertised Dictus Pro in the keyboard (#460). 1.8.1 shipped as build 29. Build numbers never repeat, so 28 is simply spent.
 
-`MANUAL` release means Apple does not publish 1.8.1 on approval. Release it with `asc versions release --version-id 9b6f088c-3053-4065-8a0b-047882850b63 --confirm`.
+1.8.1 went out with a **phased rollout**, which 1.8.0 did not have. The reason generalises: 1.8.1 changes model preparation, the one subsystem that can lock a user out of the whole app (#428), and phasing buys a pause button for exactly that. It costs nobody the fix, because it governs only *automatic* updates — a manual update from the product page lands immediately. Pause with `asc versions phased-release update --version-id <id> --state PAUSE`; finish early with `--state COMPLETE`.
 
 ## The two surfaces are not the same audience
 
@@ -50,7 +49,11 @@ It stays a PATCH because everything user-visible in it is a fix. Smart Modes and
 
 The release 1.8.1 deliberately does not carry. It exists because the open-bug count is high enough that holding those fixes until 2.0.0 would mean shipping the Pro launch on top of a year of unfixed reports.
 
-**Its contents are a closed list of nine, ordered in [ROADMAP.md](ROADMAP.md) Lane A**, plus **#488**, the App Store description's claim of four dictation languages. Description and keywords are version-scoped fields, editable only while a version is in an editable state, so a copy correction can never ship on its own — it rides the next submission or it waits another cycle. This one already waited one.
+**Its contents are a closed list of nine, ordered in [ROADMAP.md](ROADMAP.md) Lane A**, plus **#488**, the App Store description's claim of four dictation languages — already corrected and staged on the 1.8.2 version record, so it needs no work at cut time.
+
+The rule #488 produced is the part to keep. Description and keywords are version-scoped fields, and a *released* version rejects an edit to them: the API answers `Attribute 'description' cannot be edited at this time`. That is a lock, not a convention. **App Store copy therefore has no release schedule of its own** — it ships with a submission that exists for another reason, or it waits. 1.8.1 shipped a sentence known to be wrong because the mistake was spotted after `review submit`. Read the product page before submitting, not after.
+
+Staged copy also goes stale silently, because nothing re-reads it. The language numbers now in the description (Parakeet v3: 25 European languages; Whisper: ≈99, in published quality tiers) were true on 2026-09-06. Re-check them against `ModelLanguageSupport.swift` at cut time.
 
 The list being closed is the rule, not a preference: a fix that becomes ready mid-cycle joins 2.1, not this one. That is what kept 1.8.1 a one-fix release, and it is the only thing that stops a bug cycle from becoming a second campaign.
 
