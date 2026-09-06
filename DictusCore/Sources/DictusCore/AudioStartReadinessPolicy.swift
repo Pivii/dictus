@@ -75,7 +75,30 @@ public enum AudioStartReadinessPolicy {
     ///
     /// One second, because that is the observed upper bound: in all three captured
     /// failures the route returned within the same log second as the activation that asked
-    /// for it. A start that waits longer than this is not waiting for the same phenomenon.
+    /// for it.
+    ///
+    /// ### This number does not carry the fix, and the device says so
+    ///
+    /// Device validation of `rev e955db1@HEAD`, 2026-09-06: six dictations, six
+    /// successes, no `Zombie engine` line anywhere. One of the five post-interruption
+    /// starts logged
+    ///
+    /// ```
+    /// engineRebuiltAfterEmptyRoute waitedMs=1163 budgetMs=1000 route=none
+    /// ```
+    ///
+    /// — the wait ran out, **the route had still not come back, and the dictation worked
+    /// anyway**. So what repairs this is the `replaceEngine()` that follows, not the
+    /// waiting. Raising this constant would buy nothing and would only make a user wait
+    /// longer for a start that is going to succeed regardless.
+    ///
+    /// (`waitedMs` is wall-clock and the loop counts `10` per `usleep(10_000)`, so it
+    /// overshoots the budget by the syscall overhead of a hundred iterations. That is why
+    /// 1163 is not a contradiction of a 1000 ms bound.)
+    ///
+    /// Also measured in the same session: one interruption never delivered an
+    /// `audioInterruptionEnded` at all, and the fix still held — which is the argument for
+    /// keying this on the route rather than on the interruption, made by the device.
     public static let inputRouteWaitMilliseconds = 1000
 
     /// - Parameters:
