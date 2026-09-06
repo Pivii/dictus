@@ -713,6 +713,24 @@ class UnifiedAudioEngine: ObservableObject {
     /// Begin recording: purge idle audio and start accumulating samples.
     /// If the engine isn't running yet, starts it first (<100ms).
     func startRecording() throws {
+        // WHY the call guard runs here as well as in `startEngine` (#483, CodeRabbit on
+        // PR #513): a warm engine skips `startEngine()` entirely — the line thirty below
+        // says so in its own words, written for #293 — and `startEngine` is the only other
+        // caller of this guard. So with the engine already running, a dictation started
+        // while a call held the microphone would set `isRecording`, log `audioEngineStarted`
+        // and capture nothing, without ever asking CallKit.
+        //
+        // The window is real rather than theoretical: `isInterrupted`'s own documentation
+        // records that "the engine may still report `isRunning` momentarily" after an
+        // interruption begins, which is exactly the interval between a call taking the
+        // hardware and our handler stopping the engine. The keyboard is covered by
+        // `KeyboardCallGuard`; the app's own mic button reaches here and nowhere else.
+        //
+        // WHY it is the very first statement: `cancelIdleRelease()` below drops the timer
+        // that bounds a warm engine (#256). Throwing after it would leave the engine warm
+        // with nothing armed to release it.
+        try refuseIfACallHoldsTheMicrophone()
+
         // Cancel any pending idle release — recording activity resets the timer.
         cancelIdleRelease()
 
