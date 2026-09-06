@@ -40,13 +40,25 @@ extension KeyboardState {
         let observer = SystemCallObserver()
         let footprintAfterKB = MemoryFootprint.residentKB()
 
+        // `residentKB()` returns -1 when the Mach task info read fails, and subtracting
+        // that would print a number like `-50001` or, worse, a plausible `0` — a reading
+        // that is not a measurement, in the one line the device test list asks a human to
+        // read. This repo has already spent a false alarm on a log that said something it
+        // did not mean (#455), so the failure is named rather than arithmetically hidden.
+        let deltaKB: String
+        if footprintBeforeKB >= 0 && footprintAfterKB >= 0 {
+            deltaKB = "\(footprintAfterKB - footprintBeforeKB)"
+        } else {
+            deltaKB = "unavailable"
+        }
+
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardState",
             instanceID: instanceID,
             action: "callObserverReady",
             details: "\(observer.snapshot())"
                 + " footprintKB=\(footprintBeforeKB)->\(footprintAfterKB)"
-                + " deltaKB=\(footprintAfterKB - footprintBeforeKB)"
+                + " deltaKB=\(deltaKB)"
         ))
         return observer
     }
