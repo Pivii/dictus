@@ -527,8 +527,18 @@ final class BackgroundModelDownloadService: NSObject, @unchecked Sendable {
     /// transport failures, and this is not one — `DownloadStallPolicy` has already
     /// established that the device has no route at all, so a retry two seconds later can
     /// only park a second time and spend the user's remaining attempts saying nothing.
-    /// Nothing is lost by stopping: every chunk that landed is on disk and in the
-    /// manifest, so the Retry the user now has resumes at the byte the transfer reached.
+    ///
+    /// WHAT STOPPING COSTS, exactly. Every chunk that LANDED is on disk and in the
+    /// manifest, so the Retry resumes at the last chunk boundary — not at the byte the
+    /// progress bar was showing. The chunks still in flight are cancelled with the run and
+    /// their bytes are gone: `didFinishDownloadingTo` fires on success alone, so a
+    /// cancelled task's partial file is one the system deletes and nothing here ever sees.
+    /// At 32 MB a chunk and two in flight that is up to 64 MB re-paid on the retry, and on
+    /// a file whose first chunk had not landed yet it legitimately reads as 0%. Measured
+    /// on device on 2026-09-06: a cut inside the first chunk of a 176 MB `weight.bin`
+    /// re-paid 49 MB. Cancelling is not what loses them — a chunk delivered to a run
+    /// `finish` has already removed from `runs` is dropped by the guard in
+    /// `didFinishDownloadingTo` anyway — but the choice to fail the run is.
     ///
     /// WHY ONLY RUNS WITH A CONTINUATION. A run nobody is awaiting is one `restore()`
     /// rebuilt and no screen has claimed yet. There is nowhere to deliver an error, and
