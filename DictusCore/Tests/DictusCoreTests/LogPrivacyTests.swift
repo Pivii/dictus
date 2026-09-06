@@ -53,6 +53,11 @@ final class LogPrivacyTests: XCTestCase {
                 reason: "sha256 mismatch"
             ),
             .modelDownloadSessionRestored(tasks: 0, models: 1),
+            .modelDownloadOffline(
+                name: "parakeet-tdt-0.6b-v3",
+                path: "Encoder.mlmodelc/weights/weight.bin",
+                secondsWithoutProgress: 15
+            ),
             .modelSelected(name: "base"),
             .modelCompilationStarted(name: "base"),
             .modelCompilationCompleted(name: "base", durationMs: 5000),

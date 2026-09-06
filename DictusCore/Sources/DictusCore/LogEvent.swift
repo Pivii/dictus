@@ -144,6 +144,16 @@ public enum LogEvent: Sendable {
     /// disk. `tasks=0 models=1` is the force-quit shape: iOS cancelled the transfers
     /// and the bytes on disk are what the retry starts from.
     case modelDownloadSessionRestored(tasks: Int, models: Int)
+    /// A transfer was parked by the system for want of a network path, while the user
+    /// was looking at it, and was reported to them rather than left silent (#492).
+    ///
+    /// This line is the one whose absence created the issue: a background session
+    /// waiting for connectivity delivers no callback at all, so three minutes of
+    /// airplane mode produced an empty log under a frozen progress bar. Its presence
+    /// says the download stopped because the device had no route — not because the
+    /// server was slow and not because the app was backgrounded, both of which the
+    /// predicate in `DownloadStallPolicy` excludes before this is emitted.
+    case modelDownloadOffline(name: String, path: String, secondsWithoutProgress: Int)
 
     // MARK: Keyboard
     case keyboardDidAppear
@@ -400,7 +410,8 @@ public enum LogEvent: Sendable {
              .modelDownloadProgress, .modelDownloadStalled, .modelDownloadSizeMismatch,
              .modelReconciledFromDisk,
              .modelDownloadResumed, .modelDownloadRangeRejected, .modelDownloadChunk,
-             .modelDownloadIntegrityFailed, .modelDownloadSessionRestored:
+             .modelDownloadIntegrityFailed, .modelDownloadSessionRestored,
+             .modelDownloadOffline:
             return .model
         case .keyboardDidAppear, .keyboardDidDisappear, .keyboardMicTapped, .keyboardTextInserted,
              .keyRepeatStarted, .keyRepeatStopped,
@@ -471,7 +482,8 @@ public enum LogEvent: Sendable {
              .coldStartDarwinFallback, .coldStartStranded, .modelPrewarmTimeout,
              .audioInterruptionBegan, .audioMediaServicesReset,
              .modelDownloadStalled, .audioHapticsAllowanceFailed,
-             .modelDownloadSizeMismatch, .modelDownloadRangeRejected:
+             .modelDownloadSizeMismatch, .modelDownloadRangeRejected,
+             .modelDownloadOffline:
             return .warning
 
         // Info (normal operations: starts, completes, selections, configs)
@@ -659,6 +671,7 @@ public enum LogEvent: Sendable {
         case .modelDownloadChunk: return "modelDownloadChunk"
         case .modelDownloadIntegrityFailed: return "modelDownloadIntegrityFailed"
         case .modelDownloadSessionRestored: return "modelDownloadSessionRestored"
+        case .modelDownloadOffline: return "modelDownloadOffline"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
         case .polishHandoff: return "polishHandoff"
@@ -769,6 +782,8 @@ public enum LogEvent: Sendable {
             return "name=\(name) path=\(path) reason=\(reason)"
         case .modelDownloadSessionRestored(let tasks, let models):
             return "tasks=\(tasks) models=\(models)"
+        case .modelDownloadOffline(let name, let path, let secondsWithoutProgress):
+            return "name=\(name) path=\(path) noProgress=\(secondsWithoutProgress)s"
 
         // Keyboard (no content parameters -- privacy)
         case .keyboardDidAppear, .keyboardDidDisappear,

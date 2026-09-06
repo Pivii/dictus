@@ -57,6 +57,7 @@
 		AA000050 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100050 /* ModelManager.swift */; };
 		AA000052 /* ModelRepoDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100052 /* ModelRepoDownloader.swift */; };
 		AA000449 /* BackgroundModelDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100449 /* BackgroundModelDownloadService.swift */; };
+		AA000492 /* DownloadConnectivityWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100492 /* DownloadConnectivityWatch.swift */; };
 		AA000051 /* ModelManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100051 /* ModelManagerView.swift */; };
 		AA000060 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100060 /* ToolbarView.swift */; };
 		AA00006L /* KeyboardPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10006L /* KeyboardPanelView.swift */; };
@@ -232,6 +233,7 @@
 		AA100050 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
 		AA100052 /* ModelRepoDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRepoDownloader.swift; sourceTree = "<group>"; };
 		AA100449 /* BackgroundModelDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloadService.swift; sourceTree = "<group>"; };
+		AA100492 /* DownloadConnectivityWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadConnectivityWatch.swift; sourceTree = "<group>"; };
 		AA100051 /* ModelManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManagerView.swift; sourceTree = "<group>"; };
 		AA100060 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
 		AA10006L /* KeyboardPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardPanelView.swift; sourceTree = "<group>"; };
@@ -588,6 +590,7 @@
 				AA100050 /* ModelManager.swift */,
 				AA100052 /* ModelRepoDownloader.swift */,
 				AA100449 /* BackgroundModelDownloadService.swift */,
+				AA100492 /* DownloadConnectivityWatch.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1013,6 +1016,7 @@
 				AA000050 /* ModelManager.swift in Sources */,
 				AA000052 /* ModelRepoDownloader.swift in Sources */,
 				AA000449 /* BackgroundModelDownloadService.swift in Sources */,
+				AA000492 /* DownloadConnectivityWatch.swift in Sources */,
 				AA000051 /* ModelManagerView.swift in Sources */,
 				AA000071 /* TestDictationView.swift in Sources */,
 				AA000090 /* MainTabView.swift in Sources */,
