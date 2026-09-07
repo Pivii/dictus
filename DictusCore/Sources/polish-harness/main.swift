@@ -131,7 +131,7 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "t
     --mode-a / --mode-b arm one side each; a side with no mode is the free polish,
     so `ab --mode-b notes` is the mode against free polish.
 
-    guardrail (#413, #414, #466) scores the three output-inspection checks against
+    guardrail (#413, #414, #466) scores the four output-inspection checks against
     committed, hand-labelled outputs. It drives NO model and needs no Apple
     Intelligence, so the measurement behind their thresholds is re-runnable by
     anyone. Corpora live in docs/research/413-414-guardrail/.
@@ -575,6 +575,8 @@ func runGuardrail() {
     if args.contains("--segments") { GuardrailCorpus.segmentTable(cases) }
     if args.contains("--sweep") {
         GuardrailCorpus.sweep(cases)
+        GuardrailCorpus.sweepOverlap(cases)
+        GuardrailCorpus.overlapTable(cases)
         GuardrailCorpus.sweepPrefix(cases)
     }
     if args.contains("--anchors") { GuardrailCorpus.anchorTable(cases) }
@@ -588,6 +590,16 @@ func runGuardrail() {
     let grounding = GuardrailCorpus.scoreGrounding(cases)
     print("\n── #414 grounding check (translation and repair skipped: the check is unsound there)")
     GuardrailCorpus.report(grounding)
+
+    // The two checks that share the `requiresGroundedNames` gate, apart and together.
+    // The union is the verdict the pipeline actually reaches, and it is not
+    // recoverable from the two columns: each catches a fabrication the other misses.
+    let overlapThresholds = PolishSegmentOverlapThresholds.default
+    print("\n── #414 worst-segment overlap, shipping thresholds "
+          + "(floor=\(overlapThresholds.floor), minContentWords=\(overlapThresholds.minimumContentWords))")
+    GuardrailCorpus.report(GuardrailCorpus.scoreOverlap(cases, thresholds: overlapThresholds))
+    print("\n── #414 anchors OR overlap — what the pipeline refuses")
+    GuardrailCorpus.report(GuardrailCorpus.scoreGroundingUnion(cases, thresholds: overlapThresholds))
 
     // Split rather than totalled (#466). Repair's output legitimately shares no
     // vocabulary with its input — it reconstructs intent in another language — so

@@ -76,6 +76,18 @@ struct GuardrailCase: Codable {
         return String(task.dropFirst("polish.".count))
     }
 
+    /// Whether a rejection of this output would cost a user something they said, and
+    /// so counts against a check. See `GuardrailCorpus.score(_:accepts:)` for the
+    /// rule and the argument behind it (#414, decided 2026-09-07).
+    var countsAsFalseRejection: Bool {
+        !mustBeRejectedForLanguage && !(prefixApplies && mustBeRejectedForPrefix)
+    }
+
+    /// Which shipped check already refuses this output, for the `not counted` line.
+    var refusedUpstreamBy: String {
+        mustBeRejectedForLanguage ? "language (\(language))" : "prefix alignment (\(prefix ?? "aligned"))"
+    }
+
     var mustBeRejectedForLanguage: Bool { language != "sameLanguage" }
     var mustBeRejectedForGrounding: Bool { grounding == "fabricated" }
     var mustBeRejectedForPrefix: Bool { (prefix ?? "aligned") != "aligned" }
@@ -104,6 +116,9 @@ enum GuardrailCorpus {
         var caught = 0, missed = 0, correctlyAccepted = 0, falselyRejected = 0
         var falseRejections: [String] = []
         var misses: [String] = []
+        /// Rejections the counting rule on `score(_:accepts:)` does not charge to the
+        /// check, listed so the rule is auditable rather than invisible.
+        var notCountedRejections: [String] = []
 
         var line: String {
             String(format: "caught %d/%d   false rejections %d/%d",
@@ -133,22 +148,17 @@ enum GuardrailCorpus {
     /// Score the grounding check (#414). Cases whose task the check is unsound for
     /// are skipped, which is what the pipeline does with them.
     static func scoreGrounding(_ cases: [GuardrailCase]) -> Score {
-        var score = Score()
-        for item in cases where item.groundingApplies {
-            let ungrounded = PolishGrounding.ungroundedAnchors(
-                in: item.output, input: item.preprocessed, languageCode: item.expectedLang
-            )
-            let label = "\(item.source):\(item.fixture)#\(item.run)"
-            switch (item.mustBeRejectedForGrounding, ungrounded.isEmpty) {
-            case (true, false): score.caught += 1
-            case (true, true): score.missed += 1; score.misses.append(label)
-            case (false, false):
-                score.falselyRejected += 1
-                score.falseRejections.append("\(label) — \(ungrounded.map(\.text).joined(separator: ", "))")
-            case (false, true): score.correctlyAccepted += 1
-            }
+        score(cases) { item in
+            ungroundedAnchors(item).isEmpty
+        } detail: { item in
+            ungroundedAnchors(item).map(\.text).joined(separator: ", ")
         }
-        return score
+    }
+
+    private static func ungroundedAnchors(_ item: GuardrailCase) -> [PolishAnchor] {
+        PolishGrounding.ungroundedAnchors(
+            in: item.output, input: item.preprocessed, languageCode: item.expectedLang
+        )
     }
 
     /// Score the prefix-alignment check at one threshold set (#466).
@@ -192,6 +202,150 @@ enum GuardrailCorpus {
         }
     }
 
+    /// Score the worst-segment overlap check at one threshold pair (#414).
+    ///
+    /// Skips the tasks the check does not run on, exactly as `scoreGrounding` does —
+    /// it shares that check's contract gate.
+    static func scoreOverlap(_ cases: [GuardrailCase],
+                             thresholds: PolishSegmentOverlapThresholds) -> Score {
+        score(cases) { item in
+            PolishGrounding.acceptsSegmentOverlap(
+                polished: item.output, raw: item.preprocessed, thresholds: thresholds
+            )
+        }
+    }
+
+    /// Score the two checks that share the `requiresGroundedNames` gate as the one
+    /// verdict the pipeline actually reaches: an output is refused when EITHER
+    /// refuses it (#414).
+    ///
+    /// This is the number that decides whether the pair ships, and it is not
+    /// recoverable from the two individually: each catches a fabrication the other
+    /// misses, so their union is strictly better than either column.
+    static func scoreGroundingUnion(_ cases: [GuardrailCase],
+                                    thresholds: PolishSegmentOverlapThresholds) -> Score {
+        score(cases) { item in
+            PolishGrounding.ungroundedAnchors(
+                in: item.output, input: item.preprocessed, languageCode: item.expectedLang
+            ).isEmpty
+            && PolishGrounding.acceptsSegmentOverlap(
+                polished: item.output, raw: item.preprocessed, thresholds: thresholds
+            )
+        }
+    }
+
+    /// The shared tally behind the two scorers above, given "does this check accept
+    /// the output".
+    ///
+    /// ### The counting rule (#414, decided 2026-09-07)
+    ///
+    /// A rejection is only counted against a check when it is a rejection the **user
+    /// would otherwise have seen**. An output another shipped check already refuses
+    /// never reaches a document, so refusing it again is a second lock on a door the
+    /// first lock closed, and counting it as a cost inflates the measured price of
+    /// the check.
+    ///
+    /// Two populations are excluded, and both are named rather than dropped silently
+    /// — `report` prints them under `not counted`:
+    ///
+    /// - **`language != sameLanguage`** — the decision as Pierre wrote it in #414:
+    ///   the corpus's bilingual and wrong-language outputs are refused upstream by
+    ///   `detectedLanguageMatches`.
+    /// - **`prefix != aligned`, where the prefix check runs** — the same argument,
+    ///   applied to the check #466 shipped after that sentence was written. It
+    ///   reaches exactly the two #466 device captures of an Apple FM preamble, whose
+    ///   corpus notes ask the *older three* checks to keep accepting them. Overlap
+    ///   refuses both, and `requiresAlignedPrefix` is true on the contract they were
+    ///   captured under, so neither would have reached a user either way.
+    ///
+    /// Stated here rather than in the issue alone because a counting rule that lives
+    /// only in prose gets re-litigated; this one is executable and it is pinned by
+    /// `PolishGuardrailCorpusReplayTests`.
+    private static func score(_ cases: [GuardrailCase],
+                              accepts: (GuardrailCase) -> Bool,
+                              detail: ((GuardrailCase) -> String)? = nil) -> Score {
+        var score = Score()
+        for item in cases where item.groundingApplies {
+            let passes = accepts(item)
+            let label = "\(item.source):\(item.fixture)#\(item.run)"
+            switch (item.mustBeRejectedForGrounding, passes) {
+            case (true, false): score.caught += 1
+            case (true, true): score.missed += 1; score.misses.append(label)
+            case (false, false):
+                if item.countsAsFalseRejection {
+                    score.falselyRejected += 1
+                    score.falseRejections.append(detail.map { "\(label) — \($0(item))" } ?? label)
+                } else {
+                    score.notCountedRejections.append("\(label) — \(item.refusedUpstreamBy)")
+                }
+            case (false, true):
+                // Counted on the same population as a false rejection, so the two
+                // sides of the denominator are the same set of outputs. Without this
+                // a check that accepts an excluded output reports a larger
+                // denominator than one that refuses it, and the two lines stop being
+                // comparable.
+                if item.countsAsFalseRejection { score.correctlyAccepted += 1 }
+            }
+        }
+        return score
+    }
+
+    /// The overlap reading of every output the check runs on, split into the two
+    /// populations the floor sits between. The table the threshold is read off, so a
+    /// reader can see the bands rather than take them on trust.
+    static func overlapTable(_ cases: [GuardrailCase]) {
+        var legitimate: [Double] = []
+        var fabricated: [(Double, String)] = []
+        for item in cases where item.groundingApplies {
+            guard let worst = PolishGrounding.worstSegmentOverlap(
+                ofOutput: item.output, against: item.preprocessed
+            ) else { continue }
+            let label = "\(item.fixture)#\(item.run)"
+            if item.mustBeRejectedForGrounding {
+                fabricated.append((worst, label))
+            } else if item.countsAsFalseRejection {
+                legitimate.append(worst)
+            }
+        }
+        print("\n── #414 worst-segment overlap, the two populations")
+        let sorted = legitimate.sorted()
+        print(String(format: "   legitimate   n=%3d   min %.3f   Q1 %.3f   median %.3f",
+                     sorted.count, sorted.first ?? .nan,
+                     quantile(sorted, 0.25), quantile(sorted, 0.5)))
+        print("   fabricated   n=\(fabricated.count)")
+        for (share, label) in fabricated.sorted(by: { $0.0 < $1.0 }) {
+            print(String(format: "     %.3f  %@", share, label as NSString))
+        }
+        print("   (the floor is BELOW both populations' minimum — see the type's doc)")
+    }
+
+    /// Sweep the overlap floor and print the confusion matrix at each value (#414).
+    static func sweepOverlap(_ cases: [GuardrailCase]) {
+        let minimum = PolishSegmentOverlapThresholds.default.minimumContentWords
+        print("\n── #414 overlap floor sweep (minimumContentWords=\(minimum))")
+        print("        " + ["overlap alone", "with anchors"].map { cell($0, width: 16) }.joined())
+        for floor in [0.10, 0.15, 0.20, 0.25, 0.30] {
+            let thresholds = PolishSegmentOverlapThresholds(
+                floor: floor, minimumContentWords: minimum
+            )
+            let alone = scoreOverlap(cases, thresholds: thresholds)
+            let union = scoreGroundingUnion(cases, thresholds: thresholds)
+            print(String(format: "  %.2f  ", floor)
+                  + cell("\(alone.caught)c/\(alone.falselyRejected)fr", width: 16)
+                  + cell("\(union.caught)c/\(union.falselyRejected)fr", width: 16))
+        }
+        print("  (c = fabrications caught out of \(cases.filter { $0.groundingApplies && $0.mustBeRejectedForGrounding }.count);"
+              + " fr = false rejections, counted per the rule on `score`)")
+    }
+
+    /// Order statistic of an already-sorted sample, nearest-rank. Enough for a table
+    /// a human reads; nothing decides on it.
+    private static func quantile(_ sorted: [Double], _ share: Double) -> Double {
+        guard !sorted.isEmpty else { return .nan }
+        let index = min(sorted.count - 1, max(0, Int((Double(sorted.count) * share).rounded(.down))))
+        return sorted[index]
+    }
+
     // MARK: - Reports
 
     /// One score, and every case behind it that a reader has to be able to check.
@@ -199,6 +353,9 @@ enum GuardrailCorpus {
         print("   \(score.line)")
         for miss in score.misses { print("   missed:   \(miss)") }
         for bad in score.falseRejections { print("   FALSE REJECTION: \(bad)") }
+        for other in score.notCountedRejections {
+            print("   not counted (another check refuses it): \(other)")
+        }
     }
 
     /// Every segment of every case, with what the recogniser makes of it. This is
