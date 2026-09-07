@@ -420,6 +420,22 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    // The vocabulary's one screen (#80 decision 11), gated exactly
+                    // like the mode list above it: a subscriber who switched the
+                    // feature off in Settings has said what they want, and a list
+                    // under a switched-off toggle would edit rules nothing applies.
+                    if proStatus.isProActive && FeatureGate.isAvailable(.vocabulary) {
+                        NavigationLink {
+                            VocabularyListView()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: ProFeature.vocabulary.icon)
+                                    .foregroundColor(.dictusAccent)
+                                Text("My terms")
+                            }
+                        }
+                    }
                 }
             }
 

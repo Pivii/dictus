@@ -1,0 +1,178 @@
+[
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V1-mangled-technical-term",
+  "origin": "constructed",
+  "note": "The base case the feature exists for: a technical term the engine writes phonetically, mid-sentence. Constructed, not harvested — see README.md.",
+  "covers": ["mangled technical term", "mid-sentence"],
+  "entries": [
+   { "term": "Kubernetes", "variants": ["cubernetes", "kubernétisse"] }
+  ],
+  "raw": "on a redéployé le cluster cubernetes juste avant la réunion",
+  "expected": "on a redéployé le cluster Kubernetes juste avant la réunion"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V2-term-at-sentence-start",
+  "origin": "constructed",
+  "note": "The same term opening the sentence. The leading word boundary is the start of the string, which is the off-by-one a naive matcher gets wrong.",
+  "covers": ["sentence start"],
+  "entries": [
+   { "term": "Kubernetes", "variants": ["cubernetes"] }
+  ],
+  "raw": "cubernetes est reparti tout seul cette nuit",
+  "expected": "Kubernetes est reparti tout seul cette nuit"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V3-overlapping-variants",
+  "origin": "constructed",
+  "note": "Two entries whose variants overlap: 'clode' alone belongs to one term, 'clode code' to another. The longest must win, and the result must not depend on which entry the file holds first.",
+  "covers": ["overlapping variants", "longest wins"],
+  "entries": [
+   { "term": "Claude", "variants": ["clode", "cloude"] },
+   { "term": "Claude Code", "variants": ["clode code", "cloud code"] }
+  ],
+  "raw": "j'ai lancé clode code pendant que clode répondait",
+  "expected": "j'ai lancé Claude Code pendant que Claude répondait"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V4-false-positive-substring",
+  "origin": "constructed",
+  "note": "The case that costs the user text rather than merely failing to help: the variant is a substring of an unrelated, correctly spelled word. 'ampli' must not fire inside 'amplificateur' or 'amplitude', but must fire after a French elision.",
+  "covers": ["false positive", "substring of a correct word", "word boundary"],
+  "entries": [
+   { "term": "Ampli", "variants": ["ampli"] }
+  ],
+  "raw": "l'amplificateur a une amplitude correcte, mais l'ampli chauffe",
+  "expected": "l'amplificateur a une amplitude correcte, mais l'Ampli chauffe"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V5-non-spaced-script-japanese",
+  "origin": "constructed",
+  "note": "Japanese has no spaces, so a matcher that requires word boundaries never fires. Hiragana reading replaced by its kanji spelling.",
+  "covers": ["non-spaced script", "Hiragana", "Katakana"],
+  "entries": [
+   { "term": "東京", "variants": ["とうきょう"] },
+   { "term": "コンピューター", "variants": ["こんぴゅーたー"] }
+  ],
+  "raw": "あしたとうきょうでこんぴゅーたーをかいます",
+  "expected": "あした東京でコンピューターをかいます"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V6-non-spaced-script-chinese-korean-thai",
+  "origin": "constructed",
+  "note": "The other three scripts the matching rules name, so a regression in one range cannot hide behind the Japanese case.",
+  "covers": ["non-spaced script", "CJK", "Hangul", "Thai"],
+  "entries": [
+   { "term": "北京", "variants": ["北亰"] },
+   { "term": "서울", "variants": ["서울시"] },
+   { "term": "กรุงเทพ", "variants": ["กรุงเทพฯ"] }
+  ],
+  "raw": "北亰 서울시 กรุงเทพฯ",
+  "expected": "北京 서울 กรุงเทพ"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V7-lowercase-proper-noun",
+  "origin": "constructed",
+  "note": "The commonest mangling of all, and the one shape a case-insensitive matcher can fix with a variant that differs from its term only by case. The rule matches its own term, which is a fixed point rather than a cycle.",
+  "covers": ["case normalisation", "fixed point"],
+  "entries": [
+   { "term": "Dictus", "variants": ["dictus", "dictusse"] }
+  ],
+  "raw": "j'ai ouvert dictus puis dictusse encore une fois",
+  "expected": "j'ai ouvert Dictus puis Dictus encore une fois"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V8-term-without-variants-is-inert-here",
+  "origin": "constructed",
+  "note": "Decision 7 seen from the replacement side: a term with no variants changes nothing in the transcript. Its work happens in the polish glossary, which this harness does not measure.",
+  "covers": ["no variants", "identity"],
+  "entries": [
+   { "term": "Systeko", "variants": [] }
+  ],
+  "raw": "on a livré systeko hier soir",
+  "expected": "on a livré systeko hier soir"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V9-empty-vocabulary-identity",
+  "origin": "constructed",
+  "note": "The pre-registered bar, replayed: with nothing stored the pass must hand the transcript back unchanged. Punctuation, accents and casing included.",
+  "covers": ["empty vocabulary", "identity"],
+  "entries": [],
+  "raw": "Alors, on récapitule : trois points, et rien d'autre — c'est tout.",
+  "expected": "Alors, on récapitule : trois points, et rien d'autre — c'est tout."
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V10-disabled-entry",
+  "origin": "constructed",
+  "note": "The per-entry switch (decision 8). A disabled entry is stored and inert; the enabled one beside it still fires, so this also proves the switch is per entry and not global.",
+  "covers": ["per-entry isEnabled"],
+  "entries": [
+   { "term": "Kubernetes", "variants": ["cubernetes"], "isEnabled": false },
+   { "term": "Parakeet v3", "variants": ["parakit v3"] }
+  ],
+  "raw": "cubernetes tourne avec parakit v3",
+  "expected": "cubernetes tourne avec Parakeet v3"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V11-accents-are-not-folded",
+  "origin": "constructed",
+  "note": "Case-insensitive is not accent-insensitive. A user who wrote 'é' meant it, so the unaccented variant fires and the accented spelling is left alone.",
+  "covers": ["accents", "case insensitivity"],
+  "entries": [
+   { "term": "Café Noir", "variants": ["cafe noir"] }
+  ],
+  "raw": "un cafe noir et un café noir",
+  "expected": "un Café Noir et un café noir"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V12-cycle-refused",
+  "origin": "constructed",
+  "note": "Two entries the user could plausibly write that would flip the text on every application. Both rules are dropped when the rules are built, so the transcript is untouched rather than corrupted.",
+  "covers": ["idempotence", "cycle"],
+  "entries": [
+   { "term": "bar", "variants": ["foo"] },
+   { "term": "foo", "variants": ["bar"] }
+  ],
+  "raw": "foo puis bar",
+  "expected": "foo puis bar"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V13-growth-cycle-refused",
+  "origin": "constructed",
+  "note": "A variant living inside its own term, in a script with no boundaries to stop it: 東京 → 東京都 → 東京都都 on every pass. The rule is dropped.",
+  "covers": ["idempotence", "growth cycle", "non-spaced script"],
+  "entries": [
+   { "term": "東京都", "variants": ["東京"] }
+  ],
+  "raw": "あした東京へいきます",
+  "expected": "あした東京へいきます"
+ },
+ {
+  "source": "constructed-2026-09-07",
+  "fixture": "V14-long-transcript-many-entries",
+  "origin": "constructed",
+  "note": "A dictation of ordinary length against a vocabulary of several entries, most of which never fire. Nothing here should move except the two terms that match.",
+  "covers": ["mixed", "no spurious edits"],
+  "entries": [
+   { "term": "Kubernetes", "variants": ["cubernetes"] },
+   { "term": "TestFlight", "variants": ["test flight", "testeflaïte"] },
+   { "term": "Parakeet v3", "variants": ["parakit v3"] },
+   { "term": "Systeko", "variants": ["systéco"] },
+   { "term": "WhisperKit", "variants": ["whisper kit"] }
+  ],
+  "raw": "alors ce matin j'ai regardé les logs, il y avait deux erreurs sur le cluster cubernetes et rien du tout ailleurs, ensuite j'ai monté le build sur test flight et j'ai prévenu les testeurs, voilà c'est à peu près tout ce que j'avais à dire",
+  "expected": "alors ce matin j'ai regardé les logs, il y avait deux erreurs sur le cluster Kubernetes et rien du tout ailleurs, ensuite j'ai monté le build sur TestFlight et j'ai prévenu les testeurs, voilà c'est à peu près tout ce que j'avais à dire"
+ }
+]
