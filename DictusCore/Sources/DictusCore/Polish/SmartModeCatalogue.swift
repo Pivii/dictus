@@ -67,7 +67,7 @@ public enum SmartModeCatalogue {
         displayName: "List",
         icon: "list.bullet",
         prompt: SmartModePrompt(
-            instructions: SmartModeNotesPrompt.instructions(glossary: PolishGlossary.promptBlock),
+            instructions: SmartModeNotesPrompt.instructions(glossary: PolishGlossary.activePromptBlock),
             userInstruction: SmartModeNotesPrompt.userInstruction,
             outputMarker: SmartModeNotesPrompt.outputMarker
         ),
@@ -112,7 +112,7 @@ public enum SmartModeCatalogue {
             badge: .text(target.shortCode),
             prompt: SmartModePrompt(
                 instructions: SmartModeTranslatePrompt.instructions(
-                    target: target, glossary: PolishGlossary.promptBlock
+                    target: target, glossary: PolishGlossary.activePromptBlock
                 ),
                 userInstruction: SmartModeTranslatePrompt.userInstruction(target: target),
                 outputMarker: SmartModeTranslatePrompt.outputMarker

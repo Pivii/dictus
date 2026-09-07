@@ -209,7 +209,8 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
     /// a prompt file, and nothing here moves.
     public static func instructions(for task: PolishTask,
                                     language: SupportedLanguage) -> String {
-        let glossary = PolishGlossary.promptBlock
+        // The user's own terms ride along with the curated ones (#80 decision 7).
+        let glossary = PolishGlossary.activePromptBlock
         if let smartMode = task.smartMode {
             return smartMode.prompt.instructions
         }
