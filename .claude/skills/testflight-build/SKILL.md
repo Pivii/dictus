@@ -69,7 +69,23 @@ asc builds add-groups --build-id <id> --group "44ee61cb-fbdf-43d9-90b0-c31c922d0
 
 `--submit --confirm` sends the build to Apple's **beta app review**, which every external group requires. It usually clears in hours. Testers are notified when it does, not when you run the command.
 
+Confirm it landed, and expect to retry:
+
+```sh
+ASC_TIMEOUT=90s asc builds beta-app-review-submission view --build-id <id> --output json
+```
+
+Wanted: `betaReviewState: WAITING_FOR_REVIEW`, then `APPROVED`.
+
+## Two states, two tabs, and Pierre reads the other one
+
+Distributing to `Public Beta` moves **TestFlight** state. It does not move the App Store version, which sits at `PREPARE_FOR_SUBMISSION` — *"Finaliser avant soumission"* in his French UI — and stays there until he runs `appstore-promote`.
+
+That wording sounds like something is stuck. It is not. When he reports it, name the tab he is looking at before answering, or you will debug a state that is already correct.
+
 ## Traps
+
+**`betaAppReviewSubmission` times out and needs retrying.** It is the one `asc` endpoint measured doing this: two `i/o timeout` failures against Apple's IP before a clean answer, `ASC_TIMEOUT=90s` and all. Retry two or three times before concluding anything. Reading the first timeout as an answer means reporting that a submission does not exist when it does.
 
 **A `.p8` under `~/Downloads` is unreadable from a terminal.** macOS TCC protects that folder, and the failure is `Operation not permitted` on a file `ls` displays perfectly. `sudo` does not help: TCC is per-application, not per-privilege. The key belongs at `~/.asc/keys/`, moved there with Finder, which is not subject to the restriction.
 
