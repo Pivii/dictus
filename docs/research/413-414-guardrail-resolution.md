@@ -365,3 +365,121 @@ output's vocabulary appears in the input at all — and it is deliberately not w
 no consumer yet, and its threshold has to be sized against a fixture set of refusals that does not
 exist. The exclusion of `repair` from the grounding check is written down with #349 named, so the
 next person does not read it as an oversight.
+
+---
+
+## 8. #414's second query, written and shipped (2026-09-07)
+
+§7 left #414 open with one measured miss and one paragraph of intent: the anchor check sees a
+fabricated **name**, and nothing sees a fabricated **line**. This section is that second query,
+measured and shipped. It was written after the numbers, like §5–§7 — the pre-registered bars in
+§4 are #413's and #414's original ones and were not rewritten to suit it.
+
+### 8.1 The mechanism
+
+Worst-segment lexical overlap, on `PolishGrounding`:
+
+1. Cut the output into segments — the same line cut `PolishSegmentation` gives #413, so a
+   fabricated bullet is judged on its own instead of being diluted by the list around it.
+   `N2-reunion-vrac` scores **0.739 whole** and **0.000 on its fabricated bullet**; whole-output
+   resolution is the wrong unit and that number is why.
+2. Tokenise with `PolishLexicon` — never a second tokeniser, for the reason that type exists.
+3. Drop the segment's function words. What remains is its content words.
+4. Score each segment as the share of its content words that also appear in the input, take the
+   **worst**, and refuse below the floor.
+5. Skip a segment carrying fewer than 3 content words: at one or two the share can only be 0, 0.5
+   or 1, which is not a measurement.
+
+It runs where `requiresGroundedNames` already runs — Natural, Auto and Notes — and so is off for
+Translate and for Repair. It is **not** #349's answer: #349's capture is a repair event, and #466
+established that no threshold serves that band.
+
+### 8.2 The two populations, at the shipping thresholds
+
+`swift run polish-harness guardrail ../docs/research/413-414-guardrail/*.json --sweep`
+
+| population | n | min | Q1 | median |
+| --- | --- | --- | --- | --- |
+| legitimate, counted | 321 | **0.200** | 0.824 | 0.842 |
+| fabricated | 11 | 0.000 (×9) | — | — |
+
+The two fabrications above 0.000 are `Y4-fr-lieu-invente` (0.200) and `Z1-sophie-reoccurrence`
+(0.333). **The populations touch at 0.200**, so no floor separates them strictly; 0.15 sits in the
+empty band below every legitimate output and takes the nine that score zero.
+
+### 8.3 The confusion matrix
+
+| | caught | false rejections |
+| --- | --- | --- |
+| anchors (§6.2, unchanged) | 7/11 | 0/328 |
+| overlap alone, floor 0.15 | 9/11 | 0/328 |
+| **anchors OR overlap — what the pipeline refuses** | **10/11** | **0/328** |
+
+Complementary, not redundant: overlap catches `Y5-refus-applefm` and `Y6` which carry no name at
+all, anchors catches `Y4` whose invented place name scores 0.200.
+
+Floor sweep, same corpora:
+
+| floor | overlap alone | with anchors | false rejections |
+| --- | --- | --- | --- |
+| 0.10 | 9/11 | 10/11 | 0 |
+| **0.15** | **9/11** | **10/11** | **0** |
+| 0.20 | 9/11 | 10/11 | 0 |
+| 0.25 | 10/11 | 10/11 | **1** |
+
+**0.15 rather than 0.25.** 0.25 closes `Z1` and costs one measured false rejection. Pierre declined
+that trade on 2026-09-07. If a user reports a fabricated line in the field, 0.25 is the lever and
+its cost is already the number above.
+
+### 8.4 The counting rule
+
+**A rejection is charged to a check only when it is a rejection the user would otherwise have
+seen.** An output another shipped check already refuses never reaches a document, so refusing it
+again is a second lock on a door the first lock closed, and counting it inflates the measured cost.
+
+Pierre wrote that rule on #414 about the language check — the *48-of-57* form: nine of the corpus's
+57 legitimate Notes outputs are bilingual or in the wrong language and are refused upstream, so the
+bar is read on the 48 a user could see. It is applied here to **both** upstream checks, because the
+argument does not distinguish them: the two #466 device captures of an Apple FM preamble are
+refused by `PolishPrefixAlignment` on the contract they were captured under. **That extension is
+not in the issue text**, which predates #466's check reaching this corpus.
+
+Across the full corpora the overlap check refuses **92** outputs the rule does not charge it for:
+10 that the language check refuses (8 `wrongLanguage`, 2 `bilingual`) and 82 that prefix alignment
+refuses (81 `displaced`, 1 `unrelated`). The second number is worth reading as a result rather than
+as bookkeeping — **the overlap check independently sees 82 of the 88 captured Apple FM preambles**,
+which #466 had to build a separate mechanism for. It is not promoted to a second opinion on that
+shape here: the ordering in `PolishPipeline` keeps a preamble named `prefixAlignment`, so the rate
+#466 ships against stays countable in an export.
+
+Each excluded rejection is printed by the harness under `not counted` rather than dropped silently,
+and `PolishGuardrailCorpusReplayTests.testTheCountingRuleExcludesOnlyOutputsAnotherCheckRefuses`
+asserts that every excluded output really is refused by a shipped check. The rule is executable,
+not prose.
+
+### 8.5 Two corpus corrections, both judgements
+
+- **`freepolish.json` / `auto-newline-marker`, runs 1–3: the `raw` was truncated.** The #466
+  harvest from `raw/r4-freepolish-auto-3runs-after.txt` kept only the first of the dictation's
+  three lines, so an output faithfully polishing all three read as two invented bullets. Restored
+  from the committed capture. This was a data-entry error, not a label.
+- **`Y6-notes-abstraite-inventee` added, labelled `fabricated`.** It is the fully abstractive Notes
+  list that lived in `PolishPipelineTests` as the fixture proving the prefix check is inert for
+  List, written for #466 as an output the mode is *licensed* to produce. Overlap refuses it, and
+  the label says that refusal is right: the speaker gave no timeframe, so `Échéance retenue : cette
+  semaine` is a date invented for them. **This reverses an earlier judgement**, and the corpus is
+  where to disagree with it — the cost of disagreeing is one false rejection at 0.15.
+
+### 8.6 What ships open
+
+**`Z1-sophie-reoccurrence` remains a known miss**, now for both checks: `NLTagger` does not tag
+`Sophie` in that continuation (§6.2), and the reworded clause carries enough of the speaker's
+grammar to score 0.333. It is pinned by
+`PolishGroundingTests.testTheRewordedFabricationIsMISSEDByOverlapToo`, which fails if it ever
+closes — the failure is the notification.
+
+`Y4-fr-lieu-invente` is caught by the anchor check, not by overlap, and would need 0.25 here.
+
+Neither check reaches **Repair**, which carries the largest remaining inventory of worked examples
+(`GitHub`, `Apple`, `WhisperKit`, `macOS` and a dated fact across the four repair prompts). #466
+measured why no relatedness check can serve that mode. That hole is real and is not this issue's.
