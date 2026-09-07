@@ -120,7 +120,17 @@ scripts/cut-testflight.sh 1.9.0    # ← only when opening a new cycle, i.e. the
 
 **The bare form is the default.** Passing a version is the exception, not a step to remember: it belongs at exactly one moment, the first cut after a promotion. If the version on `develop` is not yet on the App Store, the cycle is already open and passing a version would rename a release in flight.
 
-Then: Xcode → Product ▸ Archive (scheme DictusApp, from develop) → upload. That's it — no tag to remember, the script made `build/N`.
+Then:
+
+```sh
+scripts/upload-testflight.sh       # archive, sign for the store, upload, wait for processing
+```
+
+No tag to remember, `cut-testflight.sh` made `build/N`. Xcode → Product ▸ Archive still works and is the fallback, but the script is headless and does not steal the screen.
+
+**It authenticates with the App Store Connect API key, not the Xcode account, and that is deliberate.** Xcode 26 keeps its signed-in Apple Account somewhere `xcodebuild` does not read: the CLI resolves the legacy `IDEProvisioningTeams` preference instead, finds a stale free-Personal-Team entry with no keychain token, and dies with `exportArchive No Accounts` / `No signing certificate "iOS Distribution" found` — while Xcode's own Settings ▸ Apple Accounts shows the right account, healthy. Nothing is broken and re-adding the account does not help, because the CLI never looks there. The API key bypasses the account system entirely. Measured 2026-09-07 while cutting 1.8.2 (30).
+
+The key must be readable at `~/.asc/keys/AuthKey_<KEYID>.p8`. **Not** in `~/Downloads`, `~/Desktop` or `~/Documents`: macOS TCC blocks a terminal from reading those, and the symptom is `Operation not permitted` on a file `ls` displays perfectly. Move it with Finder, which is not subject to that restriction.
 
 ### Promote a TestFlight build to the App Store
 
