@@ -874,11 +874,6 @@ class DictationCoordinator: ObservableObject {
                 // back with nothing saying why.
                 let smartMode = SmartModeStore.resolveArmedMode()
 
-                let transcribed = try await transcriptionService.transcribe(
-                    audioSamples: samples,
-                    languagePolicy: languagePolicy
-                )
-
                 // Custom vocabulary (#80 decision 5), and this is the only place it
                 // can go. `transcribe` returns from more than one branch depending
                 // on the active engine, so a pass added inside it would be silently
@@ -887,9 +882,13 @@ class DictationCoordinator: ObservableObject {
                 //
                 // It runs on the raw transcript, before `VerbalPunctuationPrepass`
                 // and before the polish — never after `PolishGuardrail`, which is
-                // the back door #414 and #466 closed. With an empty vocabulary this
-                // hands `transcribed` straight back.
-                let rawText = CustomVocabulary.corrected(transcribed)
+                // the back door #414 and #466 closed. With an empty vocabulary the
+                // transcript is handed straight back, which is why this wraps the
+                // call instead of adding a step of its own.
+                let rawText = CustomVocabulary.corrected(try await transcriptionService.transcribe(
+                    audioSamples: samples,
+                    languagePolicy: languagePolicy
+                ))
 
                 // Where the tail of the dictation happens, since #361.
                 //

@@ -70,6 +70,20 @@ public enum VocabularyReplacer {
         let needsTrailingBoundary: Bool
     }
 
+    /// A canonical term prepared once for the idempotence filter, which asks the
+    /// same question of it for every candidate rule.
+    private struct ResolvedTerm {
+        let id: UUID
+        let characters: [Character]
+        let lowered: [String]
+
+        init(_ entry: VocabularyEntry) {
+            id = entry.id
+            characters = Array(entry.term)
+            lowered = characters.map { $0.lowercased() }
+        }
+    }
+
     /// Build the scan's rules from the entries the user enabled.
     ///
     /// ### Order independence
@@ -129,10 +143,7 @@ public enum VocabularyReplacer {
         // The two filters that make the pass idempotent, in the order that keeps
         // them cheap: drop a needle already claimed, then drop one that lives inside
         // a term this pass can emit.
-        let terms = enabled.map { entry -> (id: UUID, characters: [Character], lowered: [String]) in
-            let characters = Array(entry.term)
-            return (entry.id, characters, characters.map { $0.lowercased() })
-        }
+        let terms = enabled.map(ResolvedTerm.init)
         var claimed = Set<String>()
         var rules: [Rule] = []
         for rule in candidates {
