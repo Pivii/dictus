@@ -226,6 +226,107 @@ final class PolishGroundingTests: XCTestCase {
         )
     }
 
+    // MARK: - Worst-segment overlap (#414)
+
+    /// The whole reason the share is taken per segment and not over the output.
+    /// Read whole, the measured list is mostly the speaker's own words and scores
+    /// far above any usable floor; the fabricated bullet is what has to be visible.
+    func testTheFabricatedBulletIsInvisibleUntilTheOutputIsReadLineByLine() {
+        let whole = PolishGrounding.worstSegmentOverlap(
+            ofOutput: sophieOutput.replacingOccurrences(of: "\n", with: " "),
+            against: sophieRaw
+        )
+        XCTAssertNotNil(whole)
+        XCTAssertGreaterThan(whole ?? 0, 0.5, "read as one blob the list looks grounded")
+
+        XCTAssertEqual(
+            PolishGrounding.worstSegmentOverlap(ofOutput: sophieOutput, against: sophieRaw) ?? -1,
+            0, accuracy: 0.0001,
+            "the fabricated bullet shares no content word with the dictation"
+        )
+        XCTAssertFalse(
+            PolishGrounding.acceptsSegmentOverlap(polished: sophieOutput, raw: sophieRaw)
+        )
+    }
+
+    /// The same list minus the fabricated bullet must still be accepted — the check
+    /// has to separate the two, not refuse the fixture.
+    func testTheSameListWithoutTheFabricatedBulletClearsTheFloor() {
+        let good = sophieOutput.split(separator: "\n").dropLast().joined(separator: "\n")
+        let worst = PolishGrounding.worstSegmentOverlap(ofOutput: good, against: sophieRaw)
+        XCTAssertGreaterThanOrEqual(worst ?? -1, PolishSegmentOverlapThresholds.default.floor)
+        XCTAssertTrue(PolishGrounding.acceptsSegmentOverlap(polished: good, raw: sophieRaw))
+    }
+
+    /// **The known miss, pinned so it cannot close silently.** `Z1-sophie-reoccurrence`
+    /// is the same fabrication with one clause reworded; the extra grammar it carries
+    /// lifts it over the floor. Closing it needs 0.25, which costs a measured false
+    /// rejection — the trade Pierre declined on 2026-09-07.
+    ///
+    /// **If this assertion starts failing, the miss has closed** — say so in the
+    /// issue rather than deleting the test.
+    func testTheRewordedFabricationIsMISSEDByOverlapToo() {
+        let output = """
+        - Récupérer les chiffres de janvier auprès de Marion
+        - Faire le tableau comparatif avec ceux de l'année dernière
+        - Appeler le prestataire pour validé le devis
+        - Réserver la salle du deuxième étage
+        - Appeler Sophie avant parce qu'elle a les données de décembre
+        """
+        XCTAssertTrue(
+            PolishGrounding.acceptsSegmentOverlap(polished: output, raw: sophieRaw),
+            "if this now refuses, #414's remaining gap has closed — update the issue and this test"
+        )
+        XCTAssertGreaterThan(
+            PolishGrounding.worstSegmentOverlap(ofOutput: output, against: sophieRaw) ?? 0,
+            PolishSegmentOverlapThresholds.default.floor
+        )
+    }
+
+    /// A line of one or two content words scores 0, 0.5 or 1 — not a measurement. It
+    /// passes untested rather than costing the user their dictation for a heading.
+    func testAShortLineIsNotJudged() {
+        let output = """
+        Actions :
+        - Rappeler le plombier avant vendredi
+        """
+        XCTAssertNil(
+            PolishGrounding.worstSegmentOverlap(ofOutput: "Actions :", against: sophieRaw),
+            "two content words is below the minimum, so there is nothing to read"
+        )
+        XCTAssertTrue(
+            PolishGrounding.acceptsSegmentOverlap(
+                polished: output, raw: "il faut que je rappelle le plombier avant vendredi"
+            )
+        )
+    }
+
+    /// Every uncertainty resolves toward accepting, here as everywhere else in this
+    /// file: no input to compare against is not evidence of a fabrication.
+    func testAnEmptyInputIsNotEvidence() {
+        XCTAssertNil(PolishGrounding.worstSegmentOverlap(ofOutput: sophieOutput, against: ""))
+        XCTAssertTrue(PolishGrounding.acceptsSegmentOverlap(polished: sophieOutput, raw: ""))
+    }
+
+    /// A language whose function words the list does not carry keeps all of them,
+    /// which raises every share and can only make the check accept more. That is the
+    /// safe direction, and it is the argument for shipping an incomplete list.
+    func testAnUnlistedLanguageIsAcceptedMoreEasilyNotLessEasily() {
+        // Italian reaches the polish through Auto mode (#239) and is not one of the
+        // four the list covers.
+        let raw = "allora ho parlato con il fornitore e mi ha detto che il progetto va bene"
+        let output = """
+        Ho parlato con il fornitore.
+        Il progetto va bene.
+        """
+        XCTAssertTrue(PolishGrounding.acceptsSegmentOverlap(polished: output, raw: raw))
+    }
+
+    func testTheShippingThresholdsAreTheMeasuredOnes() {
+        XCTAssertEqual(PolishSegmentOverlapThresholds.default.floor, 0.15, accuracy: 0.0001)
+        XCTAssertEqual(PolishSegmentOverlapThresholds.default.minimumContentWords, 3)
+    }
+
     // MARK: - Which contracts ask for it
 
     func testTheFaithfulContractsAskForGroundingAndTheReconstructingOnesDoNot() {
