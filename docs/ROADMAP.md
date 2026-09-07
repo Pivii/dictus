@@ -28,9 +28,12 @@ A **closed list**. When these are done, cut. A fix that becomes ready mid-cycle 
 
 Ordered by what a shipped user actually loses.
 
-1. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. PR #513 open, under device test. **#459 closes by hand when #513 merges.**
+**Lane A is empty. Cut 1.8.2** — `scripts/cut-testflight.sh 1.8.2`.
 
-**It is the last one. When #513 lands, cut** — `scripts/cut-testflight.sh 1.8.2`.
+**#483 shipped on 2026-09-07** in PR #513, closing #459 with it. CallKit replaces the route heuristic: a call is detected on the earpiece, on speaker and on a bluetooth headset, and the keyboard now declines the mic tap in place instead of launching `DictusApp` to fail there. `CXCallObserver` was measured readable from the extension — the probe the brief made a blocking step — at `deltaKB=192` against a ~50 MB budget. `CallRoutePolicy` is deleted rather than kept as a fallback, because the fallback path was exactly where the Siri false positive lived.
+
+The device test of that PR surfaced **#515**, which shipped in the same PR: the first activation after any interruption had to bring the input route back from `none`, and that attempt heard nothing. It is `replaceEngine()` that repairs the start, not the wait that precedes it — a capture with `waitedMs=1163 budgetMs=1000 route=none` succeeded, so raising the wait buys nothing. Recorded in the constant's doc comment, not only on the issue.
+
 
 **#417 shipped on 2026-09-07** in PR #516, device-validated: `installTap NSException` is gone by construction, 0 occurrences across four mic taps made under an active interruption. What the fix does not reach is now written on the issue — while Siri holds the input, the failure moved to `engine.start` with `-10868` (`FormatNotSupported`), 8 times, and from the keyboard it still costs a full app foreground before failing. #513 answers that for a **call**; Siri is not a call and CallKit will never report it, so the Siri case needs the interruption state itself as its predicate. Not yet an issue.
 
