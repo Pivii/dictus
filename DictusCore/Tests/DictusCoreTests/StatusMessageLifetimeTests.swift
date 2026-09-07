@@ -137,4 +137,51 @@ final class StatusMessageLifetimeTests: XCTestCase {
     func testTheDisplayDurationIsLongEnoughToBeRead() {
         XCTAssertEqual(StatusMessageLifetime.displayDuration, 3)
     }
+
+    // MARK: - Screen time, not wall clock (#490)
+
+    /// The ordinary case is unchanged: an idle keyboard clears its message on time.
+    func testAMessageClearsOnTimeWhileTheKeyboardIsIdle() {
+        var lifetime = StatusMessageLifetime()
+        let message = lifetime.advance()
+
+        XCTAssertEqual(
+            lifetime.clearDecision(message, dictationIsActive: false), .clear
+        )
+    }
+
+    /// #490's defect, as a rule. The user read half a Smart Mode refusal, started
+    /// over two seconds later, and the timer took the sentence down one second after
+    /// that -- while the recording overlay was covering the toolbar it was on.
+    func testAClearComingDueDuringADictationWaitsInsteadOfFiring() {
+        var lifetime = StatusMessageLifetime()
+        let message = lifetime.advance()
+
+        XCTAssertEqual(
+            lifetime.clearDecision(message, dictationIsActive: true), .waitForIdle,
+            "the next recording spent the explanation's three seconds behind its own overlay"
+        )
+    }
+
+    /// And it clears once the toolbar is visible again, so waiting is a deferral and
+    /// not a message that never leaves.
+    func testTheDeferredClearFiresOnceTheDictationIsOver() {
+        var lifetime = StatusMessageLifetime()
+        let message = lifetime.advance()
+
+        XCTAssertEqual(lifetime.clearDecision(message, dictationIsActive: true), .waitForIdle)
+        XCTAssertEqual(lifetime.clearDecision(message, dictationIsActive: false), .clear)
+    }
+
+    /// A superseded clear is superseded whatever the keyboard is doing. Rescheduling
+    /// it would leave one timer per replaced message running against a token none of
+    /// them owns -- #342's bug with extra steps.
+    func testASupersededClearIsNotRescheduledByADictation() {
+        var lifetime = StatusMessageLifetime()
+        let first = lifetime.advance()
+        lifetime.advance()
+
+        XCTAssertEqual(lifetime.clearDecision(first, dictationIsActive: true), .superseded)
+        XCTAssertEqual(lifetime.clearDecision(first, dictationIsActive: false), .superseded)
+    }
 }
