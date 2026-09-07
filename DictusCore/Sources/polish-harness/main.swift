@@ -662,10 +662,18 @@ func runHarness() async {
                 }
             }
         }
-        // The rate, not just the outputs. Printed for a mode run only: it is the
-        // number #393 asks for, and the free-polish paths already have their own
-        // evidence in `eval`.
-        if mode != nil { print(tally.report) }
+        // The rate, not just the outputs — the number #393 asks for.
+        //
+        // Printed on every run since #518, not only on a mode run. The reason it
+        // used to be mode-only was that "the free-polish paths already have their
+        // own evidence in `eval`", and #518 is the counterexample: on an
+        // `engineFailed` the free polish returns the deterministic FLOOR, which
+        // carries the speaker's words and passes every `contains` and length check
+        // in a fixture. So `eval` scores a dictation whose polish was dropped
+        // outright as a pass, and the one command that can see the outcome is this
+        // one. Counting it here costs two lines and is what makes a refusal RATE
+        // reportable on the free polish at all.
+        print(tally.report)
 
     case "eval":
         let mode = loadSmartMode(modeIdentifier)
