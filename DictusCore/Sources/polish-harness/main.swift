@@ -10,6 +10,7 @@
 //   swift run polish-harness show  <fixtures.json> [--runs N] [--instructions <prompt.txt>]
 //   swift run polish-harness eval  <fixtures.json> [--instructions <prompt.txt>]
 //   swift run polish-harness ab    <fixtures.json> [--a <promptA.txt>] [--b <promptB.txt>]
+//   swift run polish-harness vocabulary <corpus.json>   (#80, no model, deterministic)
 //
 // `--lang <code>` (#439) reroutes every fixture in the file: "auto" sends a
 // per-language set through the Auto-detect path, "fr" pins an auto set to French.
@@ -111,7 +112,7 @@ func corpusPaths(in args: [String], valuedOptions: Set<String> = []) -> [String]
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "target"].contains(command), args.count >= 2 else {
+guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "target", "vocabulary"].contains(command), args.count >= 2 else {
     print("""
     polish-harness — off-device polish eval (macOS + Apple Intelligence)
 
@@ -121,6 +122,7 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "t
       prompt <fixtures.json> [--id <fixtureID>] [--out <dir>] [--mode <id>]
       guardrail <corpus.json> [<corpus.json> …] [--segments] [--sweep] [--anchors]
       target    <corpus.json> [<corpus.json> …] [--sweep] [--floor N]
+      vocabulary <corpus.json> [<corpus.json> …]
 
     --lang (#439) reroutes every fixture in the file — `--lang auto` runs a
     per-language set through the Auto-detect prompt, `--lang fr` pins an auto set
@@ -135,6 +137,10 @@ guard let command = args.first, ["show", "eval", "ab", "prompt", "guardrail", "t
     committed, hand-labelled outputs. It drives NO model and needs no Apple
     Intelligence, so the measurement behind their thresholds is re-runnable by
     anyone. Corpora live in docs/research/413-414-guardrail/.
+
+    vocabulary (#80) replays the custom-vocabulary replacement pass over committed
+    term/transcript pairs and checks idempotence. Deterministic, drives no model.
+    Corpus in docs/research/80-vocabulary/.
 
     target (#456) scores the polish TARGET election — which language the model is
     told to write in — against committed, hand-labelled raw transcripts, and
@@ -182,11 +188,12 @@ let modeBIdentifier = optionValue("--mode-b", in: args) ?? modeIdentifier
 // MARK: - Load fixtures
 
 let fixtures: [Fixture]
-// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS and `target`
-// (#456) corpora of hand-labelled raw transcripts, neither of which is a fixture,
-// so those two have nothing to load here. `--lang` (#439) reroutes what IS loaded,
+// `guardrail` (#413, #414) takes corpora of hand-labelled OUTPUTS, `target` (#456)
+// corpora of hand-labelled raw transcripts and `vocabulary` (#80) corpora of terms
+// with the transcripts they rewrite, none of which is a fixture, so those three
+// have nothing to load here. `--lang` (#439) reroutes what IS loaded,
 // so it stays inside the loading branch.
-if ["guardrail", "target"].contains(command) {
+if ["guardrail", "target", "vocabulary"].contains(command) {
     fixtures = []
 } else {
     do {
@@ -237,7 +244,7 @@ guard #available(macOS 26.0, *) else {
 #if canImport(FoundationModels)
 // `prompt` never runs a model — it prints the bytes one would be sent — so it is
 // usable on a machine with Apple Intelligence off, which is the point of it.
-if command != "prompt", command != "guardrail", engineKind == "apple-fm" {
+if command != "prompt", command != "guardrail", command != "vocabulary", engineKind == "apple-fm" {
     switch SystemLanguageModel.default.availability {
     case .available:
         break
@@ -774,8 +781,8 @@ func runHarness() async {
     }
 }
 
-// `guardrail` (#413, #414) and `target` (#456) score committed corpora with
-// deterministic local `NaturalLanguage` calls and drive no model at all. They are
+// `guardrail` (#413, #414), `target` (#456) and `vocabulary` (#80) score committed
+// corpora with deterministic local calls and drive no model at all. They are
 // dispatched here rather than inside `runHarness` because they need neither its
 // macOS 26 availability nor Apple Intelligence — which is the whole point of them:
 // the numbers behind a shipped threshold have to be re-runnable by anyone.
@@ -784,6 +791,8 @@ case "guardrail":
     runGuardrail()
 case "target":
     runTargetElection()
+case "vocabulary":
+    runVocabulary()
 default:
     if #available(macOS 26.0, *) {
         await runHarness()
