@@ -305,7 +305,8 @@ public final class PolishService {
     private func finalOutcome(returned: String?,
                               bundle: PolishPipeline.Result,
                               job: PolishJob,
-                              raw: String) -> PolishOutcome {
+                              raw: String,
+                              detectedCode: String?) -> PolishOutcome {
         // `resolvedOutput` only withholds text for a Smart Mode, and only degrades
         // for one, so anything else is a plain success or a free-polish floor.
         guard let mode = job.task.smartMode, bundle.outcome != .success else {
@@ -322,7 +323,11 @@ public final class PolishService {
             modeIdentifier: mode.id,
             modeDisplayName: mode.displayName,
             outcome: bundle.outcome.rawValue,
-            reason: reason
+            reason: reason,
+            // Only `unsupportedInputLanguage` says it out loud, but it travels on
+            // every failure: which of them names the language is the surface's
+            // decision, and re-deriving it there would mean detecting twice (#490).
+            detectedLanguage: detectedCode
         )
         guard degraded, let returned else { return PolishOutcome(failure: failure) }
         return PolishOutcome(degradedTo: returned, failure: failure)
@@ -451,7 +456,11 @@ public final class PolishService {
                 sttEngine: sttEngine, detected: request.detected ?? target, target: target
             )),
             promptLanguage: target,
-            languageAgnosticPath: false
+            languageAgnosticPath: false,
+            // What the pipeline's input-language pre-flight judges (#490). The whole
+            // mix, not the leader: it answers "is any of this readable", and the
+            // measurement is already in hand.
+            inputLanguageCodes: request.languageMix.countedCodes
         )
 
         // Resolve the engine for this call — see `activeEngine` doc-comment.
@@ -510,7 +519,10 @@ public final class PolishService {
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
 
-        return finalOutcome(returned: returned, bundle: bundle, job: job, raw: raw)
+        return finalOutcome(
+            returned: returned, bundle: bundle, job: job, raw: raw,
+            detectedCode: request.detectedCode
+        )
     }
 
     // MARK: - Auto-detect path (#239)
@@ -591,7 +603,8 @@ public final class PolishService {
         let job = PolishJob(
             task: request.smartTask ?? .auto,
             promptLanguage: contextLanguage,
-            languageAgnosticPath: true
+            languageAgnosticPath: true,
+            inputLanguageCodes: request.languageMix.countedCodes
         )
         let currentEngine = activeEngine
         supersedeInflight()
@@ -627,7 +640,10 @@ public final class PolishService {
             guardrailCheck: bundle.rejectedCheck
         )
         await emit(m, raw: raw, polished: bundle.engineOutput)
-        return finalOutcome(returned: returned, bundle: bundle, job: job, raw: raw)
+        return finalOutcome(
+            returned: returned, bundle: bundle, job: job, raw: raw,
+            detectedCode: request.detectedCode
+        )
     }
 
     /// Metrics for one auto-path event. Defaults cover the skip exits (no
@@ -764,6 +780,17 @@ public final class PolishService {
         // outcome, not on the reason being present, so no failure can slip
         // through unlogged; "unclassified" would mean the engine returned no
         // reason at all, which no engine does today.
+        if m.outcome == .unsupportedInputLanguage {
+            // Its own event, not a `polishEngineFailed` with `engineMs=0` (#490):
+            // the engine was never asked, and a reader who finds this line knows the
+            // refusal is ours and is about the language the user spoke.
+            PersistentLog.log(.polishInputLanguageRefused(
+                engine: m.engine,
+                mode: m.mode ?? "-",
+                detected: m.detectedLanguage ?? "-",
+                mix: m.languageResolution?.mixDescription ?? "-"
+            ))
+        }
         if m.outcome == .engineFailed {
             PersistentLog.log(.polishEngineFailed(
                 reason: m.failureReason?.slug ?? "unclassified",

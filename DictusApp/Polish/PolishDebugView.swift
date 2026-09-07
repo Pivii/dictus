@@ -353,7 +353,8 @@ private struct PolishExportShareSheet: UIViewControllerRepresentable {
 private extension PolishMetrics.Outcome {
     static var allDisplayCases: [PolishMetrics.Outcome] {
         [.success, .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
-         .cancelled, .engineFailed, .engineUnavailable, .exceededContextBudget]
+         .cancelled, .engineFailed, .engineUnavailable, .exceededContextBudget,
+         .unsupportedInputLanguage]
     }
 
     var shortLabel: String {
@@ -367,6 +368,7 @@ private extension PolishMetrics.Outcome {
         case .engineFailed: return "failed"
         case .engineUnavailable: return "unavailable"
         case .exceededContextBudget: return "too long"
+        case .unsupportedInputLanguage: return "language"
         }
     }
 
@@ -376,7 +378,7 @@ private extension PolishMetrics.Outcome {
         // Orange, not red: an overflow is a refusal, not a breakage — the
         // engine was never called and the user still got their text (#270).
         case .rejectedGuardrail, .skipped, .skippedShort, .skippedAutoMode,
-             .exceededContextBudget: return .orange
+             .exceededContextBudget, .unsupportedInputLanguage: return .orange
         // Red, with the failures rather than with the refusals above (#315):
         // nothing failed on this dictation, but the feature is off for the rest
         // of the process, which is the worst state on this list and the one that

@@ -504,6 +504,41 @@ final class LogEventTests: XCTestCase {
         XCTAssertNotEqual(ours.message, theirs.message)
     }
 
+    // MARK: - The pre-flight refusal (#490)
+
+    /// Its own name, so a reader can tell "we declined to ask" from "the engine
+    /// refused" with one grep instead of by reading a latency.
+    func testPolishInputLanguageRefusedIsItsOwnEventAndNotAFailure() {
+        let event = LogEvent.polishInputLanguageRefused(
+            engine: "apple-fm", mode: "smart.translate.en", detected: "cs", mix: "cs 1.00"
+        )
+        XCTAssertEqual(event.name, "polishInputLanguageRefused")
+        XCTAssertEqual(
+            event.message,
+            "engine=apple-fm mode=smart.translate.en detected=cs mix=cs 1.00"
+        )
+        // Info, not warning: the guard declining a call the backend was going to
+        // refuse anyway is the feature working.
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .transcription)
+    }
+
+    /// The two events read against each other on one page, which is how the two
+    /// causes of #490 and #518 are told apart.
+    func testTheRefusalAndTheFailureCarryTheSameReadingInTheSameShape() {
+        let refused = LogEvent.polishInputLanguageRefused(
+            engine: "apple-fm", mode: "smart.translate.en", detected: "cs", mix: "cs 1.00"
+        )
+        let failed = LogEvent.polishEngineFailed(
+            reason: "unsupportedLanguageOrLocale", engine: "apple-fm",
+            mode: "smart.translate.en", engineMs: 22, detected: "cs", mix: "cs 1.00"
+        )
+        for line in [refused.message, failed.message] {
+            XCTAssertTrue(line.contains("detected=cs"), line)
+            XCTAssertTrue(line.contains("mix=cs 1.00"), line)
+        }
+    }
+
     /// A failure recorded before the mix was measured still logs, with `-` in both
     /// slots rather than an absent field. The event predates #456's trail, and a
     /// line whose shape changes with its content is a line no grep can rely on.

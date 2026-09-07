@@ -332,6 +332,21 @@ public enum LogEvent: Sendable {
     case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int,
                             detected: String, mix: String)
 
+    /// Issue #490: the polish engine was NOT called, because nothing the transcript
+    /// was measured to contain is in a language that backend reports it can read.
+    ///
+    /// Its own line rather than a `polishEngineFailed` with `engineMs=0`, because
+    /// nothing failed and nothing was asked. The distinction is the point of the
+    /// event: Apple returns `unsupportedLanguageOrLocale` for a language genuinely
+    /// outside its set AND for one inside it that its classifier misread (#518), so
+    /// a reader who finds this line knows which of the two they are looking at
+    /// without inferring it from a latency.
+    ///
+    /// `detected` and `mix` are the reading the refusal was made on, in the same
+    /// shape `polishEngineFailed` prints them, so one grep covers both.
+    case polishInputLanguageRefused(engine: String, mode: String,
+                                    detected: String, mix: String)
+
     /// Issue #315: polish stopped calling its engine for the rest of this process,
     /// after `consecutiveRefusals` `rateLimited` results in a row.
     ///
@@ -465,6 +480,7 @@ public enum LogEvent: Sendable {
         // write, so it reads with the transcription stream rather than as a
         // subsystem of its own (#315).
         case .polishEngineFailed, .polishEngineUnavailable, .polishHandoff,
+             .polishInputLanguageRefused,
              .polishInsertionRefused, .polishCallSuperseded,
              .smartModeRefused, .smartModeSkipped:
             return .transcription
@@ -564,7 +580,10 @@ public enum LogEvent: Sendable {
         // Info: the hand-off steps describe a dictation working as designed, and
         // the refusal is the guard doing its job rather than something going wrong.
         // A superseded call is likewise the documented behaviour of decision 15.
-        case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded:
+        // The pre-flight refusal joins them (#490): the check declining a call the
+        // backend was going to refuse anyway is the guard working, not a fault.
+        case .polishHandoff, .polishInsertionRefused, .polishCallSuperseded,
+             .polishInputLanguageRefused:
             return .info
 
         // Warning: a Smart Mode that refused its own output cost the user a
@@ -687,6 +706,7 @@ public enum LogEvent: Sendable {
         case .modelDownloadOffline: return "modelDownloadOffline"
         case .polishEngineFailed: return "polishEngineFailed"
         case .polishEngineUnavailable: return "polishEngineUnavailable"
+        case .polishInputLanguageRefused: return "polishInputLanguageRefused"
         case .polishHandoff: return "polishHandoff"
         case .polishInsertionRefused: return "polishInsertionRefused"
         case .polishCallSuperseded: return "polishCallSuperseded"
@@ -965,6 +985,8 @@ public enum LogEvent: Sendable {
             return "mode=\(mode) reason=\(reason) disarmed=\(disarmed)"
         case .polishEngineUnavailable(let engine, let reason, let consecutiveRefusals):
             return "engine=\(engine) reason=\(reason) consecutiveRefusals=\(consecutiveRefusals)"
+        case .polishInputLanguageRefused(let engine, let mode, let detected, let mix):
+            return "engine=\(engine) mode=\(mode) detected=\(detected) mix=\(mix)"
         }
     }
 

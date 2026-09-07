@@ -82,6 +82,7 @@ public struct PolishAvailabilityGate: Sendable, Equatable {
             return false
 
         case .cancelled, .exceededContextBudget, .engineUnavailable,
+             .unsupportedInputLanguage,
              .skipped, .skippedShort, .skippedAutoMode:
             // No evidence either way: the engine was never reached, or the call
             // was cut short before it could answer. Leaving the run untouched is

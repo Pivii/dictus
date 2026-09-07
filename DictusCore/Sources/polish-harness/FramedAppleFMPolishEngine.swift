@@ -88,6 +88,13 @@ struct FramedAppleFMPolishEngine: PolishEngineProtocol {
         )
     }
 
+    /// Delegated to the shipping engine's own list, so a framing A/B measures the
+    /// same pre-flight the app applies (#490). A harness that let an input through
+    /// where the app refuses it would be measuring a path nobody takes.
+    func inputLanguageSupport(countedCodes: Set<String>) -> PolishInputLanguageSupport {
+        AppleFoundationModelsPolishEngine.inputLanguageSupport(countedCodes: countedCodes)
+    }
+
     func failureReason(for error: Error) -> PolishFailureReason {
         guard let generationError = error as? LanguageModelSession.GenerationError else {
             return .other(error)
