@@ -769,7 +769,14 @@ public final class PolishService {
                 reason: m.failureReason?.slug ?? "unclassified",
                 engine: m.engine,
                 mode: m.mode ?? "-",
-                engineMs: m.timings?.engineMs ?? 0
+                engineMs: m.timings?.engineMs ?? 0,
+                // What we read the transcript as, before the engine ever saw it
+                // (#518). Two opposite causes share the
+                // `unsupportedLanguageOrLocale` slug — a language outside Apple's
+                // set, and one inside it their classifier misread — and on iOS 26
+                // nothing in the error separates them. These two fields do.
+                detected: m.detectedLanguage ?? "-",
+                mix: m.languageResolution?.mixDescription ?? "-"
             ))
         }
         await sink.record(PolishDebugEntry(raw: raw, polished: polished, metrics: m))

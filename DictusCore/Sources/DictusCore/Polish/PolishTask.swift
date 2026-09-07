@@ -124,12 +124,46 @@ public enum PolishTask: Equatable, Sendable {
         }
     }
 
-    /// The user turn the engine sends: the imperative, the input under an explicit
-    /// `Input:` label, and the trailing marker.
+    /// The user turn the engine sends: the imperative, the input, and the trailing
+    /// marker.
     ///
     /// Without this framing Apple FM treats the raw as a conversational turn and
     /// emits chat-reply acknowledgements ("I'll polish it for you") instead of the
     /// transformed text.
+    ///
+    /// ### There is no `Input:` label, and that is the fix for #518
+    ///
+    /// This framing used to put the transcript under a literal `Input:` line. That
+    /// one label made Apple FM refuse ordinary French with
+    /// `unsupportedLanguageOrLocale` — a language it supports, read by our own
+    /// `NLLanguageRecognizer` as `fr 1.000`, rejected at the session boundary in
+    /// 3–18 ms before any generation ran. Measured on the two committed fixtures
+    /// (`fixtures/refusal-fr.json`), five runs each, shipping system prompt:
+    ///
+    /// | user turn | refused |
+    /// | --- | --- |
+    /// | with `Input:`, own line (what shipped) | **10/10** |
+    /// | with `Input:`, same line as the text | **10/10** |
+    /// | with `Input:`, trailing marker removed | **10/10** |
+    /// | no label (this) | 0/10 |
+    /// | `Texte :` instead of `Input:` | 0/10 |
+    /// | `<TRANSCRIPT>` tags (#474) | 0/10 |
+    /// | no framing at all | 0/10, and it re-admits chat replies |
+    ///
+    /// So the trigger is **an English label immediately preceding the transcript**,
+    /// not English framing in general: the imperative above stays in English in
+    /// every passing variant. The trailing marker is not implicated — removing it
+    /// alone leaves the refusal at 10/10 — so it stays, because it is the half that
+    /// was measured to hold the chat replies back.
+    ///
+    /// Sending the transcript bare is what the classifier likes best and is still
+    /// not an option: with no framing at all, "Je me dis est-ce que je pourrais"
+    /// came back as *"Oui, je peux vous aider avec ça."*
+    ///
+    /// #474 will replace the blank line below with `<TRANSCRIPT>` tags across all
+    /// eleven prompts at once. It measures as a fix here too; it is not landed here
+    /// because tagging the user turn without tagging the eleven system prompts is
+    /// the half-tagged state that issue's first criterion forbids.
     ///
     /// WHY it lives on the task rather than inside the engine: the #268 spike sends
     /// these exact bytes to a Core ML model outside the engine's process, and it
@@ -140,7 +174,6 @@ public enum PolishTask: Equatable, Sendable {
         """
         \(userInstruction)
 
-        Input:
         \(raw)
 
         \(outputMarker)
