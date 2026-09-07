@@ -1031,10 +1031,40 @@
     "Forget %lld terms" : {
       "comment" : "Destructive confirmation button; %lld is the number of stored terms.",
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forget %lld term"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forget %lld terms"
+                }
+              }
+            }
+          }
+        },
         "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Oublier %lld termes"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Oublier %lld terme"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Oublier %lld termes"
+                }
+              }
+            }
           }
         }
       }
@@ -2206,6 +2236,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retournez dans votre application et appuyez à nouveau sur le micro."
+          }
+        }
+      }
+    },
+    "Save" : {
+      "comment" : "Confirmation button of the vocabulary editor sheet.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer"
           }
         }
       }
