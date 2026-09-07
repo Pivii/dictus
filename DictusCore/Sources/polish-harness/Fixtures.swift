@@ -64,7 +64,30 @@ struct Expectation: Codable {
     /// allowed to ADD whitespace and never to REMOVE words, so an extra paragraph
     /// break is within contract while a lost marker is not. Both counts are printed
     /// on failure, so a reader sees which of the two happened.
+    ///
+    /// It is judged on the ENGINE's output, not on what would reach the document.
+    /// Those differ exactly where this check matters: on any non-success the free
+    /// polish falls back to the deterministic floor, and the floor is the pre-passed
+    /// text — which still carries every line break. Asserting on the inserted text
+    /// would therefore pass a run in which the model deleted all of them, which is
+    /// the very hole this check was added to close, one level further down.
     var lineBreaksPreserved: Bool?
+
+    /// The run's outcome must be this `PolishMetrics.Outcome` raw value.
+    ///
+    /// A run-level assertion rather than a text one: a fixture that exists to prove
+    /// a REFUSAL has no text to inspect, and `refusal-cs.json` was committed with an
+    /// empty expectation list for that reason — which asserted nothing at all, so a
+    /// Czech translate that started succeeding would have passed it silently.
+    var outcome: String?
+
+    /// The engine failure's slug must be this `PolishFailureReason`.
+    ///
+    /// Paired with `outcome` rather than folded into it because the negative control
+    /// needs both halves: `engineFailed` alone would be satisfied by a refusal for
+    /// any other reason, and the whole point of that fixture is that Apple still
+    /// refuses Czech with `unsupportedLanguageOrLocale` after #518's reframing.
+    var failureReason: String?
 
     /// Limit this assertion to one prompt route: `"perLanguage"` or `"auto"`.
     /// Absent means it holds on both, which is the default and the common case.
@@ -88,23 +111,49 @@ struct Expectation: Codable {
         onlyOnRoute == nil || onlyOnRoute == route
     }
 
-    /// Evaluate against the polished output, the original raw, and the text the
-    /// engine was actually handed. Returns nil on pass, or a human-readable reason.
+    /// Whether this assertion reads the text that would reach the document.
     ///
-    /// `preprocessed` is the pre-pass output, not `raw`: `lineBreaksPreserved`
-    /// counts a marker that only exists after `VerbalPunctuationPrepass` has turned
-    /// spoken "retour à la ligne" into a newline. It is encoded here the way
-    /// `PolishPipeline` encodes it, so what is counted is what the engine was sent
-    /// rather than a stand-in for it.
-    func failure(polished: String, raw: String, preprocessed: String) -> String? {
+    /// Used by `eval` to decide whether "the mode inserted nothing" is a failure:
+    /// for a fixture asserting on the run (`outcome`, `failureReason`) it is the
+    /// expected result, and for one asserting on the text it is the absence of the
+    /// thing under test.
+    var inspectsInsertedText: Bool {
+        contains != nil || notContains != nil || regexAbsent != nil
+            || lengthRatioMin != nil || lengthRatioMax != nil
+    }
+
+    /// Evaluate against everything one run produced. Returns nil on pass, or a
+    /// human-readable reason.
+    func failure(_ run: RunEvidence) -> String? {
+        if let expected = outcome, run.outcome != expected {
+            return "outcome \(run.outcome), expected \(expected)"
+        }
+        if let expected = failureReason, run.failureReason != expected {
+            return "failure reason \(run.failureReason ?? "none"), expected \(expected)"
+        }
         if lineBreaksPreserved == true {
-            let markers = PolishPostpass.encodeForEngine(preprocessed)
+            // `preprocessed` is the pre-pass output, not `raw`: the marker only
+            // exists once `VerbalPunctuationPrepass` has turned spoken "retour à la
+            // ligne" into a newline. It is encoded here the way `PolishPipeline`
+            // encodes it, so what is counted is what the engine was sent rather than
+            // a stand-in for it. The engine's own output comes back already decoded
+            // (`PolishPipeline.transform`), so the other side counts real newlines.
+            let markers = PolishPostpass.encodeForEngine(run.preprocessed)
                 .components(separatedBy: PolishPostpass.newlineMarker).count - 1
-            let breaks = polished.filter(\.isNewline).count
+            guard let engineOutput = run.engineOutput else {
+                return markers == 0
+                    ? nil
+                    : "\(markers) line-break marker(s) in, and the engine produced "
+                        + "no output to check (\(run.outcome))"
+            }
+            let breaks = engineOutput.filter(\.isNewline).count
             if breaks < markers {
                 return "\(markers) line-break marker(s) in, \(breaks) line break(s) out"
             }
         }
+        // Everything below reads the text that would reach the document. When there
+        // is none, `eval` says so once rather than once per assertion.
+        guard let polished = run.polished else { return nil }
         if let needle = contains,
            polished.range(of: needle, options: .caseInsensitive) == nil {
             return "missing \"\(needle)\""
@@ -117,7 +166,7 @@ struct Expectation: Codable {
            polished.range(of: pattern, options: .regularExpression) != nil {
             return "matched forbidden /\(pattern)/"
         }
-        let ratio = raw.isEmpty ? 1 : Double(polished.count) / Double(raw.count)
+        let ratio = run.raw.isEmpty ? 1 : Double(polished.count) / Double(run.raw.count)
         if let lo = lengthRatioMin, ratio < lo {
             return String(format: "length ratio %.2f < %.2f", ratio, lo)
         }
@@ -126,6 +175,28 @@ struct Expectation: Codable {
         }
         return nil
     }
+}
+
+/// Everything one run produced, as the expectations see it.
+///
+/// Grouped rather than passed loose because the assertions no longer all read the
+/// same string: `lineBreaksPreserved` judges the ENGINE's output, `outcome` and
+/// `failureReason` judge the run, and the rest judge what would reach the document.
+/// Passing five arguments in a fixed order is how the first two got asserted against
+/// the wrong one.
+struct RunEvidence {
+    /// What would reach the document, nil when nothing would (a Smart Mode refusal).
+    let polished: String?
+    /// The fixture's verbatim transcript.
+    let raw: String
+    /// The pre-pass output — the text the engine was handed, before marker encoding.
+    let preprocessed: String
+    /// The model's own output, already decoded; nil when it never produced one.
+    let engineOutput: String?
+    /// `PolishMetrics.Outcome` raw value.
+    let outcome: String
+    /// `PolishFailureReason` slug, when the engine threw.
+    let failureReason: String?
 }
 
 enum FixtureLoader {

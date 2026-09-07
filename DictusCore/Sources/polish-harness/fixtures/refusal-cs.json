@@ -5,6 +5,13 @@
     "sttEngine": "PK",
     "_note": "The NEGATIVE control for #518, verbatim from the same export (id 0D55CE93, 2026-09-07T13:45:39Z, mode smart.translate.en, detectedLanguage cs, languageMix {\"cs\": 1}, engineFailed / unsupportedLanguageOrLocale in engineMs=22). Czech is genuinely outside Apple FM's set, so this refusal is LEGITIMATE and is #490's case, not #518's. It must stay refused after any reframing: a framing that made this one pass would have disabled the check rather than removed a false positive. Run it with --mode translate.en — that is the task it was captured under, and the free polish would skip it at the gibberish gate (cs is not one of the four prompt languages).",
     "raw": "Dobrý den, dnes je opravdu hezký den a musím zavolat kolegovi.",
-    "expect": []
+    "expect": [
+      {
+        "outcome": "engineFailed"
+      },
+      {
+        "failureReason": "unsupportedLanguageOrLocale"
+      }
+    ]
   }
 ]
