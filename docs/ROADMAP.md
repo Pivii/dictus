@@ -59,12 +59,15 @@ So the launch scope is not a question of how many features to build. It is one h
 
 ### The order
 
-1. **#490** — Translate refuses on device, Apple FM answers `unsupportedLanguageOrLocale` in 8 languages. A paid mode that does not run.
-2. **#414** — a Smart Mode prompt's worked example was copied verbatim into the user's output.
-3. **#80** — Vocabulary. The third feature, and the largest piece in this lane.
-4. **#494** — offer Pro after the first successful dictation in onboarding.
-5. **#215** — the ASC catalogue (see Lane 0; start it early, finish it here).
-6. **#279** — flip `PremiumFlags.paywallVisible`, in the same PR as the first reachable Pro feature. Walk all four entry points; the flag is compile-time, so a site that was never wired to it stays silently hidden.
+Reordered on 2026-09-07: #518 did not exist that morning. It came out of a debug export while diagnosing #490, and it outranks everything below it — it reaches **every** user including the free tier, it says nothing at all when it fires, and the trigger is our own prompt rather than Apple's model. It also reproduces 5/5 on the Mac, so it is fixed and verified without a device.
+
+1. **#518** — Apple FM refuses plain French with `unsupportedLanguageOrLocale`, and our English prompt framing is what triggers it. Normal polish, so the free path. `PolishService.finalOutcome:311` attaches a failure only when a mode is armed, so `KeyboardPolishCoordinator:326` never announces: the user is told nothing and concludes the polish had nothing to fix. Their words are not lost — the deterministic floor is inserted. The minimal refusing input is 32 characters of ordinary spoken French, and the same French sent without our framing is accepted 0/5 refused.
+2. **#490** — Traduction refuses on the dictated language. Not a broken mode: 11 successes against 1 failure on device, and reproduced deliberately with a Czech sentence. Apple's check is a language classifier on the user turn, so a pre-flight *before* the dictation cannot exist — that acceptance criterion is dropped. What is left is a specific sentence and one that survives an immediate re-dictation. Cheaper once #518's reframing lands.
+3. **#414** — a Smart Mode prompt's worked example was copied verbatim into the user's output. Mostly shipped already: `PolishGrounding` was added by this issue and the Notes examples are neutralised. Threshold decided on 2026-09-07 at **0.15**, with false rejections counted on the 48 outputs a user can actually see accepted rather than all 57 — the other 9 are already refused upstream by the language check. `Z1-sophie-reoccurrence` ships knowingly open; closing it costs 1 false rejection in 48 at 0.25.
+4. **#80** — Vocabulary. The third feature, and the largest piece in this lane. Its body is wrong on the mechanism: WhisperKit 0.16.0 has no public `initialPrompt`, and Parakeet — the default engine at ≥6 GB — has a purpose-built boosting API whose CTC judge is **English-only** (`FluidInference/parakeet-ctc-110m-coreml`, `language: ["en"]`) while our TDT speaks 25. The only stage that treats French and English alike is a post-transcription text replacement. Grill it before planning: #512 declares itself a hard dependency of #80 and assumes six deliverables its body never mentions.
+5. **#494** — offer Pro after the first successful dictation in onboarding.
+6. **#215** — the ASC catalogue (see Lane 0; start it early, finish it here).
+7. **#279** — flip `PremiumFlags.paywallVisible`, in the same PR as the first reachable Pro feature. Walk all four entry points; the flag is compile-time, so a site that was never wired to it stays silently hidden.
 
 ### What was deliberately cut from this lane
 
