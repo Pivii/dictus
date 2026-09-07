@@ -306,7 +306,7 @@ public final class PolishService {
                               bundle: PolishPipeline.Result,
                               job: PolishJob,
                               raw: String,
-                              detectedCode: String?) -> PolishOutcome {
+                              detectedLanguage: String?) -> PolishOutcome {
         // `resolvedOutput` only withholds text for a Smart Mode, and only degrades
         // for one, so anything else is a plain success or a free-polish floor.
         guard let mode = job.task.smartMode, bundle.outcome != .success else {
@@ -327,7 +327,14 @@ public final class PolishService {
             // Only `unsupportedInputLanguage` says it out loud, but it travels on
             // every failure: which of them names the language is the surface's
             // decision, and re-deriving it there would mean detecting twice (#490).
-            detectedLanguage: detectedCode
+            //
+            // The MIX's leader, not the whole-blob code, with that as the fallback.
+            // The mix is what the pre-flight judged, so it is the only reading whose
+            // verdict the sentence can honestly report — and the whole-blob code
+            // weights the opening of the transcript (#456), which is the region
+            // Parakeet gets wrong most. A message naming a language the refusal was
+            // not about would be worse than the generic sentence it replaces.
+            detectedLanguage: detectedLanguage
         )
         guard degraded, let returned else { return PolishOutcome(failure: failure) }
         return PolishOutcome(degradedTo: returned, failure: failure)
@@ -521,7 +528,7 @@ public final class PolishService {
 
         return finalOutcome(
             returned: returned, bundle: bundle, job: job, raw: raw,
-            detectedCode: request.detectedCode
+            detectedLanguage: request.languageMix.dominantCode ?? request.detectedCode
         )
     }
 
@@ -642,7 +649,7 @@ public final class PolishService {
         await emit(m, raw: raw, polished: bundle.engineOutput)
         return finalOutcome(
             returned: returned, bundle: bundle, job: job, raw: raw,
-            detectedCode: request.detectedCode
+            detectedLanguage: request.languageMix.dominantCode ?? request.detectedCode
         )
     }
 
