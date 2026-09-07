@@ -19,6 +19,16 @@ extension Notification.Name {
     static let dictusWarmStateReleased = Notification.Name("DictusWarmStateReleased")
 }
 
+/// Which of the two Objective-C calls in `startEngine()` raised an NSException.
+///
+/// The raw values are the tokens already written to the persistent log
+/// (`installTap NSException:` / `engine.start NSException:`), so a log an agent greps
+/// and an error payload it reads spell the same fact the same way (#255, #417).
+enum ObjCAudioStartCall: String {
+    case installTap
+    case engineStart = "engine.start"
+}
+
 /// Errors that can occur during audio engine operations.
 enum AudioEngineError: Error, DiagnosableError {
     case permissionDenied
@@ -39,10 +49,18 @@ enum AudioEngineError: Error, DiagnosableError {
     /// hardware is unavailable".
     case audioHardwareUnavailable(reason: String)
 
-    /// `installTap` or `engine.start` raised an Objective-C exception. The payload is the
-    /// exception's own text and is diagnostic only — it is an AVFoundation sentence that
-    /// names formats and sample rates.
-    case installTapFailed(String)
+    /// `installTap` or `engine.start` raised an Objective-C exception. `reason` is the
+    /// exception's own text — an AVFoundation sentence naming formats and sample rates —
+    /// and `call` names which of the two raised it.
+    ///
+    /// WHY `call` is carried (#417): AVAudioEngine defers tap creation on a stopped engine
+    /// until `start()`, so the same exception text can come from either site, and the two
+    /// mean different things — a tap that could not be installed, versus a format that
+    /// drifted after it was. Only the persistent log told them apart, and that distinction
+    /// is what made #417 diagnosable at all. Diagnostic only, like `phoneCallActive`'s
+    /// evidence: both cases show the user the same sentence, because from their side they
+    /// are the same event.
+    case installTapFailed(call: ObjCAudioStartCall, reason: String)
 
     /// User-facing text. Written to `DictationErrorChannel` and displayed by whichever
     /// surface the user is on — the keyboard's toolbar, the app's failure screen, or both.
@@ -77,8 +95,8 @@ enum AudioEngineError: Error, DiagnosableError {
             return "a call holds the microphone — \(evidence)"
         case .audioHardwareUnavailable(let reason):
             return "input node reports an unusable format after the engine rebuild — \(reason)"
-        case .installTapFailed(let reason):
-            return "installTap/engine.start raised: \(reason)"
+        case .installTapFailed(let call, let reason):
+            return "\(call.rawValue) raised: \(reason)"
         }
     }
 }
@@ -98,6 +116,14 @@ enum AudioEngineError: Error, DiagnosableError {
 /// buffers for heartbeat/energy (background survival) but discards the actual audio data.
 /// This eliminates the 64M idle sample accumulation bug (#38).
 @MainActor
+// WHY the exemption (#417): this class body was at 648 of the 650-line budget before the
+// converter rebuild was added, so any fix landing in it trips the rule. The threshold's own
+// rationale in .swiftlint.yml is that it exists "to catch a NEW type or function ballooning"
+// and explicitly not to police the large classes that already exist — raising the global
+// number to fit this one would weaken it everywhere for a class it was never aimed at, and
+// carving the audio-thread half into an extension is a restructuring of the file that the
+// same rationale calls the highest-risk change available. Scoped here, and only here.
+// swiftlint:disable:next type_body_length
 class UnifiedAudioEngine: ObservableObject {
     // MARK: - Published State
 
@@ -146,11 +172,27 @@ class UnifiedAudioEngine: ObservableObject {
     /// Accumulated audio samples in 16kHz mono Float32 (WhisperKit/Parakeet expected format).
     private var audioSamples: [Float] = []
 
-    /// Converter from hardware sample rate (typically 48kHz) to 16kHz mono.
-    /// WHY nonisolated(unsafe): Written once from main thread in startEngine(),
-    /// read from audio callback thread in processBuffer(). Write completes before
-    /// the audio tap is installed, so no race condition.
+    /// Converter from the hardware format (typically 48kHz mono) to 16kHz mono.
+    ///
+    /// WHY nonisolated(unsafe): `startEngine()` pre-builds one from the format the input
+    /// node reported, and from then on `processBuffer()` owns it — it rebuilds from the
+    /// buffer's own format whenever the two disagree (#417). Main writes it again only to
+    /// clear it, in the two places that bump `engineGeneration` and remove the tap first,
+    /// so an in-flight callback bails out before it can observe the nil.
+    ///
+    /// WHY the pre-build survived the move to the tap: it is what keeps the audio thread
+    /// allocation-free in the normal case. The format the node reports is the right one
+    /// almost always; when it is not, the tap pays a single build and says so.
     private nonisolated(unsafe) var converter: AVAudioConverter?
+
+    /// The last buffer format `AVAudioConverter(from:to:)` refused, if any.
+    ///
+    /// WHY it is remembered (#417): the tap runs on a real-time thread and buffers arrive
+    /// at roughly 100 Hz. Without the memo, a format nothing can convert would be retried
+    /// — allocating — on every one of them, for as long as that route lasts. Cleared
+    /// wherever `converter` is, so a fresh engine inherits no verdict from the dead one.
+    /// `AudioConverterCachePolicy` holds the rule.
+    private nonisolated(unsafe) var lastUnconvertibleInputFormat: AVAudioFormat?
 
     /// Target format: 16kHz mono Float32 — what WhisperKit and Parakeet expect.
     ///
@@ -544,6 +586,7 @@ class UnifiedAudioEngine: ObservableObject {
         engineGeneration &+= 1
         engine = AVAudioEngine()
         converter = nil
+        lastUnconvertibleInputFormat = nil
     }
 
     // MARK: - Session & Permissions (ported from AudioRecorder)
@@ -903,6 +946,7 @@ class UnifiedAudioEngine: ObservableObject {
         )
         sessionConfigured = false
         converter = nil
+        lastUnconvertibleInputFormat = nil
         lastIdleStartTime = nil
         idleReleaseWorkItem = nil
 
@@ -951,18 +995,30 @@ class UnifiedAudioEngine: ObservableObject {
 
         let (inputNode, hwFormat) = try resolveUsableInputFormat(context: context)
 
-        // Create converter from hardware format to 16kHz mono
-        guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
-            // Logged for the same reason as the guards above (#123): a start that
-            // fails here leaves no trace at all, and the format that could not be
-            // converted is the only thing that would explain it.
-            PersistentLog.log(.dictationFailed(
-                error: "no converter from sr=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount) to 16kHz mono"
+        // Pre-build the converter from the format the node just reported, to 16kHz mono.
+        //
+        // WHY this is best effort and no longer throws (#417): since the tap installs with
+        // `format: nil`, `hwFormat` is advisory. The format that matters is the one on the
+        // first buffer, and `processBuffer` rebuilds from it when the two disagree. Refusing
+        // to start here would refuse a dictation the bus was about to serve correctly.
+        //
+        // The pre-build stays because it is what keeps the audio thread allocation-free in
+        // the normal case: the node's format is the bus's format almost always, so the first
+        // recording buffer finds a converter that already matches and builds nothing.
+        //
+        // The log line stays for the reason #123 put it there: a start that produces no
+        // converter used to leave no trace at all, and the format is the only thing that
+        // would explain it. It is a diagnostic now, not a failure — the tap gets the last word.
+        converter = AVAudioConverter(from: hwFormat, to: targetFormat)
+        lastUnconvertibleInputFormat = nil
+        if converter == nil {
+            PersistentLog.log(.diagnosticProbe(
+                component: "UnifiedAudioEngine",
+                instanceID: context,
+                action: "converterPrebuildFailed",
+                details: "no converter from sr=\(hwFormat.sampleRate) ch=\(hwFormat.channelCount) to 16kHz mono"
             ))
-            throw NSError(domain: "UnifiedAudioEngine", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Cannot create audio converter from \(hwFormat) to 16kHz mono"])
         }
-        converter = conv
 
         // Remove any stale tap before installing a new one.
         // WHY: If a previous startEngine() installed a tap but engine.start() threw
@@ -980,10 +1036,19 @@ class UnifiedAudioEngine: ObservableObject {
         // belong to the dead engine and must be discarded — otherwise they race
         // with the new engine's tap on shared `nonisolated(unsafe)` audio-thread
         // state (issue #106 review).
+        //
+        // WHY `format: nil` rather than `hwFormat` (#417): nil means "use the bus's own
+        // format", so the value can no longer be stale and a mismatch is impossible by
+        // construction. `hwFormat` was read by `resolveUsableInputFormat` sixty lines up,
+        // and an interruption — a native call, or Siri — renegotiates the input node inside
+        // that window. Measured six times on device (2026-09-02 with Siri listening,
+        // 2026-09-03 during a call): `installTap NSException: Failed to create tap due to
+        // format mismatch, <AVAudioFormat 1 ch, 48000 Hz, Float32>`, on a format that is
+        // individually valid and that every pre-flight guard therefore accepts.
         let installedGeneration = engineGeneration
         do {
             try ObjCExceptionCatcher.catchException {
-                inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
                     guard let self else { return }
                     guard installedGeneration == self.engineGeneration else { return }
                     self.processBuffer(buffer)
@@ -992,7 +1057,7 @@ class UnifiedAudioEngine: ObservableObject {
         } catch {
             let reason = (error as NSError).localizedDescription
             PersistentLog.log(.dictationFailed(error: "installTap NSException: \(reason)"))
-            throw AudioEngineError.installTapFailed(reason)
+            throw AudioEngineError.installTapFailed(call: .installTap, reason: reason)
         }
 
         // engine.start() can throw both Swift errors (AUIOClient_StartIO) and
@@ -1010,7 +1075,7 @@ class UnifiedAudioEngine: ObservableObject {
             inputNode.removeTap(onBus: 0)
             let reason = (error as NSError).localizedDescription
             PersistentLog.log(.dictationFailed(error: "engine.start NSException: \(reason)"))
-            throw AudioEngineError.installTapFailed(reason)
+            throw AudioEngineError.installTapFailed(call: .engineStart, reason: reason)
         }
         if let swiftStartError {
             inputNode.removeTap(onBus: 0)
@@ -1241,7 +1306,7 @@ class UnifiedAudioEngine: ObservableObject {
             return
         }
 
-        guard let converter else { return }
+        guard let converter = converterMatching(buffer.format) else { return }
 
         // Calculate output frame count: input frames * (target rate / source rate) + 1
         let ratio = 16000.0 / buffer.format.sampleRate
@@ -1339,6 +1404,74 @@ class UnifiedAudioEngine: ObservableObject {
 
             // Maintain a rolling window of energy values (last 30 = matches barCount in BrandWaveform)
             self.bufferEnergy = self.makeWaveformSnapshot()
+        }
+    }
+
+    /// The converter for this buffer, built or rebuilt when the one we hold reads a
+    /// different format. Nil means the buffer cannot be converted and must be dropped.
+    ///
+    /// ### Why the format comes from the buffer (#417)
+    ///
+    /// The tap installs with `format: nil`, so the bus decides what it delivers and nothing
+    /// we read beforehand is authoritative. `startEngine()` still pre-builds a converter from
+    /// the format the node reported, which is the same format in every ordinary start — so
+    /// the ordinary path lands on `.reuse` and allocates nothing.
+    ///
+    /// It also closes a second, quieter failure the issue named: before this, a route change
+    /// mid-recording left the converter reading a format the hardware had stopped producing,
+    /// and it went on converting from it without a word.
+    ///
+    /// ### Why allocating on the audio thread is acceptable here
+    ///
+    /// This runs on a real-time thread, and `AVAudioConverter(from:to:)` allocates. It is
+    /// bounded to one build per distinct format — a start, or a route renegotiation — and
+    /// `AudioConverterCachePolicy` is what bounds it: without the failure memo, a format
+    /// nothing can convert would allocate on every buffer at roughly 100 Hz.
+    ///
+    /// The same callback already encodes JSON at 5 Hz and writes the persistent log at 1 Hz,
+    /// so a build at route-change frequency is strictly cheaper than what runs here anyway.
+    /// The alternative — hop to main and drop buffers until it answers — would lose audio at
+    /// the start of the recording, which is the worst place to lose it.
+    private nonisolated func converterMatching(_ bufferFormat: AVAudioFormat) -> AVAudioConverter? {
+        switch AudioConverterCachePolicy.decide(
+            heldInputFormat: converter?.inputFormat,
+            lastUnconvertibleFormat: lastUnconvertibleInputFormat,
+            bufferFormat: bufferFormat
+        ) {
+        case .reuse:
+            return converter
+
+        case .skipUnconvertibleFormat:
+            return nil
+
+        case .build:
+            let previous = converter?.inputFormat
+            guard let rebuilt = AVAudioConverter(from: bufferFormat, to: targetFormat) else {
+                // This is the case that silently loses the recording: no converter means no
+                // samples accumulate, and the user gets an empty transcription with nothing
+                // to explain it. Logged as a failure for that reason, once per format —
+                // `lastUnconvertibleInputFormat` is what keeps it from repeating at 100 Hz.
+                converter = nil
+                lastUnconvertibleInputFormat = bufferFormat
+                PersistentLog.log(.dictationFailed(
+                    error: "no converter from the bus format sr=\(bufferFormat.sampleRate)"
+                        + " ch=\(bufferFormat.channelCount) to 16kHz mono"
+                ))
+                return nil
+            }
+            converter = rebuilt
+            lastUnconvertibleInputFormat = nil
+
+            // The whole point of #417 is that the format we read and the format the bus
+            // delivers can differ, and we had no way to see it. This line is that evidence.
+            PersistentLog.log(.diagnosticProbe(
+                component: "UnifiedAudioEngine",
+                instanceID: "shared",
+                action: "converterBuiltFromBusFormat",
+                details: "from=\(previous.map { "sr=\($0.sampleRate) ch=\($0.channelCount)" } ?? "none")"
+                    + " to=sr=\(bufferFormat.sampleRate) ch=\(bufferFormat.channelCount)"
+            ))
+            return rebuilt
         }
     }
 
