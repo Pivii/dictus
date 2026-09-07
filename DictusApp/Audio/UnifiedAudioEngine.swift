@@ -34,11 +34,11 @@ enum AudioEngineError: Error, DiagnosableError {
     case permissionDenied
     case permissionUndetermined
 
-    /// A call holds the microphone. The payload names which of the two signals said so —
-    /// a telephony input route, or a bluetooth headset route during an interruption
-    /// (#459). Diagnostic only: a log that says nothing but "a call" cannot tell a
-    /// handset call from an AirPods one, and those are two different fixes if this
-    /// detection is ever wrong again.
+    /// A call holds the microphone, as CallKit reports it (#483). The payload names which
+    /// state said so — a connected call, or one still ringing or connecting. Diagnostic
+    /// only: a log that says nothing but "a call" cannot tell a refusal during a
+    /// conversation from a refusal while the phone was merely ringing, and those are two
+    /// different conversations if this detection is ever wrong again.
     case phoneCallActive(evidence: String)
 
     /// The input node reported a format nothing can be recorded from, and it reported
@@ -226,6 +226,24 @@ class UnifiedAudioEngine: ObservableObject {
     /// (Live Activity, transitionToRecording guard) need a fast in-process flag to
     /// know the audio layer is degraded (issue #106).
     private var isInterrupted = false
+
+    /// Whether the input route has been observed empty since the last engine start that
+    /// succeeded (issue #515).
+    ///
+    /// This is the whole trigger of the post-interruption fix, and it is one bool because
+    /// the device captures made it one: every attempt whose own `setActive(true)` had to
+    /// bring the route back from `none` captured zero samples, and every attempt that found
+    /// the route already up captured audio. `AudioStartReadinessPolicy` holds the argument.
+    private var inputRouteWentEmptySinceLastStart = false
+
+    /// CallKit's view of the system's calls, retained for the life of the engine (#483).
+    ///
+    /// WHY it is built here and not at the guard that reads it: `CXCallObserver` has to be
+    /// retained, and its `calls` array is not guaranteed populated the instant after
+    /// `init()`. An observer created at start-attempt time would answer "no call" during a
+    /// real call, intermittently. `UnifiedAudioEngine` is created once at app launch and
+    /// lives as long as the process, so the connection is up long before anyone asks.
+    private let callObserver = SystemCallObserver()
 
     /// Re-entry guard for the interruption handler. Prevents a second `.began` /
     /// `.ended` arriving while we're still mutating engine state from a previous
@@ -510,6 +528,17 @@ class UnifiedAudioEngine: ObservableObject {
         let previous = (userInfo[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription)
             .map { portList($0.inputs) } ?? "unknown"
 
+        // The fact #515 turns on. An interruption ending leaves the route empty and
+        // leaves it there; the next start is the one that pays for bringing it back, and
+        // that is the start that captures nothing. Raised here rather than in the
+        // interruption handler because it is the route that discriminates, not the
+        // interruption: a `.began` with no empty route behind it costs the next start
+        // nothing, and an empty route with no `.ended` (media services, a cable pulled)
+        // costs it just as much.
+        if AVAudioSession.sharedInstance().currentRoute.inputs.isEmpty {
+            inputRouteWentEmptySinceLastStart = true
+        }
+
         PersistentLog.log(.audioRouteChanged(
             reason: Self.routeChangeReasonName(raw),
             details: "previous=\(previous) \(routeStateDescription())"
@@ -727,6 +756,24 @@ class UnifiedAudioEngine: ObservableObject {
     /// Begin recording: purge idle audio and start accumulating samples.
     /// If the engine isn't running yet, starts it first (<100ms).
     func startRecording() throws {
+        // WHY the call guard runs here as well as in `startEngine` (#483, CodeRabbit on
+        // PR #513): a warm engine skips `startEngine()` entirely — the line thirty below
+        // says so in its own words, written for #293 — and `startEngine` is the only other
+        // caller of this guard. So with the engine already running, a dictation started
+        // while a call held the microphone would set `isRecording`, log `audioEngineStarted`
+        // and capture nothing, without ever asking CallKit.
+        //
+        // The window is real rather than theoretical: `isInterrupted`'s own documentation
+        // records that "the engine may still report `isRunning` momentarily" after an
+        // interruption begins, which is exactly the interval between a call taking the
+        // hardware and our handler stopping the engine. The keyboard is covered by
+        // `KeyboardCallGuard`; the app's own mic button reaches here and nowhere else.
+        //
+        // WHY it is the very first statement: `cancelIdleRelease()` below drops the timer
+        // that bounds a warm engine (#256). Throwing after it would leave the engine warm
+        // with nothing armed to release it.
+        try refuseIfACallHoldsTheMicrophone()
+
         // Cancel any pending idle release — recording activity resets the timer.
         cancelIdleRelease()
 
@@ -830,12 +877,31 @@ class UnifiedAudioEngine: ObservableObject {
         sessionConfigured = false
         PersistentLog.log(.audioEngineStopped)
 
+        // WHY the two calls are caught separately (#515): one `catch` covered both, so the
+        // device capture of 2026-09-06 says only
+        // `engineWarmUpFailed context=forceRestart error=OSStatus 560557684` — that is
+        // `AVAudioSessionErrorCodeCannotInterruptOthers`, another session still owns the
+        // hardware, and it can come from either `setCategory` or `setActive`. Which one it
+        // is decides whether re-asserting the category during a recovery is the mistake,
+        // and the log could not say. Now it names the call.
         do {
             try configureAudioSession()
+        } catch {
+            PersistentLog.log(.engineWarmUpFailed(
+                context: "forceRestart-configureAudioSession",
+                error: DictationFailureMessage.diagnostic(for: error)
+            ))
+            return
+        }
+
+        do {
             try startEngine(context: "forceRestart")
             PersistentLog.log(.engineWarmUpSuccess(context: "forceRestart"))
         } catch {
-            PersistentLog.log(.engineWarmUpFailed(context: "forceRestart", error: DictationFailureMessage.diagnostic(for: error)))
+            PersistentLog.log(.engineWarmUpFailed(
+                context: "forceRestart-startEngine",
+                error: DictationFailureMessage.diagnostic(for: error)
+            ))
         }
     }
 
@@ -993,6 +1059,12 @@ class UnifiedAudioEngine: ObservableObject {
         // Nothing about the #457 rebuild itself changes — only when it is reached.
         try refuseIfACallHoldsTheMicrophone()
 
+        // The start after an interruption is the one that re-establishes the input route,
+        // and it is the one that captures nothing (#515). Runs after the call guard, for
+        // the same reason that guard runs first: waiting for a route a call is holding
+        // cannot succeed, and refusing costs nothing.
+        recoverInputRouteIfAnInterruptionEmptiedIt(context: context)
+
         let (inputNode, hwFormat) = try resolveUsableInputFormat(context: context)
 
         // Pre-build the converter from the format the node just reported, to 16kHz mono.
@@ -1094,6 +1166,11 @@ class UnifiedAudioEngine: ObservableObject {
         // to remember to flip the flag.
         isInterrupted = false
 
+        // This start reached a running engine, so whatever the route did before it is
+        // spent: the next start is an ordinary one (#515). Cleared here, with
+        // `isInterrupted`, because this is the only place a start is known to have worked.
+        inputRouteWentEmptySinceLastStart = false
+
         // Re-assert the system-haptics allowance now that the session is truly
         // carrying input. `configureAudioSession()` sets it before the engine
         // exists, and `startEngine()` is reachable without it — after a
@@ -1181,59 +1258,6 @@ class UnifiedAudioEngine: ObservableObject {
                 ))
                 throw AudioEngineError.audioHardwareUnavailable(reason: reason.rawValue)
             }
-        }
-    }
-
-    /// Refuse the start when a call holds the microphone, and say that it is a call.
-    ///
-    /// ### What was wrong (issue #459)
-    ///
-    /// The guard used to be one `contains("telephony")` on the input ports. **A call
-    /// carried over AirPods or any bluetooth headset does not present as `telephony`.
-    /// It presents as `BluetoothHFP`** — so for most people, on the majority of their
-    /// calls, the guard never fired. Until #457 that miss was hidden: a zero-channel
-    /// format threw `phoneCallActive` too, so the AirPods case reached the user with
-    /// the right message for the wrong reason. #457 corrected the mislabel, which left
-    /// this case telling the user the microphone is unavailable without saying that a
-    /// call is holding it — the one situation the user can actually act on.
-    ///
-    /// ### WHY only the inputs, and not `builtInReceiver` on the outputs
-    ///
-    /// Unchanged from the original guard: without `.defaultToSpeaker`, iOS routes
-    /// output to `builtInReceiver` by default. That is normal operation, not a call.
-    ///
-    /// The rule itself is `CallRoutePolicy` in DictusCore, because this method cannot
-    /// be tested — `@MainActor`, a live `AVAudioEngine`, and a simulator that has
-    /// neither a telephony route nor bluetooth audio. Since #123 this is the only site
-    /// in the file that produces the phone-call message.
-    private func refuseIfACallHoldsTheMicrophone() throws {
-        let session = AVAudioSession.sharedInstance()
-        let decision = CallRoutePolicy.decide(
-            inputPortTypes: session.currentRoute.inputs.map { $0.portType.rawValue },
-            isInterrupted: isInterrupted,
-            builtInMicrophoneIsAvailable: (session.availableInputs ?? [])
-                .contains { $0.portType == .builtInMic }
-        )
-
-        guard case .callHoldsMicrophone(let evidence) = decision else { return }
-
-        PersistentLog.log(.dictationFailed(
-            error: "a call holds the microphone: \(evidence.rawValue) — \(routeStateDescription())"
-        ))
-        throw AudioEngineError.phoneCallActive(evidence: Self.evidenceSentence(for: evidence))
-    }
-
-    /// The English fragment `AudioEngineError.phoneCallActive` carries into the log.
-    ///
-    /// Diagnostic only — never shown to anyone. It exists because the two signals are
-    /// indistinguishable in a log that only says "a call", and the reader of that log
-    /// is an agent (#255).
-    private static func evidenceSentence(for evidence: CallRouteEvidence) -> String {
-        switch evidence {
-        case .telephonyInputRoute:
-            return "a telephony input route is active"
-        case .headsetRouteDuringInterruption:
-            return "a bluetooth headset is the input route while the session is interrupted"
         }
     }
 
@@ -1583,5 +1607,141 @@ class UnifiedAudioEngine: ObservableObject {
             middle,
             last
         )
+    }
+}
+
+// MARK: - What a start checks before it builds anything (#483, #515)
+
+/// The two questions `startEngine` asks before it touches the input node, and the one
+/// sentence that explains a refusal to a log.
+///
+/// An extension rather than more of the class body: both guards arrived with issues of
+/// their own, both carry the device captures that justify them, and together they pushed
+/// `UnifiedAudioEngine` past SwiftLint's `type_body_length`. Same file, so they keep
+/// reaching the private state they read.
+extension UnifiedAudioEngine {
+
+    /// Give a start that follows an interruption a route to build its node on (#515).
+    ///
+    /// ### The failure this answers
+    ///
+    /// When an interruption ends, iOS leaves the input route empty:
+    ///
+    /// ```
+    /// 14:57:08  audioRouteChanged reason=routeConfigurationChange(8) previous=MicrophoneBuiltIn route=none
+    /// 14:57:08  audioInterruptionEnded shouldResume=true restored=false
+    /// ```
+    ///
+    /// and leaves it there. The next `setActive(true)` brings it back — and on device,
+    /// `rev 550dc6a`, iPhone16,2, iOS 26.6.1, **all three attempts that had to do that
+    /// captured nothing**, while all six that found the route already up captured audio.
+    /// The user then waited two seconds for the zombie guard, watched it be refused with
+    /// `cannotInterruptOthers`, and was told to close the app — after which the very next
+    /// tap worked.
+    ///
+    /// ### Why this shape
+    ///
+    /// The alternative — resume on `.ended` — is forbidden by #106 and would be the wrong
+    /// trade anyway: it holds the audio hardware, orange indicator and all, for a user who
+    /// has not asked to dictate. So the whole of the room to act in is inside the tap, and
+    /// what this does is refuse to build an input node on a route that is not there yet,
+    /// then hand the start a node built after it arrived.
+    ///
+    /// The rebuild is `replaceEngine()`, the same primitive #457 uses when a node reports a
+    /// format nothing can be recorded from, and `handleMediaServicesReset` before it. The
+    /// node this engine holds was attached while the call owned the hardware; the argument
+    /// that a node cannot outlive the hardware it was built against is the one this repo
+    /// has already made twice.
+    ///
+    /// ### What is not established
+    ///
+    /// That waiting and rebuilding is *sufficient*. The trigger is measured, seven
+    /// activations across two sessions; the remedy is this repo's precedent applied to it.
+    /// The probe line carries the wait actually spent, so the next device capture answers
+    /// it rather than being reasoned about.
+    private func recoverInputRouteIfAnInterruptionEmptiedIt(context: String) {
+        let session = AVAudioSession.sharedInstance()
+        let readiness = AudioStartReadinessPolicy.decide(
+            inputPortCount: session.currentRoute.inputs.count,
+            routeWentEmptySinceLastStart: inputRouteWentEmptySinceLastStart
+        )
+        guard case .rebuildOnceInputRouteReturns(let waitMilliseconds) = readiness else { return }
+
+        // Polled rather than driven by the route notification: `startEngine` is
+        // synchronous and `@MainActor`, and the notification would be delivered on this
+        // same queue — waiting for it here would deadlock against the thing being waited
+        // for. The poll is 10 ms, bounded, and only ever runs on the first start after an
+        // interruption.
+        let started = Date()
+        var waited = 0
+        while session.currentRoute.inputs.isEmpty && waited < waitMilliseconds {
+            usleep(10_000)
+            waited += 10
+        }
+        let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
+
+        replaceEngine()
+        // The same 50 ms #102 settle `resolveUsableInputFormat` gives a rebuilt node: it
+        // has not finished negotiating its format the instant it exists.
+        usleep(50_000)
+
+        PersistentLog.log(.diagnosticProbe(
+            component: "UnifiedAudioEngine",
+            instanceID: context,
+            action: "engineRebuiltAfterEmptyRoute",
+            details: "waitedMs=\(elapsedMs) budgetMs=\(waitMilliseconds) \(routeStateDescription())"
+        ))
+    }
+
+    /// Refuse the start when a call holds the microphone, and say that it is a call.
+    ///
+    /// ### What was wrong (issues #459, #483)
+    ///
+    /// This guard asked the audio session, and the audio session cannot answer. The
+    /// predicate it started with — one `contains("telephony")` on the input ports — never
+    /// fired at all: a native call on the iPhone's own earpiece routes through
+    /// `MicrophoneBuiltIn`. #476 widened it to catch a call on a bluetooth headset
+    /// (`BluetoothHFP` + an interruption + the built-in mic available, measured 4/4), which
+    /// is real and cannot reach the earpiece case. And nothing at that layer can: **Siri
+    /// produces exactly the same three signals as a call**, and
+    /// `AVAudioSession.InterruptionReason` exposes neither `.phoneCall` nor `.siri`.
+    ///
+    /// `CXCallObserver` answers the question directly, so the heuristic was deleted rather
+    /// than kept as a fallback — CallKit says "no call" while Siri listens, so a fallback
+    /// underneath it would fire on Siri every time (#483, Decision 1).
+    ///
+    /// ### What is unchanged
+    ///
+    /// The position: this still runs **before** `resolveUsableInputFormat`, because a call
+    /// takes the input hardware away, so the format guard would otherwise throw
+    /// `audioHardwareUnavailable` first and this would never be evaluated (#459). And the
+    /// route state is still written into the log line — it is no longer the evidence, but it
+    /// is the context that made three of these captures readable.
+    ///
+    /// The rule itself is `ActiveCallPolicy` in DictusCore, because this method cannot be
+    /// tested — `@MainActor`, a live `AVAudioEngine`, and a simulator with no telephony at
+    /// all. Since #123 this is the only site in the file that produces the phone-call message.
+    private func refuseIfACallHoldsTheMicrophone() throws {
+        guard case .callHoldsMicrophone(let evidence) = callObserver.decide() else { return }
+
+        PersistentLog.log(.dictationFailed(
+            error: "a call holds the microphone: \(evidence.rawValue)"
+                + " — \(callObserver.snapshot()) \(routeStateDescription())"
+        ))
+        throw AudioEngineError.phoneCallActive(evidence: Self.evidenceSentence(for: evidence))
+    }
+
+    /// The English fragment `AudioEngineError.phoneCallActive` carries into the log.
+    ///
+    /// Diagnostic only — never shown to anyone. It exists because the two signals are
+    /// indistinguishable in a log that only says "a call", and the reader of that log
+    /// is an agent (#255).
+    private static func evidenceSentence(for evidence: ActiveCallEvidence) -> String {
+        switch evidence {
+        case .connectedCall:
+            return "CallKit reports a connected call"
+        case .pendingCall:
+            return "CallKit reports a call that is ringing or connecting"
+        }
     }
 }

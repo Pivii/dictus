@@ -31,6 +31,11 @@ final class DictationErrorCopyTests: XCTestCase {
 
     private static let catalogPath = "DictusApp/Localizable.xcstrings"
 
+    /// The keyboard extension writes exactly one dictation failure message of its own
+    /// (#483), and it has its own catalog to write it into.
+    private static let keyboardMessageSource = "DictusKeyboard/KeyboardCallGuard.swift"
+    private static let keyboardCatalogPath = "DictusKeyboard/Localizable.xcstrings"
+
     // MARK: - Every sentence is a translated catalog key
 
     /// The half of the contract that fails silently. A new `String(localized:)` compiles,
@@ -152,6 +157,36 @@ final class DictationErrorCopyTests: XCTestCase {
         }
     }
 
+    // MARK: - The keyboard says the app's sentence, not one of its own
+
+    /// #483 gave the keyboard extension the ability to decline a mic tap in place, which
+    /// means a second surface now writes a dictation failure message. The brief's rule was
+    /// "the message shown is the one #313 defines; no second string is invented", and the
+    /// two targets have **separate string catalogs** — so the sentence is spelled twice by
+    /// construction, and nothing but this test stops the two copies drifting apart into two
+    /// different messages for one event.
+    func testTheKeyboardsCallMessageIsTheAppsOwnSentence() throws {
+        let sentence = "The microphone is busy on a call. Try again once the call ends."
+
+        let keyboardSource = try source(at: Self.keyboardMessageSource)
+        XCTAssertTrue(keyboardSource.contains("String(localized: \"\(sentence)\")"),
+                      "\(Self.keyboardMessageSource) no longer writes the app's call sentence")
+
+        for path in [Self.catalogPath, Self.keyboardCatalogPath] {
+            let strings = try XCTUnwrap(try catalog(at: path)["strings"] as? [String: Any])
+            let entry = try XCTUnwrap(strings[sentence] as? [String: Any],
+                                      "\(path) has no entry for \"\(sentence)\"")
+            let unit = try XCTUnwrap((entry["localizations"] as? [String: Any])
+                .flatMap { $0["fr"] as? [String: Any] }
+                .flatMap { $0["stringUnit"] as? [String: Any] },
+                                     "\(path) has no French translation for the call sentence")
+            XCTAssertEqual(unit["state"] as? String, "translated", "in \(path)")
+            XCTAssertEqual(unit["value"] as? String,
+                           "Le micro est occupé par un appel. Réessayez une fois l'appel terminé.",
+                           "\(path) translates the call sentence differently from the other catalog")
+        }
+    }
+
     // MARK: - Reading the repo
 
     private func repoRoot() -> URL {
@@ -171,8 +206,10 @@ final class DictationErrorCopyTests: XCTestCase {
         return text
     }
 
-    private func catalog(file: StaticString = #filePath, line: UInt = #line) throws -> [String: Any] {
-        let url = repoRoot().appendingPathComponent(Self.catalogPath)
+    private func catalog(at path: String = DictationErrorCopyTests.catalogPath,
+                         file: StaticString = #filePath,
+                         line: UInt = #line) throws -> [String: Any] {
+        let url = repoRoot().appendingPathComponent(path)
         guard let data = try? Data(contentsOf: url) else {
             XCTFail("String catalog not found at \(url.path)", file: file, line: line)
             throw CocoaError(.fileNoSuchFile)

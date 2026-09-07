@@ -16,6 +16,15 @@ class KeyboardState: ObservableObject {
     static let shared = KeyboardState()
     private let instanceID = String(UUID().uuidString.prefix(8))
 
+    /// CallKit's view of the system's calls, held for the life of the process (#483).
+    ///
+    /// `CXCallObserver` has to be retained, and its `calls` array is not guaranteed
+    /// populated the instant after `init()` — so it is built when the keyboard starts and
+    /// never at tap time, where it would answer "no call" during a real call. Not private
+    /// because the guard that reads it lives in `KeyboardCallGuard.swift`, which is where
+    /// the rest of that story is written.
+    let callObserver: SystemCallObserver
+
     /// The dictation this keyboard process currently owns, if any.
     ///
     /// WHY the `didSet` (#261): `sessionStartedAt` below has to be in step with this
@@ -356,6 +365,9 @@ class KeyboardState: ObservableObject {
     private var coldStartGraceEnd: Date?
 
     private init() {
+        // Built before anything else asks for it, and bracketed for its cost (#483).
+        callObserver = KeyboardState.makeCallObserver(instanceID: instanceID)
+
         PersistentLog.log(.diagnosticProbe(
             component: "KeyboardState",
             instanceID: instanceID,
@@ -1335,6 +1347,18 @@ class KeyboardState: ObservableObject {
             return
         }
 
+        // A call holds the microphone (#483). Nothing downstream can succeed, so the
+        // handoff is pure cost: the user leaves the app they were typing in, watches
+        // DictusApp cold-start, and swipes back to read a message that has been counting
+        // down its three seconds since before the keyboard was on screen (#482). The
+        // refusal — and why the keyboard is the one asking — is in `KeyboardCallGuard`.
+        //
+        // WHY this comes before the debounce, like the undo guard above: a refused tap must
+        // not count as a tap. Charging it to the debounce window would make the mic dead for
+        // 1.5 s after a refusal that cost nothing, and the tap that refusal is inviting —
+        // the one after the call ends — is the one that would be rejected.
+        guard !refuseMicTapIfACallHoldsTheMicrophone() else { return }
+
         // Debounce: reject taps within 1.5s of the last tap.
         let now = Date()
         guard now.timeIntervalSince(lastMicTapDate) >= 1.5 else {
@@ -1465,22 +1489,6 @@ class KeyboardState: ObservableObject {
         dictationStatus = .requested
         startWatchdog()
         HapticFeedback.recordingStarted()
-    }
-
-    func sessionDetails() -> String {
-        let sessionID = activeSessionID ?? "none"
-        return "sessionID=\(sessionID) status=\(dictationStatus.rawValue) energyCount=\(waveformEnergy.count)"
-    }
-
-    /// Not `private` for the reason `stopWatchdog` above is not: the polish-stage
-    /// extension lives in another file. It only writes a log line.
-    func logProbe(_ action: String, details: String = "") {
-        PersistentLog.log(.diagnosticProbe(
-            component: "KeyboardState",
-            instanceID: instanceID,
-            action: action,
-            details: details
-        ))
     }
 
     private func waveformStatsDetails(_ values: [Float]) -> String {
@@ -1625,6 +1633,36 @@ private extension KeyboardState {
             reason: "reconciled-\(source)",
             timeoutReason: "reconciled-timeout"
         )
+    }
+}
+
+// MARK: - Log helpers
+
+/// `KeyboardState`'s own log helpers.
+///
+/// Lifted out of the class body unchanged when #483 added the call guard and pushed the
+/// type past SwiftLint's `type_body_length`. An extension in the same file keeps them
+/// reaching `instanceID`, which is `private` and therefore file-scoped.
+///
+/// Neither is `private`, for the reason `stopWatchdog` is not: the polish-stage extension
+/// and the call guard live in other files. They only write log lines.
+extension KeyboardState {
+
+    /// A `diagnosticProbe` line attributed to this instance.
+    func logProbe(_ action: String, details: String = "") {
+        PersistentLog.log(.diagnosticProbe(
+            component: "KeyboardState",
+            instanceID: instanceID,
+            action: action,
+            details: details
+        ))
+    }
+
+    /// The session, the status and the energy count — the three facts every probe in the
+    /// dictation path is read against.
+    func sessionDetails() -> String {
+        let sessionID = activeSessionID ?? "none"
+        return "sessionID=\(sessionID) status=\(dictationStatus.rawValue) energyCount=\(waveformEnergy.count)"
     }
 }
 

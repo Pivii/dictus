@@ -445,6 +445,17 @@
         }
       }
     },
+    "The microphone is busy on a call. Try again once the call ends." : {
+      "comment" : "Toolbar message shown when the keyboard declines a mic tap because a call holds the microphone (issues #313, #483). Same sentence as DictusApp's.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro est occupé par un appel. Réessayez une fois l'appel terminé."
+          }
+        }
+      }
+    },
     "Transcribing..." : {
       "localizations" : {
         "fr" : {

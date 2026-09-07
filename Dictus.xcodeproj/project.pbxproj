@@ -32,6 +32,7 @@
 		AA000006 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000A /* DictationView.swift */; };
 		AA000007 /* KeyboardState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000B /* KeyboardState.swift */; };
 		AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000F6 /* KeyboardLifecycleProbe.swift */; };
+		AA483002 /* KeyboardCallGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA483001 /* KeyboardCallGuard.swift */; };
 		AA000008 /* MicButtonDisabled.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000C /* MicButtonDisabled.swift */; };
 		AA000010 /* DictusCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA900010 /* DictusCore */; };
 		AA000011 /* DictusCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA900011 /* DictusCore */; };
@@ -209,6 +210,7 @@
 		AA10000A /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		AA10000B /* KeyboardState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardState.swift; sourceTree = "<group>"; };
 		AA1000F6 /* KeyboardLifecycleProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLifecycleProbe.swift; sourceTree = "<group>"; };
+		AA483001 /* KeyboardCallGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCallGuard.swift; sourceTree = "<group>"; };
 		AA10000C /* MicButtonDisabled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicButtonDisabled.swift; sourceTree = "<group>"; };
 		AA100030 /* InputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputView.swift; sourceTree = "<group>"; };
 		AA100035 /* FullAccessBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAccessBanner.swift; sourceTree = "<group>"; };
@@ -434,6 +436,7 @@
 				AA100004 /* KeyboardRootView.swift */,
 				AA10000B /* KeyboardState.swift */,
 				AA1000F6 /* KeyboardLifecycleProbe.swift */,
+				AA483001 /* KeyboardCallGuard.swift */,
 				AA361003 /* KeyboardPolishCoordinator.swift */,
 				AA361007 /* KeyboardPolishStage.swift */,
 				AA361009 /* KeyboardSmartModeFan.swift */,
@@ -1066,6 +1069,7 @@
 				AA000004 /* KeyboardRootView.swift in Sources */,
 				AA000007 /* KeyboardState.swift in Sources */,
 				AA0000F7 /* KeyboardLifecycleProbe.swift in Sources */,
+				AA483002 /* KeyboardCallGuard.swift in Sources */,
 				AA361004 /* KeyboardPolishCoordinator.swift in Sources */,
 				AA361008 /* KeyboardPolishStage.swift in Sources */,
 				AA361010 /* KeyboardSmartModeFan.swift in Sources */,
