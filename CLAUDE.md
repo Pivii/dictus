@@ -125,3 +125,9 @@ Single-context — `CONTEXT.md` + `docs/adr/` at the repo root (created lazily b
 ### Headless simulator
 
 Boot, build, install, launch, capture, and what a simulator cannot show. See `docs/agents/simulator.md`.
+
+### Releasing
+
+`testflight-build` cuts a version, uploads it and distributes it to a tester group. **`appstore-promote` is user-invoked and has no model-facing description on purpose** — merging into `main` and submitting to Apple's review queue are Pierre's to start, never something an agent reaches by interpreting a sentence. Pierre types it himself.
+
+"Publier au public" means the `Public Beta` **TestFlight** group, not the App Store. If a request is ambiguous between the two, ask.
