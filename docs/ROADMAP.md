@@ -12,8 +12,8 @@ Last reviewed: 2026-09-07.
 
 | Lane | What it is | Runs |
 | --- | --- | --- |
-| **A** | 1.8.2, the bug cycle | Now |
-| **B** | 2.0.0, the Pro launch | After A is cut |
+| **A** | 1.8.2, the bug cycle | **Cut on 2026-09-07** as 1.8.2 (30) |
+| **B** | 2.0.0, the Pro launch | **Now** |
 | **C** | The keyboard session | After the `paywallVisible` flip |
 
 They are sequential on purpose. Lane C is the one Pierre most wants to do and the one most likely to swallow the others, so it goes last and it gets a preparation step it can start on today.
@@ -28,7 +28,9 @@ A **closed list**. When these are done, cut. A fix that becomes ready mid-cycle 
 
 Ordered by what a shipped user actually loses.
 
-**Lane A is empty. Cut 1.8.2** — `scripts/cut-testflight.sh 1.8.2`.
+**Cut on 2026-09-07 as 1.8.2 (30)**, tag `build/30`, commit `d8e7494`. Verified before the bump: all eleven lane issues closed, the `1.8.2 — bug cycle` milestone empty, `develop` clean and in sync, 1666 tests green, `swiftlint --strict` at 0 violations across 255 files. Remaining steps are Xcode archive, upload, and `scripts/promote-to-appstore.sh 30` when it ships.
+
+**One gap ships knowingly with it.** #417's fix removes `installTap NSException`, and #513 makes the keyboard refuse a mic tap during a *call*. Dictation while **Siri** holds the input still fails, now at `engine.start` with `-10868` (`FormatNotSupported`), and still costs a full app foreground before it says so. CallKit cannot see Siri, so the predicate has to be the interruption state itself. Not filed: it is a known limit, not a regression, and it waits for a user to hit it.
 
 **#483 shipped on 2026-09-07** in PR #513, closing #459 with it. CallKit replaces the route heuristic: a call is detected on the earpiece, on speaker and on a bluetooth headset, and the keyboard now declines the mic tap in place instead of launching `DictusApp` to fail there. `CXCallObserver` was measured readable from the extension — the probe the brief made a blocking step — at `deltaKB=192` against a ~50 MB budget. `CallRoutePolicy` is deleted rather than kept as a fallback, because the fallback path was exactly where the Siri false positive lived.
 
