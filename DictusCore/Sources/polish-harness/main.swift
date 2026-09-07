@@ -695,15 +695,25 @@ func runHarness() async {
             let o = await runOnce(fx, engine: engine, mode: mode)
             let route = Expectation.routeName(perLanguage: fx.language != nil)
             let checks = (fx.expect ?? []).filter { $0.applies(to: route) }
-            // A mode that failed closed has no output to check, and that is a
-            // failure of the fixture rather than a reason to skip it: the mode's own
-            // contract refused what the engine produced, which is precisely what
-            // `eval` is being asked about.
-            let failures = o.final.map { final in
-                checks.compactMap {
-                    $0.failure(polished: final, raw: fx.raw, preprocessed: o.preprocessed)
-                }
-            } ?? ["the mode inserted nothing (\(o.outcome.rawValue))"]
+            let evidence = RunEvidence(
+                polished: o.final,
+                raw: fx.raw,
+                preprocessed: o.preprocessed,
+                engineOutput: o.engineOutput,
+                outcome: o.outcome.rawValue,
+                failureReason: o.failureReason?.slug
+            )
+            // A mode that failed closed has no output to check, and that is normally
+            // a failure of the fixture rather than a reason to skip it: the mode's
+            // own contract refused what the engine produced, which is precisely what
+            // `eval` is being asked about. It is NOT a failure for a fixture whose
+            // assertions are all about the run — `refusal-cs.json` exists to prove a
+            // refusal, so nothing reaching the document is the pass condition.
+            var failures: [String] = []
+            if o.final == nil, checks.isEmpty || checks.contains(where: \.inspectsInsertedText) {
+                failures.append("the mode inserted nothing (\(o.outcome.rawValue))")
+            }
+            failures += checks.compactMap { $0.failure(evidence) }
             total += 1
             if failures.isEmpty {
                 passed += 1
