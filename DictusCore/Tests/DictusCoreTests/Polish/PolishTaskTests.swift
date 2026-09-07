@@ -61,7 +61,7 @@ final class PolishTaskTests: XCTestCase {
         let polish = PolishTask.natural.userTurn(raw: "salut")
         XCTAssertTrue(polish.hasPrefix("Polish this text."))
         XCTAssertTrue(polish.hasSuffix("Polished output:"))
-        XCTAssertTrue(polish.contains("Input:\nsalut"))
+        XCTAssertTrue(polish.contains("\n\nsalut\n\n"))
 
         let notes = PolishTask.smart(SmartModeCatalogue.notes).userTurn(raw: "salut")
         XCTAssertTrue(notes.hasPrefix("Condense this text into a bulleted list."))
@@ -73,6 +73,43 @@ final class PolishTaskTests: XCTestCase {
             .userTurn(raw: "salut")
         XCTAssertTrue(translate.hasPrefix("Translate this text into English."))
         XCTAssertTrue(translate.hasSuffix("Translated output:"))
+    }
+
+    /// #518: no task may put an English label immediately before the transcript.
+    ///
+    /// The framing shipped with an `Input:` line there, and Apple FM answered
+    /// ordinary French with `unsupportedLanguageOrLocale` — a language it supports,
+    /// refused at the session boundary before generating anything. 10/10 refused
+    /// with the label, 0/10 without it, on the two committed fixtures in
+    /// `polish-harness/fixtures/refusal-fr.json`. Moving the label onto the same
+    /// line as the text did not help (10/10) and translating it did (0/10), so the
+    /// property to hold is the absence of the English label, not the layout.
+    ///
+    /// Asserted on every task because the composition is shared: a Smart Mode's
+    /// user turn is the same string with its own imperative and marker, so a label
+    /// reintroduced here would reach all eleven prompts at once.
+    func testNoTaskLabelsTheTranscriptInEnglish() {
+        let labels = ["input:", "text:", "transcript:", "source:", "original:"]
+        let tasks = [PolishTask.natural, .repair, .auto]
+            + SmartModeCatalogue.builtIns.map(PolishTask.smart)
+        for task in tasks {
+            // The marker is a label too and is deliberately kept — it trails the
+            // transcript instead of preceding it, and removing it alone left the
+            // refusal at 10/10 while costing the chat-reply bias it was measured
+            // to provide. So the assertion is scoped to what comes BEFORE the text.
+            let framing = task.userTurn(raw: "TRANSCRIPT")
+            guard let placed = framing.range(of: "TRANSCRIPT") else {
+                XCTFail("\(task.identifier) did not include the raw text at all")
+                continue
+            }
+            let head = framing[..<placed.lowerBound].lowercased()
+            for label in labels {
+                XCTAssertFalse(
+                    head.contains(label),
+                    "\(task.identifier) labels the transcript with '\(label)' (#518)"
+                )
+            }
+        }
     }
 
     /// The genre-prior finding, pinned so a later edit cannot reintroduce it.

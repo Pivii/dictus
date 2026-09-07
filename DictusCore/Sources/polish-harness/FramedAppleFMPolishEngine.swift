@@ -47,14 +47,12 @@ struct FramedAppleFMPolishEngine: PolishEngineProtocol {
 
     /// The shipping engine's framing, quoted so a run can A/B against it
     /// explicitly rather than by omitting a flag.
-    static let shippingFraming = """
-    Polish this text. Output only the polished version, nothing else.
-
-    Input:
-    {{INPUT}}
-
-    Polished output:
-    """
+    ///
+    /// Built from `PolishTask` rather than typed out, since #518: this constant is
+    /// the "baseline" side of every framing A/B, and a baseline that has drifted
+    /// from what ships measures nothing. The placeholder is substituted for the raw
+    /// exactly where `userTurn` puts it.
+    static let shippingFraming = PolishTask.natural.userTurn(raw: "{{INPUT}}")
 
     init(instructions: String, framing: String) {
         self.instructions = instructions
