@@ -325,6 +325,10 @@ struct RunOutcome {
     /// Raw NLLanguage code of the input ("fr", "it", "zh-Hans", …).
     let detected: String?
     let task: PolishTask?
+    /// What the pre-pass produced, i.e. what the engine was handed once the
+    /// pipeline had encoded its newlines as markers. Carried so `eval` can assert
+    /// on the markers themselves: they exist in neither `raw` nor the fixture.
+    let preprocessed: String
     /// Set when the engine threw (#315) — the same slug the app exports, so a
     /// failure seen here reads against the field data without a translation.
     let failureReason: PolishFailureReason?
@@ -335,6 +339,7 @@ struct RunOutcome {
          engineMs: Int,
          detected: String?,
          task: PolishTask?,
+         preprocessed: String,
          failureReason: PolishFailureReason? = nil) {
         self.final = final
         self.engineOutput = engineOutput
@@ -342,6 +347,7 @@ struct RunOutcome {
         self.engineMs = engineMs
         self.detected = detected
         self.task = task
+        self.preprocessed = preprocessed
         self.failureReason = failureReason
     }
 
@@ -440,7 +446,8 @@ func runOnce(_ fx: Fixture,
         hasDetectedLanguage: detected != nil, task: smartTask ?? .natural
     ) {
         let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
-        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: detectedCode, task: nil)
+        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0,
+                          detected: detectedCode, task: nil, preprocessed: preprocessed)
     }
     // The armed mode when there is one, otherwise the free-polish variant the STT
     // engine and the detected-vs-target gap select. `detected ?? target` matches the
@@ -457,7 +464,9 @@ func runOnce(_ fx: Fixture,
     // nil for a Smart Mode on any non-success: it inserts nothing rather than the
     // untransformed floor, which #79 names as the worst outcome available.
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, task: job.task, failureReason: r.failureReason)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome,
+                      engineMs: r.engineMs, detected: detectedCode, task: job.task,
+                      preprocessed: preprocessed, failureReason: r.failureReason)
 }
 
 /// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
@@ -481,13 +490,16 @@ func runOnceAuto(_ fx: Fixture,
     if PolishGatePolicy.skipsForGibberish(
         hasDetectedLanguage: detectedCode != nil, task: smartTask ?? .auto
     ) {
-        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, task: nil)
+        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0,
+                          detected: nil, task: nil, preprocessed: fx.raw)
     }
     let preprocessed = PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode)
     let job = PolishJob(task: smartTask ?? .auto, promptLanguage: .english, languageAgnosticPath: true)
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, job: job)
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, task: job.task, failureReason: r.failureReason)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome,
+                      engineMs: r.engineMs, detected: detectedCode, task: job.task,
+                      preprocessed: preprocessed, failureReason: r.failureReason)
 }
 
 /// What `prompt` prints for one fixture: the task the engine would run, the text it
@@ -688,7 +700,9 @@ func runHarness() async {
             // contract refused what the engine produced, which is precisely what
             // `eval` is being asked about.
             let failures = o.final.map { final in
-                checks.compactMap { $0.failure(polished: final, raw: fx.raw) }
+                checks.compactMap {
+                    $0.failure(polished: final, raw: fx.raw, preprocessed: o.preprocessed)
+                }
             } ?? ["the mode inserted nothing (\(o.outcome.rawValue))"]
             total += 1
             if failures.isEmpty {

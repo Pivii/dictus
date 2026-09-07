@@ -50,6 +50,22 @@ struct Expectation: Codable {
     var lengthRatioMin: Double?
     /// polishedCount / rawCount must be ≤ this (guards against invention).
     var lengthRatioMax: Double?
+    /// Every `<<NL>>` the engine was handed comes back as a line break.
+    ///
+    /// WHY this is not `regexAbsent: "<<NL>>"`, which `seed.json` already carries:
+    /// that assertion passes both when the marker is CONVERTED to a newline and when
+    /// it is DELETED outright, and those are opposite results. The absence check was
+    /// green through the whole #518 campaign while a device session was losing three
+    /// markers out of three and printing no line break at all. Counting is what tells
+    /// the two apart, and the count has to be taken against the text the engine
+    /// received — the marker only exists after the pre-pass.
+    ///
+    /// The bar is "at least as many", not "exactly as many". Normal polish is
+    /// allowed to ADD whitespace and never to REMOVE words, so an extra paragraph
+    /// break is within contract while a lost marker is not. Both counts are printed
+    /// on failure, so a reader sees which of the two happened.
+    var lineBreaksPreserved: Bool?
+
     /// Limit this assertion to one prompt route: `"perLanguage"` or `"auto"`.
     /// Absent means it holds on both, which is the default and the common case.
     ///
@@ -72,9 +88,23 @@ struct Expectation: Codable {
         onlyOnRoute == nil || onlyOnRoute == route
     }
 
-    /// Evaluate against the polished output and the original raw. Returns nil on
-    /// pass, or a human-readable failure reason.
-    func failure(polished: String, raw: String) -> String? {
+    /// Evaluate against the polished output, the original raw, and the text the
+    /// engine was actually handed. Returns nil on pass, or a human-readable reason.
+    ///
+    /// `preprocessed` is the pre-pass output, not `raw`: `lineBreaksPreserved`
+    /// counts a marker that only exists after `VerbalPunctuationPrepass` has turned
+    /// spoken "retour à la ligne" into a newline. It is encoded here the way
+    /// `PolishPipeline` encodes it, so what is counted is what the engine was sent
+    /// rather than a stand-in for it.
+    func failure(polished: String, raw: String, preprocessed: String) -> String? {
+        if lineBreaksPreserved == true {
+            let markers = PolishPostpass.encodeForEngine(preprocessed)
+                .components(separatedBy: PolishPostpass.newlineMarker).count - 1
+            let breaks = polished.filter(\.isNewline).count
+            if breaks < markers {
+                return "\(markers) line-break marker(s) in, \(breaks) line break(s) out"
+            }
+        }
         if let needle = contains,
            polished.range(of: needle, options: .caseInsensitive) == nil {
             return "missing \"\(needle)\""
