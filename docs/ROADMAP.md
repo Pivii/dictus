@@ -6,7 +6,7 @@ The ordered queue. One list, one order, and the first unfinished item is what ha
 
 **How to use it.** Start a session by reading this file and taking the first unfinished item of the active lane. Do not re-derive the order from the tracker: the tracker sorts by how well an issue is written, not by how much it matters. When an item ships, tick it here. Revise the lanes at a version cut, not more often.
 
-Last reviewed: 2026-09-06.
+Last reviewed: 2026-09-07.
 
 ## The three lanes, in order
 
@@ -28,10 +28,11 @@ A **closed list**. When these are done, cut. A fix that becomes ready mid-cycle 
 
 Ordered by what a shipped user actually loses.
 
-1. **#417** — dictation fails outright with `Failed to create tap due to format mismatch`. No longer diagnostic-only. The #483 device captures name the cause: an active interruption, a call **or Siri**, renegotiates the input node between the format read and the tap install, and it is `installTap` that throws, not `engine.start` — which is the distinction the issue said everything turned on, and it means the scoped fix is sufficient. `ready-for-agent` on 2026-09-06.
-2. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. PR #513 open, under device test. It does **not** subsume #417 — Siri throws the same exception and is not a call. **#459 closes by hand when #513 merges.**
+1. **#483** — a phone call is not detected. #459 shipped the bluetooth half (PR #476) and is now blocked on this one: a native call routes through `MicrophoneBuiltIn`, never `telephony`, and Siri is indistinguishable from a call at the session layer. `CXCallObserver` is the only thing that answers it, and it also lets the keyboard refuse the mic tap without launching the app. PR #513 open, under device test. **#459 closes by hand when #513 merges.**
 
-**Both are in flight, and nothing else is queued behind them. When #417 and #513 land, cut** — `scripts/cut-testflight.sh 1.8.2`.
+**It is the last one. When #513 lands, cut** — `scripts/cut-testflight.sh 1.8.2`.
+
+**#417 shipped on 2026-09-07** in PR #516, device-validated: `installTap NSException` is gone by construction, 0 occurrences across four mic taps made under an active interruption. What the fix does not reach is now written on the issue — while Siri holds the input, the failure moved to `engine.start` with `-10868` (`FormatNotSupported`), 8 times, and from the keyboard it still costs a full app foreground before failing. #513 answers that for a **call**; Siri is not a call and CallKit will never report it, so the Siri case needs the interruption state itself as its predicate. Not yet an issue.
 
 **Closed out of this lane on 2026-09-06.** #492 and #438 shipped. #488, the App Store description's four-languages claim, is applied. #293 passed its device check: `audioHapticsAllowance allowed=true` on every active-session context, which is the line PR #367 added precisely so this could stop being a correlation. #362 and #370 are fixed and shipped in 1.8.0 (27); they were closed with the reporter contacted and unanswered, because their last criterion needs an iPhone 11 nobody here owns and that tier is not Dictus's target. They reopen on his word.
 
