@@ -38,6 +38,23 @@
         }
       }
     },
+    "%@: Apple Intelligence does not support the dictated language (%@)." : {
+      "comment" : "Shown when an armed Smart Mode could not run because the language the user dictated is outside the set Apple Intelligence reads. First placeholder is the mode's name, second is the dictated language.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: Apple Intelligence does not support the dictated language (%@)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ : Apple Intelligence ne prend pas en charge la langue dictée (%@)."
+          }
+        }
+      }
+    },
     "%@: could not be applied. Try again." : {
       "comment" : "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name.",
       "localizations" : {
