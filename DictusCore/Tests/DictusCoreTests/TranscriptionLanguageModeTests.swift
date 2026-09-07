@@ -386,6 +386,28 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         )
     }
 
+    /// #518 put the shares on the persistent log's `polishEngineFailed` line as
+    /// well as in the OSLog metrics line, so the rendering became something two
+    /// call sites share. Leader first, because the reader of either line is asking
+    /// which language the engine was handed — and `-` rather than an empty string
+    /// when there is no mix, so the field keeps its shape for a grep.
+    func testTheSharesRenderLeaderFirstOnOneLine() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut, mix: mixed(.english, 0.776, .french))
+                .mixDescription,
+            "en 0.78/fr 0.22"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut, mix: wholly(.french)).mixDescription,
+            "fr 1.00"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut).mixDescription, "-",
+            "no mix was supplied, so none is claimed"
+        )
+    }
+
     func testLanguageResolutionTrailCarriesEachFactApart() {
         // The export must let a reader separate the mode, the keyboard, and
         // what STT was handed — the failure that made three device re-tests

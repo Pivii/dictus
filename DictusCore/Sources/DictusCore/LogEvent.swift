@@ -317,7 +317,20 @@ public enum LogEvent: Sendable {
     /// app doing". A failure that arrives in 4 ms has to be readable against the
     /// dictation timeline right next to it — status transitions, holds, the
     /// insertion — and only this log has all of them on one page.
-    case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int)
+    ///
+    /// `detected` and `mix` are what the transcript was read as, and they are here
+    /// because the reason slug alone cannot say whose fault a refusal is (#518).
+    /// `unsupportedLanguageOrLocale` arrives byte-identical from two opposite
+    /// causes: a language genuinely outside Apple's set (#490 — legitimate, and the
+    /// dictation is what it is), and a language squarely inside it that Apple's
+    /// classifier misread because of our own prompt (#518 — ours to fix). On iOS 26
+    /// the error carries no `languageCode` to tell them apart; the reading we took
+    /// before the call does. `cs` + refusal is theirs, `fr` + `fr 1.00` + refusal
+    /// is ours.
+    ///
+    /// Language codes and shares only — the transcript itself never enters this log.
+    case polishEngineFailed(reason: String, engine: String, mode: String, engineMs: Int,
+                            detected: String, mix: String)
 
     /// Issue #315: polish stopped calling its engine for the rest of this process,
     /// after `consecutiveRefusals` `rateLimited` results in a row.
@@ -937,8 +950,9 @@ public enum LogEvent: Sendable {
             return "removed=\(removed) learnedCount=\(learnedCount)"
 
         // Polish (#315)
-        case .polishEngineFailed(let reason, let engine, let mode, let engineMs):
-            return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs)"
+        case .polishEngineFailed(let reason, let engine, let mode, let engineMs, let detected, let mix):
+            return "reason=\(reason) engine=\(engine) mode=\(mode) engineMs=\(engineMs) "
+                + "detected=\(detected) mix=\(mix)"
         case .polishHandoff(let step, let outcome, let chars):
             return "step=\(step) outcome=\(outcome) chars=\(chars)"
         case .polishInsertionRefused(let reason, let ageMs):
