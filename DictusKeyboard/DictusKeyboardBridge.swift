@@ -621,6 +621,15 @@ final class DictusKeyboardBridge: NSObject,
             suggestionState?.pendingUndo = nil
             lastInsertedCharacter = " "
         }
+        #if DEBUG
+        // #530 criterion 1 asks for a reading at every spacebar press, including the
+        // ones that do not correct anything. `handleAutoFullStop` records its own
+        // replacement, so by here the prediction is up to date on both branches.
+        MirrorProbe.shared.probe(
+            event: "space",
+            mirror: controller?.textDocumentProxy.documentContextBeforeInput
+        )
+        #endif
 
         // After space, clear current word and trigger n-gram predictions.
         // WHY updatePredictions instead of updateAsync: After finishing a word,
