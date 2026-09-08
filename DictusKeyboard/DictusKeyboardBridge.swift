@@ -753,6 +753,11 @@ final class DictusKeyboardBridge: NSObject,
     /// correction + trailing space, stores undo state and refreshes predictions.
     /// Only called after AutocorrectReplacement.check confirmed the live context
     /// ends with `freshWord` (#191) — `deleteCount` comes from that check.
+    ///
+    /// That check can be satisfied by a proxy that is lying, which is what #530
+    /// measured, so `deleteCount` is spent through `WordBoundaryDelete` and never
+    /// as a blind loop: whatever the count says, the delete stops at the word
+    /// boundary and cannot reach the previous word.
     private func applyAutocorrect(
         state: SuggestionState,
         freshWord: String,
@@ -771,9 +776,24 @@ final class DictusKeyboardBridge: NSObject,
         )
         #endif
 
-        for _ in 0..<deleteCount {
-            proxy?.deleteBackward()
-        }
+        // Self-limiting delete (#530): `deleteCount` is a ceiling, not a contract.
+        // AutocorrectReplacement.check validated it against the proxy, which is the
+        // only source of truth an extension has and therefore cannot catch itself
+        // lying. Deleting a selected word leaves the proxy over-reporting by a
+        // character, and the blind loop this replaces then ate the space before the
+        // word: "Une fois ton" came out "Une foiston". Stopping on the boundary
+        // deletes exactly the real word, so the over-count case is correct, not
+        // merely survivable.
+        WordBoundaryDelete.perform(
+            deleteCount: deleteCount,
+            contextBeforeInput: { proxy?.documentContextBeforeInput },
+            deleteBackward: { proxy?.deleteBackward() },
+            onClamped: { outcome in
+                #if DEBUG
+                AutocorrectDebugLog.applyClamped(planned: outcome.planned, deleted: outcome.deleted)
+                #endif
+            }
+        )
         #if DEBUG
         AutocorrectDebugLog.applyAfterDelete(
             contextTail: Self.contextTail(proxy?.documentContextBeforeInput)

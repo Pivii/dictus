@@ -152,6 +152,20 @@ public enum AutocorrectDebugLog {
         write("AUTOCORRECT-APPLY-AFTER-DELETE ctx=\"\(contextTail)\"")
     }
 
+    /// A replacement's delete loop stopped on a word boundary before spending its
+    /// count (#530). This is the proxy-desync signature made visible: the check
+    /// handed out `planned` deletions, the document only had `deleted` characters
+    /// of word to give, and the surplus was phantom. Until this line existed a
+    /// desync could only be seen by putting a screen recording next to the log.
+    ///
+    /// Emitted by both replacement sites — spacebar autocorrect and suggestion-bar
+    /// tap. A preceding AUTOCORRECT-APPLY-BEFORE on the same tick means the
+    /// spacebar path; its absence means the bar.
+    public static func applyClamped(planned: Int, deleted: Int) {
+        guard enabled else { return }
+        write("AUTOCORRECT-APPLY-CLAMPED planned=\(planned) deleted=\(deleted)")
+    }
+
     /// Snapshot of the live context after inserting the correction + space (#191).
     public static func applyAfterInsert(contextTail: String) {
         guard enabled else { return }

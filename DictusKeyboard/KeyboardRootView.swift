@@ -613,17 +613,32 @@ struct KeyboardRootView: View {
         }
     }
 
-    /// Executes a validated replacement: deletes exactly `deleteCount` graphemes,
+    /// Executes a validated replacement: deletes at most `deleteCount` graphemes,
     /// then inserts. Only ever called with a count that a boundary check produced.
+    ///
+    /// The count is a ceiling, not a contract (#530). Both counts reaching here
+    /// come from AutocorrectReplacement.check — directly via `replaceCurrentWord`,
+    /// or through SuggestionTapRouting — and that check reads the proxy, which is
+    /// the only source of truth an extension has and so cannot catch itself lying.
+    /// The spacebar path was measured merging two words on exactly that lie; this
+    /// site runs the same mechanism on the same reads, so it takes the same clamp.
+    /// When the proxy is honest the count is spent in full and nothing changes.
     private func applyReplacement(
         proxy: UITextDocumentProxy,
         deleteCount: Int,
         replacement: String,
         addSpace: Bool
     ) {
-        for _ in 0..<deleteCount {
-            proxy.deleteBackward()
-        }
+        WordBoundaryDelete.perform(
+            deleteCount: deleteCount,
+            contextBeforeInput: { proxy.documentContextBeforeInput },
+            deleteBackward: { proxy.deleteBackward() },
+            onClamped: { outcome in
+                #if DEBUG
+                AutocorrectDebugLog.applyClamped(planned: outcome.planned, deleted: outcome.deleted)
+                #endif
+            }
+        )
         proxy.insertText(replacement)
         if addSpace {
             proxy.insertText(" ")
