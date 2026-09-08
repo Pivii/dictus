@@ -53,7 +53,7 @@ public struct PolishLanguageSegmentThresholds: Equatable, Sendable {
 
 /// Runtime sanity check on every polish output.
 ///
-/// Four complementary checks:
+/// Five complementary checks:
 /// 1. `accepts(raw:polished:mode:)` — character-length ratio. Catches catastrophic
 ///    over- or under-generation (empty output, runaway generation).
 /// 2. `detectedLanguageMatches(polished:target:)` — language detection on the
@@ -63,21 +63,32 @@ public struct PolishLanguageSegmentThresholds: Equatable, Sendable {
 ///    that drifts one item at a time.
 /// 3. `PolishGrounding` — whether the output is *about* the input. Lives in its own
 ///    type because it answers a different question with a different tool.
-/// 4. `PolishPrefixAlignment` — whether the output *opens* where the input opens.
+/// 4. `PolishGrounding.acceptsSegmentOverlap` — whether every LINE of the output is
+///    made of the input's own words. The second query over the tokens check 3 uses,
+///    and the one that sees a fabricated bullet naming nobody (#414). It shares
+///    check 3's contract gate and names itself apart, because "the model invented a
+///    person" and "the model invented a line" are two answers.
+/// 5. `PolishPrefixAlignment` — whether the output *opens* where the input opens.
 ///    Catches the chat reply that arrives in the RIGHT language, which check 2
 ///    cannot see by construction: a preamble (#466) and a refusal (#349), both of
 ///    them the model writing about its own task in the language it was told to
 ///    write in. Its own type for the same reason check 3 is.
 public enum PolishGuardrail {
 
-    /// Which of the four refused an output.
+    /// Which of the five refused an output.
     ///
-    /// One `PolishMetrics.Outcome.rejectedGuardrail` covers four questions with four
+    /// One `PolishMetrics.Outcome.rejectedGuardrail` covers five questions with five
     /// different answers — the band is mis-sized for the mode, the prompt drifted
-    /// out of the speaker's language, the model invented a name, or the model wrote
-    /// about its own task. Until #466 the word only reached the os_log line; it now
-    /// travels on the metrics event too, so the rate of each is countable from a
-    /// seven-day export instead of from a log a device may no longer hold.
+    /// out of the speaker's language, the model invented a name, the model invented a
+    /// whole line, or the model wrote about its own task. Until #466 the word only
+    /// reached the os_log line; it now travels on the metrics event too, so the rate
+    /// of each is countable from a seven-day export instead of from a log a device
+    /// may no longer hold.
+    ///
+    /// Adding a case is additive on the wire: every consumer reads `rawValue` as a
+    /// string — a histogram key in `PolishDebugExporter`, a word in a log line — so a
+    /// build that has never heard of `segmentOverlap` counts it under its own name
+    /// rather than failing to read the export.
     ///
     /// Raw values are **wire values**: they land in the debug export and in the
     /// persistent log, and a report written against one build gets compared to the
@@ -87,6 +98,7 @@ public enum PolishGuardrail {
         case length
         case language
         case grounding
+        case segmentOverlap
         case prefixAlignment
 
         public var description: String { rawValue }

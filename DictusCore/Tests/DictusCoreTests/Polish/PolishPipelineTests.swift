@@ -570,18 +570,34 @@ final class PolishPipelineTests: XCTestCase {
     /// speaker's words and are supported from word 0. The inertness is therefore a
     /// contract decision about what the mode is *licensed* to do, not a workaround
     /// for a check that always fires.
+    ///
+    /// ### Why the fixture changed under #414
+    ///
+    /// This test used to run on a fully abstractive list — `Décision : accélérer le
+    /// projet` / `Risque identifié : la concurrence` / `Échéance retenue : cette
+    /// semaine` — and #414's overlap check refuses it. On inspection that refusal is
+    /// right rather than a cost: the speaker gave no deadline, and `cette semaine` is
+    /// a date invented for them. The old fixture is now committed as a labelled
+    /// fabrication (`adversarial.json`, `Y6-notes-abstraite-inventee`) so the claim is
+    /// measured instead of argued, and this test runs on a list that condenses
+    /// without inventing — which still opens on words that are not the speaker's, so
+    /// the prefix check would still refuse it.
     func testThePrefixCheckIsInertForList() async {
         let raw = "alors voilà pour résumer on a beaucoup discuté hier soir et franchement "
             + "je pense qu'on devrait avancer vite sur ce sujet là parce que sinon on va se "
             + "faire dépasser"
         let output = """
-        - Décision : accélérer le projet
-        - Risque identifié : la concurrence
-        - Échéance retenue : cette semaine
+        - Décision retenue : avancer vite
+        - Risque : se faire dépasser
+        - Point discuté hier soir
         """
         XCTAssertFalse(
             PolishPrefixAlignment.accepts(polished: output, raw: raw),
             "precondition: the check WOULD refuse this output if it ran"
+        )
+        XCTAssertTrue(
+            PolishGrounding.acceptsSegmentOverlap(polished: output, raw: raw),
+            "precondition: every bullet is made of the speaker's own words (#414)"
         )
         let result = await PolishPipeline.transform(
             preprocessed: raw,
@@ -620,8 +636,9 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertNil(result.rejectedCheck)
     }
 
-    /// The four checks name themselves apart (#466). One `rejectedGuardrail` outcome
-    /// covers four questions, and an export has to be able to count them separately.
+    /// The five checks name themselves apart (#466, #414). One `rejectedGuardrail`
+    /// outcome covers five questions, and an export has to be able to count them
+    /// separately.
     func testEachGuardrailNamesItselfOnTheResult() async {
         let raw = "bon alors il faut que je pense à rappeler le plombier avant vendredi "
             + "et à préparer le dossier pour la réunion de lundi matin"
@@ -658,6 +675,25 @@ final class PolishPipelineTests: XCTestCase {
             )
         )
         XCTAssertEqual(sophie.rejectedCheck, .grounding)
+
+        // A fabricated bullet naming nobody: the anchor check has nothing to look at,
+        // so this is the one the overlap check exists for (#414). It has to pass the
+        // three cheaper checks to reach it — the list is French, it condenses, and it
+        // names no one.
+        let invented = await PolishPipeline.transform(
+            preprocessed: raw,
+            engine: FixedOutputEngine(output: """
+            - Rappeler le plombier avant vendredi
+            - Préparer le dossier pour la réunion de lundi
+            - Commander les fournitures de bureau manquantes
+            """),
+            job: PolishJob(
+                task: .smart(SmartModeCatalogue.notes),
+                promptLanguage: .french,
+                languageAgnosticPath: false
+            )
+        )
+        XCTAssertEqual(invented.rejectedCheck, .segmentOverlap)
 
         let preamble = await PolishPipeline.transform(
             preprocessed: PolishPrefixAlignmentTests.preambleRaw,

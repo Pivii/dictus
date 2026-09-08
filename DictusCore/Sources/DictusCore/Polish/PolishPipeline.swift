@@ -138,10 +138,16 @@ public enum PolishPipeline {
             }
             // Guardrail baseline is the preprocessed text — what the engine
             // actually saw (modulo the newline marker the post-pass undid).
-            // The four output checks, in the order they cost: a character ratio,
-            // then two `NaturalLanguage` passes, then a word-set comparison. Each
-            // names itself in the result so an export can count the four apart
-            // (#466) — `rejectedGuardrail` is one outcome for four questions.
+            // The five output checks, in the order they cost: a character ratio,
+            // then two `NaturalLanguage` passes, then two word-set comparisons. Each
+            // names itself in the result so an export can count the five apart
+            // (#466) — `rejectedGuardrail` is one outcome for five questions.
+            //
+            // The two word-set checks are ordered by SPECIFICITY rather than by cost,
+            // which is the same for both. A chat preamble fails them both, and #466
+            // owns that shape: leaving `segmentOverlap` last keeps every captured
+            // preamble counted as `prefixAlignment`, so a seven-day export still
+            // measures the rate #466 shipped against.
             let refused: PolishGuardrail.Check?
             if !PolishGuardrail.accepts(
                 raw: preprocessed, polished: polished, contract: job.task.contract
@@ -153,6 +159,8 @@ public enum PolishPipeline {
                 refused = .grounding
             } else if !prefixGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) {
                 refused = .prefixAlignment
+            } else if !segmentOverlapGuardrailPasses(polished: polished, preprocessed: preprocessed, job: job) {
+                refused = .segmentOverlap
             } else {
                 refused = nil
             }
@@ -237,6 +245,31 @@ public enum PolishPipeline {
         return PolishGrounding.ungroundedAnchors(
             in: polished, input: preprocessed, languageCode: outputCode
         ).isEmpty
+    }
+
+    /// Worst-segment overlap guardrail (#414): every line of the output has to be
+    /// made of words the input actually contains.
+    ///
+    /// Gated on the same `requiresGroundedNames` the anchor check is, and
+    /// deliberately not folded into it. The field asks one question — *is this
+    /// transformation licensed to introduce material the speaker did not say* — and
+    /// both checks want the same answer to it: a translation localises names AND
+    /// keeps no word of the input, and repair reconstructs both. A second field would
+    /// have to be set to the same value on every contract in the codebase, which is a
+    /// knob that can only be set wrong.
+    ///
+    /// It stays a separate function, and a separate `Check`, because the two answers
+    /// differ: `.grounding` says the model named someone the speaker did not,
+    /// `.segmentOverlap` says it wrote a line the speaker has no words in. Merging
+    /// them would make a seven-day export unable to tell which hole is being hit.
+    ///
+    /// The baseline is `preprocessed` for the reason the other three use it: that is
+    /// the text the engine actually saw.
+    private static func segmentOverlapGuardrailPasses(polished: String,
+                                                      preprocessed: String,
+                                                      job: PolishJob) -> Bool {
+        guard job.task.contract.requiresGroundedNames else { return true }
+        return PolishGrounding.acceptsSegmentOverlap(polished: polished, raw: preprocessed)
     }
 
     /// Prefix-alignment guardrail (#466, #349): the output has to open where the

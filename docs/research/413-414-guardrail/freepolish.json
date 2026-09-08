@@ -1371,7 +1371,7 @@
     "grounding": "grounded",
     "prefix": "aligned",
     "wasAccepted": true,
-    "raw": "salut voilà les points pour demain",
+    "raw": "salut voilà les points pour demain\npremier point la réunion\ndeuxième point le budget",
     "output": "Salut, voilà les points pour demain.\nPremier point: la réunion.\nDeuxième point: le budget.",
     "note": "Harvested verbatim from docs/research/413-414-guardrail/raw/, the free-polish rounds of the #393 campaign. Added in #466 because the check that issue adds runs ONLY on the free polish, and the committed corpus held 14 such outputs."
   },
@@ -1387,7 +1387,7 @@
     "grounding": "grounded",
     "prefix": "aligned",
     "wasAccepted": true,
-    "raw": "salut voilà les points pour demain",
+    "raw": "salut voilà les points pour demain\npremier point la réunion\ndeuxième point le budget",
     "output": "Salut, voilà les points pour demain.\nPremier point: la réunion.\nDeuxième point: le budget.",
     "note": "Harvested verbatim from docs/research/413-414-guardrail/raw/, the free-polish rounds of the #393 campaign. Added in #466 because the check that issue adds runs ONLY on the free polish, and the committed corpus held 14 such outputs."
   },
@@ -1403,7 +1403,7 @@
     "grounding": "grounded",
     "prefix": "aligned",
     "wasAccepted": true,
-    "raw": "salut voilà les points pour demain",
+    "raw": "salut voilà les points pour demain\npremier point la réunion\ndeuxième point le budget",
     "output": "Salut, voilà les points pour demain.\nPremier point: la réunion.\nDeuxième point: le budget.",
     "note": "Harvested verbatim from docs/research/413-414-guardrail/raw/, the free-polish rounds of the #393 campaign. Added in #466 because the check that issue adds runs ONLY on the free polish, and the committed corpus held 14 such outputs."
   },

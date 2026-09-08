@@ -333,5 +333,21 @@
     "raw": "好的那我再做一次测试因为我之前在语言检测模式现在我切换回中文以便获得正确的测试结果这样就能做完整的测试了",
     "output": "当然，以下是润色后的文本：\n好的，那我再做一次测试，因为我之前在语言检测模式。现在我切换回中文，以便获得正确的测试结果，这样就能做完整的测试了。",
     "note": "Found by CodeRabbit reviewing PR #478, and the shape no corpus here had: a script that writes no word separators. PolishLexicon split on 'not a letter or digit', so a whole Chinese dictation was ONE token, the word-count floor was never met, and the prefix check returned notApplicable and accepted anything -- measured at caught 0/1. Auto mode (#239) is the language-agnostic route and PolishPostpass already anticipates CJK on it, so this path is live (#409). inputLang/expectedLang corrected to zh-Hans from the probe's original fr, which made the #413 check report a false rejection on a correctly-Chinese output."
+  },
+  {
+    "source": "adversarial",
+    "fixture": "Y6-notes-abstraite-inventee",
+    "run": 1,
+    "kind": "polished",
+    "task": "smart.notes",
+    "inputLang": "fr",
+    "expectedLang": "fr",
+    "language": "sameLanguage",
+    "grounding": "fabricated",
+    "prefix": "unrelated",
+    "wasAccepted": true,
+    "note": "#414. Written for #466 as a Notes output the mode is LICENSED to produce -- a fully abstractive list -- and it lived in PolishPipelineTests as the fixture proving the prefix check is inert for List. #414's overlap check refuses it, and the label here says that refusal is right rather than a cost: the speaker gave no timeframe at all, so `Échéance retenue : cette semaine` is a date invented for them, and `la concurrence` is an inference the speaker never voiced. That is ADR 0003's forbidden line -- adding content that was not in the input -- so it is labelled `fabricated`. THIS IS A JUDGEMENT AND IT REVERSES AN EARLIER ONE: if the reading is wrong, the corpus is where to disagree with it, and the cost of disagreeing is one false rejection at floor 0.15.",
+    "raw": "alors voilà pour résumer on a beaucoup discuté hier soir et franchement je pense qu'on devrait avancer vite sur ce sujet là parce que sinon on va se faire dépasser",
+    "output": "- Décision : accélérer le projet\n- Risque identifié : la concurrence\n- Échéance retenue : cette semaine"
   }
 ]
