@@ -1,7 +1,31 @@
 // DictusCore/Sources/DictusCore/WordBoundaryDelete.swift
 // Self-limiting backward delete for word replacement (issue #530).
 //
-// THE BUG THIS PREVENTS:
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │ NOTHING CALLS THIS, AND NOTHING SHOULD. DO NOT WIRE IT UP.               │
+// │                                                                          │
+// │ It is a FALSIFIED design, kept only so the falsification stays           │
+// │ executable — WordBoundaryDeleteTests runs it against the mirror/document │
+// │ pair from #530's capture and asserts it does NOT help. Deleting this     │
+// │ file deletes the proof and invites a third attempt at the same idea.     │
+// │                                                                          │
+// │ WHY IT CANNOT WORK, in one line: the loop re-reads the same mirror the   │
+// │ guard already read, so the boundary it stops on is the mirror's, offset  │
+// │ by exactly the phantom it was meant to catch. Worse, it is dead code by  │
+// │ construction — AutocorrectReplacement.check returns .ok(deleteCount:)    │
+// │ only when the mirror's last deleteCount characters ARE the word, and a   │
+// │ word holds no whitespace, so the stop condition can never be true.       │
+// │                                                                          │
+// │ The two call sites that briefly used it (DictusKeyboardBridge            │
+// │ .applyAutocorrect and KeyboardRootView.applyReplacement) were returned   │
+// │ to their blind loops so #530's diagnostic round measures develop's       │
+// │ behaviour, not this one's.                                               │
+// └──────────────────────────────────────────────────────────────────────────┘
+//
+// Everything below is the original rationale, preserved as written, so the
+// argument that looked convincing can be read next to the reason it was wrong.
+//
+// THE BUG THIS WAS MEANT TO PREVENT:
 // A word replacement used to issue exactly `deleteCount` deleteBackward() calls,
 // where the count came from AutocorrectReplacement.check reading
 // documentContextBeforeInput. That check cannot detect a lying proxy — see the
@@ -66,10 +90,8 @@ public enum WordBoundaryDelete {
     ///     once per iteration — never hoisted, the whole point is that the value
     ///     changes under the loop.
     ///   - deleteBackward: issues one deleteBackward() on the live proxy.
-    ///   - onClamped: called only when the loop stopped short, so callers report a
-    ///     desync without binding a result they would not otherwise read. Reporting
-    ///     is part of this contract rather than the call site's because a clamp is
-    ///     the only evidence of a desync the extension can produce (#530).
+    ///   - onClamped: called only when the loop stopped short. No production caller
+    ///     exists any more — the tests are what exercise it.
     /// - Returns: what was planned and what was actually deleted.
     @discardableResult
     public static func perform(

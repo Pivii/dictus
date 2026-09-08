@@ -366,6 +366,12 @@ class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
+        #if DEBUG
+        // #530: a new appearance is a new field as far as the keyboard knows, so
+        // the prediction starts without a baseline and adopts on its first probe.
+        MirrorProbe.shared.reset()
+        #endif
+
         // CRITICAL: Disable touch delay on system gesture recognizers.
         // iOS attaches gesture recognizers to the keyboard's UIWindow that have
         // delaysTouchesBegan=true (for system gesture disambiguation at screen edges).
@@ -1138,8 +1144,42 @@ class KeyboardViewController: UIInputViewController {
 
     // MARK: - Text Change
 
+    // These two overrides exist ONLY for #530's diagnostic round and only in Debug.
+    // develop does not override them at all, so guarding the declarations — not just
+    // their bodies — is what keeps a release build byte-identical rather than merely
+    // equivalent.
+    #if DEBUG
+    /// The host is about to change the text. This is the LAST moment the keyboard's
+    /// prediction can be trusted before an edit it did not make lands, so an `off=0`
+    /// here followed by a re-baseline pins the divergence to the external edit
+    /// rather than to anything the keyboard did.
+    override func textWillChange(_ textInput: UITextInput?) {
+        super.textWillChange(textInput)
+        MirrorProbe.shared.probe(
+            event: "textWillChange",
+            mirror: textDocumentProxy.documentContextBeforeInput
+        )
+    }
+
+    /// The caret is about to move. Same role as `textWillChange` for a selection
+    /// delete, which moves the caret as well as changing the text.
+    override func selectionWillChange(_ textInput: UITextInput?) {
+        super.selectionWillChange(textInput)
+        MirrorProbe.shared.probe(
+            event: "selectionWillChange",
+            mirror: textDocumentProxy.documentContextBeforeInput
+        )
+    }
+    #endif
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        #if DEBUG
+        MirrorProbe.shared.probe(
+            event: "textDidChange",
+            mirror: textDocumentProxy.documentContextBeforeInput
+        )
+        #endif
         // Re-check the dictation undo offer against the changed document (#266).
         // Deliberately a re-check and not a clear: the keyboard's own insertion is
         // itself a text change, so clearing here would cancel the offer at the
@@ -1158,6 +1198,12 @@ class KeyboardViewController: UIInputViewController {
 
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
+        #if DEBUG
+        MirrorProbe.shared.probe(
+            event: "selectionDidChange",
+            mirror: textDocumentProxy.documentContextBeforeInput
+        )
+        #endif
         // A caret the user moved is a caret the insertion is no longer behind (#266).
         KeyboardState.shared.revalidateDictationUndo()
         // Some hosts move focus between fields without emitting textDidChange.
