@@ -82,6 +82,21 @@ public enum PolishPipeline {
         guard gate.allowsCall(engine: engine.identifier) else {
             return Result(engineOutput: nil, outcome: .engineUnavailable, engineMs: 0, postprocessMs: 0)
         }
+        // Input-language pre-flight (#490). Apple Foundation Models classifies the
+        // user turn and refuses a language outside its set before generating
+        // anything — 22 ms on device, 3 to 5 on the Mac. Asking the backend for its
+        // list first turns that round trip into a local verdict, and, unlike the
+        // slug the round trip returns, one that can be explained to the user: the
+        // engine's `unsupportedLanguageOrLocale` arrives byte-identically from a
+        // false positive on a supported language (#518), this does not.
+        //
+        // Placed with the availability gate rather than with the context guard: both
+        // are "do not call at all", and both must cost nothing. `.unknown` — no list
+        // published, or nothing readable in the transcript — always falls through.
+        if engine.inputLanguageSupport(countedCodes: job.inputLanguageCodes) == .unsupported {
+            return Result(engineOutput: nil, outcome: .unsupportedInputLanguage,
+                          engineMs: 0, postprocessMs: 0)
+        }
         // Encode newlines as a marker so the model can't "naturalise" them into
         // ", " + capital — see `PolishPostpass`. Sub-millisecond, kept out of the
         // engine timing below.
@@ -328,13 +343,19 @@ public enum PolishPipeline {
 
     /// Whether an armed mode accepts the deterministic floor for this outcome.
     ///
-    /// The outcome test is as narrow as the argument that justifies it: only
-    /// `.exceededContextBudget` never reached the engine. `.engineFailed`,
+    /// The outcome test is as narrow as the argument that justifies it. `.engineFailed`,
     /// `.rejectedGuardrail`, `.cancelled` and `.engineUnavailable` all stay
     /// fail-closed for every mode, whatever it declares — the first three because a
     /// transformation was attempted and may have half-happened, the last because it
     /// describes a process that will not run the model again for its lifetime, which
     /// is a different conversation to have with the user (#315).
+    ///
+    /// `.unsupportedInputLanguage` (#490) never reached the engine either, and stays
+    /// fail-closed anyway. What the mode would degrade to is text in a language the
+    /// model cannot read — Czech bullets from a mode that promised bullets, Czech
+    /// from a mode that promised English — so "at least the words are there" is not
+    /// the same offer it is for an overflow, where the words are the ones the user
+    /// would have got. The user is told, and DictusApp's card still holds the raw.
     public static func degradesToFloor(_ mode: SmartMode,
                                        outcome: PolishMetrics.Outcome) -> Bool {
         outcome == .exceededContextBudget && mode.overflowBehaviour == .insertRawText

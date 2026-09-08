@@ -1709,12 +1709,38 @@ extension KeyboardState {
     /// `assignStatusMessage` makes for itself above. A future site that schedules its
     /// own clear would reintroduce the bug in full, and there would be nothing to stop
     /// it -- here there is no reason to write one.
+    ///
+    /// WHY the clear can decline (#490): the three seconds are three seconds of screen
+    /// time. A recording covers the toolbar with its overlay, so a timer that ran
+    /// through one spent the message's life on a surface nobody was looking at --
+    /// measured on device, a Smart Mode refusal that lived from 13:52:24 to 13:52:27
+    /// with the user recording again from 13:52:26. See
+    /// `StatusMessageLifetime.clearDecision`.
     func presentStatusMessage(_ message: String, reason: String, timeoutReason: String) {
         assignStatusMessage(message, reason: reason)
-        let token = messageLifetime.current
+        scheduleStatusMessageClear(token: messageLifetime.current, timeoutReason: timeoutReason)
+    }
+
+    /// Arm the clear for the message holding `token`, and re-arm it for as long as
+    /// the toolbar is covered (#490).
+    ///
+    /// The recursion is the whole rule: `clearDecision` answers `.waitForIdle` while
+    /// a dictation is in flight, because the recording overlay owns the keyboard area
+    /// and a message nobody can see is not being read. The token never changes, so
+    /// every re-arm stays bound to the same message and a replacement still
+    /// invalidates all of them at once.
+    ///
+    /// It cannot loop forever: a dictation is bounded by the watchdog, and every way
+    /// out of one already clears the message.
+    private func scheduleStatusMessageClear(token: Int, timeoutReason: String) {
         DispatchQueue.main.asyncAfter(deadline: .now() + StatusMessageLifetime.displayDuration) { [weak self] in
-            guard let self, self.messageLifetime.mayClear(token) else { return }
-            self.assignStatusMessage(nil, reason: timeoutReason)
+            guard let self else { return }
+            let active = DictationSessionLivenessPolicy.isActive(self.dictationStatus)
+            switch self.messageLifetime.clearDecision(token, dictationIsActive: active) {
+            case .superseded: break
+            case .waitForIdle: self.scheduleStatusMessageClear(token: token, timeoutReason: timeoutReason)
+            case .clear: self.assignStatusMessage(nil, reason: timeoutReason)
+            }
         }
     }
 

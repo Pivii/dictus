@@ -90,4 +90,40 @@ public struct StatusMessageLifetime: Equatable, Sendable {
     public func mayClear(_ token: Int) -> Bool {
         token == current
     }
+
+    /// What a clear that has come due should do.
+    ///
+    /// ### Why three answers and not two (#490)
+    ///
+    /// `displayDuration` was being spent on wall clock, and a recording spends wall
+    /// clock without showing the toolbar: the recording overlay owns the keyboard
+    /// area for its whole length. Captured on device on 2026-09-04 — a Smart Mode
+    /// refusal at 13:52:24, the user starting over at 13:52:26, the message cleared
+    /// at 13:52:27 by its own timer while nobody could see it. Two of its three
+    /// seconds went to a screen it was not on.
+    ///
+    /// So a clear that comes due during a dictation declines and asks to be
+    /// rescheduled. **The number is unchanged** — whether three seconds is right is
+    /// #313's question, not this type's — what changes is that it now measures time
+    /// the message could actually be read.
+    ///
+    /// This cannot strand a message. A dictation is bounded by the keyboard's
+    /// watchdog, and every route back to idle already takes the message down:
+    /// an insertion, a cancel, a reconcile, or the next message replacing it.
+    public func clearDecision(_ token: Int, dictationIsActive: Bool) -> ClearDecision {
+        guard mayClear(token) else { return .superseded }
+        return dictationIsActive ? .waitForIdle : .clear
+    }
+
+    /// The three answers `clearDecision` gives.
+    public enum ClearDecision: Equatable, Sendable {
+        /// Take the message down.
+        case clear
+        /// A newer message owns the toolbar; this clear belongs to nothing. Do not
+        /// reschedule — the message that replaced it brought its own clear.
+        case superseded
+        /// The message is still current but the toolbar is covered by a dictation in
+        /// flight. Reschedule and ask again.
+        case waitForIdle
+    }
 }

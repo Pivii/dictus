@@ -192,6 +192,43 @@ public final class AppleFoundationModelsPolishEngine: PolishEngineProtocol, Send
         }
     }
 
+    // MARK: - Input-language pre-flight (#490)
+
+    /// The languages Apple's model reports it can read, as primary subtags.
+    ///
+    /// Read once per process: the set is a property of the installed model and does
+    /// not change under a running app, and the pre-flight below runs on every
+    /// engine-facing dictation.
+    ///
+    /// Measured 2026-09-07: 23 locales collapsing to 15 subtags —
+    /// `da de en es fr it ja ko nb nl pt sv tr vi zh`. Six more than #490's body
+    /// assumed, which is why the list is read here rather than written down anywhere.
+    private static let readableLanguageCodes: Set<String> = Set(
+        SystemLanguageModel.default.supportedLanguages
+            .compactMap(\.languageCode?.identifier)
+            .map(PolishInputLanguage.primarySubtag)
+    )
+
+    /// Whether Apple's model can read a transcript made of `countedCodes` (#490).
+    ///
+    /// This is the whole of the local pre-flight: the rule that decides is
+    /// `PolishInputLanguage.support`, which knows nothing about Apple, and the only
+    /// thing this engine contributes is its own list. An empty list — which is what
+    /// a device with Apple Intelligence off returns — yields `.unknown`, so the
+    /// engine is still called and still gets to answer for itself.
+    public func inputLanguageSupport(countedCodes: Set<String>) -> PolishInputLanguageSupport {
+        Self.inputLanguageSupport(countedCodes: countedCodes)
+    }
+
+    /// The same verdict without an instance, for the harness engine — which wraps the
+    /// same model and must apply the same pre-flight, but has no session cache to
+    /// build in order to ask about a list.
+    public static func inputLanguageSupport(countedCodes: Set<String>) -> PolishInputLanguageSupport {
+        PolishInputLanguage.support(
+            countedCodes: countedCodes, readableCodes: readableLanguageCodes
+        )
+    }
+
     // MARK: - Instruction routing
 
     /// Returns the system prompt for `(task, language)`. All four supported

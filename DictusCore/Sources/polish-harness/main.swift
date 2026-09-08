@@ -325,6 +325,10 @@ struct RunOutcome {
     /// Raw NLLanguage code of the input ("fr", "it", "zh-Hans", …).
     let detected: String?
     let task: PolishTask?
+    /// What the pre-pass produced, i.e. what the engine was handed once the
+    /// pipeline had encoded its newlines as markers. Carried so `eval` can assert
+    /// on the markers themselves: they exist in neither `raw` nor the fixture.
+    let preprocessed: String
     /// Set when the engine threw (#315) — the same slug the app exports, so a
     /// failure seen here reads against the field data without a translation.
     let failureReason: PolishFailureReason?
@@ -335,6 +339,7 @@ struct RunOutcome {
          engineMs: Int,
          detected: String?,
          task: PolishTask?,
+         preprocessed: String,
          failureReason: PolishFailureReason? = nil) {
         self.final = final
         self.engineOutput = engineOutput
@@ -342,6 +347,7 @@ struct RunOutcome {
         self.engineMs = engineMs
         self.detected = detected
         self.task = task
+        self.preprocessed = preprocessed
         self.failureReason = failureReason
     }
 
@@ -440,7 +446,8 @@ func runOnce(_ fx: Fixture,
         hasDetectedLanguage: detected != nil, task: smartTask ?? .natural
     ) {
         let fallback = PolishPostpass.decodeFromEngine(preprocessed, language: target)
-        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: detectedCode, task: nil)
+        return RunOutcome(final: fallback, engineOutput: nil, outcome: .skipped, engineMs: 0,
+                          detected: detectedCode, task: nil, preprocessed: preprocessed)
     }
     // The armed mode when there is one, otherwise the free-polish variant the STT
     // engine and the detected-vs-target gap select. `detected ?? target` matches the
@@ -451,13 +458,20 @@ func runOnce(_ fx: Fixture,
             sttEngine: fx.speechEngine, detected: detected ?? target, target: target
         )),
         promptLanguage: target,
-        languageAgnosticPath: false
+        languageAgnosticPath: false,
+        // What the pipeline's input-language pre-flight judges (#490). Off the same
+        // mix the target was elected from, exactly as `PolishService` does it — a
+        // harness that skipped it would let a fixture reach the engine where the app
+        // refuses it locally, which is a path no user takes.
+        inputLanguageCodes: mix.countedCodes
     )
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, job: job)
     // nil for a Smart Mode on any non-success: it inserts nothing rather than the
     // untransformed floor, which #79 names as the worst outcome available.
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, task: job.task, failureReason: r.failureReason)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome,
+                      engineMs: r.engineMs, detected: detectedCode, task: job.task,
+                      preprocessed: preprocessed, failureReason: r.failureReason)
 }
 
 /// Auto-detect path (#239), mirroring `PolishCoordinator.polishAutoDetected`:
@@ -481,13 +495,21 @@ func runOnceAuto(_ fx: Fixture,
     if PolishGatePolicy.skipsForGibberish(
         hasDetectedLanguage: detectedCode != nil, task: smartTask ?? .auto
     ) {
-        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0, detected: nil, task: nil)
+        return RunOutcome(final: fx.raw, engineOutput: nil, outcome: .skipped, engineMs: 0,
+                          detected: nil, task: nil, preprocessed: fx.raw)
     }
     let preprocessed = PolishPipeline.autoPreprocess(fx.raw, detectedCode: detectedCode)
-    let job = PolishJob(task: smartTask ?? .auto, promptLanguage: .english, languageAgnosticPath: true)
+    let job = PolishJob(
+        task: smartTask ?? .auto, promptLanguage: .english, languageAgnosticPath: true,
+        // Same pre-flight input as the per-language path (#490). Measured on the raw
+        // for the reason the other path measures it there.
+        inputLanguageCodes: PolishLanguageMix.measure(fx.raw).countedCodes
+    )
     let r = await PolishPipeline.transform(preprocessed: preprocessed, engine: engine, job: job)
     let final = PolishPipeline.resolvedOutput(r, preprocessed: preprocessed, job: job)
-    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome, engineMs: r.engineMs, detected: detectedCode, task: job.task, failureReason: r.failureReason)
+    return RunOutcome(final: final, engineOutput: r.engineOutput, outcome: r.outcome,
+                      engineMs: r.engineMs, detected: detectedCode, task: job.task,
+                      preprocessed: preprocessed, failureReason: r.failureReason)
 }
 
 /// What `prompt` prints for one fixture: the task the engine would run, the text it
@@ -674,10 +696,18 @@ func runHarness() async {
                 }
             }
         }
-        // The rate, not just the outputs. Printed for a mode run only: it is the
-        // number #393 asks for, and the free-polish paths already have their own
-        // evidence in `eval`.
-        if mode != nil { print(tally.report) }
+        // The rate, not just the outputs — the number #393 asks for.
+        //
+        // Printed on every run since #518, not only on a mode run. The reason it
+        // used to be mode-only was that "the free-polish paths already have their
+        // own evidence in `eval`", and #518 is the counterexample: on an
+        // `engineFailed` the free polish returns the deterministic FLOOR, which
+        // carries the speaker's words and passes every `contains` and length check
+        // in a fixture. So `eval` scores a dictation whose polish was dropped
+        // outright as a pass, and the one command that can see the outcome is this
+        // one. Counting it here costs two lines and is what makes a refusal RATE
+        // reportable on the free polish at all.
+        print(tally.report)
 
     case "eval":
         let mode = loadSmartMode(modeIdentifier)
@@ -687,13 +717,25 @@ func runHarness() async {
             let o = await runOnce(fx, engine: engine, mode: mode)
             let route = Expectation.routeName(perLanguage: fx.language != nil)
             let checks = (fx.expect ?? []).filter { $0.applies(to: route) }
-            // A mode that failed closed has no output to check, and that is a
-            // failure of the fixture rather than a reason to skip it: the mode's own
-            // contract refused what the engine produced, which is precisely what
-            // `eval` is being asked about.
-            let failures = o.final.map { final in
-                checks.compactMap { $0.failure(polished: final, raw: fx.raw) }
-            } ?? ["the mode inserted nothing (\(o.outcome.rawValue))"]
+            let evidence = RunEvidence(
+                polished: o.final,
+                raw: fx.raw,
+                preprocessed: o.preprocessed,
+                engineOutput: o.engineOutput,
+                outcome: o.outcome.rawValue,
+                failureReason: o.failureReason?.slug
+            )
+            // A mode that failed closed has no output to check, and that is normally
+            // a failure of the fixture rather than a reason to skip it: the mode's
+            // own contract refused what the engine produced, which is precisely what
+            // `eval` is being asked about. It is NOT a failure for a fixture whose
+            // assertions are all about the run — `refusal-cs.json` exists to prove a
+            // refusal, so nothing reaching the document is the pass condition.
+            var failures: [String] = []
+            if o.final == nil, checks.isEmpty || checks.contains(where: \.inspectsInsertedText) {
+                failures.append("the mode inserted nothing (\(o.outcome.rawValue))")
+            }
+            failures += checks.compactMap { $0.failure(evidence) }
             total += 1
             if failures.isEmpty {
                 passed += 1

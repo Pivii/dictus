@@ -57,6 +57,23 @@ public protocol PolishEngineProtocol: Sendable {
                     targetLanguage: SupportedLanguage,
                     task: PolishTask) -> PolishContextFit
 
+    /// Whether this backend can read a transcript made of `countedCodes` — the
+    /// `NLLanguage` raw codes the language mix counted (#490).
+    ///
+    /// Asked by `PolishPipeline` before the call, for the same reason `contextFit`
+    /// is: a refusal the backend was always going to make is worth making here,
+    /// named, and for free. Apple Foundation Models classifies the user turn and
+    /// refuses in 3 to 22 ms on a language outside its set; asking first turns that
+    /// round trip into a local verdict the surface can explain.
+    ///
+    /// The engine answers because the readable set is a property of the backend —
+    /// Apple publishes `SystemLanguageModel.default.supportedLanguages`, a future
+    /// backend would publish something else, and no caller hardcodes a list.
+    ///
+    /// Default implementation returns `.unknown`: an engine that publishes no list
+    /// is valid and stays unaffected, because `.unknown` never refuses.
+    func inputLanguageSupport(countedCodes: Set<String>) -> PolishInputLanguageSupport
+
     /// Name the failure `error` — thrown by this engine's own `polish(...)` —
     /// so an engine failure stops being one opaque bucket (#315).
     ///
@@ -82,6 +99,8 @@ public extension PolishEngineProtocol {
     func contextFit(input: String,
                     targetLanguage: SupportedLanguage,
                     task: PolishTask) -> PolishContextFit { .fits }
+
+    func inputLanguageSupport(countedCodes: Set<String>) -> PolishInputLanguageSupport { .unknown }
 
     func failureReason(for error: Error) -> PolishFailureReason { .other(error) }
 }

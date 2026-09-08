@@ -469,6 +469,90 @@ final class LogEventTests: XCTestCase {
         }
     }
 
+    // MARK: - Polish engine failure (#315, #518)
+
+    /// The line has to answer "whose fault was this refusal" on its own.
+    ///
+    /// `unsupportedLanguageOrLocale` is returned byte-identically for a language
+    /// genuinely outside Apple's set (#490) and for one squarely inside it that
+    /// their classifier misread (#518), and iOS 26's `GenerationError.Context`
+    /// carries no `languageCode` to separate them. What separates them is the
+    /// reading taken before the call, which is why these two fields are on the line
+    /// rather than only in the debug export: this log is the one an agent greps
+    /// (#255), and a reason slug alone sends it to read three files.
+    func testPolishEngineFailedNamesTheLanguageItReadBeforeTheCall() {
+        // The bug: French, read as French at full share, refused anyway.
+        let ours = LogEvent.polishEngineFailed(
+            reason: "unsupportedLanguageOrLocale", engine: "apple-fm", mode: "natural",
+            engineMs: 7, detected: "fr", mix: "fr 1.00"
+        )
+        XCTAssertEqual(ours.name, "polishEngineFailed")
+        XCTAssertEqual(
+            ours.message,
+            "reason=unsupportedLanguageOrLocale engine=apple-fm mode=natural engineMs=7 "
+                + "detected=fr mix=fr 1.00"
+        )
+        XCTAssertEqual(ours.level, .warning)
+        XCTAssertEqual(ours.subsystem, .transcription)
+
+        // The legitimate case, same slug, and now distinguishable from the line.
+        let theirs = LogEvent.polishEngineFailed(
+            reason: "unsupportedLanguageOrLocale", engine: "apple-fm",
+            mode: "smart.translate.en", engineMs: 22, detected: "cs", mix: "cs 1.00"
+        )
+        XCTAssertTrue(theirs.message.contains("detected=cs"))
+        XCTAssertNotEqual(ours.message, theirs.message)
+    }
+
+    // MARK: - The pre-flight refusal (#490)
+
+    /// Its own name, so a reader can tell "we declined to ask" from "the engine
+    /// refused" with one grep instead of by reading a latency.
+    func testPolishInputLanguageRefusedIsItsOwnEventAndNotAFailure() {
+        let event = LogEvent.polishInputLanguageRefused(
+            engine: "apple-fm", mode: "smart.translate.en", detected: "cs", mix: "cs 1.00"
+        )
+        XCTAssertEqual(event.name, "polishInputLanguageRefused")
+        XCTAssertEqual(
+            event.message,
+            "engine=apple-fm mode=smart.translate.en detected=cs mix=cs 1.00"
+        )
+        // Info, not warning: the guard declining a call the backend was going to
+        // refuse anyway is the feature working.
+        XCTAssertEqual(event.level, .info)
+        XCTAssertEqual(event.subsystem, .transcription)
+    }
+
+    /// The two events read against each other on one page, which is how the two
+    /// causes of #490 and #518 are told apart.
+    func testTheRefusalAndTheFailureCarryTheSameReadingInTheSameShape() {
+        let refused = LogEvent.polishInputLanguageRefused(
+            engine: "apple-fm", mode: "smart.translate.en", detected: "cs", mix: "cs 1.00"
+        )
+        let failed = LogEvent.polishEngineFailed(
+            reason: "unsupportedLanguageOrLocale", engine: "apple-fm",
+            mode: "smart.translate.en", engineMs: 22, detected: "cs", mix: "cs 1.00"
+        )
+        for line in [refused.message, failed.message] {
+            XCTAssertTrue(line.contains("detected=cs"), line)
+            XCTAssertTrue(line.contains("mix=cs 1.00"), line)
+        }
+    }
+
+    /// A failure recorded before the mix was measured still logs, with `-` in both
+    /// slots rather than an absent field. The event predates #456's trail, and a
+    /// line whose shape changes with its content is a line no grep can rely on.
+    func testPolishEngineFailedRendersAnAbsentReadingAsPlaceholders() {
+        let event = LogEvent.polishEngineFailed(
+            reason: "rateLimited", engine: "apple-fm", mode: "natural",
+            engineMs: 4, detected: "-", mix: "-"
+        )
+        XCTAssertEqual(
+            event.message,
+            "reason=rateLimited engine=apple-fm mode=natural engineMs=4 detected=- mix=-"
+        )
+    }
+
     // MARK: - Formatted output
 
     func testFormattedOutputContainsLevelSubsystemAndEventName() {

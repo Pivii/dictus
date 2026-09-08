@@ -97,6 +97,23 @@ extension DictationCoordinator {
             // is a colon-label, not the sentence's subject, because translate modes
             // are called "→ EN" and "→ EN could not transform this text" does not
             // read. The keyboard's `announce` uses the same shape, deliberately.
+            //
+            // One refusal gets its own sentence here as it does there (#490): a
+            // language Apple Foundation Models does not read is the only cause this
+            // surface can name, and it is the only one where "Try again" would be an
+            // instruction to repeat a failure. Keyed on the outcome and not on the
+            // `unsupportedLanguageOrLocale` slug, which #518 measured arriving from
+            // plain French — a language Apple does read.
+            if let failure = outcome.smartModeFailure,
+               failure.outcome == PolishMetrics.Outcome.unsupportedInputLanguage.rawValue,
+               let code = failure.detectedLanguage {
+                let language = PolishLanguageName.display(for: code)
+                handleError(String(
+                    localized: "\(name): Apple Intelligence does not support the dictated language (\(language)).",
+                    comment: "Shown when an armed Smart Mode could not run because the language the user dictated is outside the set Apple Intelligence reads. First placeholder is the mode's name, second is the dictated language."
+                ))
+                return
+            }
             handleError(String(
                 localized: "\(name): could not be applied. Try again.",
                 comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."

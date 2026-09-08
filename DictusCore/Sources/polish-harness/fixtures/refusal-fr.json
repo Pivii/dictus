@@ -1,0 +1,41 @@
+[
+  {
+    "id": "518-minimal-32",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "The minimal refusing string bisected on #518: 32 characters of ordinary spoken French, refused 5/5 by Apple FM with unsupportedLanguageOrLocale under the shipping user-turn framing, and accepted when the same text is sent bare. Seven of nine perturbations of it make the refusal disappear, so it is a confidence-threshold artefact rather than a rule — which is why it is committed verbatim: any edit is a different measurement.",
+    "raw": "Je me dis est-ce que je pourrais",
+    "expect": [
+      {
+        "contains": "est-ce que"
+      },
+      {
+        "lengthRatioMax": 1.6
+      }
+    ]
+  },
+  {
+    "id": "518-capture-717",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "The device capture #518 was opened on, verbatim from dictus-polish-debug-20260907-154551.json, event 2026-09-06T08:15:37Z (id BE2C2E86, App keyboard, parakeet-tdt-0.6b-v3, mode natural, detectedLanguage fr, languageMix {\"fr\": 1}, outcome engineFailed / unsupportedLanguageOrLocale in engineMs=7). French is one of the 23 locales Apple FM reports as supported and our own reading of this text is fr 1.000, so the refusal is a false positive.",
+    "raw": "Je me dis est-ce que je pourrais pas le quote pour vraiment ouvrir le débat sur la taxe foncière et expliquer qu'en fait c'est limite un des impôts que je trouve le plus légitime à payer, dans le sens où si on imagine un monde avec un état régalien uniquement, donc on va dire plus minarchique, en fait je serais OK de payer un impôt local pour financer des choses des choses autour de la commune quoi comme des infrastructures communes le nettoyage de la commune voilà des choses un peu comme ça et j'aimerais que là tu t'appuies sur le livre il me semble cette démocratie le dieu qui a échoué je me demande s'il parle pas de tout ça un petit peu et de comment se réorganiser la vie dans un monde anarcho-capitaliste",
+    "expect": [
+      {
+        "contains": "taxe foncière"
+      },
+      {
+        "contains": "anarcho"
+      },
+      {
+        "regexAbsent": "<<NL>>"
+      },
+      {
+        "lengthRatioMin": 0.85
+      },
+      {
+        "lengthRatioMax": 1.3
+      }
+    ]
+  }
+]

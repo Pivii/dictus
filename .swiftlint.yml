@@ -78,8 +78,20 @@ force_unwrapping:
 # Measured maxima at the time of writing, and the headroom each gets:
 #   type_body_length      558  LiveActivityManager              -> 650  (+16%)
 #   function_body_length  127  TextPredictionEngine.spellCheck  -> 150  (+18%)
-#   file_length           686  DictationCoordinator             -> 800  (+17%)
+#   file_length           801  KeyboardState                    -> 900  (+12%)
 #   cyclomatic_complexity  18  AccentExpander                   ->  20  (+2 branches)
+#
+# `file_length` was 800 against DictationCoordinator's 686 until 2026-09-07, when
+# KeyboardState passed it (#490 added the re-arm loop that stops a recording
+# spending a toolbar message's three seconds behind its own overlay). Raised rather
+# than worked around, because both ways around it are worse and both are already
+# argued against in writing: splitting KeyboardState means widening private members
+# for a style rule -- its two extractable extensions each say in their own doc
+# comment that staying in this file is what kept them private -- and a file-level
+# `swiftlint:disable file_length` would stop policing the growth of the file with
+# the worst regression history in the repo. Following this block's own protocol
+# (set the number above the largest offender, with modest headroom) keeps the rule
+# doing its job everywhere, this file included.
 #
 # cyclomatic_complexity gets proportionally less headroom on purpose: it counts
 # branches, not lines, so a single added `if` is a far bigger relative step than
@@ -97,7 +109,7 @@ type_body_length:
   error: 900
 
 file_length:
-  warning: 800
+  warning: 900
   error: 1200
   ignore_comment_only_lines: true
 

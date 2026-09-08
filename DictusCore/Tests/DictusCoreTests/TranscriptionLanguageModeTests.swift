@@ -386,6 +386,54 @@ final class TranscriptionLanguagePolicyTests: XCTestCase {
         )
     }
 
+    /// #518 put the shares on the persistent log's `polishEngineFailed` line as
+    /// well as in the OSLog metrics line, so the rendering became something two
+    /// call sites share. Leader first, because the reader of either line is asking
+    /// which language the engine was handed — and `-` rather than an empty string
+    /// when there is no mix, so the field keeps its shape for a grep.
+    func testTheSharesRenderLeaderFirstOnOneLine() {
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut, mix: mixed(.english, 0.776, .french))
+                .mixDescription,
+            "en 0.78/fr 0.22"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut, mix: wholly(.french)).mixDescription,
+            "fr 1.00"
+        )
+        XCTAssertEqual(
+            PolishMetrics.LanguageResolution(policy: sut).mixDescription, "-",
+            "no mix was supplied, so none is claimed"
+        )
+    }
+
+    /// The decimal separator is a dot under a French locale too.
+    ///
+    /// Raised on PR #519's review as a suspected `String(format:)` localisation bug —
+    /// `fr 0,78` instead of `fr 0.78`, which would break the agent that reads this
+    /// log (#255). It is not one: the `String(format:)` overload WITHOUT a `locale:`
+    /// argument is documented as non-localizing, and only the overload that takes one
+    /// localizes. Measured under `LC_ALL=fr_FR.UTF-8` with `Locale.current` reading
+    /// `fr_FR`: the no-locale call printed `0.78` and the explicit `fr_FR` call
+    /// printed `0,78`.
+    ///
+    /// Pinned rather than argued, because the cheap fix for a bug that does not exist
+    /// is a `locale:` argument nobody would ever remove — and this test fails loudly
+    /// if someone adds the localizing overload by accident.
+    func testTheSharesUseADotWhateverTheProcessLocale() {
+        let previous = setlocale(LC_ALL, nil).map { String(cString: $0) }
+        setlocale(LC_ALL, "fr_FR.UTF-8")
+        defer { setlocale(LC_ALL, previous ?? "C") }
+
+        let sut = policy(.followKeyboard, keyboard: .french, engine: .parakeet)
+        let rendered = PolishMetrics.LanguageResolution(
+            policy: sut, mix: mixed(.english, 0.776, .french)
+        ).mixDescription
+        XCTAssertEqual(rendered, "en 0.78/fr 0.22")
+        XCTAssertFalse(rendered.contains(","), "a decimal comma breaks the log's reader")
+    }
+
     func testLanguageResolutionTrailCarriesEachFactApart() {
         // The export must let a reader separate the mode, the keyboard, and
         // what STT was handed — the failure that made three device re-tests

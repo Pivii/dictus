@@ -1,0 +1,14 @@
+[
+  {
+    "id": "518-control-cs",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "The negative control for #518 and the reproduction for #490, verbatim from the device export (id 0D55CE93, 2026-09-07T13:45:39Z, mode smart.translate.en, detectedLanguage cs, languageMix {\"cs\": 1}). Czech is genuinely outside Apple FM's set, so this refusal is LEGITIMATE and it must stay refused: a change that made this one pass would have disabled the check rather than removed a false positive. Run it with --mode translate.en — that is the task it was captured under, and the free polish would skip it at the gibberish gate (cs is not one of the four prompt languages). WHAT CHANGED IN #490: the refusal used to be Apple's, `engineFailed` / `unsupportedLanguageOrLocale` in 22 ms on device and 3–5 ms on the Mac. It is now ours, `unsupportedInputLanguage` in 0 ms, because the pipeline asks the backend which languages it reads before calling it. The product-level property this fixture defends is unchanged — Czech is refused and nothing reaches the document — but the finer one, that APPLE still refuses Czech, is no longer reachable through the shipping pipeline by construction, because the shipping pipeline no longer asks. To measure that again, build the job with an empty `inputLanguageCodes`: that is the default, and `.unknown` never refuses.",
+    "raw": "Dobrý den, dnes je opravdu hezký den a musím zavolat kolegovi.",
+    "expect": [
+      {
+        "outcome": "unsupportedInputLanguage"
+      }
+    ]
+  }
+]

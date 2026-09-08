@@ -1,0 +1,71 @@
+[
+  {
+    "id": "nl-1-liste-courses",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "Dictated on device 2026-09-07 on build ba9d468 and relayed from the session that validated #518; cases 3 and 4 are excerpts of longer dictations. Each hands Apple FM at least one <<NL>> marker, and rule 5 of PolishNaturalPromptFR orders it kept character-for-character. Note what the pre-pass did first: spoken \"retour à la ligne\" AND the bare \"à la ligne\" are line-break commands, so those words are consumed by VerbalPunctuationPrepass, correctly, before the engine sees anything. What reaches the engine is a marker. MEASURED 2026-09-07, three runs per case: nl-1, nl-2 and nl-4 lost the marker on every single run under BOTH framings, 0 preserved out of 9 each side. nl-3 is intermittent — 1 of 3 under the pre-#518 `Input:` framing, 3 of 3 under the current one — so this file scores 0/4 or 1/4 depending on sampling, and nl-3 passing is not evidence of anything. Totals: 1 line break preserved out of 12 with `Input:`, 3 out of 12 without, which is why the framing was ruled out as the cause. Tracked as #520. These expectations are a declared bar the shipping model FAILS, committed failing on purpose the way longform-fr.json carries #439's, so the next fix has a number to move.",
+    "raw": "Voici ce que j'ai besoin de points, retour à la ligne, des carottes, retour à la ligne, des patates, retour à la ligne, des pommes",
+    "expect": [
+      {
+        "lineBreaksPreserved": true
+      },
+      {
+        "contains": "carottes"
+      },
+      {
+        "contains": "patates"
+      },
+      {
+        "contains": "pommes"
+      }
+    ]
+  },
+  {
+    "id": "nl-2-plus-de-retours",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "See nl-1-liste-courses for provenance and the measurement.",
+    "raw": "Donc j'ai l'impression qu'il ne me fait plus les retours à la ligne, je sais pas pourquoi.",
+    "expect": [
+      {
+        "lineBreaksPreserved": true
+      },
+      {
+        "contains": "je sais pas pourquoi"
+      }
+    ]
+  },
+  {
+    "id": "nl-3-sous-paragraphes",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "See nl-1-liste-courses for provenance and the measurement.",
+    "raw": "sur des grands paragraphes des sous-paragraphes avec des retours à la ligne, des espaces blancs",
+    "expect": [
+      {
+        "lineBreaksPreserved": true
+      },
+      {
+        "contains": "sous-paragraphes"
+      },
+      {
+        "contains": "espaces blancs"
+      }
+    ]
+  },
+  {
+    "id": "nl-4-identifiants",
+    "lang": "fr",
+    "sttEngine": "PK",
+    "_note": "See nl-1-liste-courses for provenance and the measurement.",
+    "raw": "il me dit de points retour à la ligne copier les identifiants",
+    "expect": [
+      {
+        "lineBreaksPreserved": true
+      },
+      {
+        "contains": "identifiants"
+      }
+    ]
+  }
+]

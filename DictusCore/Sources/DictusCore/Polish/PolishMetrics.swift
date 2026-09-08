@@ -65,6 +65,18 @@ public struct PolishMetrics: Sendable, Codable {
         /// "that was too long" instead of "something went wrong", and what lets
         /// the metrics tell a length problem from a backend problem.
         case exceededContextBudget
+        /// Refused BEFORE the engine call (#490): nothing the transcript was
+        /// measured to contain is in a language the backend reports it can read.
+        ///
+        /// Deliberately distinct from `engineFailed` for the same reason
+        /// `exceededContextBudget` is — nothing failed and nothing was attempted —
+        /// and distinct from it for a second reason of its own. Apple returns
+        /// `unsupportedLanguageOrLocale` byte-identically for a language genuinely
+        /// outside its set and for one squarely inside it that its classifier
+        /// misread (#518), so the slug can never tell a user why. This outcome can:
+        /// it means *we* read the transcript as a language the model does not
+        /// publish, which is a fact about the dictation rather than about the model.
+        case unsupportedInputLanguage
     }
 
     /// The inputs that decided the polish target, captured per event (#332).
@@ -147,6 +159,20 @@ public struct PolishMetrics: Sendable, Codable {
                 languageMix: mix?.roundedShares,
                 targetSource: mix.map { Self.targetSource(policy: policy, mix: $0) }
             )
+        }
+
+        /// The shares as one line, leader first: `fr 0.78/en 0.22`. `-` when the
+        /// event carries none, which is what a build predating #456 wrote.
+        ///
+        /// A method rather than two copies of the same `sorted`/`format` chain: the
+        /// OSLog metrics line and the persistent log's `polishEngineFailed` (#518)
+        /// both print it, and a reader comparing the two across one dictation is
+        /// exactly who a formatting drift would mislead.
+        public var mixDescription: String {
+            guard let languageMix, !languageMix.isEmpty else { return "-" }
+            return languageMix.sorted { lhs, rhs in
+                lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+            }.map { String(format: "%@ %.2f", $0.key, $0.value) }.joined(separator: "/")
         }
 
         /// Which of the three inputs decided the target, given the same policy and
@@ -334,11 +360,8 @@ public struct PolishMetrics: Sendable, Codable {
                 // share so the leader reads first: `mix:fr .78/en .22`. Appended
                 // only when the event carries them, so pre-#456 events keep their
                 // shape exactly as pre-#332 ones do.
-                let mix = r.languageMix.map { shares in
-                    let rendered = shares.sorted { lhs, rhs in
-                        lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
-                    }.map { String(format: "%@ %.2f", $0.key, $0.value) }.joined(separator: "/")
-                    return " mix=\(rendered) via:\(r.targetSource ?? "-")"
+                let mix = r.languageMix.map { _ in
+                    " mix=\(r.mixDescription) via:\(r.targetSource ?? "-")"
                 } ?? ""
                 return " resolution=tx:\(r.transcriptionMode)/kbd:\(r.keyboardLanguage)"
                     + "/stt:\(r.sttLanguageCode)\(inert)" + mix

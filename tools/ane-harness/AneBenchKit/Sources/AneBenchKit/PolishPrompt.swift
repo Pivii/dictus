@@ -49,24 +49,25 @@ public struct PolishPrompt: Sendable {
         guard let detected = PolishPipeline.detectLanguage(in: preprocessed) else {
             throw PromptError.languageUndetected(fixture.id)
         }
-        let mode = PolishPipeline.mode(sttEngine: fixture.speechEngine,
-                                       detected: detected,
-                                       target: language)
+        // A task, not a bare mode, since #79 turned both the instruction dispatch
+        // and the user turn into properties of one value. This file predates that
+        // change and had not been rebuilt through it — its manifest cannot even
+        // load without `../.deps/Anemll`, which `setup.sh` clones — so the two call
+        // sites below are corrected together with #518's framing change rather
+        // than left stale under a comment claiming they match what ships.
+        let task = PolishTask.polish(PolishPipeline.mode(sttEngine: fixture.speechEngine,
+                                                         detected: detected,
+                                                         target: language))
         return PolishPrompt(
-            system: AppleFoundationModelsPolishEngine.instructions(for: mode, language: language),
-            // Byte-identical to `AppleFoundationModelsPolishEngine.polish`, which
-            // builds this string inline, and to `LocalHTTPPolishEngine.userTurn`,
-            // which the off-device spike measured through.
-            user: """
-            Polish this text. Output only the polished version, nothing else.
-
-            Input:
-            \(preprocessed)
-
-            Polished output:
-            """,
+            system: AppleFoundationModelsPolishEngine.instructions(for: task, language: language),
+            // Byte-identical to what the shipping engine sends, because it is the
+            // same call: `AppleFoundationModelsPolishEngine.polish` composes its
+            // user turn through `PolishTask.userTurn(raw:)` too. This used to be a
+            // hand copy of that string, and #518 changed the framing — a hand copy
+            // would have gone on measuring prefill on a prompt no build sends.
+            user: task.userTurn(raw: preprocessed),
             fixtureID: fixture.id,
-            mode: mode.rawValue
+            mode: task.identifier
         )
     }
 
