@@ -25,14 +25,25 @@ public struct SmartModeFailure: Equatable, Sendable {
     /// `PolishFailureReason` wraps an `Error` and is not `Equatable`.
     public let reason: String
 
+    /// What the transcript was read as, as an `NLLanguage` raw code, or nil when
+    /// nothing was readable (#490).
+    ///
+    /// Here because one refusal has to name it: `unsupportedInputLanguage` means the
+    /// language the user spoke is one the model does not read, and a message that
+    /// says so without saying which language would leave them guessing. Every other
+    /// outcome ignores it.
+    public let detectedLanguage: String?
+
     public init(modeIdentifier: String,
                 modeDisplayName: String,
                 outcome: String,
-                reason: String) {
+                reason: String,
+                detectedLanguage: String? = nil) {
         self.modeIdentifier = modeIdentifier
         self.modeDisplayName = modeDisplayName
         self.outcome = outcome
         self.reason = reason
+        self.detectedLanguage = detectedLanguage
     }
 }
 

@@ -122,6 +122,14 @@ public struct PolishLanguageMix: Equatable, Sendable, Codable {
     /// to tell "detection was mixed" from "detection was confident" at a glance.
     public var isMixed: Bool { shares.count > 1 }
 
+    /// Every language the transcript was counted as containing, as `NLLanguage` raw
+    /// codes. Empty when nothing was readable.
+    ///
+    /// The whole mix rather than the leader, because the one question asked of it —
+    /// can the polish backend read any of this? (#490) — is answered wrong by the
+    /// leader alone on a bilingual transcript.
+    public var countedCodes: Set<String> { Set(shares.keys) }
+
     // MARK: - Measurement
 
     /// Measure `text`.

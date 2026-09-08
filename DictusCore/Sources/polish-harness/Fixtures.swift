@@ -83,10 +83,14 @@ struct Expectation: Codable {
 
     /// The engine failure's slug must be this `PolishFailureReason`.
     ///
-    /// Paired with `outcome` rather than folded into it because the negative control
-    /// needs both halves: `engineFailed` alone would be satisfied by a refusal for
-    /// any other reason, and the whole point of that fixture is that Apple still
-    /// refuses Czech with `unsupportedLanguageOrLocale` after #518's reframing.
+    /// Paired with `outcome` rather than folded into it, because `engineFailed` alone
+    /// would be satisfied by a refusal for any other reason and a negative control has
+    /// to name the one it is about.
+    ///
+    /// `refusal-cs.json` was that control and no longer carries this half (#490): its
+    /// refusal is now the local pre-flight's, `unsupportedInputLanguage` with nothing
+    /// thrown, because the pipeline asks which languages the backend reads before
+    /// calling it. The field stays for any fixture that does assert on a throw.
     var failureReason: String?
 
     /// Limit this assertion to one prompt route: `"perLanguage"` or `"auto"`.

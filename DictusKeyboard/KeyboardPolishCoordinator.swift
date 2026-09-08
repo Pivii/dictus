@@ -336,7 +336,7 @@ final class KeyboardPolishCoordinator {
 
     /// Tell the user their armed mode did not run (#79).
     ///
-    /// Three sentences, because three different things happened and only one of them
+    /// Four sentences, because four different things happened and only one of them
     /// is "try again":
     ///
     /// - **Too long, text inserted** — the mode declared the floor acceptable. The
@@ -344,10 +344,21 @@ final class KeyboardPolishCoordinator {
     /// - **Too long, nothing inserted** — the mode could not degrade. This one has to
     ///   carry the remedy, because it is the only case where the user has lost
     ///   something and shortening the dictation genuinely fixes it.
+    /// - **The dictated language is one the model does not read** (#490) — names that
+    ///   language and stops there. It is the one refusal with a knowable cause and no
+    ///   remedy: Apple Foundation Models classifies the user turn and refuses before
+    ///   generating, so the same words in the same language will be refused again.
+    ///   "Try again" would be an instruction to repeat a failure.
     /// - **Anything else** — engine throw, guardrail rejection, cancellation. The
     ///   user can do nothing specific about any of them, so the copy does not pretend
     ///   otherwise; it matches the in-app wording (`DictationHandoff`) word for word,
     ///   so the same failure reads the same on both surfaces.
+    ///
+    /// The language branch keys on the OUTCOME, never on the
+    /// `unsupportedLanguageOrLocale` slug. #518 measured that slug arriving from
+    /// plain French, which Apple does read — telling a French speaker their language
+    /// is unsupported would be a lie the log would not even contradict. The outcome
+    /// is set by our own reading of the transcript and means only what it says.
     ///
     /// The mode name is the catalogue's own label — "→ EN" — so it reads as the
     /// thing the user armed. It goes through `SmartMode.localizedDisplayName` since
@@ -362,33 +373,45 @@ final class KeyboardPolishCoordinator {
     /// alternative and was rejected — `SmartModeCatalogue` picked a language-neutral
     /// label on purpose, and the fan is where that label mostly lives.
     private func announce(_ failure: SmartModeFailure, degraded: Bool) {
+        KeyboardState.shared.presentStatusMessage(
+            Self.message(for: failure, degraded: degraded),
+            reason: "smartModeFailed-\(failure.outcome)",
+            timeoutReason: "smartModeFailed-timeout"
+        )
+    }
+
+    /// The sentence for one refusal. Split out of `announce` so the copy can be read
+    /// as a set of four alternatives rather than as a presentation with branches in it.
+    private static func message(for failure: SmartModeFailure, degraded: Bool) -> String {
         let name = SmartMode.localizedDisplayName(
             identifier: failure.modeIdentifier, fallback: failure.modeDisplayName
         )
+        if failure.outcome == PolishMetrics.Outcome.unsupportedInputLanguage.rawValue,
+           let code = failure.detectedLanguage {
+            let language = PolishLanguageName.display(for: code)
+            return String(
+                localized: "\(name): Apple Intelligence does not support the dictated language (\(language)).",
+                comment: "Shown when an armed Smart Mode could not run because the language the user dictated is outside the set Apple Intelligence reads. First placeholder is the mode's name, second is the dictated language."
+            )
+        }
         let overflowed = failure.outcome == PolishMetrics.Outcome.exceededContextBudget.rawValue
-        let message: String
         switch (overflowed, degraded) {
         case (true, true):
-            message = String(
+            return String(
                 localized: "\(name): too long, text inserted as dictated.",
                 comment: "Shown when a Smart Mode hit the context ceiling and the untransformed text was inserted instead. The placeholder is the mode's name."
             )
         case (true, false):
-            message = String(
+            return String(
                 localized: "\(name): too long. Try a shorter dictation.",
                 comment: "Shown when a Smart Mode hit the context ceiling and could not fall back, so nothing was inserted. The placeholder is the mode's name."
             )
         default:
-            message = String(
+            return String(
                 localized: "\(name): could not be applied. Try again.",
                 comment: "Shown when an armed Smart Mode fails and nothing is inserted. The placeholder is the mode's name."
             )
         }
-        KeyboardState.shared.presentStatusMessage(
-            message,
-            reason: "smartModeFailed-\(failure.outcome)",
-            timeoutReason: "smartModeFailed-timeout"
-        )
     }
 
     /// Tell the user their armed mode did not run, and that the dictation went in as
