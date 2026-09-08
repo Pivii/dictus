@@ -99,4 +99,22 @@ final class AutocorrectReplacementTests: XCTestCase {
         let result = AutocorrectReplacement.check(context: "", word: "que")
         XCTAssertEqual(result, .failed(reason: "no-context"))
     }
+
+    // MARK: - What this check structurally cannot do (#530)
+
+    func testContextLongerThanTheDocumentItDescribesStillPasses() {
+        // The measured #530 desync: the host holds "Une fois ton", the proxy
+        // reports "Une fois tonn". This check PASSES — and that is correct
+        // behaviour, not a hole to plug. `documentContextBeforeInput` is the
+        // only source of truth a keyboard extension has about the document, so
+        // a check that re-reads it is validating the proxy against itself.
+        //
+        // The test exists to pin that down: the guard defends against a stale
+        // `state.currentWord`, which is real and is what #191 hit. It does not
+        // and cannot defend against a stale proxy. Do not "fix" it by reading
+        // harder here — the defence has to live somewhere with a second witness.
+        let lyingContext = "Une fois tonn"          // the document holds "Une fois ton"
+        let result = AutocorrectReplacement.check(context: lyingContext, word: "tonn")
+        XCTAssertEqual(result, .ok(deleteCount: 4))
+    }
 }

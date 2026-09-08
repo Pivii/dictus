@@ -2,11 +2,12 @@
 // Boundary-safe validation for autocorrect word replacement (issue #191).
 //
 // THE BUG THIS PREVENTS:
-// The keyboard used to replace a word by issuing `word.count` deleteBackward()
-// calls, trusting a word captured from an earlier proxy read. When the proxy's
-// reported context desyncs from the live document (rapid delete/retype produces
-// phantom duplicated-letter words like "quee"), the fixed count over-deletes
-// past the word into the preceding space: "pense quee" -> "penseque".
+// The keyboard replaces a word by issuing `word.count` deleteBackward() calls,
+// and the word it plans to replace can come from an earlier read: the suggestion
+// bar's `currentWord` is refreshed on an async background queue, so a fast
+// typist reaches the space key or taps a suggestion while it still holds a word
+// the document has moved past. Deleting that stale count would eat into the
+// preceding word.
 //
 // THE INVARIANT:
 // Before deleting anything, the caller re-reads the live context and this check
@@ -14,6 +15,19 @@
 // (b) the character before that word is a boundary (whitespace, punctuation,
 // symbol, or start-of-field). If either fails, the caller must skip the
 // replacement — never a destructive guess.
+//
+// WHAT IT CANNOT PREVENT — #530, and this is structural:
+// It cannot detect a desynced proxy. `documentContextBeforeInput` is the only
+// source of truth a keyboard extension has about the document, so a check that
+// re-reads it is validating the proxy against itself. This header used to claim
+// the opposite ("when the proxy's reported context desyncs from the live
+// document"); #530 measured it false. Deleting a selected word leaves the proxy
+// reporting a character the document does not hold: it said "Une fois tonn" for
+// a document holding "Une fois ton", this check duly returned .ok(deleteCount: 4),
+// and the caller's blind loop removed n, o, t AND the space — "Une foiston ".
+// No amount of reading harder here fixes that; do not add a guard that tries.
+// The defence lives at the delete site instead, in `WordBoundaryDelete`, which
+// stops on a word boundary whatever count it is handed.
 
 import Foundation
 
